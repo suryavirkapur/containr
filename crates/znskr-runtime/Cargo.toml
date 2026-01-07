@@ -1,0 +1,30 @@
+[package]
+name = "znskr-runtime"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+znskr-common = { path = "../znskr-common" }
+
+tokio = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+tracing = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+uuid = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+dashmap = { workspace = true }
+which = "7"
+tower = { workspace = true }
+containerd-client = "0.8"
+
+[build-dependencies]
+tonic-build = "0.12"

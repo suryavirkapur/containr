@@ -1,0 +1,34 @@
+[package]
+name = "znskr-proxy"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+znskr-common = { path = "../znskr-common" }
+
+tokio = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+http-body-util = { workspace = true }
+bytes = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+tracing = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+instant-acme = { workspace = true }
+rcgen = { workspace = true }
+rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
+tokio-rustls = { workspace = true }
+
+uuid = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+once_cell = { workspace = true }

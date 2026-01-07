@@ -1,0 +1,22 @@
+{
+    "name": "znskr-web",
+    "version": "0.1.0",
+    "type": "module",
+    "scripts": {
+        "dev": "bunx --bun vite",
+        "build": "bunx --bun vite build",
+        "preview": "bunx --bun vite preview"
+    },
+    "dependencies": {
+        "solid-js": "^1.8.0",
+        "@solidjs/router": "^0.14.0"
+    },
+    "devDependencies": {
+        "vite": "^5.0.0",
+        "vite-plugin-solid": "^2.8.0",
+        "typescript": "^5.3.0",
+        "tailwindcss": "^3.4.0",
+        "postcss": "^8.4.0",
+        "autoprefixer": "^10.4.0"
+    }
+}

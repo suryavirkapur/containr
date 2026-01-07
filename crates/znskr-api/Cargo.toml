@@ -1,0 +1,38 @@
+[package]
+name = "znskr-api"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+znskr-common = { path = "../znskr-common" }
+
+tokio = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+sled = { workspace = true }
+
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+argon2 = { workspace = true }
+jsonwebtoken = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+reqwest = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+dashmap = { workspace = true }
+rand = { workspace = true }
+base64 = { workspace = true }
+url = { workspace = true }

@@ -1,0 +1,18 @@
+# znskr build artifacts
+/target/
+
+# data directory
+/data/
+
+# config with secrets
+znskr.json
+
+# ide
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macos
+.DS_Store
+node_modules

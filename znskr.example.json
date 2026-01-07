@@ -1,0 +1,28 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 3000
+  },
+  "database": {
+    "path": "./data/znskr.db"
+  },
+  "proxy": {
+    "http_port": 8080,
+    "https_port": 8443,
+    "base_domain": "svk77.com"
+  },
+  "github": {
+    "client_id": "",
+    "client_secret": "",
+    "webhook_secret": ""
+  },
+  "auth": {
+    "jwt_secret": "change-me-in-production",
+    "jwt_expiry_hours": 24
+  },
+  "acme": {
+    "email": "",
+    "certs_dir": "./data/certs",
+    "staging": true
+  }
+}
