@@ -40,6 +40,16 @@ impl ImageManager {
         }
     }
 
+    /// creates a new image manager with no client but NOT in stub mode
+    /// useful for testing build/pull commands that use external binaries
+    #[cfg(test)]
+    pub fn new_headless() -> Self {
+        Self {
+            client: None,
+            stub_mode: false,
+        }
+    }
+
     /// returns true if running in stub mode
     pub fn is_stub(&self) -> bool {
         self.stub_mode
@@ -90,23 +100,60 @@ impl ImageManager {
         }
     }
 
-    /// builds an image from a dockerfile
+    /// builds an image from a Dockerfile or Containerfile
+    /// 
+    /// The dockerfile parameter can specify either "Dockerfile" or "Containerfile".
+    /// If not provided, it will auto-detect which one exists in the context path,
+    /// with Containerfile taking precedence if both exist.
     pub async fn build_image(
         &self,
         name: &str,
         context_path: &str,
-        _dockerfile: Option<&str>,
+        dockerfile: Option<&str>,
     ) -> Result<ImageInfo> {
         info!(name = %name, context = %context_path, "building image");
 
+        if self.stub_mode {
+            return Ok(ImageInfo {
+                name: name.to_string(),
+                digest: "sha256:stub-build".to_string(),
+                size: 0,
+            });
+        }
+
+        // Determine which containerfile to use
+        let containerfile = match dockerfile {
+            Some(f) => f.to_string(),
+            None => {
+                // Auto-detect: prefer Containerfile over Dockerfile
+                let containerfile_path = std::path::Path::new(context_path).join("Containerfile");
+                let dockerfile_path = std::path::Path::new(context_path).join("Dockerfile");
+                
+                if containerfile_path.exists() {
+                    info!(name = %name, "auto-detected Containerfile");
+                    "Containerfile".to_string()
+                } else if dockerfile_path.exists() {
+                    info!(name = %name, "auto-detected Dockerfile");
+                    "Dockerfile".to_string()
+                } else {
+                    // Default to Dockerfile for backward compatibility
+                    warn!(name = %name, "no Containerfile or Dockerfile found, defaulting to Dockerfile");
+                    "Dockerfile".to_string()
+                }
+            }
+        };
+
+        info!(name = %name, context = %context_path, containerfile = %containerfile, "building image with containerfile");
+
         // use buildah or docker for building since containerd doesn't build images
+        // buildah natively supports Containerfile, docker uses -f flag
         let output = if which::which("buildah").is_ok() {
             Command::new("buildah")
-                .args(["build", "-t", name, context_path])
+                .args(["build", "-f", &containerfile, "-t", name, context_path])
                 .output()
         } else if which::which("docker").is_ok() {
             Command::new("docker")
-                .args(["build", "-t", name, context_path])
+                .args(["build", "-f", &containerfile, "-t", name, context_path])
                 .output()
         } else {
             return Err(ClientError::Operation(
