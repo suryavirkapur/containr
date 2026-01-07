@@ -113,23 +113,33 @@ async fn main() -> anyhow::Result<()> {
         "proxy server started"
     );
 
-    // todo: start deployment worker
-    // the worker needs containerd which requires linux
-    // for now, we log a warning on macos
+    // start deployment worker
+    // on macos, containerd isn't available so we use stub mode
+    // on linux, try to connect to containerd, fallback to stub if not available
+    let work_dir = args.data_dir.join("builds");
+    
     #[cfg(target_os = "macos")]
     {
-        tracing::warn!("containerd not available on macos - deployment worker disabled");
-        tracing::warn!("use a linux server for full functionality");
+        tracing::warn!("containerd not available on macos - using stub mode");
+        let worker = znskr_runtime::DeploymentWorker::new_stub(db.clone(), work_dir)?;
+        tokio::spawn(async move {
+            worker.run(deployment_rx).await;
+        });
+        info!("deployment worker started (stub mode)");
     }
 
     #[cfg(not(target_os = "macos"))]
     {
-        let work_dir = args.data_dir.join("builds");
         let worker = znskr_runtime::DeploymentWorker::new(db.clone(), work_dir).await?;
+        let stub_mode = worker.is_stub();
         tokio::spawn(async move {
             worker.run(deployment_rx).await;
         });
-        info!("deployment worker started");
+        if stub_mode {
+            info!("deployment worker started (stub mode - containerd not available)");
+        } else {
+            info!("deployment worker started (containerd connected)");
+        }
     }
 
     info!("znskr is ready");

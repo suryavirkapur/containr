@@ -3,19 +3,11 @@
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use uuid::Uuid;
 
 use znskr_common::{Error, Result};
 
-/// deployment job sent to the queue
-#[derive(Debug, Clone)]
-pub struct DeploymentJob {
-    pub app_id: Uuid,
-    pub commit_sha: String,
-    pub commit_message: Option<String>,
-    pub github_url: String,
-    pub branch: String,
-}
+// re-export from common
+pub use znskr_common::models::DeploymentJob;
 
 /// github push event payload
 #[derive(Debug, Deserialize)]

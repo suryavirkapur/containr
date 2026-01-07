@@ -9,15 +9,16 @@ use containerd_client::services::v1::{
     tasks_client::TasksClient,
     version_client::VersionClient,
     Container, CreateContainerRequest, DeleteContainerRequest, GetContainerRequest,
-    ListContainersRequest, UpdateContainerRequest,
+    ListContainersRequest,
     CreateTaskRequest, DeleteTaskRequest, KillRequest, StartRequest,
     GetImageRequest, ListImagesRequest,
 };
 use containerd_client::tonic::transport::Channel;
+use containerd_client::tonic::Request;
 use containerd_client::{connect, with_namespace};
 use std::collections::HashMap;
 use thiserror::Error;
-use tracing::{error, info, warn};
+use tracing::info;
 
 /// containerd client errors
 #[derive(Error, Debug)]

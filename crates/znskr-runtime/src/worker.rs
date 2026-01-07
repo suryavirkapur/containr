@@ -8,23 +8,15 @@ use std::path::PathBuf;
 use std::process::Command;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
-use uuid::Uuid;
 
 use crate::client::{ContainerdClient, DEFAULT_NAMESPACE, DEFAULT_SOCKET};
-use crate::container::{ContainerConfig, ContainerManager, ContainerStatus};
+use crate::container::{ContainerConfig, ContainerManager};
 use crate::image::ImageManager;
 use znskr_common::models::{Deployment, DeploymentStatus};
 use znskr_common::Database;
 
-/// deployment job received from the api
-#[derive(Debug, Clone)]
-pub struct DeploymentJob {
-    pub app_id: Uuid,
-    pub commit_sha: String,
-    pub commit_message: Option<String>,
-    pub github_url: String,
-    pub branch: String,
-}
+// use shared type from common
+use znskr_common::models::DeploymentJob;
 
 /// deployment worker processes jobs from the queue
 pub struct DeploymentWorker {
@@ -32,22 +24,35 @@ pub struct DeploymentWorker {
     container_manager: ContainerManager,
     image_manager: ImageManager,
     work_dir: PathBuf,
+    stub_mode: bool,
 }
 
 impl DeploymentWorker {
-    // creates a new deployment worker
-    pub fn new(db: Database, work_dir: PathBuf) -> anyhow::Result<Self> {
-        // try to connect to containerd, fall back to stub mode
-        let client = match ContainerdClient::new(DEFAULT_SOCKET, DEFAULT_NAMESPACE) {
-            Ok(client) => client,
-            Err(e) => {
-                warn!("could not connect to containerd: {}. running in stub mode.", e);
-                ContainerdClient::new_unchecked(DEFAULT_SOCKET, DEFAULT_NAMESPACE)
-            }
-        };
-
-        let container_manager = ContainerManager::new(client.clone());
-        let image_manager = ImageManager::new(client);
+    /// creates a new deployment worker
+    pub async fn new(db: Database, work_dir: PathBuf) -> anyhow::Result<Self> {
+        // try to connect to containerd
+        let (container_manager, image_manager, stub_mode) =
+            match ContainerdClient::connect(DEFAULT_SOCKET, DEFAULT_NAMESPACE).await {
+                Ok(client) => {
+                    info!("connected to containerd");
+                    (
+                        ContainerManager::new(client.clone()),
+                        ImageManager::new(client),
+                        false,
+                    )
+                }
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        "could not connect to containerd - running in stub mode"
+                    );
+                    (
+                        ContainerManager::new_stub(),
+                        ImageManager::new_stub(),
+                        true,
+                    )
+                }
+            };
 
         // ensure work directory exists
         std::fs::create_dir_all(&work_dir)?;
@@ -57,12 +62,34 @@ impl DeploymentWorker {
             container_manager,
             image_manager,
             work_dir,
+            stub_mode,
         })
     }
 
-    // runs the worker, processing jobs from the channel
+    /// creates a worker in stub mode (for development without containerd)
+    pub fn new_stub(db: Database, work_dir: PathBuf) -> anyhow::Result<Self> {
+        warn!("deployment worker starting in stub mode");
+
+        // ensure work directory exists
+        std::fs::create_dir_all(&work_dir)?;
+
+        Ok(Self {
+            db,
+            container_manager: ContainerManager::new_stub(),
+            image_manager: ImageManager::new_stub(),
+            work_dir,
+            stub_mode: true,
+        })
+    }
+
+    /// returns true if running in stub mode
+    pub fn is_stub(&self) -> bool {
+        self.stub_mode
+    }
+
+    /// runs the worker, processing jobs from the channel
     pub async fn run(self, mut rx: mpsc::Receiver<DeploymentJob>) {
-        info!("deployment worker started");
+        info!(stub_mode = %self.stub_mode, "deployment worker started");
 
         while let Some(job) = rx.recv().await {
             info!(
@@ -77,13 +104,20 @@ impl DeploymentWorker {
                     error = %e,
                     "deployment failed"
                 );
+
+                // update deployment status to failed
+                if let Ok(Some(mut deployment)) = self.db.get_latest_deployment(job.app_id) {
+                    deployment.status = DeploymentStatus::Failed;
+                    deployment.logs.push(format!("error: {}", e));
+                    let _ = self.db.save_deployment(&deployment);
+                }
             }
         }
 
         info!("deployment worker stopped");
     }
 
-    // processes a single deployment job
+    /// processes a single deployment job
     async fn process_job(&self, job: &DeploymentJob) -> anyhow::Result<()> {
         // get the latest deployment for this app
         let deployment = self
@@ -103,8 +137,16 @@ impl DeploymentWorker {
         self.update_status(&deployment, DeploymentStatus::Building)?;
 
         // build docker image
-        let image_name = format!("znskr/{}:{}", job.app_id, &job.commit_sha[..8.min(job.commit_sha.len())]);
-        self.build_image(&repo_path, &image_name).await?;
+        let commit_prefix = if job.commit_sha.len() >= 8 {
+            &job.commit_sha[..8]
+        } else {
+            &job.commit_sha
+        };
+        let image_name = format!("znskr/{}:{}", job.app_id, commit_prefix);
+
+        self.image_manager
+            .build_image(&image_name, repo_path.to_str().unwrap(), None)
+            .await?;
 
         // update status to starting
         self.update_status(&deployment, DeploymentStatus::Starting)?;
@@ -158,7 +200,7 @@ impl DeploymentWorker {
         Ok(())
     }
 
-    // clones the git repository
+    /// clones the git repository
     async fn clone_repo(&self, job: &DeploymentJob) -> anyhow::Result<PathBuf> {
         let commit_prefix = if job.commit_sha.len() >= 8 {
             &job.commit_sha[..8]
@@ -198,50 +240,13 @@ impl DeploymentWorker {
         Ok(repo_path)
     }
 
-    // builds a docker image from the repository
-    async fn build_image(&self, repo_path: &PathBuf, image_name: &str) -> anyhow::Result<()> {
-        info!(
-            path = %repo_path.display(),
-            image = %image_name,
-            "building docker image"
-        );
-
-        // try to use buildah or docker
-        let output = if which::which("buildah").is_ok() {
-            Command::new("buildah")
-                .args([
-                    "build",
-                    "-t",
-                    image_name,
-                    repo_path.to_str().unwrap(),
-                ])
-                .output()?
-        } else {
-            Command::new("docker")
-                .args([
-                    "build",
-                    "-t",
-                    image_name,
-                    repo_path.to_str().unwrap(),
-                ])
-                .output()?
-        };
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("image build failed: {}", stderr));
-        }
-
-        Ok(())
-    }
-
-    // updates deployment status
+    /// updates deployment status
     fn update_status(&self, deployment: &Deployment, status: DeploymentStatus) -> anyhow::Result<()> {
         let mut updated = deployment.clone();
-        updated.status = status;
+        updated.status = status.clone();
         updated.logs.push(format!(
             "[{}] status: {:?}",
-            chrono::Utc::now(),
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
             status
         ));
         self.db.save_deployment(&updated)?;

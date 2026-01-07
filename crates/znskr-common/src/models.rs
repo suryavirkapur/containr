@@ -173,3 +173,13 @@ pub struct Route {
     pub upstream_port: u16,
     pub ssl_enabled: bool,
 }
+
+/// deployment job sent between api and worker
+#[derive(Debug, Clone)]
+pub struct DeploymentJob {
+    pub app_id: Uuid,
+    pub commit_sha: String,
+    pub commit_message: Option<String>,
+    pub github_url: String,
+    pub branch: String,
+}
