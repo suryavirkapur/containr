@@ -8,7 +8,7 @@ use containerd_client::services::v1::{
     images_client::ImagesClient,
     tasks_client::TasksClient,
     version_client::VersionClient,
-    Container, CreateContainerRequest, DeleteContainerRequest, GetContainerRequest,
+    Container, container, CreateContainerRequest, DeleteContainerRequest, GetContainerRequest,
     ListContainersRequest,
     CreateTaskRequest, DeleteTaskRequest, KillRequest, StartRequest,
     GetImageRequest, ListImagesRequest,
@@ -107,6 +107,10 @@ impl ContainerdClient {
             id: id.to_string(),
             image: image.to_string(),
             labels,
+            runtime: Some(container::Runtime {
+                name: "io.containerd.runc.v2".to_string(),
+                options: None,
+            }),
             ..Default::default()
         };
 

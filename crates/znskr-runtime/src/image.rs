@@ -42,7 +42,6 @@ impl ImageManager {
 
     /// creates a new image manager with no client but NOT in stub mode
     /// useful for testing build/pull commands that use external binaries
-    #[cfg(test)]
     pub fn new_headless() -> Self {
         Self {
             client: None,
@@ -131,14 +130,14 @@ impl ImageManager {
                 
                 if containerfile_path.exists() {
                     info!(name = %name, "auto-detected Containerfile");
-                    "Containerfile".to_string()
+                    containerfile_path.to_string_lossy().to_string()
                 } else if dockerfile_path.exists() {
                     info!(name = %name, "auto-detected Dockerfile");
-                    "Dockerfile".to_string()
+                    dockerfile_path.to_string_lossy().to_string()
                 } else {
-                    // Default to Dockerfile for backward compatibility
+                    // Default to Dockerfile for backward compatibility - assume in context
                     warn!(name = %name, "no Containerfile or Dockerfile found, defaulting to Dockerfile");
-                    "Dockerfile".to_string()
+                    std::path::Path::new(context_path).join("Dockerfile").to_string_lossy().to_string()
                 }
             }
         };

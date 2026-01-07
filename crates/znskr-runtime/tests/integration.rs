@@ -18,6 +18,15 @@ fn is_containerd_available() -> bool {
     Path::new(DEFAULT_SOCKET).exists()
 }
 
+/// Helper to check if docker is available
+fn is_docker_available() -> bool {
+    std::process::Command::new("docker")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// Test connecting to containerd
 #[tokio::test]
 async fn test_containerd_connection() {
@@ -226,4 +235,45 @@ async fn test_containerfile_precedence() {
     
     // The logic in build_image prefers Containerfile when both exist
     // This test documents the expected behavior
+}
+
+/// Test real build using Docker and Containerfile
+#[tokio::test]
+async fn test_real_docker_build_containerfile() {
+    if !is_docker_available() {
+        eprintln!("SKIP: docker not available");
+        return;
+    }
+
+    // Use headless manager (not stub mode, but no containerd client)
+    let manager = ImageManager::new_headless();
+    assert!(!manager.is_stub());
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let containerfile_path = temp_dir.path().join("Containerfile");
+    
+    // Create a valid Containerfile using Alpine
+    fs::write(&containerfile_path, "FROM alpine:latest\nRUN echo 'built with containerfile'").unwrap();
+
+    let image_name = format!("znskr-test-build:{}", uuid::Uuid::new_v4());
+    
+    // Build image
+    // This should detect Containerfile and use 'docker build -f ...'
+    let result = manager.build_image(
+        &image_name,
+        temp_dir.path().to_str().unwrap(),
+        None,
+    ).await;
+
+    if let Err(e) = &result {
+        eprintln!("Build failed: {}", e);
+    }
+    
+    assert!(result.is_ok());
+
+    // Cleanup (try to remove image via docker)
+    std::process::Command::new("docker")
+        .args(["rmi", &image_name])
+        .output()
+        .ok();
 }

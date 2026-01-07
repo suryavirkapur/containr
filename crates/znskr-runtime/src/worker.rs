@@ -9,8 +9,7 @@ use std::process::Command;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
-use crate::client::{ContainerdClient, DEFAULT_NAMESPACE, DEFAULT_SOCKET};
-use crate::container::{ContainerConfig, ContainerManager};
+use crate::docker::{DockerContainerConfig, DockerContainerManager};
 use crate::image::ImageManager;
 use znskr_common::models::{Deployment, DeploymentStatus};
 use znskr_common::Database;
@@ -21,52 +20,40 @@ use znskr_common::models::DeploymentJob;
 /// deployment worker processes jobs from the queue
 pub struct DeploymentWorker {
     db: Database,
-    container_manager: ContainerManager,
+    docker_manager: DockerContainerManager,
     image_manager: ImageManager,
     work_dir: PathBuf,
     stub_mode: bool,
 }
 
 impl DeploymentWorker {
-    /// creates a new deployment worker
+    /// creates a new deployment worker using Docker for containers
     pub async fn new(db: Database, work_dir: PathBuf) -> anyhow::Result<Self> {
-        // try to connect to containerd
-        let (container_manager, image_manager, stub_mode) =
-            match ContainerdClient::connect(DEFAULT_SOCKET, DEFAULT_NAMESPACE).await {
-                Ok(client) => {
-                    info!("connected to containerd");
-                    (
-                        ContainerManager::new(client.clone()),
-                        ImageManager::new(client),
-                        false,
-                    )
-                }
-                Err(e) => {
-                    warn!(
-                        error = %e,
-                        "could not connect to containerd - running in stub mode"
-                    );
-                    (
-                        ContainerManager::new_stub(),
-                        ImageManager::new_stub(),
-                        true,
-                    )
-                }
-            };
+        // Use Docker for container management (simpler than containerd tasks)
+        let docker_manager = DockerContainerManager::new();
+        let image_manager = ImageManager::new_headless(); // Uses docker/buildah CLI
+        
+        let stub_mode = docker_manager.is_stub();
+        
+        if stub_mode {
+            warn!("docker not available - running in stub mode");
+        } else {
+            info!("deployment worker using Docker runtime");
+        }
 
         // ensure work directory exists
         std::fs::create_dir_all(&work_dir)?;
 
         Ok(Self {
             db,
-            container_manager,
+            docker_manager,
             image_manager,
             work_dir,
             stub_mode,
         })
     }
 
-    /// creates a worker in stub mode (for development without containerd)
+    /// creates a worker in stub mode (for development without docker)
     pub fn new_stub(db: Database, work_dir: PathBuf) -> anyhow::Result<Self> {
         warn!("deployment worker starting in stub mode");
 
@@ -75,7 +62,7 @@ impl DeploymentWorker {
 
         Ok(Self {
             db,
-            container_manager: ContainerManager::new_stub(),
+            docker_manager: DockerContainerManager::new_stub(),
             image_manager: ImageManager::new_stub(),
             work_dir,
             stub_mode: true,
@@ -166,11 +153,11 @@ impl DeploymentWorker {
 
         // stop existing container if running
         let container_id = format!("znskr-{}", job.app_id);
-        let _ = self.container_manager.stop_container(&container_id).await;
-        let _ = self.container_manager.remove_container(&container_id).await;
+        let _ = self.docker_manager.stop_container(&container_id).await;
+        let _ = self.docker_manager.remove_container(&container_id).await;
 
-        // start new container
-        let config = ContainerConfig {
+        // start new container using Docker
+        let config = DockerContainerConfig {
             id: container_id.clone(),
             image: image_name,
             env_vars,
@@ -179,7 +166,7 @@ impl DeploymentWorker {
             cpu_limit: Some(1.0),
         };
 
-        let container_info = self.container_manager.create_container(config).await?;
+        let container_info = self.docker_manager.create_container(config).await?;
 
         // update deployment with container info
         let mut updated_deployment = deployment.clone();
