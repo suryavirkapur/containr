@@ -3,9 +3,9 @@
     "version": "0.1.0",
     "type": "module",
     "scripts": {
-        "dev": "bunx --bun vite",
-        "build": "bunx --bun vite build",
-        "preview": "bunx --bun vite preview"
+        "dev": "bunx vite",
+        "build": "bunx vite build",
+        "preview": "bunx vite preview"
     },
     "dependencies": {
         "solid-js": "^1.8.0",

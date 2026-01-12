@@ -10,7 +10,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use crate::github::DeploymentJob;
-use crate::handlers::{apps, auth, deployments, health, webhooks};
+use crate::handlers::{apps, auth, certificates, deployments, health, webhooks, websocket};
 use crate::state::AppState;
 use znskr_common::{Config, Database, Result};
 
@@ -39,14 +39,41 @@ pub async fn run_server(config: Config, db: Database) -> Result<mpsc::Receiver<D
         // apps
         .route("/api/apps", get(apps::list_apps))
         .route("/api/apps", post(apps::create_app))
-        .route("/api/apps/:id", get(apps::get_app))
-        .route("/api/apps/:id", put(apps::update_app))
-        .route("/api/apps/:id", delete(apps::delete_app))
+        .route("/api/apps/{id}", get(apps::get_app))
+        .route("/api/apps/{id}", put(apps::update_app))
+        .route("/api/apps/{id}", delete(apps::delete_app))
         // deployments
-        .route("/api/apps/:id/deployments", get(deployments::list_deployments))
-        .route("/api/apps/:id/deployments", post(deployments::trigger_deployment))
-        .route("/api/apps/:app_id/deployments/:id", get(deployments::get_deployment))
-        .route("/api/apps/:app_id/deployments/:id/logs", get(deployments::get_deployment_logs))
+        .route(
+            "/api/apps/{id}/deployments",
+            get(deployments::list_deployments),
+        )
+        .route(
+            "/api/apps/{id}/deployments",
+            post(deployments::trigger_deployment),
+        )
+        .route(
+            "/api/apps/{app_id}/deployments/{id}",
+            get(deployments::get_deployment),
+        )
+        .route(
+            "/api/apps/{app_id}/deployments/{id}/logs",
+            get(deployments::get_deployment_logs),
+        )
+        // certificates
+        .route(
+            "/api/apps/{id}/certificate",
+            get(certificates::get_certificate),
+        )
+        .route(
+            "/api/apps/{id}/certificate/reissue",
+            post(certificates::reissue_certificate),
+        )
+        // websocket logs
+        .route("/api/apps/{id}/logs/ws", get(websocket::container_logs_ws))
+        .route(
+            "/api/apps/{app_id}/deployments/{id}/logs/ws",
+            get(websocket::deployment_logs_ws),
+        )
         // webhooks
         .route("/webhooks/github", post(webhooks::github_webhook))
         // middleware

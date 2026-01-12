@@ -6,11 +6,11 @@ use chrono::{DateTime, Duration, Utc};
 use instant_acme::{
     Account, AuthorizationStatus, ChallengeType, Identifier, NewAccount, NewOrder, OrderStatus,
 };
+use parking_lot::RwLock;
 use rcgen::{CertificateParams, DistinguishedName, KeyPair};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use parking_lot::RwLock;
 use tokio::fs;
 use tracing::{error, info, warn};
 
@@ -34,7 +34,9 @@ impl ChallengeStore {
 
     // adds a challenge
     pub fn add(&self, token: &str, key_auth: &str) {
-        self.challenges.write().insert(token.to_string(), key_auth.to_string());
+        self.challenges
+            .write()
+            .insert(token.to_string(), key_auth.to_string());
     }
 
     // gets a challenge response
@@ -130,7 +132,8 @@ impl AcmeManager {
 
             // store challenge response
             let key_auth = order.key_authorization(challenge);
-            self.challenge_store.add(&challenge.token, key_auth.as_str());
+            self.challenge_store
+                .add(&challenge.token, key_auth.as_str());
 
             info!(
                 domain = %domain,
@@ -196,9 +199,10 @@ impl AcmeManager {
         }
 
         // download certificate
-        let cert_chain = order.certificate().await?.ok_or_else(|| {
-            anyhow::anyhow!("certificate not available")
-        })?;
+        let cert_chain = order
+            .certificate()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("certificate not available"))?;
 
         // save certificate
         let cert = Certificate::new(

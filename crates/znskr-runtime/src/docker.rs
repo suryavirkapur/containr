@@ -63,7 +63,10 @@ impl DockerContainerManager {
     }
 
     /// creates and starts a new container
-    pub async fn create_container(&self, config: DockerContainerConfig) -> Result<DockerContainerInfo> {
+    pub async fn create_container(
+        &self,
+        config: DockerContainerConfig,
+    ) -> Result<DockerContainerInfo> {
         info!(id = %config.id, image = %config.image, "creating docker container");
 
         if self.stub_mode {
@@ -120,7 +123,10 @@ impl DockerContainerManager {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(ClientError::Operation(format!("docker run failed: {}", stderr)));
+            return Err(ClientError::Operation(format!(
+                "docker run failed: {}",
+                stderr
+            )));
         }
 
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -194,7 +200,7 @@ impl DockerContainerManager {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        
+
         Ok(format!("{}{}", stdout, stderr))
     }
 
@@ -224,7 +230,14 @@ impl DockerContainerManager {
         }
 
         let output = Command::new("docker")
-            .args(["ps", "-a", "--filter", "name=znskr-", "--format", "{{.Names}}|{{.Image}}|{{.Status}}"])
+            .args([
+                "ps",
+                "-a",
+                "--filter",
+                "name=znskr-",
+                "--format",
+                "{{.Names}}|{{.Image}}|{{.Status}}",
+            ])
             .output()
             .map_err(|e| ClientError::Operation(format!("docker ps failed: {}", e)))?;
 

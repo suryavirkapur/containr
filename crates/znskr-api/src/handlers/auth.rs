@@ -60,7 +60,12 @@ pub async fn register(
     Json(req): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
     // check if user already exists
-    if state.db.get_user_by_email(&req.email).map_err(internal_error)?.is_some() {
+    if state
+        .db
+        .get_user_by_email(&req.email)
+        .map_err(internal_error)?
+        .is_some()
+    {
         return Err((
             StatusCode::CONFLICT,
             Json(ErrorResponse {

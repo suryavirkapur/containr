@@ -16,3 +16,4 @@ znskr.json
 # macos
 .DS_Store
 node_modules
+web/dist

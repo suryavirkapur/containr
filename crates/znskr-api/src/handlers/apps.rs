@@ -32,10 +32,19 @@ pub struct EnvVarRequest {
     pub secret: Option<bool>,
 }
 
+/// env var in response (hides secret values)
+#[derive(Debug, Serialize)]
+pub struct EnvVarResponse {
+    pub key: String,
+    pub value: String,
+    pub secret: bool,
+}
+
 /// update app request
 #[derive(Debug, Deserialize)]
 pub struct UpdateAppRequest {
     pub name: Option<String>,
+    pub github_url: Option<String>,
     pub branch: Option<String>,
     pub domain: Option<String>,
     pub port: Option<u16>,
@@ -51,6 +60,7 @@ pub struct AppResponse {
     pub branch: String,
     pub domain: Option<String>,
     pub port: u16,
+    pub env_vars: Vec<EnvVarResponse>,
     pub created_at: String,
 }
 
@@ -63,6 +73,20 @@ impl From<&App> for AppResponse {
             branch: app.branch.clone(),
             domain: app.domain.clone(),
             port: app.port,
+            env_vars: app
+                .env_vars
+                .iter()
+                .map(|e| EnvVarResponse {
+                    key: e.key.clone(),
+                    // Hide secret values
+                    value: if e.secret {
+                        "********".to_string()
+                    } else {
+                        e.value.clone()
+                    },
+                    secret: e.secret,
+                })
+                .collect(),
             created_at: app.created_at.to_rfc3339(),
         }
     }
@@ -257,7 +281,11 @@ pub async fn update_app(
     }
     if let Some(domain) = req.domain {
         // check domain uniqueness
-        if let Some(existing) = state.db.get_app_by_domain(&domain).map_err(internal_error)? {
+        if let Some(existing) = state
+            .db
+            .get_app_by_domain(&domain)
+            .map_err(internal_error)?
+        {
             if existing.id != app.id {
                 return Err((
                     StatusCode::CONFLICT,
@@ -273,12 +301,28 @@ pub async fn update_app(
         app.port = port;
     }
     if let Some(env_vars) = req.env_vars {
+        // Create a map of existing env vars for lookups
+        let existing_vars: std::collections::HashMap<String, String> = app
+            .env_vars
+            .iter()
+            .map(|e| (e.key.clone(), e.value.clone()))
+            .collect();
+
         app.env_vars = env_vars
             .into_iter()
-            .map(|e| EnvVar {
-                key: e.key,
-                value: e.value,
-                secret: e.secret.unwrap_or(false),
+            .map(|e| {
+                let value = if e.secret.unwrap_or(false) && e.value == "********" {
+                    // unexpected: user sent back the mask, try to find existing value
+                    existing_vars.get(&e.key).cloned().unwrap_or(e.value)
+                } else {
+                    e.value
+                };
+
+                EnvVar {
+                    key: e.key,
+                    value,
+                    secret: e.secret.unwrap_or(false),
+                }
             })
             .collect();
     }

@@ -32,9 +32,9 @@ impl DeploymentWorker {
         // Use Docker for container management (simpler than containerd tasks)
         let docker_manager = DockerContainerManager::new();
         let image_manager = ImageManager::new_headless(); // Uses docker/buildah CLI
-        
+
         let stub_mode = docker_manager.is_stub();
-        
+
         if stub_mode {
             warn!("docker not available - running in stub mode");
         } else {
@@ -194,7 +194,9 @@ impl DeploymentWorker {
         } else {
             &job.commit_sha
         };
-        let repo_path = self.work_dir.join(format!("{}_{}", job.app_id, commit_prefix));
+        let repo_path = self
+            .work_dir
+            .join(format!("{}_{}", job.app_id, commit_prefix));
 
         // remove if exists
         let _ = tokio::fs::remove_dir_all(&repo_path).await;
@@ -228,7 +230,11 @@ impl DeploymentWorker {
     }
 
     /// updates deployment status
-    fn update_status(&self, deployment: &Deployment, status: DeploymentStatus) -> anyhow::Result<()> {
+    fn update_status(
+        &self,
+        deployment: &Deployment,
+        status: DeploymentStatus,
+    ) -> anyhow::Result<()> {
         let mut updated = deployment.clone();
         updated.status = status.clone();
         updated.logs.push(format!(

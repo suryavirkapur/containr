@@ -36,7 +36,7 @@ async fn test_containerd_connection() {
     }
 
     let result = ContainerdClient::connect(DEFAULT_SOCKET, TEST_NAMESPACE).await;
-    
+
     match result {
         Ok(client) => {
             println!("Connected to containerd");
@@ -113,19 +113,17 @@ async fn test_container_manager_stub() {
 #[tokio::test]
 async fn test_image_build_containerfile_detection() {
     let manager = ImageManager::new_stub();
-    
+
     // Create a temp directory with a Containerfile
     let temp_dir = tempfile::tempdir().unwrap();
     let containerfile_path = temp_dir.path().join("Containerfile");
     fs::write(&containerfile_path, "FROM alpine:latest\nRUN echo hello").unwrap();
-    
+
     // This should detect the Containerfile (in stub mode, it just returns success)
-    let result = manager.build_image(
-        "test-image:latest",
-        temp_dir.path().to_str().unwrap(),
-        None,
-    ).await;
-    
+    let result = manager
+        .build_image("test-image:latest", temp_dir.path().to_str().unwrap(), None)
+        .await;
+
     assert!(result.is_ok());
 }
 
@@ -133,18 +131,20 @@ async fn test_image_build_containerfile_detection() {
 #[tokio::test]
 async fn test_image_build_explicit_dockerfile() {
     let manager = ImageManager::new_stub();
-    
+
     let temp_dir = tempfile::tempdir().unwrap();
     let dockerfile_path = temp_dir.path().join("MyDockerfile");
     fs::write(&dockerfile_path, "FROM alpine:latest").unwrap();
-    
+
     // Explicitly specify the dockerfile
-    let result = manager.build_image(
-        "test-image:latest",
-        temp_dir.path().to_str().unwrap(),
-        Some("MyDockerfile"),
-    ).await;
-    
+    let result = manager
+        .build_image(
+            "test-image:latest",
+            temp_dir.path().to_str().unwrap(),
+            Some("MyDockerfile"),
+        )
+        .await;
+
     assert!(result.is_ok());
 }
 
@@ -170,7 +170,9 @@ async fn test_containerd_full_flow() {
 
     // Pull a small test image
     println!("Pulling test image...");
-    let pull_result = image_manager.pull_image("docker.io/library/alpine:latest").await;
+    let pull_result = image_manager
+        .pull_image("docker.io/library/alpine:latest")
+        .await;
     if let Err(e) = &pull_result {
         eprintln!("Failed to pull image: {}", e);
         return;
@@ -219,20 +221,20 @@ async fn test_containerd_full_flow() {
 #[tokio::test]
 async fn test_containerfile_precedence() {
     let temp_dir = tempfile::tempdir().unwrap();
-    
+
     // Create both files
     fs::write(temp_dir.path().join("Dockerfile"), "FROM ubuntu:latest").unwrap();
     fs::write(temp_dir.path().join("Containerfile"), "FROM alpine:latest").unwrap();
-    
+
     // When both exist, Containerfile should be preferred
     // We can't easily verify this without running the actual build,
     // but we can at least verify the logic exists
     let containerfile_path = temp_dir.path().join("Containerfile");
     let dockerfile_path = temp_dir.path().join("Dockerfile");
-    
+
     assert!(containerfile_path.exists());
     assert!(dockerfile_path.exists());
-    
+
     // The logic in build_image prefers Containerfile when both exist
     // This test documents the expected behavior
 }
@@ -251,24 +253,26 @@ async fn test_real_docker_build_containerfile() {
 
     let temp_dir = tempfile::tempdir().unwrap();
     let containerfile_path = temp_dir.path().join("Containerfile");
-    
+
     // Create a valid Containerfile using Alpine
-    fs::write(&containerfile_path, "FROM alpine:latest\nRUN echo 'built with containerfile'").unwrap();
+    fs::write(
+        &containerfile_path,
+        "FROM alpine:latest\nRUN echo 'built with containerfile'",
+    )
+    .unwrap();
 
     let image_name = format!("znskr-test-build:{}", uuid::Uuid::new_v4());
-    
+
     // Build image
     // This should detect Containerfile and use 'docker build -f ...'
-    let result = manager.build_image(
-        &image_name,
-        temp_dir.path().to_str().unwrap(),
-        None,
-    ).await;
+    let result = manager
+        .build_image(&image_name, temp_dir.path().to_str().unwrap(), None)
+        .await;
 
     if let Err(e) = &result {
         eprintln!("Build failed: {}", e);
     }
-    
+
     assert!(result.is_ok());
 
     // Cleanup (try to remove image via docker)

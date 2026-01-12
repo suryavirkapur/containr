@@ -101,7 +101,10 @@ pub async fn github_webhook(
             // create deployment
             let mut deployment = Deployment::new(app.id, push_event.after.clone());
             deployment.commit_message = push_event.head_commit.map(|c| c.message);
-            state.db.save_deployment(&deployment).map_err(internal_error)?;
+            state
+                .db
+                .save_deployment(&deployment)
+                .map_err(internal_error)?;
 
             // queue deployment job
             let job = DeploymentJob {
@@ -112,9 +115,11 @@ pub async fn github_webhook(
                 branch: app.branch,
             };
 
-            state.deployment_tx.send(job).await.map_err(|e| {
-                internal_error(format!("failed to queue deployment: {}", e))
-            })?;
+            state
+                .deployment_tx
+                .send(job)
+                .await
+                .map_err(|e| internal_error(format!("failed to queue deployment: {}", e)))?;
 
             tracing::info!(
                 app_id = %app.id,
@@ -141,7 +146,10 @@ async fn find_app_by_repo(
     branch: &str,
 ) -> Result<Option<znskr_common::models::App>, (StatusCode, Json<ErrorResponse>)> {
     // use the database method to find the app
-    state.db.get_app_by_github_url(repo_url, branch).map_err(internal_error)
+    state
+        .db
+        .get_app_by_github_url(repo_url, branch)
+        .map_err(internal_error)
 }
 
 /// helper for internal errors

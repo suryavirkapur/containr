@@ -32,3 +32,10 @@ futures = { workspace = true }
 dashmap = { workspace = true }
 parking_lot = { workspace = true }
 once_cell = { workspace = true }
+
+# Pingora - Cloudflare's reverse proxy framework
+pingora = "0.6"
+pingora-proxy = "0.6"
+pingora-http = "0.6"
+pingora-core = "0.6"
+

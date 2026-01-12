@@ -11,10 +11,11 @@ pub mod worker;
 
 pub use client::ContainerdClient;
 pub use container::{ContainerConfig, ContainerInfo, ContainerManager, ContainerStatus};
-pub use docker::{DockerContainerConfig, DockerContainerInfo, DockerContainerManager, DockerContainerStatus};
+pub use docker::{
+    DockerContainerConfig, DockerContainerInfo, DockerContainerManager, DockerContainerStatus,
+};
 pub use image::{ImageInfo, ImageManager};
 pub use worker::DeploymentWorker;
 
 // re-export from common
 pub use znskr_common::models::DeploymentJob;
-

@@ -118,7 +118,8 @@ pub async fn list_deployments(
         .list_deployments_by_app(app_id)
         .map_err(internal_error)?;
 
-    let responses: Vec<DeploymentResponse> = deployments.iter().map(DeploymentResponse::from).collect();
+    let responses: Vec<DeploymentResponse> =
+        deployments.iter().map(DeploymentResponse::from).collect();
     Ok(Json(responses))
 }
 
@@ -211,7 +212,10 @@ pub async fn trigger_deployment(
 
     // create deployment record
     let deployment = Deployment::new(app_id, "manual".to_string());
-    state.db.save_deployment(&deployment).map_err(internal_error)?;
+    state
+        .db
+        .save_deployment(&deployment)
+        .map_err(internal_error)?;
 
     // queue deployment job
     let job = DeploymentJob {
@@ -228,7 +232,10 @@ pub async fn trigger_deployment(
         .await
         .map_err(|e| internal_error(format!("failed to queue deployment: {}", e)))?;
 
-    Ok((StatusCode::CREATED, Json(DeploymentResponse::from(&deployment))))
+    Ok((
+        StatusCode::CREATED,
+        Json(DeploymentResponse::from(&deployment)),
+    ))
 }
 
 /// get deployment logs

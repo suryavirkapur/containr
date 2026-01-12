@@ -95,12 +95,15 @@ impl ImageManager {
                 let stderr = String::from_utf8_lossy(&out.stderr);
                 Err(ClientError::Operation(format!("pull failed: {}", stderr)))
             }
-            Err(e) => Err(ClientError::Operation(format!("pull command failed: {}", e))),
+            Err(e) => Err(ClientError::Operation(format!(
+                "pull command failed: {}",
+                e
+            ))),
         }
     }
 
     /// builds an image from a Dockerfile or Containerfile
-    /// 
+    ///
     /// The dockerfile parameter can specify either "Dockerfile" or "Containerfile".
     /// If not provided, it will auto-detect which one exists in the context path,
     /// with Containerfile taking precedence if both exist.
@@ -127,7 +130,7 @@ impl ImageManager {
                 // Auto-detect: prefer Containerfile over Dockerfile
                 let containerfile_path = std::path::Path::new(context_path).join("Containerfile");
                 let dockerfile_path = std::path::Path::new(context_path).join("Dockerfile");
-                
+
                 if containerfile_path.exists() {
                     info!(name = %name, "auto-detected Containerfile");
                     containerfile_path.to_string_lossy().to_string()
@@ -137,7 +140,10 @@ impl ImageManager {
                 } else {
                     // Default to Dockerfile for backward compatibility - assume in context
                     warn!(name = %name, "no Containerfile or Dockerfile found, defaulting to Dockerfile");
-                    std::path::Path::new(context_path).join("Dockerfile").to_string_lossy().to_string()
+                    std::path::Path::new(context_path)
+                        .join("Dockerfile")
+                        .to_string_lossy()
+                        .to_string()
                 }
             }
         };
@@ -189,7 +195,10 @@ impl ImageManager {
                 let stderr = String::from_utf8_lossy(&out.stderr);
                 Err(ClientError::Operation(format!("build failed: {}", stderr)))
             }
-            Err(e) => Err(ClientError::Operation(format!("build command failed: {}", e))),
+            Err(e) => Err(ClientError::Operation(format!(
+                "build command failed: {}",
+                e
+            ))),
         }
     }
 
@@ -211,9 +220,10 @@ impl ImageManager {
             return Ok(vec![]);
         }
 
-        let client = self.client.as_ref().ok_or_else(|| {
-            ClientError::Operation("no containerd client".to_string())
-        })?;
+        let client = self
+            .client
+            .as_ref()
+            .ok_or_else(|| ClientError::Operation("no containerd client".to_string()))?;
 
         let images = client.list_images().await?;
 
@@ -249,7 +259,10 @@ impl ImageManager {
                 let stderr = String::from_utf8_lossy(&out.stderr);
                 Err(ClientError::Operation(format!("remove failed: {}", stderr)))
             }
-            Err(e) => Err(ClientError::Operation(format!("remove command failed: {}", e))),
+            Err(e) => Err(ClientError::Operation(format!(
+                "remove command failed: {}",
+                e
+            ))),
         }
     }
 }

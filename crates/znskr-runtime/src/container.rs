@@ -83,9 +83,10 @@ impl ContainerManager {
             });
         }
 
-        let client = self.client.as_ref().ok_or_else(|| {
-            ClientError::Operation("no containerd client".to_string())
-        })?;
+        let client = self
+            .client
+            .as_ref()
+            .ok_or_else(|| ClientError::Operation("no containerd client".to_string()))?;
 
         // prepare labels
         let mut labels = HashMap::new();
@@ -131,9 +132,10 @@ impl ContainerManager {
             return Ok(());
         }
 
-        let client = self.client.as_ref().ok_or_else(|| {
-            ClientError::Operation("no containerd client".to_string())
-        })?;
+        let client = self
+            .client
+            .as_ref()
+            .ok_or_else(|| ClientError::Operation("no containerd client".to_string()))?;
 
         // kill the task with sigterm (15)
         match client.kill_task(id, 15).await {
@@ -159,9 +161,10 @@ impl ContainerManager {
             return Ok(());
         }
 
-        let client = self.client.as_ref().ok_or_else(|| {
-            ClientError::Operation("no containerd client".to_string())
-        })?;
+        let client = self
+            .client
+            .as_ref()
+            .ok_or_else(|| ClientError::Operation("no containerd client".to_string()))?;
 
         // stop task first if running
         let _ = self.stop_container(id).await;
@@ -182,9 +185,10 @@ impl ContainerManager {
             });
         }
 
-        let client = self.client.as_ref().ok_or_else(|| {
-            ClientError::Operation("no containerd client".to_string())
-        })?;
+        let client = self
+            .client
+            .as_ref()
+            .ok_or_else(|| ClientError::Operation("no containerd client".to_string()))?;
 
         // check if container exists
         let _container = client.get_container(id).await?;
@@ -204,9 +208,10 @@ impl ContainerManager {
             return Ok(vec![]);
         }
 
-        let client = self.client.as_ref().ok_or_else(|| {
-            ClientError::Operation("no containerd client".to_string())
-        })?;
+        let client = self
+            .client
+            .as_ref()
+            .ok_or_else(|| ClientError::Operation("no containerd client".to_string()))?;
 
         let containers = client.list_containers().await?;
 
@@ -233,6 +238,9 @@ impl ContainerManager {
 
         // containerd doesn't store logs - need to collect from task stdio
         // for production, integrate with a log aggregator
-        Ok(format!("logs for container {} - use external log collection", id))
+        Ok(format!(
+            "logs for container {} - use external log collection",
+            id
+        ))
     }
 }

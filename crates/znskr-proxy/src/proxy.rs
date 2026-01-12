@@ -73,15 +73,10 @@ impl ProxyServer {
                 let service = service_fn(move |req: Request<Incoming>| {
                     let routes = routes.clone();
                     let challenges = challenges.clone();
-                    async move {
-                        handle_request(req, routes, challenges, remote_addr).await
-                    }
+                    async move { handle_request(req, routes, challenges, remote_addr).await }
                 });
 
-                if let Err(e) = http1::Builder::new()
-                    .serve_connection(io, service)
-                    .await
-                {
+                if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
                     if !e.to_string().contains("error shutting down connection") {
                         error!(error = %e, "connection error");
                     }
@@ -131,7 +126,10 @@ async fn handle_request(
         }
         None => {
             warn!(host = %host, "no route found");
-            Ok(error_response(StatusCode::NOT_FOUND, "no route configured for this host"))
+            Ok(error_response(
+                StatusCode::NOT_FOUND,
+                "no route configured for this host",
+            ))
         }
     }
 }
@@ -162,10 +160,7 @@ async fn proxy_request(
 }
 
 /// creates an error response
-fn error_response(
-    status: StatusCode,
-    message: &str,
-) -> Response<BoxBody<Bytes, hyper::Error>> {
+fn error_response(status: StatusCode, message: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
     Response::builder()
         .status(status)
         .body(full(message.to_string()))

@@ -54,8 +54,8 @@ pub fn verify_webhook_signature(payload: &[u8], signature: &str, secret: &str) -
         .strip_prefix("sha256=")
         .ok_or_else(|| Error::Validation("invalid signature format".to_string()))?;
 
-    let sig_bytes = hex::decode(sig)
-        .map_err(|e| Error::Validation(format!("invalid signature hex: {}", e)))?;
+    let sig_bytes =
+        hex::decode(sig).map_err(|e| Error::Validation(format!("invalid signature hex: {}", e)))?;
 
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
         .map_err(|e| Error::Internal(format!("hmac error: {}", e)))?;

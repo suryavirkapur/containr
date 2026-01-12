@@ -6,8 +6,10 @@ edition.workspace = true
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
 sled = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+

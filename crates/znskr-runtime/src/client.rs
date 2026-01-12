@@ -4,14 +4,10 @@
 //! managing containers and images using the containerd-client crate.
 
 use containerd_client::services::v1::{
-    containers_client::ContainersClient,
-    images_client::ImagesClient,
-    tasks_client::TasksClient,
-    version_client::VersionClient,
-    Container, container, CreateContainerRequest, DeleteContainerRequest, GetContainerRequest,
-    ListContainersRequest,
-    CreateTaskRequest, DeleteTaskRequest, KillRequest, StartRequest,
-    GetImageRequest, ListImagesRequest,
+    container, containers_client::ContainersClient, images_client::ImagesClient,
+    tasks_client::TasksClient, version_client::VersionClient, Container, CreateContainerRequest,
+    CreateTaskRequest, DeleteContainerRequest, DeleteTaskRequest, GetContainerRequest,
+    GetImageRequest, KillRequest, ListContainersRequest, ListImagesRequest, StartRequest,
 };
 use containerd_client::tonic::transport::Channel;
 use containerd_client::tonic::Request;
@@ -114,7 +110,12 @@ impl ContainerdClient {
             ..Default::default()
         };
 
-        let req = with_namespace!(CreateContainerRequest { container: Some(container) }, &self.namespace);
+        let req = with_namespace!(
+            CreateContainerRequest {
+                container: Some(container)
+            },
+            &self.namespace
+        );
 
         let resp = client.create(req).await?;
         resp.into_inner()
@@ -148,7 +149,10 @@ impl ContainerdClient {
     pub async fn delete_container(&self, id: &str) -> Result<()> {
         let mut client = ContainersClient::new(self.channel.clone());
 
-        let req = with_namespace!(DeleteContainerRequest { id: id.to_string() }, &self.namespace);
+        let req = with_namespace!(
+            DeleteContainerRequest { id: id.to_string() },
+            &self.namespace
+        );
 
         client.delete(req).await?;
         Ok(())
@@ -226,7 +230,12 @@ impl ContainerdClient {
     pub async fn get_image(&self, name: &str) -> Result<containerd_client::services::v1::Image> {
         let mut client = ImagesClient::new(self.channel.clone());
 
-        let req = with_namespace!(GetImageRequest { name: name.to_string() }, &self.namespace);
+        let req = with_namespace!(
+            GetImageRequest {
+                name: name.to_string()
+            },
+            &self.namespace
+        );
 
         let resp = client.get(req).await?;
         resp.into_inner()

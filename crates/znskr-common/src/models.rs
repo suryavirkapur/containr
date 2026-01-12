@@ -153,7 +153,12 @@ pub struct Certificate {
 
 impl Certificate {
     // creates a new certificate record
-    pub fn new(domain: String, cert_pem: String, key_pem: String, expires_at: DateTime<Utc>) -> Self {
+    pub fn new(
+        domain: String,
+        cert_pem: String,
+        key_pem: String,
+        expires_at: DateTime<Utc>,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
             domain,
@@ -163,6 +168,36 @@ impl Certificate {
             created_at: Utc::now(),
         }
     }
+
+    /// Returns the status of this certificate
+    pub fn status(&self) -> CertificateStatus {
+        let now = Utc::now();
+        if self.expires_at < now {
+            CertificateStatus::Expired
+        } else if self.expires_at < now + chrono::Duration::days(30) {
+            CertificateStatus::ExpiringSoon
+        } else {
+            CertificateStatus::Valid
+        }
+    }
+}
+
+/// Status of a TLS certificate
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CertificateStatus {
+    /// No certificate exists
+    None,
+    /// Certificate is being issued
+    Pending,
+    /// Certificate is valid
+    Valid,
+    /// Certificate expires within 30 days
+    ExpiringSoon,
+    /// Certificate has expired
+    Expired,
+    /// Certificate issuance failed
+    Failed,
 }
 
 /// route configuration for the proxy
