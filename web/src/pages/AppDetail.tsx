@@ -1,5 +1,6 @@
 import { Component, createResource, createSignal, For, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
+import { parseAnsi } from '../utils/ansi';
 
 interface App {
     id: string;
@@ -501,7 +502,7 @@ const AppDetail: Component = () => {
                             </Show>
                             <For each={logs()}>
                                 {(line) => (
-                                    <div class="text-gray-300 leading-relaxed whitespace-pre-wrap break-all">{line}</div>
+                                    <div class="text-gray-300 leading-relaxed whitespace-pre-wrap break-all" innerHTML={parseAnsi(line)}></div>
                                 )}
                             </For>
                         </div>
