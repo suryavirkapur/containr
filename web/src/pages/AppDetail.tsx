@@ -198,7 +198,6 @@ const AppDetail: Component = () => {
     let logsRef: HTMLDivElement | undefined;
 
     const connectLogs = () => {
-        // Check if we're in browser context
         if (typeof window === 'undefined') return;
 
         try {
@@ -212,41 +211,34 @@ const AppDetail: Component = () => {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/api/apps/${params.id}/logs/ws?tail=100`;
 
-            console.log('[WebSocket] Connecting to:', wsUrl);
-            setLogs(['Connecting to ' + wsUrl + '...']);
+            setLogs(['connecting...']);
 
             logsSocket = new WebSocket(wsUrl);
 
             logsSocket.onopen = () => {
-                console.log('[WebSocket] Connected successfully');
                 setLogsConnected(true);
                 setLogs(prev => [...prev, '[connected]']);
             };
 
             logsSocket.onmessage = (event) => {
-                console.log('[WebSocket] Message:', event.data);
                 setLogs(prev => [...prev, event.data]);
-                // Auto-scroll to bottom
                 if (logsRef) {
                     logsRef.scrollTop = logsRef.scrollHeight;
                 }
             };
 
             logsSocket.onclose = (event) => {
-                console.log('[WebSocket] Closed:', event.code, event.reason);
                 setLogsConnected(false);
-                setLogs(prev => [...prev, `[disconnected: ${event.code} ${event.reason || 'no reason'}]`]);
+                setLogs(prev => [...prev, `[disconnected: ${event.code}]`]);
             };
 
-            logsSocket.onerror = (error) => {
-                console.error('[WebSocket] Error:', error);
+            logsSocket.onerror = () => {
                 setLogsConnected(false);
-                setLogs(prev => [...prev, '[error occurred]']);
+                setLogs(prev => [...prev, '[error]']);
             };
         } catch (err) {
-            console.error('Failed to connect to logs:', err);
             setLogsConnected(false);
-            setLogs([`Error: ${err}`]);
+            setLogs([`error: ${err}`]);
         }
     };
 
@@ -313,21 +305,21 @@ const AppDetail: Component = () => {
         }
     };
 
-    const statusColor = (status: string) => {
+    const statusIndicator = (status: string) => {
         switch (status) {
             case 'running':
-                return 'bg-green-500';
+                return 'bg-black';
             case 'pending':
             case 'cloning':
             case 'building':
             case 'starting':
-                return 'bg-yellow-500';
+                return 'bg-neutral-400 animate-pulse';
             case 'failed':
-                return 'bg-red-500';
+                return 'bg-neutral-300';
             case 'stopped':
-                return 'bg-gray-500';
+                return 'bg-neutral-200';
             default:
-                return 'bg-gray-500';
+                return 'bg-neutral-200';
         }
     };
 
@@ -336,11 +328,11 @@ const AppDetail: Component = () => {
             {/* loading */}
             <Show when={app.loading}>
                 <div class="animate-pulse">
-                    <div class="h-8 bg-gray-800 w-1/4 mb-4"></div>
-                    <div class="h-4 bg-gray-800 w-1/2 mb-8"></div>
-                    <div class="bg-gray-900 border border-gray-800 p-8">
-                        <div class="h-6 bg-gray-800 w-full mb-4"></div>
-                        <div class="h-6 bg-gray-800 w-3/4"></div>
+                    <div class="h-7 bg-neutral-100 w-1/4 mb-3"></div>
+                    <div class="h-4 bg-neutral-50 w-1/2 mb-10"></div>
+                    <div class="border border-neutral-200 p-8">
+                        <div class="h-5 bg-neutral-100 w-full mb-4"></div>
+                        <div class="h-5 bg-neutral-50 w-3/4"></div>
                     </div>
                 </div>
             </Show>
@@ -348,63 +340,63 @@ const AppDetail: Component = () => {
             {/* content */}
             <Show when={!app.loading && app()}>
                 {/* header */}
-                <div class="flex justify-between items-start mb-8">
+                <div class="flex justify-between items-start mb-10">
                     <div>
-                        <h1 class="text-2xl font-bold text-white">{app()!.name}</h1>
-                        <p class="text-gray-400 mt-1">{app()!.github_url}</p>
+                        <h1 class="text-2xl font-serif text-black">{app()!.name}</h1>
+                        <p class="text-neutral-500 mt-1 text-sm font-mono">{app()!.github_url}</p>
                     </div>
-                    <div class="flex gap-3">
+                    <div class="flex gap-2">
                         <button
                             onClick={openEditModal}
-                            class="px-4 py-2 bg-gray-700 text-white hover:bg-gray-600 transition-colors"
+                            class="px-3 py-1.5 border border-neutral-300 text-neutral-700 hover:text-black hover:border-neutral-400 transition-colors text-sm"
                         >
                             settings
                         </button>
                         <button
                             onClick={toggleLogs}
-                            class={`px-4 py-2 text-white transition-colors ${showLogs() ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 hover:bg-gray-600'}`}
+                            class={`px-3 py-1.5 border transition-colors text-sm ${showLogs() ? 'border-black text-black' : 'border-neutral-300 text-neutral-700 hover:text-black hover:border-neutral-400'}`}
                         >
-                            {showLogs() ? 'hide logs' : 'view logs'}
+                            {showLogs() ? 'hide logs' : 'logs'}
                         </button>
                         <button
                             onClick={triggerDeploy}
                             disabled={deploying()}
-                            class="px-4 py-2 bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                            class="px-3 py-1.5 bg-black text-white hover:bg-neutral-800 disabled:opacity-50 transition-colors text-sm"
                         >
-                            {deploying() ? 'deploying...' : 'deploy now'}
+                            {deploying() ? 'deploying...' : 'deploy'}
                         </button>
                         <button
                             onClick={deleteApp}
                             disabled={deleting()}
-                            class="px-4 py-2 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+                            class="px-3 py-1.5 border border-neutral-300 text-neutral-500 hover:text-black hover:border-neutral-400 disabled:opacity-50 transition-colors text-sm"
                         >
                             {deleting() ? 'deleting...' : 'delete'}
                         </button>
                     </div>
                 </div>
 
-                {/* info cards */}
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                {/* info grid */}
+                <div class="grid grid-cols-4 gap-px bg-neutral-200 mb-8">
                     {/* status */}
-                    <div class="bg-gray-900 border border-gray-800 p-6">
-                        <h3 class="text-sm font-medium text-gray-400 mb-2">status</h3>
+                    <div class="bg-white p-5">
+                        <h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">status</h3>
                         <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 bg-green-500"></span>
-                            <span class="text-white">running</span>
+                            <span class="w-2 h-2 bg-black"></span>
+                            <span class="text-black text-sm">running</span>
                         </div>
                     </div>
 
                     {/* domain */}
-                    <div class="bg-gray-900 border border-gray-800 p-6">
-                        <h3 class="text-sm font-medium text-gray-400 mb-2">domain</h3>
+                    <div class="bg-white p-5">
+                        <h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">domain</h3>
                         <Show
                             when={app()!.domain}
-                            fallback={<span class="text-gray-500">not configured</span>}
+                            fallback={<span class="text-neutral-400 text-sm">—</span>}
                         >
                             <a
                                 href={`https://${app()!.domain}`}
                                 target="_blank"
-                                class="text-primary-400 hover:text-primary-300"
+                                class="text-black text-sm hover:underline"
                             >
                                 {app()!.domain}
                             </a>
@@ -412,97 +404,90 @@ const AppDetail: Component = () => {
                     </div>
 
                     {/* branch */}
-                    <div class="bg-gray-900 border border-gray-800 p-6">
-                        <h3 class="text-sm font-medium text-gray-400 mb-2">branch</h3>
-                        <span class="text-white">{app()!.branch}</span>
+                    <div class="bg-white p-5">
+                        <h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">branch</h3>
+                        <span class="text-black text-sm font-mono">{app()!.branch}</span>
                     </div>
 
-                    {/* certificate status */}
-                    <div class="bg-gray-900 border border-gray-800 p-6">
-                        <h3 class="text-sm font-medium text-gray-400 mb-2">ssl certificate</h3>
+                    {/* certificate */}
+                    <div class="bg-white p-5">
+                        <h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">ssl</h3>
                         <Show when={certificate.loading}>
-                            <span class="text-gray-500">loading...</span>
+                            <span class="text-neutral-400 text-sm">loading...</span>
                         </Show>
                         <Show when={!certificate.loading && certificate()}>
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-2">
-                                    {/* status badge */}
                                     <Show when={certificate()!.status === 'valid'}>
-                                        <span class="w-2 h-2 bg-green-500"></span>
-                                        <span class="text-green-400">valid</span>
+                                        <span class="w-2 h-2 bg-black"></span>
+                                        <span class="text-black text-sm">valid</span>
                                     </Show>
                                     <Show when={certificate()!.status === 'expiringsoon'}>
-                                        <span class="w-2 h-2 bg-yellow-500"></span>
-                                        <span class="text-yellow-400">expiring soon</span>
+                                        <span class="w-2 h-2 bg-neutral-400"></span>
+                                        <span class="text-neutral-600 text-sm">expiring</span>
                                     </Show>
                                     <Show when={certificate()!.status === 'expired'}>
-                                        <span class="w-2 h-2 bg-red-500"></span>
-                                        <span class="text-red-400">expired</span>
+                                        <span class="w-2 h-2 bg-neutral-300"></span>
+                                        <span class="text-neutral-500 text-sm">expired</span>
                                     </Show>
                                     <Show when={certificate()!.status === 'pending'}>
-                                        <span class="w-2 h-2 bg-blue-500 animate-pulse"></span>
-                                        <span class="text-blue-400">pending</span>
+                                        <span class="w-2 h-2 bg-neutral-400 animate-pulse"></span>
+                                        <span class="text-neutral-500 text-sm">pending</span>
                                     </Show>
                                     <Show when={certificate()!.status === 'failed'}>
-                                        <span class="w-2 h-2 bg-red-500"></span>
-                                        <span class="text-red-400">failed</span>
+                                        <span class="w-2 h-2 bg-neutral-300"></span>
+                                        <span class="text-neutral-500 text-sm">failed</span>
                                     </Show>
                                     <Show when={certificate()!.status === 'none'}>
-                                        <span class="w-2 h-2 bg-gray-500"></span>
-                                        <span class="text-gray-400">none</span>
+                                        <span class="text-neutral-400 text-sm">—</span>
                                     </Show>
                                 </div>
                                 <Show when={app()!.domain && certificate()!.status !== 'pending'}>
                                     <button
                                         onClick={reissueCertificate}
                                         disabled={reissuing()}
-                                        class="text-xs text-primary-400 hover:text-primary-300 disabled:opacity-50"
+                                        class="text-xs text-neutral-500 hover:text-black disabled:opacity-50"
                                     >
                                         {reissuing() ? '...' : 'reissue'}
                                     </button>
                                 </Show>
                             </div>
-                            <Show when={certificate()!.expires_at}>
-                                <p class="text-xs text-gray-500 mt-1">
-                                    expires: {new Date(certificate()!.expires_at!).toLocaleDateString()}
-                                </p>
-                            </Show>
                         </Show>
                     </div>
                 </div>
 
-                {/* Live Logs Panel */}
+                {/* logs panel */}
                 <Show when={showLogs()}>
-                    <div class="bg-gray-900 border border-gray-800 mb-8">
-                        <div class="border-b border-gray-800 px-6 py-4 flex justify-between items-center">
+                    <div class="border border-neutral-200 mb-8">
+                        <div class="border-b border-neutral-200 px-5 py-3 flex justify-between items-center">
                             <div class="flex items-center gap-3">
-                                <h2 class="text-lg font-semibold text-white">container logs</h2>
+                                <h2 class="text-sm font-serif text-black">container logs</h2>
                                 <div class="flex items-center gap-2">
-                                    <span class={`w-2 h-2 ${logsConnected() ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                                    <span class="text-xs text-gray-400">
-                                        {logsConnected() ? 'connected' : 'disconnected'}
+                                    <span class={`w-1.5 h-1.5 ${logsConnected() ? 'bg-black' : 'bg-neutral-300'}`}></span>
+                                    <span class="text-xs text-neutral-500">
+                                        {logsConnected() ? 'live' : 'disconnected'}
                                     </span>
                                 </div>
                             </div>
                             <button
                                 onClick={() => setLogs([])}
-                                class="text-sm text-gray-400 hover:text-white"
+                                class="text-xs text-neutral-500 hover:text-black"
                             >
                                 clear
                             </button>
                         </div>
                         <div
                             ref={logsRef}
-                            class="p-4 h-80 overflow-y-auto font-mono text-sm bg-black"
+                            class="p-4 h-72 overflow-y-auto font-mono text-xs bg-neutral-50"
                         >
                             <Show when={logs().length === 0}>
-                                <p class="text-gray-500">
+                                <p class="text-neutral-400">
                                     {logsConnected() ? 'waiting for logs...' : 'connecting...'}
                                 </p>
                             </Show>
                             <For each={logs()}>
                                 {(line) => (
-                                    <div class="text-gray-300 leading-relaxed whitespace-pre-wrap break-all" innerHTML={parseAnsi(line)}></div>
+                                    <div class="text-neutral-700 leading-relaxed whitespace-pre-wrap break-all" innerHTML={parseAnsi(line)}></div>
                                 )}
                             </For>
                         </div>
@@ -510,55 +495,43 @@ const AppDetail: Component = () => {
                 </Show>
 
                 {/* deployments */}
-                <div class="bg-gray-900 border border-gray-800">
-                    <div class="border-b border-gray-800 px-6 py-4">
-                        <h2 class="text-lg font-semibold text-white">deployments</h2>
+                <div class="border border-neutral-200">
+                    <div class="border-b border-neutral-200 px-5 py-3">
+                        <h2 class="text-sm font-serif text-black">deployments</h2>
                     </div>
 
                     <Show when={deployments.loading}>
-                        <div class="p-6 animate-pulse">
-                            <div class="h-12 bg-gray-800 mb-4"></div>
-                            <div class="h-12 bg-gray-800 mb-4"></div>
-                            <div class="h-12 bg-gray-800"></div>
+                        <div class="p-5 animate-pulse space-y-3">
+                            <div class="h-10 bg-neutral-50"></div>
+                            <div class="h-10 bg-neutral-50"></div>
                         </div>
                     </Show>
 
                     <Show when={!deployments.loading && deployments()?.length === 0}>
-                        <div class="p-6 text-center text-gray-500">
-                            no deployments yet. click "deploy now" to start.
+                        <div class="p-8 text-center text-neutral-400 text-sm">
+                            no deployments yet
                         </div>
                     </Show>
 
                     <Show when={!deployments.loading && deployments() && deployments()!.length > 0}>
-                        <div class="divide-y divide-gray-800">
+                        <div class="divide-y divide-neutral-200">
                             <For each={deployments()}>
                                 {(deployment) => (
-                                    <div class="px-6 py-4 flex items-center justify-between">
+                                    <div class="px-5 py-4 flex items-center justify-between">
                                         <div class="flex items-center gap-4">
-                                            {/* status */}
-                                            <span
-                                                class={`w-2 h-2 ${statusColor(deployment.status)}`}
-                                            ></span>
-
-                                            {/* commit */}
+                                            <span class={`w-2 h-2 ${statusIndicator(deployment.status)}`}></span>
                                             <div>
-                                                <p class="text-white font-mono text-sm">
+                                                <p class="text-black font-mono text-sm">
                                                     {deployment.commit_sha.substring(0, 8)}
                                                 </p>
-                                                <p class="text-gray-400 text-sm truncate max-w-md">
+                                                <p class="text-neutral-500 text-xs mt-0.5 truncate max-w-md">
                                                     {deployment.commit_message || 'no message'}
                                                 </p>
                                             </div>
                                         </div>
-
-                                        <div class="flex items-center gap-4">
-                                            {/* status text */}
-                                            <span class="text-sm text-gray-400">
-                                                {deployment.status}
-                                            </span>
-
-                                            {/* time */}
-                                            <span class="text-sm text-gray-500">
+                                        <div class="flex items-center gap-6 text-xs">
+                                            <span class="text-neutral-500">{deployment.status}</span>
+                                            <span class="text-neutral-400">
                                                 {new Date(deployment.created_at).toLocaleString()}
                                             </span>
                                         </div>
@@ -570,75 +543,72 @@ const AppDetail: Component = () => {
                 </div>
             </Show>
 
-            {/* Edit Modal */}
+            {/* edit modal */}
             <Show when={editing()}>
-                <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div class="bg-gray-900 border border-gray-700 p-6 w-full max-w-md">
-                        <h2 class="text-xl font-bold text-white mb-6">App Settings</h2>
+                <div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">
+                    <div class="bg-white border border-neutral-300 p-6 w-full max-w-md">
+                        <h2 class="text-lg font-serif text-black mb-6">app settings</h2>
 
-                        <div class="space-y-4">
+                        <div class="space-y-5">
                             <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-1">GitHub URL</label>
+                                <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-2">github url</label>
                                 <input
                                     type="text"
                                     value={editForm().github_url}
                                     onInput={(e) => setEditForm(prev => ({ ...prev, github_url: e.currentTarget.value }))}
-                                    class="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white focus:border-primary-500 focus:outline-none"
-                                    placeholder="https://github.com/user/repo"
+                                    class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
                                 />
                             </div>
 
                             <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-1">Branch</label>
+                                <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-2">branch</label>
                                 <input
                                     type="text"
                                     value={editForm().branch}
                                     onInput={(e) => setEditForm(prev => ({ ...prev, branch: e.currentTarget.value }))}
-                                    class="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white focus:border-primary-500 focus:outline-none"
-                                    placeholder="main"
+                                    class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
                                 />
                             </div>
 
                             <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-1">Domain (optional)</label>
+                                <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-2">domain</label>
                                 <input
                                     type="text"
                                     value={editForm().domain}
                                     onInput={(e) => setEditForm(prev => ({ ...prev, domain: e.currentTarget.value }))}
-                                    class="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white focus:border-primary-500 focus:outline-none"
+                                    class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
                                     placeholder="app.example.com"
                                 />
                             </div>
 
                             <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-1">Port</label>
+                                <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-2">port</label>
                                 <input
                                     type="number"
                                     value={editForm().port}
                                     onInput={(e) => setEditForm(prev => ({ ...prev, port: parseInt(e.currentTarget.value) || 8080 }))}
-                                    class="w-full px-3 py-2 bg-gray-800 border border-gray-700 text-white focus:border-primary-500 focus:outline-none"
-                                    placeholder="8080"
+                                    class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
                                 />
                             </div>
                         </div>
 
-                        <div>
-                            <div class="flex justify-between items-center mb-2">
-                                <label class="block text-sm font-medium text-gray-400">Environment Variables</label>
+                        <div class="mt-6">
+                            <div class="flex justify-between items-center mb-3">
+                                <label class="text-xs text-neutral-500 uppercase tracking-wider">environment variables</label>
                                 <button
                                     onClick={() => setEditForm(prev => ({
                                         ...prev,
                                         env_vars: [...prev.env_vars, { key: '', value: '', secret: false }]
                                     }))}
-                                    class="text-xs text-primary-400 hover:text-primary-300"
+                                    class="text-xs text-neutral-500 hover:text-black"
                                 >
-                                    + add variable
+                                    + add
                                 </button>
                             </div>
-                            <div class="space-y-3">
+                            <div class="space-y-2">
                                 <For each={editForm().env_vars}>
                                     {(env, i) => (
-                                        <div class="flex items-start gap-2 bg-gray-800 p-2 border border-gray-700">
+                                        <div class="flex items-start gap-2 border border-neutral-200 p-2">
                                             <div class="flex-1 space-y-2">
                                                 <input
                                                     type="text"
@@ -649,7 +619,7 @@ const AppDetail: Component = () => {
                                                         newVars[i()] = { ...newVars[i()], key: e.currentTarget.value };
                                                         setEditForm(prev => ({ ...prev, env_vars: newVars }));
                                                     }}
-                                                    class="w-full px-2 py-1 bg-black border border-gray-700 text-white text-sm focus:border-primary-500 focus:outline-none"
+                                                    class="w-full px-2 py-1.5 bg-white border border-neutral-200 text-black text-xs focus:border-neutral-400 focus:outline-none font-mono"
                                                 />
                                                 <input
                                                     type="text"
@@ -660,7 +630,7 @@ const AppDetail: Component = () => {
                                                         newVars[i()] = { ...newVars[i()], value: e.currentTarget.value };
                                                         setEditForm(prev => ({ ...prev, env_vars: newVars }));
                                                     }}
-                                                    class="w-full px-2 py-1 bg-black border border-gray-700 text-white text-sm focus:border-primary-500 focus:outline-none"
+                                                    class="w-full px-2 py-1.5 bg-white border border-neutral-200 text-black text-xs focus:border-neutral-400 focus:outline-none font-mono"
                                                 />
                                                 <label class="flex items-center gap-2 cursor-pointer">
                                                     <input
@@ -671,9 +641,9 @@ const AppDetail: Component = () => {
                                                             newVars[i()] = { ...newVars[i()], secret: e.currentTarget.checked };
                                                             setEditForm(prev => ({ ...prev, env_vars: newVars }));
                                                         }}
-                                                        class="form-checkbox h-3 w-3 text-primary-600 bg-gray-900 border-gray-700 rounded focus:ring-primary-500"
+                                                        class="w-3 h-3 bg-white border border-neutral-300"
                                                     />
-                                                    <span class="text-xs text-gray-400">secret</span>
+                                                    <span class="text-xs text-neutral-500">secret</span>
                                                 </label>
                                             </div>
                                             <button
@@ -682,10 +652,9 @@ const AppDetail: Component = () => {
                                                     newVars.splice(i(), 1);
                                                     setEditForm(prev => ({ ...prev, env_vars: newVars }));
                                                 }}
-                                                class="text-red-500 hover:text-red-400 p-1"
-                                                title="remove"
+                                                class="text-neutral-400 hover:text-black p-1"
                                             >
-                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                                                 </svg>
                                             </button>
@@ -693,32 +662,32 @@ const AppDetail: Component = () => {
                                     )}
                                 </For>
                                 <Show when={editForm().env_vars.length === 0}>
-                                    <p class="text-xs text-gray-500 text-center py-2 border border-dashed border-gray-700">
+                                    <p class="text-xs text-neutral-400 text-center py-3 border border-dashed border-neutral-200">
                                         no environment variables
                                     </p>
                                 </Show>
                             </div>
                         </div>
 
-                        <div class="flex gap-3 mt-6">
+                        <div class="flex gap-2 mt-8">
                             <button
                                 onClick={() => setEditing(false)}
-                                class="flex-1 px-4 py-2 bg-gray-700 text-white hover:bg-gray-600 transition-colors"
+                                class="flex-1 px-4 py-2 border border-neutral-300 text-neutral-700 hover:text-black hover:border-neutral-400 transition-colors text-sm"
                             >
                                 cancel
                             </button>
                             <button
                                 onClick={updateApp}
                                 disabled={saving()}
-                                class="flex-1 px-4 py-2 bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                                class="flex-1 px-4 py-2 bg-black text-white hover:bg-neutral-800 disabled:opacity-50 transition-colors text-sm"
                             >
-                                {saving() ? 'saving...' : 'save changes'}
+                                {saving() ? 'saving...' : 'save'}
                             </button>
                         </div>
                     </div>
                 </div>
-            </Show >
-        </div >
+            </Show>
+        </div>
     );
 };
 

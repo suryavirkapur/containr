@@ -2,17 +2,17 @@
 //!
 //! handles automatic ssl provisioning via let's encrypt.
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use instant_acme::{
-    Account, AuthorizationStatus, ChallengeType, Identifier, NewAccount, NewOrder, OrderStatus,
+    Account, AuthorizationStatus, ChallengeType, Identifier, KeyAuthorization, LetsEncrypt,
+    NewAccount, NewOrder, OrderStatus,
 };
 use parking_lot::RwLock;
-use rcgen::{CertificateParams, DistinguishedName, KeyPair};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::fs;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use znskr_common::models::Certificate;
 use znskr_common::Database;
@@ -109,40 +109,39 @@ impl AcmeManager {
 
         // create order
         let identifiers = vec![Identifier::Dns(domain.to_string())];
-        let mut order = account
-            .new_order(&NewOrder {
-                identifiers: &identifiers,
-            })
-            .await?;
+        let mut order = account.new_order(&NewOrder::new(&identifiers)).await?;
 
-        // get authorizations
-        let authorizations = order.authorizations().await?;
+        // collect challenge tokens for cleanup
+        let mut challenge_tokens: Vec<String> = Vec::new();
 
-        for auth in &authorizations {
-            if auth.status == AuthorizationStatus::Valid {
+        // get authorizations and process them
+        let mut authorizations = order.authorizations();
+        while let Some(result) = authorizations.next().await {
+            let mut authz = result?;
+
+            if authz.status == AuthorizationStatus::Valid {
                 continue;
             }
 
             // find http-01 challenge
-            let challenge = auth
-                .challenges
-                .iter()
-                .find(|c| c.r#type == ChallengeType::Http01)
+            let mut challenge = authz
+                .challenge(ChallengeType::Http01)
                 .ok_or_else(|| anyhow::anyhow!("http-01 challenge not found"))?;
 
             // store challenge response
-            let key_auth = order.key_authorization(challenge);
-            self.challenge_store
-                .add(&challenge.token, key_auth.as_str());
+            let key_auth: KeyAuthorization = challenge.key_authorization();
+            let token = challenge.token.clone();
+            self.challenge_store.add(&token, key_auth.as_str());
+            challenge_tokens.push(token.clone());
 
             info!(
                 domain = %domain,
-                token = %challenge.token,
+                token = %token,
                 "challenge ready - waiting for validation"
             );
 
             // tell acme to validate
-            order.set_challenge_ready(&challenge.url).await?;
+            challenge.set_ready().await?;
         }
 
         // wait for order to be ready
@@ -166,17 +165,8 @@ impl AcmeManager {
             }
         }
 
-        // generate csr
-        let key_pair = KeyPair::generate()?;
-        let mut params = CertificateParams::default();
-        params.distinguished_name = DistinguishedName::new();
-        params.subject_alt_names = vec![rcgen::SanType::DnsName(domain.try_into()?)];
-
-        let csr = params.serialize_request(&key_pair)?;
-        let csr_der = csr.der();
-
-        // finalize order
-        order.finalize(csr_der).await?;
+        // generate csr and finalize - order.finalize() generates csr internally and returns pem key
+        let private_key_pem = order.finalize().await?;
 
         // wait for certificate
         let mut attempts = 0;
@@ -208,7 +198,7 @@ impl AcmeManager {
         let cert = Certificate::new(
             domain.to_string(),
             cert_chain.clone(),
-            key_pair.serialize_pem(),
+            private_key_pem.clone(),
             Utc::now() + Duration::days(90),
         );
 
@@ -220,13 +210,11 @@ impl AcmeManager {
 
         fs::create_dir_all(&self.certs_dir).await?;
         fs::write(&cert_path, &cert_chain).await?;
-        fs::write(&key_path, key_pair.serialize_pem()).await?;
+        fs::write(&key_path, &private_key_pem).await?;
 
-        // cleanup challenge
-        for auth in &authorizations {
-            for challenge in &auth.challenges {
-                self.challenge_store.remove(&challenge.token);
-            }
+        // cleanup challenges
+        for token in challenge_tokens {
+            self.challenge_store.remove(&token);
         }
 
         info!(domain = %domain, "certificate issued successfully");
@@ -237,9 +225,9 @@ impl AcmeManager {
     // gets or creates an acme account
     async fn get_or_create_account(&self) -> anyhow::Result<Account> {
         let server_url = if self.staging {
-            instant_acme::LetsEncrypt::Staging.url()
+            LetsEncrypt::Staging.url().to_owned()
         } else {
-            instant_acme::LetsEncrypt::Production.url()
+            LetsEncrypt::Production.url().to_owned()
         };
 
         // check for existing account key
@@ -247,22 +235,23 @@ impl AcmeManager {
 
         if account_key_path.exists() {
             // load existing account
-            let key_pem = fs::read_to_string(&account_key_path).await?;
+            let _key_pem = fs::read_to_string(&account_key_path).await?;
             // todo: implement account loading from key
             warn!("account reuse not fully implemented - creating new account");
         }
 
         // create new account
-        let (account, _credentials) = Account::create(
-            &NewAccount {
-                contact: &[&format!("mailto:{}", self.email)],
-                terms_of_service_agreed: true,
-                only_return_existing: false,
-            },
-            server_url,
-            None,
-        )
-        .await?;
+        let (account, _credentials) = Account::builder()?
+            .create(
+                &NewAccount {
+                    contact: &[&format!("mailto:{}", self.email)],
+                    terms_of_service_agreed: true,
+                    only_return_existing: false,
+                },
+                server_url,
+                None,
+            )
+            .await?;
 
         // save account key
         fs::create_dir_all(&self.certs_dir).await?;

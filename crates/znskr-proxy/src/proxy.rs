@@ -3,12 +3,11 @@
 //! implements dynamic routing with acme challenge handling.
 
 use bytes::Bytes;
-use dashmap::DashMap;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{Method, Request, Response, StatusCode};
+use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -125,7 +124,12 @@ async fn handle_request(
             }
         }
         None => {
-            warn!(host = %host, "no route found");
+            // try to serve embedded static files (dashboard/frontend)
+            if let Some(response) = crate::static_files::serve_static(&path) {
+                return Ok(response);
+            }
+
+            warn!(host = %host, path = %path, "no route found");
             Ok(error_response(
                 StatusCode::NOT_FOUND,
                 "no route configured for this host",

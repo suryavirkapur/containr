@@ -39,3 +39,7 @@ pingora-proxy = "0.6"
 pingora-http = "0.6"
 pingora-core = "0.6"
 
+# embedded static files
+rust-embed = "8.9"
+mime_guess = "2"
+

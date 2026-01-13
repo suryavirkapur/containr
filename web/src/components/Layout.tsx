@@ -23,27 +23,27 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
     };
 
     return (
-        <div class="min-h-screen flex flex-col">
+        <div class="min-h-screen flex flex-col bg-white">
             {/* header */}
-            <header class="bg-gray-900 border-b border-gray-800">
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div class="flex justify-between items-center h-16">
+            <header class="border-b border-neutral-200">
+                <div class="max-w-6xl mx-auto px-6">
+                    <div class="flex justify-between items-center h-14">
                         {/* logo */}
                         <A href="/" class="flex items-center gap-2">
-                            <span class="text-xl font-bold text-primary-500">znskr</span>
+                            <span class="text-xl font-serif font-semibold text-black tracking-tight">znskr</span>
                         </A>
 
                         {/* nav */}
-                        <nav class="flex items-center gap-6">
+                        <nav class="flex items-center gap-8">
                             <A
                                 href="/"
-                                class="text-gray-300 hover:text-white transition-colors"
+                                class="text-neutral-500 hover:text-black transition-colors text-sm"
                             >
                                 apps
                             </A>
                             <A
                                 href="/apps/new"
-                                class="text-gray-300 hover:text-white transition-colors"
+                                class="text-neutral-500 hover:text-black transition-colors text-sm"
                             >
                                 deploy
                             </A>
@@ -53,10 +53,10 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
                         <div class="flex items-center gap-4">
                             {isAuthenticated() ? (
                                 <>
-                                    <span class="text-gray-400 text-sm">{user()?.email}</span>
+                                    <span class="text-neutral-500 text-sm">{user()?.email}</span>
                                     <button
                                         onClick={handleLogout}
-                                        class="px-4 py-2 bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 transition-colors"
+                                        class="px-3 py-1.5 text-neutral-500 hover:text-black border border-neutral-300 hover:border-neutral-400 transition-colors text-sm"
                                     >
                                         logout
                                     </button>
@@ -64,7 +64,7 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
                             ) : (
                                 <A
                                     href="/login"
-                                    class="px-4 py-2 bg-primary-600 text-white hover:bg-primary-700 transition-colors"
+                                    class="px-3 py-1.5 bg-black text-white hover:bg-neutral-800 transition-colors text-sm"
                                 >
                                     login
                                 </A>
@@ -76,15 +76,15 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
 
             {/* main content */}
             <main class="flex-1">
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div class="max-w-6xl mx-auto px-6 py-10">
                     {props.children}
                 </div>
             </main>
 
             {/* footer */}
-            <footer class="bg-gray-900 border-t border-gray-800 py-4">
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <p class="text-center text-gray-500 text-sm">
+            <footer class="border-t border-neutral-200 py-6">
+                <div class="max-w-6xl mx-auto px-6">
+                    <p class="text-center text-neutral-400 text-sm font-serif italic">
                         znskr — deploy containers with ease
                     </p>
                 </div>

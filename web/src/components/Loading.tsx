@@ -5,10 +5,10 @@ import { Component } from 'solid-js';
  */
 const Loading: Component = () => {
     return (
-        <div class="flex items-center justify-center min-h-screen">
+        <div class="flex items-center justify-center min-h-screen bg-white">
             <div class="flex flex-col items-center gap-4">
-                <div class="w-8 h-8 border-2 border-primary-500 border-t-transparent animate-spin"></div>
-                <span class="text-gray-400">loading...</span>
+                <div class="w-6 h-6 border border-black border-t-transparent animate-spin"></div>
+                <span class="text-neutral-500 text-sm">loading...</span>
             </div>
         </div>
     );
