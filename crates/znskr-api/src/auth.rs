@@ -1,9 +1,10 @@
 //! authentication module - jwt + password hashing
 
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
+use rand_core::OsRng;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};

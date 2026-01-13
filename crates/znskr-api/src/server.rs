@@ -76,6 +76,8 @@ pub async fn run_server(config: Config, db: Database) -> Result<mpsc::Receiver<D
         )
         // webhooks
         .route("/webhooks/github", post(webhooks::github_webhook))
+        // static files fallback (spa)
+        .fallback(crate::static_files::serve_static)
         // middleware
         .layer(TraceLayer::new_for_http())
         .layer(cors)
