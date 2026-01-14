@@ -6,6 +6,7 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
@@ -14,53 +15,79 @@ use crate::state::AppState;
 use znskr_common::models::{App, EnvVar};
 
 /// create app request
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateAppRequest {
+    /// app name
     pub name: String,
+    /// github repository url
     pub github_url: String,
+    /// branch to deploy (defaults to main)
     pub branch: Option<String>,
+    /// custom domain
     pub domain: Option<String>,
+    /// port for the app
     pub port: Option<u16>,
+    /// environment variables
     pub env_vars: Option<Vec<EnvVarRequest>>,
 }
 
 /// env var in request
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct EnvVarRequest {
+    /// variable key
     pub key: String,
+    /// variable value
     pub value: String,
+    /// mark as secret (hides value)
     pub secret: Option<bool>,
 }
 
 /// env var in response (hides secret values)
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct EnvVarResponse {
+    /// variable key
     pub key: String,
+    /// variable value (masked if secret)
     pub value: String,
+    /// whether value is secret
     pub secret: bool,
 }
 
 /// update app request
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateAppRequest {
+    /// new app name
     pub name: Option<String>,
+    /// new github url
     pub github_url: Option<String>,
+    /// new branch
     pub branch: Option<String>,
+    /// new domain
     pub domain: Option<String>,
+    /// new port
     pub port: Option<u16>,
+    /// updated env vars
     pub env_vars: Option<Vec<EnvVarRequest>>,
 }
 
 /// app response
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AppResponse {
+    /// unique app id
     pub id: Uuid,
+    /// app name
     pub name: String,
+    /// github repository url
     pub github_url: String,
+    /// branch being deployed
     pub branch: String,
+    /// custom domain
     pub domain: Option<String>,
+    /// app port
     pub port: u16,
+    /// environment variables
     pub env_vars: Vec<EnvVarResponse>,
+    /// creation timestamp
     pub created_at: String,
 }
 
@@ -131,6 +158,16 @@ fn get_user_id(
 }
 
 /// list all apps for the authenticated user
+#[utoipa::path(
+    get,
+    path = "/api/apps",
+    tag = "apps",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "list of apps", body = Vec<AppResponse>),
+        (status = 401, description = "unauthorized", body = ErrorResponse)
+    )
+)]
 pub async fn list_apps(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -148,6 +185,19 @@ pub async fn list_apps(
 }
 
 /// create a new app
+#[utoipa::path(
+    post,
+    path = "/api/apps",
+    tag = "apps",
+    security(("bearer" = [])),
+    request_body = CreateAppRequest,
+    responses(
+        (status = 201, description = "app created", body = AppResponse),
+        (status = 400, description = "invalid request", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 409, description = "domain conflict", body = ErrorResponse)
+    )
+)]
 pub async fn create_app(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -209,6 +259,19 @@ pub async fn create_app(
 }
 
 /// get a single app by id
+#[utoipa::path(
+    get,
+    path = "/api/apps/{id}",
+    tag = "apps",
+    params(("id" = Uuid, Path, description = "app id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "app details", body = AppResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "not found", body = ErrorResponse)
+    )
+)]
 pub async fn get_app(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -244,6 +307,21 @@ pub async fn get_app(
 }
 
 /// update an app
+#[utoipa::path(
+    put,
+    path = "/api/apps/{id}",
+    tag = "apps",
+    params(("id" = Uuid, Path, description = "app id")),
+    security(("bearer" = [])),
+    request_body = UpdateAppRequest,
+    responses(
+        (status = 200, description = "app updated", body = AppResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "not found", body = ErrorResponse),
+        (status = 409, description = "domain conflict", body = ErrorResponse)
+    )
+)]
 pub async fn update_app(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -338,6 +416,19 @@ pub async fn update_app(
 }
 
 /// delete an app
+#[utoipa::path(
+    delete,
+    path = "/api/apps/{id}",
+    tag = "apps",
+    params(("id" = Uuid, Path, description = "app id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 204, description = "app deleted"),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "not found", body = ErrorResponse)
+    )
+)]
 pub async fn delete_app(
     State(state): State<AppState>,
     headers: HeaderMap,

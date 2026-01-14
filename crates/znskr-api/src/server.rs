@@ -9,9 +9,12 @@ use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
+use utoipa::OpenApi;
+use utoipa_scalar::{Scalar, Servable};
 
 use crate::github::DeploymentJob;
 use crate::handlers::{apps, auth, certificates, deployments, health, settings, webhooks, websocket};
+use crate::openapi::ApiDoc;
 use crate::state::AppState;
 use znskr_common::{Config, Database, Result};
 
@@ -37,6 +40,8 @@ pub async fn run_server(
     let app = Router::new()
         // health
         .route("/health", get(health::health))
+        // openapi docs
+        .merge(Scalar::with_url("/api/docs", ApiDoc::openapi()))
         // auth
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))

@@ -6,6 +6,7 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
@@ -13,31 +14,51 @@ use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
 
 /// settings response - only exposes safe fields
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct SettingsResponse {
+    /// base domain for all apps
     pub base_domain: String,
+    /// http port for proxy
     pub http_port: u16,
+    /// https port for proxy
     pub https_port: u16,
+    /// email for acme certificates
     pub acme_email: String,
+    /// whether to use acme staging
     pub acme_staging: bool,
 }
 
 /// update settings request
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateSettingsRequest {
+    /// new base domain (optional)
     pub base_domain: Option<String>,
+    /// new acme email (optional)
     pub acme_email: Option<String>,
+    /// use acme staging (optional)
     pub acme_staging: Option<bool>,
 }
 
 /// certificate issuance response
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct DashboardCertResponse {
+    /// status message
     pub message: String,
+    /// domain for certificate
     pub domain: String,
 }
 
 /// get current server settings
+#[utoipa::path(
+    get,
+    path = "/api/settings",
+    tag = "settings",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "current settings", body = SettingsResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse)
+    )
+)]
 pub async fn get_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -56,6 +77,17 @@ pub async fn get_settings(
 }
 
 /// update server settings
+#[utoipa::path(
+    put,
+    path = "/api/settings",
+    tag = "settings",
+    security(("bearer" = [])),
+    request_body = UpdateSettingsRequest,
+    responses(
+        (status = 200, description = "updated settings", body = SettingsResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse)
+    )
+)]
 pub async fn update_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -98,6 +130,17 @@ pub async fn update_settings(
 }
 
 /// request certificate for dashboard domain
+#[utoipa::path(
+    post,
+    path = "/api/settings/certificate",
+    tag = "settings",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "certificate issuance initiated", body = DashboardCertResponse),
+        (status = 400, description = "bad request", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse)
+    )
+)]
 pub async fn issue_dashboard_certificate(
     State(state): State<AppState>,
     headers: HeaderMap,

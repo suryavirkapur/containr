@@ -3,6 +3,7 @@
 pub mod auth;
 pub mod github;
 pub mod handlers;
+pub mod openapi;
 pub mod server;
 pub mod state;
 pub mod static_files;

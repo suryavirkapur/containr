@@ -6,6 +6,7 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::auth::{create_token, hash_password, verify_password};
@@ -14,37 +15,47 @@ use crate::state::AppState;
 use znskr_common::models::User;
 
 /// login request body
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct LoginRequest {
+    /// user email address
     pub email: String,
+    /// user password
     pub password: String,
 }
 
 /// register request body
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct RegisterRequest {
+    /// user email address
     pub email: String,
+    /// password (min 8 characters)
     pub password: String,
 }
 
 /// auth response with token
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AuthResponse {
+    /// jwt authentication token
     pub token: String,
+    /// authenticated user info
     pub user: UserResponse,
 }
 
 /// user info in responses
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct UserResponse {
+    /// unique user id
     pub id: Uuid,
+    /// user email
     pub email: String,
+    /// github username if linked
     pub github_username: Option<String>,
 }
 
 /// error response
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ErrorResponse {
+    /// error message
     pub error: String,
 }
 
@@ -55,6 +66,17 @@ pub struct GithubCallbackQuery {
 }
 
 /// register a new user with email/password
+#[utoipa::path(
+    post,
+    path = "/api/auth/register",
+    tag = "auth",
+    request_body = RegisterRequest,
+    responses(
+        (status = 200, description = "successfully registered", body = AuthResponse),
+        (status = 400, description = "invalid request", body = ErrorResponse),
+        (status = 409, description = "email already registered", body = ErrorResponse)
+    )
+)]
 pub async fn register(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
@@ -111,6 +133,16 @@ pub async fn register(
 }
 
 /// login with email/password
+#[utoipa::path(
+    post,
+    path = "/api/auth/login",
+    tag = "auth",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "successfully logged in", body = AuthResponse),
+        (status = 401, description = "invalid credentials", body = ErrorResponse)
+    )
+)]
 pub async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
@@ -170,6 +202,18 @@ pub async fn login(
 }
 
 /// github oauth callback
+#[utoipa::path(
+    get,
+    path = "/api/auth/github/callback",
+    tag = "auth",
+    params(
+        ("code" = String, Query, description = "github oauth authorization code")
+    ),
+    responses(
+        (status = 200, description = "successfully authenticated with github", body = AuthResponse),
+        (status = 400, description = "invalid oauth code", body = ErrorResponse)
+    )
+)]
 pub async fn github_callback(
     State(state): State<AppState>,
     Query(query): Query<GithubCallbackQuery>,
