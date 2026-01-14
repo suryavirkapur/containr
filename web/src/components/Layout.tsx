@@ -1,6 +1,7 @@
 import { Component, JSX } from 'solid-js';
 import { A, useNavigate } from '@solidjs/router';
 import { AuthProvider, useAuth } from '../context/AuthContext';
+import { Button } from './ui/Button';
 
 /**
  * main layout with navigation
@@ -37,15 +38,21 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
                         <nav class="flex items-center gap-8">
                             <A
                                 href="/"
-                                class="text-neutral-500 hover:text-black transition-colors text-sm"
+                                class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
                             >
                                 apps
                             </A>
                             <A
                                 href="/apps/new"
-                                class="text-neutral-500 hover:text-black transition-colors text-sm"
+                                class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
                             >
                                 deploy
+                            </A>
+                            <A
+                                href="/settings"
+                                class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
+                            >
+                                settings
                             </A>
                         </nav>
 
@@ -53,20 +60,20 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
                         <div class="flex items-center gap-4">
                             {isAuthenticated() ? (
                                 <>
-                                    <span class="text-neutral-500 text-sm">{user()?.email}</span>
-                                    <button
+                                    <span class="text-neutral-500 text-sm font-mono">{user()?.email}</span>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
                                         onClick={handleLogout}
-                                        class="px-3 py-1.5 text-neutral-500 hover:text-black border border-neutral-300 hover:border-neutral-400 transition-colors text-sm"
                                     >
                                         logout
-                                    </button>
+                                    </Button>
                                 </>
                             ) : (
                                 <A
                                     href="/login"
-                                    class="px-3 py-1.5 bg-black text-white hover:bg-neutral-800 transition-colors text-sm"
                                 >
-                                    login
+                                    <Button size="sm">login</Button>
                                 </A>
                             )}
                         </div>

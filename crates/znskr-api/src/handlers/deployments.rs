@@ -88,7 +88,8 @@ pub async fn list_deployments(
     headers: HeaderMap,
     Path(app_id): Path<Uuid>,
 ) -> Result<Json<Vec<DeploymentResponse>>, (StatusCode, Json<ErrorResponse>)> {
-    let user_id = get_user_id(&headers, &state.config.auth.jwt_secret)?;
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     // verify app ownership
     let app = state
@@ -129,7 +130,8 @@ pub async fn get_deployment(
     headers: HeaderMap,
     Path((app_id, deployment_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<DeploymentResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let user_id = get_user_id(&headers, &state.config.auth.jwt_secret)?;
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     // verify app ownership
     let app = state
@@ -185,7 +187,8 @@ pub async fn trigger_deployment(
     headers: HeaderMap,
     Path(app_id): Path<Uuid>,
 ) -> Result<(StatusCode, Json<DeploymentResponse>), (StatusCode, Json<ErrorResponse>)> {
-    let user_id = get_user_id(&headers, &state.config.auth.jwt_secret)?;
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     // get app
     let app = state
@@ -244,7 +247,8 @@ pub async fn get_deployment_logs(
     headers: HeaderMap,
     Path((app_id, deployment_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Vec<String>>, (StatusCode, Json<ErrorResponse>)> {
-    let user_id = get_user_id(&headers, &state.config.auth.jwt_secret)?;
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     // verify app ownership
     let app = state

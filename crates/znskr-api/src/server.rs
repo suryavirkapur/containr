@@ -5,22 +5,27 @@ use axum::{
     Router,
 };
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use crate::github::DeploymentJob;
-use crate::handlers::{apps, auth, certificates, deployments, health, webhooks, websocket};
+use crate::handlers::{apps, auth, certificates, deployments, health, settings, webhooks, websocket};
 use crate::state::AppState;
 use znskr_common::{Config, Database, Result};
 
 /// runs the api server
-pub async fn run_server(config: Config, db: Database) -> Result<mpsc::Receiver<DeploymentJob>> {
+pub async fn run_server(
+    config: Config,
+    config_path: PathBuf,
+    db: Database,
+) -> Result<mpsc::Receiver<DeploymentJob>> {
     // create deployment queue channel
     let (tx, rx) = mpsc::channel::<DeploymentJob>(100);
 
     // create shared state
-    let state = AppState::new(config.clone(), db, tx);
+    let state = AppState::new(config.clone(), config_path, db, tx);
 
     // cors layer
     let cors = CorsLayer::new()
@@ -36,6 +41,13 @@ pub async fn run_server(config: Config, db: Database) -> Result<mpsc::Receiver<D
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/github/callback", get(auth::github_callback))
+        // settings
+        .route("/api/settings", get(settings::get_settings))
+        .route("/api/settings", put(settings::update_settings))
+        .route(
+            "/api/settings/certificate",
+            post(settings::issue_dashboard_certificate),
+        )
         // apps
         .route("/api/apps", get(apps::list_apps))
         .route("/api/apps", post(apps::create_app))
@@ -97,3 +109,4 @@ pub async fn run_server(config: Config, db: Database) -> Result<mpsc::Receiver<D
 
     Ok(rx)
 }
+

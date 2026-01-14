@@ -1,5 +1,8 @@
 import { Component, createResource, For, Show } from 'solid-js';
 import { A } from '@solidjs/router';
+import { Button } from '../components/ui/Button';
+import { Card, CardContent } from '../components/ui/Card';
+import { Badge } from '../components/ui/Badge';
 
 interface App {
     id: string;
@@ -44,27 +47,26 @@ const Dashboard: Component = () => {
             {/* header */}
             <div class="flex justify-between items-center mb-10">
                 <div>
-                    <h1 class="text-2xl font-serif text-black">your apps</h1>
-                    <p class="text-neutral-500 mt-1 text-sm">manage your deployed applications</p>
+                    <h1 class="text-3xl font-serif font-medium text-black">your apps</h1>
+                    <p class="text-neutral-500 mt-1 text-sm font-light">manage your deployed applications</p>
                 </div>
-                <A
-                    href="/apps/new"
-                    class="px-4 py-2 bg-black text-white hover:bg-neutral-800 transition-colors text-sm flex items-center gap-2"
-                >
-                    <svg
-                        class="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M12 4v16m8-8H4"
-                        />
-                    </svg>
-                    new app
+                <A href="/apps/new">
+                    <Button class="gap-2">
+                        <svg
+                            class="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M12 4v16m8-8H4"
+                            />
+                        </svg>
+                        new app
+                    </Button>
                 </A>
             </div>
 
@@ -73,7 +75,7 @@ const Dashboard: Component = () => {
                 <div class="space-y-4">
                     <For each={[1, 2, 3]}>
                         {() => (
-                            <div class="border border-neutral-200 p-6 animate-pulse">
+                            <div class="border border-neutral-100 p-6 animate-pulse">
                                 <div class="h-5 bg-neutral-100 w-1/4 mb-3"></div>
                                 <div class="h-4 bg-neutral-50 w-1/2"></div>
                             </div>
@@ -84,8 +86,8 @@ const Dashboard: Component = () => {
 
             {/* empty state */}
             <Show when={!apps.loading && apps()?.length === 0}>
-                <div class="border border-neutral-200 p-12 text-center">
-                    <div class="w-12 h-12 mx-auto mb-4 border border-neutral-300 flex items-center justify-center">
+                <div class="border border-dashed border-neutral-300 p-12 text-center bg-neutral-50/50">
+                    <div class="w-12 h-12 mx-auto mb-4 border border-neutral-300 flex items-center justify-center bg-white">
                         <svg
                             class="w-6 h-6 text-neutral-400"
                             fill="none"
@@ -101,69 +103,52 @@ const Dashboard: Component = () => {
                         </svg>
                     </div>
                     <h3 class="text-lg font-serif text-black mb-2">no apps yet</h3>
-                    <p class="text-neutral-500 mb-6 text-sm">
+                    <p class="text-neutral-500 mb-6 text-sm font-light">
                         deploy your first app from a github repository
                     </p>
-                    <A
-                        href="/apps/new"
-                        class="inline-flex items-center gap-2 px-4 py-2 bg-black text-white hover:bg-neutral-800 transition-colors text-sm"
-                    >
-                        <svg
-                            class="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                        >
-                            <path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                stroke-width="2"
-                                d="M12 4v16m8-8H4"
-                            />
-                        </svg>
-                        deploy new app
+                    <A href="/apps/new">
+                        <Button>deploy new app</Button>
                     </A>
                 </div>
             </Show>
 
             {/* apps list */}
             <Show when={!apps.loading && apps() && apps()!.length > 0}>
-                <div class="space-y-3">
+                <div class="grid gap-4">
                     <For each={apps()}>
                         {(app) => (
-                            <A
-                                href={`/apps/${app.id}`}
-                                class="block border border-neutral-200 p-5 hover:border-neutral-400 transition-colors group"
-                            >
-                                <div class="flex items-center justify-between">
-                                    <div class="flex items-center gap-4">
-                                        {/* status indicator */}
-                                        <span class="w-2 h-2 bg-black"></span>
+                            <A href={`/apps/${app.id}`} class="block group">
+                                <Card variant="hover" class="transition-all hover:bg-neutral-50">
+                                    <div class="p-6 flex items-center justify-between">
+                                        <div class="flex items-center gap-4">
+                                            {/* status indicator */}
+                                            <span class="w-2.5 h-2.5 bg-black"></span>
 
-                                        {/* app info */}
-                                        <div>
-                                            <h3 class="text-black font-medium group-hover:underline">
-                                                {app.name}
-                                            </h3>
-                                            <p class="text-neutral-500 text-sm mt-0.5">{app.github_url}</p>
+                                            {/* app info */}
+                                            <div>
+                                                <h3 class="text-black font-medium text-lg leading-none group-hover:underline decoration-1 underline-offset-4">
+                                                    {app.name}
+                                                </h3>
+                                                <p class="text-neutral-500 text-xs mt-1.5 font-mono">{app.github_url}</p>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex items-center gap-6 text-sm text-neutral-500">
+                                            {/* domain */}
+                                            <Show when={app.domain}>
+                                                <span class="text-neutral-900 font-medium">{app.domain}</span>
+                                            </Show>
+
+                                            {/* branch */}
+                                            <Badge variant="secondary" class="font-mono text-xs">{app.branch}</Badge>
+
+                                            {/* arrow */}
+                                            <svg class="w-4 h-4 text-neutral-300 group-hover:text-black transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                                            </svg>
                                         </div>
                                     </div>
-
-                                    <div class="flex items-center gap-6 text-sm text-neutral-500">
-                                        {/* domain */}
-                                        <Show when={app.domain}>
-                                            <span class="text-neutral-700">{app.domain}</span>
-                                        </Show>
-
-                                        {/* branch */}
-                                        <span class="font-mono">{app.branch}</span>
-
-                                        {/* arrow */}
-                                        <svg class="w-4 h-4 text-neutral-400 group-hover:text-black transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                        </svg>
-                                    </div>
-                                </div>
+                                </Card>
                             </A>
                         )}
                     </For>

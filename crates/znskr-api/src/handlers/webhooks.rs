@@ -40,7 +40,8 @@ pub async fn github_webhook(
         })?;
 
     // verify signature
-    let valid = verify_webhook_signature(&body, signature, &state.config.github.webhook_secret)
+    let config = state.config.read().await;
+    let valid = verify_webhook_signature(&body, signature, &config.github.webhook_secret)
         .map_err(|e| {
             (
                 StatusCode::BAD_REQUEST,

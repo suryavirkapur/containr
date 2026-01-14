@@ -35,7 +35,8 @@ pub async fn get_certificate(
     headers: HeaderMap,
     Path(app_id): Path<Uuid>,
 ) -> Result<Json<CertificateResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let user_id = get_user_id(&headers, &state.config.auth.jwt_secret)?;
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     // Get the app
     let app = state
@@ -100,7 +101,8 @@ pub async fn reissue_certificate(
     headers: HeaderMap,
     Path(app_id): Path<Uuid>,
 ) -> Result<Json<ReissueResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let user_id = get_user_id(&headers, &state.config.auth.jwt_secret)?;
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     // Get the app
     let app = state

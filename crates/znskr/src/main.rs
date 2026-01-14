@@ -79,7 +79,7 @@ async fn main() -> anyhow::Result<()> {
     info!(path = %db_path.display(), "database opened");
 
     // start api server and get deployment queue receiver
-    let deployment_rx = znskr_api::run_server(config.clone(), db.clone()).await?;
+    let deployment_rx = znskr_api::run_server(config.clone(), args.config.clone(), db.clone()).await?;
     info!(port = %config.server.port, "api server started");
 
     // create route manager and challenge store for proxy

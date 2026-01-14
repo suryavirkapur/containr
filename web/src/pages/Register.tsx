@@ -1,5 +1,7 @@
 import { Component, createSignal } from 'solid-js';
 import { A, useNavigate } from '@solidjs/router';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
 
 /**
  * registration page
@@ -55,76 +57,61 @@ const Register: Component = () => {
             <div class="w-full max-w-sm">
                 {/* logo */}
                 <div class="text-center mb-10">
-                    <h1 class="text-3xl font-serif font-semibold text-black tracking-tight">znskr</h1>
-                    <p class="text-neutral-500 mt-2 text-sm">deploy containers with ease</p>
+                    <h1 class="text-4xl font-serif font-bold text-black tracking-tight">znskr</h1>
+                    <p class="text-neutral-500 mt-2 text-sm font-light">deploy containers with ease</p>
                 </div>
 
                 {/* form */}
-                <div class="border border-neutral-200 p-8">
-                    <h2 class="text-lg font-serif text-black mb-6">create account</h2>
+                <div class="border-t border-b border-neutral-100 py-10">
+                    <h2 class="text-xl font-serif font-medium text-black mb-8 text-center">create account</h2>
 
                     {error() && (
-                        <div class="border border-neutral-300 bg-neutral-50 text-neutral-700 px-4 py-3 mb-6 text-sm">
+                        <div class="border border-red-200 bg-red-50 text-red-800 px-4 py-3 mb-6 text-xs font-mono">
                             {error()}
                         </div>
                     )}
 
                     <form onSubmit={handleSubmit} class="space-y-5">
-                        <div>
-                            <label class="block text-neutral-600 text-sm mb-2">
-                                email
-                            </label>
-                            <input
-                                type="email"
-                                value={email()}
-                                onInput={(e) => setEmail(e.currentTarget.value)}
-                                class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-                                placeholder="you@example.com"
-                                required
-                            />
-                        </div>
+                        <Input
+                            label="email"
+                            type="email"
+                            value={email()}
+                            onInput={(e) => setEmail(e.currentTarget.value)}
+                            placeholder="you@example.com"
+                            required
+                        />
 
-                        <div>
-                            <label class="block text-neutral-600 text-sm mb-2">
-                                password
-                            </label>
-                            <input
-                                type="password"
-                                value={password()}
-                                onInput={(e) => setPassword(e.currentTarget.value)}
-                                class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-                                placeholder="********"
-                                required
-                            />
-                        </div>
+                        <Input
+                            label="password"
+                            type="password"
+                            value={password()}
+                            onInput={(e) => setPassword(e.currentTarget.value)}
+                            placeholder="at least 8 characters"
+                            required
+                        />
 
-                        <div>
-                            <label class="block text-neutral-600 text-sm mb-2">
-                                confirm password
-                            </label>
-                            <input
-                                type="password"
-                                value={confirmPassword()}
-                                onInput={(e) => setConfirmPassword(e.currentTarget.value)}
-                                class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-                                placeholder="********"
-                                required
-                            />
-                        </div>
+                        <Input
+                            label="confirm password"
+                            type="password"
+                            value={confirmPassword()}
+                            onInput={(e) => setConfirmPassword(e.currentTarget.value)}
+                            placeholder="confirm your password"
+                            required
+                        />
 
-                        <button
+                        <Button
                             type="submit"
-                            disabled={loading()}
-                            class="w-full px-4 py-2.5 bg-black text-white hover:bg-neutral-800 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                            isLoading={loading()}
+                            class="w-full"
                         >
                             {loading() ? 'creating account...' : 'create account'}
-                        </button>
+                        </Button>
                     </form>
 
                     {/* login link */}
-                    <p class="mt-6 text-center text-neutral-500 text-sm">
+                    <p class="mt-8 text-center text-neutral-400 text-sm">
                         already have an account?{' '}
-                        <A href="/login" class="text-black hover:underline">
+                        <A href="/login" class="text-black hover:underline font-medium">
                             sign in
                         </A>
                     </p>

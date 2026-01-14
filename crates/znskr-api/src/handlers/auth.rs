@@ -91,11 +91,12 @@ pub async fn register(
     state.db.save_user(&user).map_err(internal_error)?;
 
     // create token
+    let config = state.config.read().await;
     let token = create_token(
         user.id,
         &user.email,
-        &state.config.auth.jwt_secret,
-        state.config.auth.jwt_expiry_hours,
+        &config.auth.jwt_secret,
+        config.auth.jwt_expiry_hours,
     )
     .map_err(internal_error)?;
 
@@ -149,11 +150,12 @@ pub async fn login(
     }
 
     // create token
+    let config = state.config.read().await;
     let token = create_token(
         user.id,
         &user.email,
-        &state.config.auth.jwt_secret,
-        state.config.auth.jwt_expiry_hours,
+        &config.auth.jwt_secret,
+        config.auth.jwt_expiry_hours,
     )
     .map_err(internal_error)?;
 
@@ -173,9 +175,10 @@ pub async fn github_callback(
     Query(query): Query<GithubCallbackQuery>,
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
     // exchange code for token
+    let config = state.config.read().await;
     let token_response = exchange_code_for_token(
-        &state.config.github.client_id,
-        &state.config.github.client_secret,
+        &config.github.client_id,
+        &config.github.client_secret,
         &query.code,
     )
     .await
@@ -222,11 +225,12 @@ pub async fn github_callback(
     };
 
     // create jwt token
+    let config = state.config.read().await;
     let token = create_token(
         user.id,
         &user.email,
-        &state.config.auth.jwt_secret,
-        state.config.auth.jwt_expiry_hours,
+        &config.auth.jwt_secret,
+        config.auth.jwt_expiry_hours,
     )
     .map_err(internal_error)?;
 

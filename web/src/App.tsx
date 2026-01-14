@@ -8,6 +8,7 @@ const Register = lazy(() => import('./pages/Register'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const AppDetail = lazy(() => import('./pages/AppDetail'));
 const NewApp = lazy(() => import('./pages/NewApp'));
+const Settings = lazy(() => import('./pages/Settings'));
 
 const App: Component = () => {
     return (
@@ -18,9 +19,11 @@ const App: Component = () => {
                 <Route path="/" component={Dashboard} />
                 <Route path="/apps/new" component={NewApp} />
                 <Route path="/apps/:id" component={AppDetail} />
+                <Route path="/settings" component={Settings} />
             </Route>
         </Suspense>
     );
 };
 
 export default App;
+

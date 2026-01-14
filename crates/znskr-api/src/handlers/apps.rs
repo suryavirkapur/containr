@@ -135,7 +135,8 @@ pub async fn list_apps(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<AppResponse>>, (StatusCode, Json<ErrorResponse>)> {
-    let user_id = get_user_id(&headers, &state.config.auth.jwt_secret)?;
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let apps = state
         .db
@@ -152,7 +153,8 @@ pub async fn create_app(
     headers: HeaderMap,
     Json(req): Json<CreateAppRequest>,
 ) -> Result<(StatusCode, Json<AppResponse>), (StatusCode, Json<ErrorResponse>)> {
-    let user_id = get_user_id(&headers, &state.config.auth.jwt_secret)?;
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     // validate name
     if req.name.is_empty() || req.name.len() > 64 {
@@ -212,7 +214,8 @@ pub async fn get_app(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Json<AppResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let user_id = get_user_id(&headers, &state.config.auth.jwt_secret)?;
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let app = state
         .db
@@ -247,7 +250,8 @@ pub async fn update_app(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateAppRequest>,
 ) -> Result<Json<AppResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let user_id = get_user_id(&headers, &state.config.auth.jwt_secret)?;
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let mut app = state
         .db
@@ -339,7 +343,8 @@ pub async fn delete_app(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let user_id = get_user_id(&headers, &state.config.auth.jwt_secret)?;
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let app = state
         .db

@@ -1,0 +1,163 @@
+# znskr installation guide
+
+a rust-native paas for deploying docker containers with automatic ssl.
+
+---
+
+## installation from cargo
+
+```bash
+cargo install --git https://github.com/suryavirkapur/znskr-paas znskr
+```
+
+### with specific version/tag
+
+```bash
+cargo install --git https://github.com/suryavirkapur/znskr-paas --tag v0.1.0 znskr
+```
+
+### from local clone
+
+```bash
+git clone https://github.com/suryavirkapur/znskr-paas.git
+cd znskr-paas
+cargo install --path crates/znskr
+```
+
+---
+
+## requirements
+
+- rust 1.75+ (install via https://rustup.rs)
+- docker (containerd runtime)
+- bun (for frontend, optional if using pre-built binary)
+
+---
+
+## post-install configuration
+
+1. create the config file `znskr.toml` in your working directory:
+
+```toml
+[server]
+host = "0.0.0.0"
+port = 3000
+
+[database]
+path = "./data/znskr.db"
+
+[proxy]
+http_port = 80
+https_port = 443
+base_domain = "your-domain.com"
+
+[github]
+client_id = "your-github-oauth-client-id"
+client_secret = "your-github-oauth-client-secret"
+webhook_secret = "your-webhook-secret"
+
+[auth]
+jwt_secret = "generate-a-secure-secret-here"
+jwt_expiry_hours = 24
+
+[acme]
+email = "you@example.com"
+certs_dir = "./data/certs"
+staging = false
+```
+
+2. create required directories:
+
+```bash
+mkdir -p ./data/certs
+```
+
+---
+
+## running
+
+### with default ports (requires root for 80/443)
+
+```bash
+sudo znskr
+```
+
+### with custom ports (no root required)
+
+```bash
+znskr --http-port 8080 --https-port 8443 --api-port 3000
+```
+
+---
+
+## systemd service (optional)
+
+create `/etc/systemd/system/znskr.service`:
+
+```ini
+[unit]
+description=znskr paas
+after=network.target docker.service
+requires=docker.service
+
+[service]
+type=simple
+user=root
+workingdirectory=/opt/znskr
+execstart=/usr/local/cargo/bin/znskr
+restart=always
+environment=rust_log=info
+
+[install]
+wantedby=multi-user.target
+```
+
+then enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable znskr
+sudo systemctl start znskr
+```
+
+---
+
+## verify installation
+
+```bash
+# check version
+znskr --version
+
+# check if running
+curl http://localhost:3000/api/health
+```
+
+---
+
+## dns setup
+
+point your base domain and wildcard to your server:
+
+```
+your-domain.com     A     your-server-ip
+*.your-domain.com   A     your-server-ip
+```
+
+apps will be accessible at `app-name.your-domain.com`.
+
+---
+
+## troubleshooting
+
+### port 80/443 permission denied
+run with sudo or use custom non-privileged ports (8080/8443).
+
+### docker not found
+ensure docker is installed and the user is in the docker group:
+```bash
+sudo usermod -ag docker $user
+```
+
+### ssl certificate errors
+set `staging = true` in `[acme]` section for testing.
+use `staging = false` for production certificates.
