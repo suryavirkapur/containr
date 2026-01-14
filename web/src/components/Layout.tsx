@@ -43,6 +43,18 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
                                 apps
                             </A>
                             <A
+                                href="/databases"
+                                class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
+                            >
+                                databases
+                            </A>
+                            <A
+                                href="/storage"
+                                class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
+                            >
+                                storage
+                            </A>
+                            <A
                                 href="/apps/new"
                                 class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
                             >

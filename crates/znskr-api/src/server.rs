@@ -13,7 +13,7 @@ use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
 use crate::github::DeploymentJob;
-use crate::handlers::{apps, auth, certificates, deployments, health, settings, webhooks, websocket};
+use crate::handlers::{apps, auth, certificates, databases, deployments, health, settings, storage, webhooks, websocket};
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
 use znskr_common::{Config, Database, Result};
@@ -91,6 +91,18 @@ pub async fn run_server(
             "/api/apps/{app_id}/deployments/{id}/logs/ws",
             get(websocket::deployment_logs_ws),
         )
+        // managed databases
+        .route("/api/databases", get(databases::list_databases))
+        .route("/api/databases", post(databases::create_database))
+        .route("/api/databases/{id}", get(databases::get_database))
+        .route("/api/databases/{id}", delete(databases::delete_database))
+        .route("/api/databases/{id}/start", post(databases::start_database))
+        .route("/api/databases/{id}/stop", post(databases::stop_database))
+        // storage buckets
+        .route("/api/buckets", get(storage::list_buckets))
+        .route("/api/buckets", post(storage::create_bucket))
+        .route("/api/buckets/{id}", get(storage::get_bucket))
+        .route("/api/buckets/{id}", delete(storage::delete_bucket))
         // webhooks
         .route("/webhooks/github", post(webhooks::github_webhook))
         // static files fallback (spa)

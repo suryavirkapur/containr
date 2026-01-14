@@ -5,19 +5,25 @@
 //! WebSocket upgrades, gRPC (HTTP/2), and Server-Sent Events.
 
 use async_trait::async_trait;
+use bytes::Bytes;
+use pingora_core::listeners::tls::TlsSettings;
+use pingora_core::listeners::{TlsAccept, TlsAcceptCallbacks};
 use pingora_core::prelude::*;
+use pingora_core::tls::{ext, pkey::{PKey, Private}, ssl, x509::X509};
 use pingora_http::{RequestHeader, ResponseHeader};
 use pingora_proxy::{ProxyHttp, Session};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::acme::ChallengeStore;
-use crate::routes::RouteManager;
+use crate::routes::{RouteManager, SelectedUpstream};
 
 /// Context for each request
 pub struct ProxyCtx {
     /// The upstream address to forward to
     upstream_addr: Option<String>,
+    upstream_selection: Option<SelectedUpstream>,
     /// Whether this is a WebSocket upgrade request
     is_websocket: bool,
     /// Whether this is a gRPC request
@@ -42,6 +48,58 @@ impl ZnskrProxy {
     }
 }
 
+pub struct DynamicCertResolver {
+    certs_dir: PathBuf,
+}
+
+impl DynamicCertResolver {
+    pub fn new(certs_dir: PathBuf) -> Self {
+        Self { certs_dir }
+    }
+
+    async fn load_cert(&self, domain: &str) -> Option<(X509, PKey<Private>)> {
+        let cert_path = self.certs_dir.join(format!("{}.pem", domain));
+        let key_path = self.certs_dir.join(format!("{}.key", domain));
+
+        let cert_bytes = tokio::fs::read(cert_path).await.ok()?;
+        let key_bytes = tokio::fs::read(key_path).await.ok()?;
+
+        let cert = X509::from_pem(&cert_bytes).ok()?;
+        let key = PKey::private_key_from_pem(&key_bytes).ok()?;
+
+        Some((cert, key))
+    }
+}
+
+#[async_trait]
+impl TlsAccept for DynamicCertResolver {
+    async fn certificate_callback(&self, ssl: &mut pingora_core::protocols::tls::TlsRef) -> () {
+        let domain = match ssl.servername(ssl::NameType::HOST_NAME) {
+            Some(name) => name.to_string(),
+            None => {
+                warn!("tls handshake missing server name");
+                return;
+            }
+        };
+
+        match self.load_cert(&domain).await {
+            Some((cert, key)) => {
+                if let Err(error) = ext::ssl_use_certificate(ssl, &cert) {
+                    warn!(error = %error, domain = %domain, "failed to set tls certificate");
+                    return;
+                }
+                if let Err(error) = ext::ssl_use_private_key(ssl, &key) {
+                    warn!(error = %error, domain = %domain, "failed to set tls private key");
+                    return;
+                }
+            }
+            None => {
+                warn!(domain = %domain, "no tls certificate found for domain");
+            }
+        }
+    }
+}
+
 #[async_trait]
 impl ProxyHttp for ZnskrProxy {
     type CTX = ProxyCtx;
@@ -49,6 +107,7 @@ impl ProxyHttp for ZnskrProxy {
     fn new_ctx(&self) -> Self::CTX {
         ProxyCtx {
             upstream_addr: None,
+            upstream_selection: None,
             is_websocket: false,
             is_grpc: false,
             is_sse: false,
@@ -119,13 +178,26 @@ impl ProxyHttp for ZnskrProxy {
         }
 
         // Find route for this host
-        match self.routes.get_route(host) {
-            Some(route) => {
-                ctx.upstream_addr =
-                    Some(format!("{}:{}", route.upstream_host, route.upstream_port));
+        match self.routes.select_upstream(host) {
+            Some(selection) => {
+                ctx.upstream_addr = Some(selection.address());
+                ctx.upstream_selection = Some(selection);
                 Ok(false) // Continue to upstream
             }
             None => {
+                // serve embedded static assets if no route is configured
+                if let Some(asset) = crate::static_files::load_static(path) {
+                    let mut header = ResponseHeader::build(200, None)?;
+                    header.insert_header("Content-Type", asset.content_type)?;
+                    session
+                        .write_response_header(Box::new(header), false)
+                        .await?;
+                    session
+                        .write_response_body(Some(Bytes::from(asset.data)), true)
+                        .await?;
+                    return Ok(true);
+                }
+
                 warn!(host = %host, "no route found");
 
                 // Send 404 response
@@ -211,6 +283,10 @@ impl ProxyHttp for ZnskrProxy {
 
     /// Log the request/response after completion
     async fn logging(&self, session: &mut Session, _e: Option<&Error>, ctx: &mut Self::CTX) {
+        if let Some(selection) = ctx.upstream_selection.as_ref() {
+            selection.complete();
+        }
+
         let req = session.req_header();
         let status = session
             .response_written()
@@ -245,7 +321,9 @@ pub fn create_proxy_server(
     routes: RouteManager,
     challenges: ChallengeStore,
     http_port: u16,
-) -> Server {
+    https_port: u16,
+    certs_dir: PathBuf,
+) -> anyhow::Result<Server> {
     let mut server = Server::new(None).unwrap();
     server.bootstrap();
 
@@ -255,7 +333,13 @@ pub fn create_proxy_server(
 
     proxy_service.add_tcp(&format!("0.0.0.0:{}", http_port));
 
+    let resolver = DynamicCertResolver::new(certs_dir);
+    let callbacks: TlsAcceptCallbacks = Box::new(resolver);
+    let mut tls_settings = TlsSettings::with_callbacks(callbacks)?;
+    tls_settings.enable_h2();
+    proxy_service.add_tls_with_settings(&format!("0.0.0.0:{}", https_port), None, tls_settings);
+
     server.add_service(proxy_service);
 
-    server
+    Ok(server)
 }

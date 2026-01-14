@@ -1,0 +1,286 @@
+//! managed services models for databases and storage
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+/// supported database types
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DatabaseType {
+    Postgresql,
+    Mariadb,
+    Valkey,
+    Qdrant,
+}
+
+impl DatabaseType {
+    /// returns the docker image for this database type
+    pub fn docker_image(&self, version: &str) -> String {
+        match self {
+            DatabaseType::Postgresql => format!("postgres:{}", version),
+            DatabaseType::Mariadb => format!("mariadb:{}", version),
+            DatabaseType::Valkey => format!("valkey/valkey:{}", version),
+            DatabaseType::Qdrant => format!("qdrant/qdrant:{}", version),
+        }
+    }
+
+    /// returns the default port for this database type
+    pub fn default_port(&self) -> u16 {
+        match self {
+            DatabaseType::Postgresql => 5432,
+            DatabaseType::Mariadb => 3306,
+            DatabaseType::Valkey => 6379,
+            DatabaseType::Qdrant => 6333,
+        }
+    }
+
+    /// returns the data volume path inside the container
+    pub fn volume_path(&self) -> &'static str {
+        match self {
+            DatabaseType::Postgresql => "/var/lib/postgresql/data",
+            DatabaseType::Mariadb => "/var/lib/mysql",
+            DatabaseType::Valkey => "/data",
+            DatabaseType::Qdrant => "/qdrant/storage",
+        }
+    }
+
+    /// returns default memory limit in bytes
+    pub fn default_memory_limit(&self) -> u64 {
+        match self {
+            DatabaseType::Postgresql => 512 * 1024 * 1024,  // 512mb
+            DatabaseType::Mariadb => 512 * 1024 * 1024,     // 512mb
+            DatabaseType::Valkey => 256 * 1024 * 1024,      // 256mb
+            DatabaseType::Qdrant => 1024 * 1024 * 1024,     // 1gb
+        }
+    }
+
+    /// returns default cpu limit
+    pub fn default_cpu_limit(&self) -> f64 {
+        match self {
+            DatabaseType::Postgresql => 1.0,
+            DatabaseType::Mariadb => 1.0,
+            DatabaseType::Valkey => 0.5,
+            DatabaseType::Qdrant => 1.0,
+        }
+    }
+
+    /// returns the default version
+    pub fn default_version(&self) -> &'static str {
+        match self {
+            DatabaseType::Postgresql => "16",
+            DatabaseType::Mariadb => "11",
+            DatabaseType::Valkey => "8",
+            DatabaseType::Qdrant => "latest",
+        }
+    }
+
+    /// returns environment variables for container startup
+    pub fn env_vars(&self, creds: &DatabaseCredentials) -> Vec<(String, String)> {
+        match self {
+            DatabaseType::Postgresql => vec![
+                ("POSTGRES_USER".into(), creds.username.clone()),
+                ("POSTGRES_PASSWORD".into(), creds.password.clone()),
+                ("POSTGRES_DB".into(), creds.database_name.clone()),
+            ],
+            DatabaseType::Mariadb => vec![
+                ("MARIADB_USER".into(), creds.username.clone()),
+                ("MARIADB_PASSWORD".into(), creds.password.clone()),
+                ("MARIADB_DATABASE".into(), creds.database_name.clone()),
+                ("MARIADB_ROOT_PASSWORD".into(), creds.password.clone()),
+            ],
+            DatabaseType::Valkey => vec![
+                ("VALKEY_PASSWORD".into(), creds.password.clone()),
+            ],
+            DatabaseType::Qdrant => vec![
+                ("QDRANT__SERVICE__API_KEY".into(), creds.password.clone()),
+            ],
+        }
+    }
+}
+
+/// service status for managed services
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceStatus {
+    #[default]
+    Pending,
+    Starting,
+    Running,
+    Stopped,
+    Failed,
+}
+
+/// database credentials (password stored encrypted)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatabaseCredentials {
+    pub username: String,
+    /// plaintext password (encrypt before storing)
+    pub password: String,
+    pub database_name: String,
+}
+
+impl DatabaseCredentials {
+    /// generates new credentials with random password
+    pub fn generate(db_type: DatabaseType) -> Self {
+        let password = generate_random_password(24);
+        let username = match db_type {
+            DatabaseType::Postgresql => "postgres".to_string(),
+            DatabaseType::Mariadb => "mariadb".to_string(),
+            DatabaseType::Valkey => "default".to_string(),
+            DatabaseType::Qdrant => "qdrant".to_string(),
+        };
+        Self {
+            username,
+            password,
+            database_name: "main".to_string(),
+        }
+    }
+}
+
+/// generates a random alphanumeric password
+fn generate_random_password(len: usize) -> String {
+    use rand::Rng;
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let mut rng = rand::rng();
+    (0..len)
+        .map(|_| {
+            let idx = rng.random_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect()
+}
+
+/// managed database instance
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManagedDatabase {
+    pub id: Uuid,
+    pub owner_id: Uuid,
+    pub name: String,
+    pub db_type: DatabaseType,
+    pub version: String,
+    pub container_id: Option<String>,
+    /// deprecated: use host_data_path for bind mounts instead
+    pub volume_name: String,
+    /// host directory for bind mount storage
+    pub host_data_path: String,
+    pub internal_host: String,
+    pub port: u16,
+    pub credentials: DatabaseCredentials,
+    pub memory_limit: u64,
+    pub cpu_limit: f64,
+    pub status: ServiceStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl ManagedDatabase {
+    /// creates a new managed database with defaults
+    pub fn new(owner_id: Uuid, name: String, db_type: DatabaseType) -> Self {
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        Self {
+            id,
+            owner_id,
+            name: name.clone(),
+            db_type,
+            version: db_type.default_version().to_string(),
+            container_id: None,
+            volume_name: format!("znskr-db-{}", id),
+            host_data_path: format!("/data/znskr/databases/{}/data", id),
+            internal_host: format!("db-{}.internal", id),
+            port: db_type.default_port(),
+            credentials: DatabaseCredentials::generate(db_type),
+            memory_limit: db_type.default_memory_limit(),
+            cpu_limit: db_type.default_cpu_limit(),
+            status: ServiceStatus::Pending,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// creates a new managed database with custom data path from config
+    pub fn new_with_path(owner_id: Uuid, name: String, db_type: DatabaseType, data_dir: &std::path::Path) -> Self {
+        let mut db = Self::new(owner_id, name, db_type);
+        db.host_data_path = data_dir
+            .join("databases")
+            .join(db.id.to_string())
+            .join("data")
+            .to_string_lossy()
+            .to_string();
+        db
+    }
+
+    /// returns the bind mount argument for docker (host:container)
+    pub fn bind_mount_arg(&self) -> String {
+        format!("{}:{}", self.host_data_path, self.db_type.volume_path())
+    }
+
+    /// returns the connection string for this database
+    pub fn connection_string(&self) -> String {
+        match self.db_type {
+            DatabaseType::Postgresql => format!(
+                "postgresql://{}:{}@{}:{}/{}",
+                self.credentials.username,
+                self.credentials.password,
+                self.internal_host,
+                self.port,
+                self.credentials.database_name
+            ),
+            DatabaseType::Mariadb => format!(
+                "mysql://{}:{}@{}:{}/{}",
+                self.credentials.username,
+                self.credentials.password,
+                self.internal_host,
+                self.port,
+                self.credentials.database_name
+            ),
+            DatabaseType::Valkey => format!(
+                "redis://:{}@{}:{}",
+                self.credentials.password,
+                self.internal_host,
+                self.port
+            ),
+            DatabaseType::Qdrant => format!(
+                "http://{}:{}",
+                self.internal_host,
+                self.port
+            ),
+        }
+    }
+
+    /// returns docker image for this database
+    pub fn docker_image(&self) -> String {
+        self.db_type.docker_image(&self.version)
+    }
+}
+
+/// storage bucket (s3-compatible via rustfs)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageBucket {
+    pub id: Uuid,
+    pub owner_id: Uuid,
+    pub name: String,
+    pub access_key: String,
+    /// secret key (encrypt before storing)
+    pub secret_key: String,
+    pub size_bytes: u64,
+    pub endpoint: String,
+    pub created_at: DateTime<Utc>,
+}
+
+impl StorageBucket {
+    /// creates a new storage bucket
+    pub fn new(owner_id: Uuid, name: String, endpoint: String) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            owner_id,
+            name,
+            access_key: generate_random_password(20),
+            secret_key: generate_random_password(40),
+            size_bytes: 0,
+            endpoint,
+            created_at: Utc::now(),
+        }
+    }
+}

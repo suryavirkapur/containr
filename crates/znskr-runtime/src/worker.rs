@@ -8,9 +8,11 @@ use std::path::PathBuf;
 use std::process::Command;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 use crate::docker::{DockerContainerConfig, DockerContainerManager};
 use crate::image::ImageManager;
+use crate::route_updates::ProxyRouteUpdate;
 use znskr_common::models::{Deployment, DeploymentStatus};
 use znskr_common::Database;
 
@@ -24,11 +26,16 @@ pub struct DeploymentWorker {
     image_manager: ImageManager,
     work_dir: PathBuf,
     stub_mode: bool,
+    proxy_updates: Option<mpsc::Sender<ProxyRouteUpdate>>,
 }
 
 impl DeploymentWorker {
     /// creates a new deployment worker using Docker for containers
-    pub async fn new(db: Database, work_dir: PathBuf) -> anyhow::Result<Self> {
+    pub async fn new(
+        db: Database,
+        work_dir: PathBuf,
+        proxy_updates: Option<mpsc::Sender<ProxyRouteUpdate>>,
+    ) -> anyhow::Result<Self> {
         // Use Docker for container management (simpler than containerd tasks)
         let docker_manager = DockerContainerManager::new();
         let image_manager = ImageManager::new_headless(); // Uses docker/buildah CLI
@@ -50,11 +57,16 @@ impl DeploymentWorker {
             image_manager,
             work_dir,
             stub_mode,
+            proxy_updates,
         })
     }
 
     /// creates a worker in stub mode (for development without docker)
-    pub fn new_stub(db: Database, work_dir: PathBuf) -> anyhow::Result<Self> {
+    pub fn new_stub(
+        db: Database,
+        work_dir: PathBuf,
+        proxy_updates: Option<mpsc::Sender<ProxyRouteUpdate>>,
+    ) -> anyhow::Result<Self> {
         warn!("deployment worker starting in stub mode");
 
         // ensure work directory exists
@@ -66,6 +78,7 @@ impl DeploymentWorker {
             image_manager: ImageManager::new_stub(),
             work_dir,
             stub_mode: true,
+            proxy_updates,
         })
     }
 
@@ -144,36 +157,53 @@ impl DeploymentWorker {
             .get_app(job.app_id)?
             .ok_or_else(|| anyhow::anyhow!("app not found"))?;
 
-        // prepare env vars
+        // prepare shared env vars (all services inherit these)
         let mut env_vars = HashMap::new();
         for env in &app.env_vars {
             env_vars.insert(env.key.clone(), env.value.clone());
         }
-        env_vars.insert("PORT".to_string(), app.port.to_string());
 
-        // stop existing container if running
-        let container_id = format!("znskr-{}", job.app_id);
-        let _ = self.docker_manager.stop_container(&container_id).await;
-        let _ = self.docker_manager.remove_container(&container_id).await;
+        // create network for this app
+        let network_name = format!("znskr-{}", job.app_id);
+        self.docker_manager.create_network(&network_name).await?;
 
-        // start new container using Docker
-        let config = DockerContainerConfig {
-            id: container_id.clone(),
-            image: image_name,
-            env_vars,
-            port: app.port,
-            memory_limit: Some(512 * 1024 * 1024), // 512mb
-            cpu_limit: Some(1.0),
-        };
+        // check if app uses new multi-service model
+        if app.has_services() {
+            // multi-container deployment
+            self.deploy_services(&app, &deployment, &network_name, &image_name, &env_vars).await?;
+        } else {
+            // legacy single-container deployment (backward compat)
+            env_vars.insert("PORT".to_string(), app.port.to_string());
 
-        let container_info = self.docker_manager.create_container(config).await?;
+            // stop existing container if running
+            let container_id = format!("znskr-{}", job.app_id);
+            let _ = self.docker_manager.stop_container(&container_id).await;
+            let _ = self.docker_manager.remove_container(&container_id).await;
 
-        // update deployment with container info
-        let mut updated_deployment = deployment.clone();
-        updated_deployment.status = DeploymentStatus::Running;
-        updated_deployment.container_id = Some(container_info.id);
-        updated_deployment.started_at = Some(chrono::Utc::now());
-        self.db.save_deployment(&updated_deployment)?;
+            // start new container using Docker
+            let config = DockerContainerConfig {
+                id: container_id.clone(),
+                image: image_name,
+                env_vars,
+                port: app.port,
+                memory_limit: Some(512 * 1024 * 1024), // 512mb
+                cpu_limit: Some(1.0),
+                network: Some(network_name),
+                health_check: None,
+                restart_policy: "unless-stopped".to_string(),
+            };
+
+            let container_info = self.docker_manager.create_container(config).await?;
+
+            // update deployment with container info
+            let mut updated_deployment = deployment.clone();
+            updated_deployment.status = DeploymentStatus::Running;
+            updated_deployment.container_id = Some(container_info.id);
+            updated_deployment.started_at = Some(chrono::Utc::now());
+            self.db.save_deployment(&updated_deployment)?;
+
+            self.send_proxy_refresh(app.id).await;
+        }
 
         info!(
             app_id = %job.app_id,
@@ -185,6 +215,183 @@ impl DeploymentWorker {
         let _ = tokio::fs::remove_dir_all(&repo_path).await;
 
         Ok(())
+    }
+
+    /// deploys multi-container services with dependency ordering
+    async fn deploy_services(
+        &self,
+        app: &znskr_common::models::App,
+        deployment: &Deployment,
+        network_name: &str,
+        image_name: &str,
+        shared_env_vars: &HashMap<String, String>,
+    ) -> anyhow::Result<()> {
+        use znskr_common::models::{ServiceDeployment, RestartPolicy};
+
+        // topological sort services by dependencies
+        let sorted_services = self.topological_sort_services(&app.services)?;
+
+        let mut service_deployments = Vec::new();
+
+        for service in sorted_services {
+            info!(
+                service = %service.name,
+                replicas = %service.replicas,
+                "deploying service"
+            );
+
+            // deploy each replica
+            for replica_idx in 0..service.replicas {
+                let container_id = format!("znskr-{}-{}-{}", app.id, service.name, replica_idx);
+
+                // stop existing container if running
+                let _ = self.docker_manager.stop_container(&container_id).await;
+                let _ = self.docker_manager.remove_container(&container_id).await;
+
+                // merge shared env vars with service-specific PORT
+                let mut env_vars = shared_env_vars.clone();
+                env_vars.insert("PORT".to_string(), service.port.to_string());
+                env_vars.insert("SERVICE_NAME".to_string(), service.name.clone());
+                env_vars.insert("REPLICA_INDEX".to_string(), replica_idx.to_string());
+
+                // convert health check if configured
+                let health_check = service.health_check.as_ref().map(|hc| {
+                    crate::docker::HealthCheckCommand {
+                        cmd: vec![
+                            "curl".to_string(),
+                            "-f".to_string(),
+                            format!("http://localhost:{}{}", service.port, hc.path),
+                        ],
+                        interval_secs: hc.interval_secs,
+                        timeout_secs: hc.timeout_secs,
+                        retries: hc.retries,
+                    }
+                });
+
+                // convert restart policy
+                let restart_policy = match service.restart_policy {
+                    RestartPolicy::Never => "no".to_string(),
+                    RestartPolicy::Always => "always".to_string(),
+                    RestartPolicy::OnFailure => "on-failure".to_string(),
+                };
+
+                // use service image if specified, otherwise use built image
+                let service_image = if service.image.is_empty() {
+                    image_name.to_string()
+                } else {
+                    service.image.clone()
+                };
+
+                let config = DockerContainerConfig {
+                    id: container_id.clone(),
+                    image: service_image,
+                    env_vars,
+                    port: service.port,
+                    memory_limit: service.memory_limit,
+                    cpu_limit: service.cpu_limit,
+                    network: Some(network_name.to_string()),
+                    health_check,
+                    restart_policy,
+                };
+
+                let container_info = self.docker_manager.create_container(config).await?;
+
+                // wait for dependencies to be healthy before continuing
+                if service.health_check.is_some() {
+                    let _ = self.docker_manager.wait_for_healthy(&container_id, 60).await;
+                }
+
+                // create service deployment record
+                let mut sd = ServiceDeployment::new(service.id, deployment.id, replica_idx);
+                sd.container_id = Some(container_info.id);
+                sd.status = znskr_common::models::DeploymentStatus::Running;
+                sd.started_at = Some(chrono::Utc::now());
+
+                self.db.save_service_deployment(&sd)?;
+                service_deployments.push(sd);
+
+                self.send_proxy_refresh(app.id).await;
+            }
+        }
+
+        // update main deployment
+        let mut updated_deployment = deployment.clone();
+        updated_deployment.status = znskr_common::models::DeploymentStatus::Running;
+        updated_deployment.service_deployments = service_deployments;
+        updated_deployment.started_at = Some(chrono::Utc::now());
+        self.db.save_deployment(&updated_deployment)?;
+
+        Ok(())
+    }
+
+    /// topological sort services by dependencies
+    fn topological_sort_services(
+        &self,
+        services: &[znskr_common::models::ContainerService],
+    ) -> anyhow::Result<Vec<znskr_common::models::ContainerService>> {
+        use std::collections::{HashSet, VecDeque};
+
+        let name_to_service: HashMap<String, &znskr_common::models::ContainerService> =
+            services.iter().map(|s| (s.name.clone(), s)).collect();
+
+        let mut in_degree: HashMap<String, usize> = HashMap::new();
+        let mut adj_list: HashMap<String, Vec<String>> = HashMap::new();
+
+        // initialize
+        for service in services {
+            in_degree.insert(service.name.clone(), 0);
+            adj_list.insert(service.name.clone(), Vec::new());
+        }
+
+        // build graph
+        for service in services {
+            for dep in &service.depends_on {
+                if let Some(edges) = adj_list.get_mut(dep) {
+                    edges.push(service.name.clone());
+                }
+                if let Some(degree) = in_degree.get_mut(&service.name) {
+                    *degree += 1;
+                }
+            }
+        }
+
+        // kahn's algorithm
+        let mut queue: VecDeque<String> = in_degree
+            .iter()
+            .filter(|(_, &degree)| degree == 0)
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        let mut sorted = Vec::new();
+        let mut visited = HashSet::new();
+
+        while let Some(name) = queue.pop_front() {
+            if visited.contains(&name) {
+                continue;
+            }
+            visited.insert(name.clone());
+
+            if let Some(service) = name_to_service.get(&name) {
+                sorted.push((*service).clone());
+            }
+
+            if let Some(neighbors) = adj_list.get(&name) {
+                for neighbor in neighbors {
+                    if let Some(degree) = in_degree.get_mut(neighbor) {
+                        *degree -= 1;
+                        if *degree == 0 {
+                            queue.push_back(neighbor.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        if sorted.len() != services.len() {
+            return Err(anyhow::anyhow!("circular dependency detected in services"));
+        }
+
+        Ok(sorted)
     }
 
     /// clones the git repository
@@ -244,5 +451,13 @@ impl DeploymentWorker {
         ));
         self.db.save_deployment(&updated)?;
         Ok(())
+    }
+
+    async fn send_proxy_refresh(&self, app_id: Uuid) {
+        if let Some(sender) = &self.proxy_updates {
+            let _ = sender
+                .send(ProxyRouteUpdate::RefreshApp { app_id })
+                .await;
+        }
     }
 }

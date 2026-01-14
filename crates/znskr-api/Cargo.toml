@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 znskr-common = { path = "../znskr-common" }
+znskr-runtime = { path = "../znskr-runtime" }
 
 tokio = { workspace = true }
 axum = { workspace = true, features = ["ws"] }

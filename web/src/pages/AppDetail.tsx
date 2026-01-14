@@ -2,6 +2,18 @@ import { Component, createResource, createSignal, For, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
 import { parseAnsi } from '../utils/ansi';
 
+interface AppService {
+    id: string;
+    name: string;
+    image: string;
+    port: number;
+    replicas: number;
+    memory_limit_mb: number | null;
+    cpu_limit: number | null;
+    depends_on: string[];
+    restart_policy: string;
+}
+
 interface App {
     id: string;
     name: string;
@@ -11,6 +23,7 @@ interface App {
     port: number;
     created_at: string;
     env_vars: { key: string; value: string; secret: boolean }[];
+    services: AppService[];
 }
 
 interface Deployment {
@@ -455,6 +468,44 @@ const AppDetail: Component = () => {
                         </Show>
                     </div>
                 </div>
+
+                {/* services section for multi-container apps */}
+                <Show when={app()!.services && app()!.services.length > 0}>
+                    <div class="border border-neutral-200 mb-8">
+                        <div class="border-b border-neutral-200 px-5 py-3">
+                            <h2 class="text-sm font-serif text-black">services</h2>
+                        </div>
+                        <div class="divide-y divide-neutral-100">
+                            <For each={app()!.services}>
+                                {(service) => (
+                                    <div class="px-5 py-4">
+                                        <div class="flex justify-between items-start">
+                                            <div>
+                                                <div class="flex items-center gap-3">
+                                                    <span class="w-2 h-2 bg-black"></span>
+                                                    <span class="text-black text-sm font-medium">{service.name}</span>
+                                                    <span class="text-xs text-neutral-400">:{service.port}</span>
+                                                </div>
+                                                <Show when={service.image}>
+                                                    <p class="text-xs text-neutral-500 mt-1 ml-5 font-mono">{service.image}</p>
+                                                </Show>
+                                            </div>
+                                            <div class="flex items-center gap-4 text-xs text-neutral-500">
+                                                <span>{service.replicas} replica{service.replicas > 1 ? 's' : ''}</span>
+                                                <Show when={service.memory_limit_mb}>
+                                                    <span>{service.memory_limit_mb}mb</span>
+                                                </Show>
+                                                <Show when={service.depends_on.length > 0}>
+                                                    <span>→ {service.depends_on.join(', ')}</span>
+                                                </Show>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </For>
+                        </div>
+                    </div>
+                </Show>
 
                 {/* logs panel */}
                 <Show when={showLogs()}>

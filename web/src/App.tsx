@@ -9,6 +9,8 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const AppDetail = lazy(() => import('./pages/AppDetail'));
 const NewApp = lazy(() => import('./pages/NewApp'));
 const Settings = lazy(() => import('./pages/Settings'));
+const Databases = lazy(() => import('./pages/Databases'));
+const Storage = lazy(() => import('./pages/Storage'));
 
 const App: Component = () => {
     return (
@@ -19,6 +21,8 @@ const App: Component = () => {
                 <Route path="/" component={Dashboard} />
                 <Route path="/apps/new" component={NewApp} />
                 <Route path="/apps/:id" component={AppDetail} />
+                <Route path="/databases" component={Databases} />
+                <Route path="/storage" component={Storage} />
                 <Route path="/settings" component={Settings} />
             </Route>
         </Suspense>
@@ -26,4 +30,5 @@ const App: Component = () => {
 };
 
 export default App;
+
 

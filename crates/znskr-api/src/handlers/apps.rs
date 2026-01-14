@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
-use znskr_common::models::{App, EnvVar};
+use znskr_common::models::{App, ContainerService, EnvVar, HealthCheck, RestartPolicy};
 
 /// create app request
 #[derive(Debug, Deserialize, ToSchema)]
@@ -25,10 +25,12 @@ pub struct CreateAppRequest {
     pub branch: Option<String>,
     /// custom domain
     pub domain: Option<String>,
-    /// port for the app
+    /// port for the app (deprecated, use services)
     pub port: Option<u16>,
-    /// environment variables
+    /// environment variables (shared across all services)
     pub env_vars: Option<Vec<EnvVarRequest>>,
+    /// container services for multi-container apps
+    pub services: Option<Vec<ServiceRequest>>,
 }
 
 /// env var in request
@@ -53,6 +55,65 @@ pub struct EnvVarResponse {
     pub secret: bool,
 }
 
+/// health check configuration request
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct HealthCheckRequest {
+    /// http path to check
+    pub path: String,
+    /// interval in seconds
+    pub interval_secs: Option<u32>,
+    /// timeout in seconds
+    pub timeout_secs: Option<u32>,
+    /// retries before unhealthy
+    pub retries: Option<u32>,
+}
+
+/// service request for multi-container apps
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ServiceRequest {
+    /// service name (e.g. "web", "api", "db")
+    pub name: String,
+    /// docker image (empty = use built image)
+    pub image: Option<String>,
+    /// container port
+    pub port: u16,
+    /// number of replicas
+    pub replicas: Option<u32>,
+    /// memory limit in mb
+    pub memory_limit_mb: Option<u64>,
+    /// cpu limit (1.0 = 1 core)
+    pub cpu_limit: Option<f64>,
+    /// service names this depends on
+    pub depends_on: Option<Vec<String>>,
+    /// health check config
+    pub health_check: Option<HealthCheckRequest>,
+    /// restart policy
+    pub restart_policy: Option<String>,
+}
+
+/// service response for multi-container apps
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ServiceResponse {
+    /// service id
+    pub id: String,
+    /// service name
+    pub name: String,
+    /// docker image
+    pub image: String,
+    /// container port
+    pub port: u16,
+    /// number of replicas
+    pub replicas: u32,
+    /// memory limit in mb
+    pub memory_limit_mb: Option<u64>,
+    /// cpu limit
+    pub cpu_limit: Option<f64>,
+    /// dependencies
+    pub depends_on: Vec<String>,
+    /// restart policy
+    pub restart_policy: String,
+}
+
 /// update app request
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateAppRequest {
@@ -64,10 +125,12 @@ pub struct UpdateAppRequest {
     pub branch: Option<String>,
     /// new domain
     pub domain: Option<String>,
-    /// new port
+    /// new port (deprecated, use services)
     pub port: Option<u16>,
     /// updated env vars
     pub env_vars: Option<Vec<EnvVarRequest>>,
+    /// updated services
+    pub services: Option<Vec<ServiceRequest>>,
 }
 
 /// app response
@@ -83,10 +146,12 @@ pub struct AppResponse {
     pub branch: String,
     /// custom domain
     pub domain: Option<String>,
-    /// app port
+    /// app port (deprecated)
     pub port: u16,
     /// environment variables
     pub env_vars: Vec<EnvVarResponse>,
+    /// container services
+    pub services: Vec<ServiceResponse>,
     /// creation timestamp
     pub created_at: String,
 }
@@ -105,13 +170,27 @@ impl From<&App> for AppResponse {
                 .iter()
                 .map(|e| EnvVarResponse {
                     key: e.key.clone(),
-                    // Hide secret values
                     value: if e.secret {
                         "********".to_string()
                     } else {
                         e.value.clone()
                     },
                     secret: e.secret,
+                })
+                .collect(),
+            services: app
+                .services
+                .iter()
+                .map(|s| ServiceResponse {
+                    id: s.id.to_string(),
+                    name: s.name.clone(),
+                    image: s.image.clone(),
+                    port: s.port,
+                    replicas: s.replicas,
+                    memory_limit_mb: s.memory_limit.map(|m| m / (1024 * 1024)),
+                    cpu_limit: s.cpu_limit,
+                    depends_on: s.depends_on.clone(),
+                    restart_policy: format!("{:?}", s.restart_policy).to_lowercase(),
                 })
                 .collect(),
             created_at: app.created_at.to_rfc3339(),
@@ -249,6 +328,41 @@ pub async fn create_app(
                 key: e.key,
                 value: e.value,
                 secret: e.secret.unwrap_or(false),
+            })
+            .collect();
+    }
+
+    // process services for multi-container apps
+    if let Some(services) = req.services {
+        app.services = services
+            .into_iter()
+            .map(|s| {
+                let mut service = ContainerService::new(
+                    app.id,
+                    s.name,
+                    s.image.unwrap_or_default(),
+                    s.port,
+                );
+                service.replicas = s.replicas.unwrap_or(1);
+                service.memory_limit = s.memory_limit_mb.map(|m| m * 1024 * 1024);
+                service.cpu_limit = s.cpu_limit;
+                service.depends_on = s.depends_on.unwrap_or_default();
+                if let Some(hc) = s.health_check {
+                    service.health_check = Some(HealthCheck {
+                        path: hc.path,
+                        interval_secs: hc.interval_secs.unwrap_or(30),
+                        timeout_secs: hc.timeout_secs.unwrap_or(5),
+                        retries: hc.retries.unwrap_or(3),
+                    });
+                }
+                if let Some(rp) = s.restart_policy {
+                    service.restart_policy = match rp.to_lowercase().as_str() {
+                        "never" | "no" => RestartPolicy::Never,
+                        "onfailure" | "on-failure" => RestartPolicy::OnFailure,
+                        _ => RestartPolicy::Always,
+                    };
+                }
+                service
             })
             .collect();
     }
