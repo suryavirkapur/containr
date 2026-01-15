@@ -1,0 +1,14 @@
+current context:
+- added acme request worker triggered by tls certificate misses
+- proxy now queues certificate issuance when no cert is found
+
+pending tasks:
+- none
+
+important decisions:
+- acme issuance is triggered on first https request and deduped per domain
+- acme requires config.acme.email to be set, otherwise it is disabled
+
+architectural notes:
+- acme manager runs on tokio runtime and serves http-01 via shared challenge store
+- pingora tls callback only queues issuance to avoid blocking handshake path

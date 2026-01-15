@@ -5,10 +5,11 @@
 //! - deployment worker (docker)
 //! - reverse proxy (pingora)
 
-use clap::Parser;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use tracing::{info, Level};
+
+use clap::Parser;
+use tracing::{info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
 use znskr_common::{Config, Database};
@@ -90,6 +91,85 @@ async fn main() -> anyhow::Result<()> {
     // Load existing routes from database
     load_routes_from_db(&db, &routes, config.proxy.load_balance);
 
+    let (cert_request_tx, mut cert_request_rx) =
+        tokio::sync::mpsc::channel::<String>(64);
+    let acme_email = config.acme.email.clone();
+    let acme_staging = config.acme.staging;
+    let acme_certs_dir = PathBuf::from(config.acme.certs_dir.clone());
+    let acme_base_domain = config.proxy.base_domain.clone();
+    let acme_db = db.clone();
+    let acme_challenges = challenges.clone();
+    tokio::spawn(async move {
+        let acme_enabled = !acme_email.is_empty();
+        let acme_manager = if acme_enabled {
+            Some(znskr_proxy::acme::AcmeManager::new(
+                acme_db,
+                acme_certs_dir,
+                acme_email,
+                acme_staging,
+                acme_challenges,
+            ))
+        } else {
+            None
+        };
+        let mut in_flight = HashSet::new();
+        let mut blocked = HashSet::new();
+        let mut logged_disabled = false;
+
+        while let Some(domain) = cert_request_rx.recv().await {
+            if domain.is_empty() {
+                continue;
+            }
+
+            let manager = match &acme_manager {
+                Some(manager) => manager,
+                None => {
+                    if !logged_disabled {
+                        warn!("acme disabled: email not set");
+                        logged_disabled = true;
+                    }
+                    continue;
+                }
+            };
+
+            let allowed = match acme_db.get_app_by_domain(&domain) {
+                Ok(Some(_)) => true,
+                Ok(None) => domain == acme_base_domain,
+                Err(error) => {
+                    warn!(
+                        domain = %domain,
+                        error = %error,
+                        "failed to check domain for acme issuance"
+                    );
+                    false
+                }
+            };
+            if !allowed {
+                if !blocked.contains(&domain) {
+                    warn!(domain = %domain, "skipping acme issuance for unknown domain");
+                    blocked.insert(domain.clone());
+                }
+                continue;
+            }
+
+            if in_flight.contains(&domain) {
+                continue;
+            }
+
+            in_flight.insert(domain.clone());
+
+            if let Err(error) = manager.ensure_certificate(&domain).await {
+                warn!(
+                    domain = %domain,
+                    error = %error,
+                    "certificate issuance failed"
+                );
+            }
+
+            in_flight.remove(&domain);
+        }
+    });
+
     // start pingora proxy server in background thread
     // pingora has its own runtime so we run it in a separate thread
     let proxy_routes = routes.clone();
@@ -97,6 +177,7 @@ async fn main() -> anyhow::Result<()> {
     let http_port = config.proxy.http_port;
     let https_port = config.proxy.https_port;
     let certs_dir = PathBuf::from(config.acme.certs_dir.clone());
+    let cert_request_tx = Some(cert_request_tx);
 
     std::thread::spawn(move || {
         let server = znskr_proxy::pingora_proxy::create_proxy_server(
@@ -105,6 +186,7 @@ async fn main() -> anyhow::Result<()> {
             http_port,
             https_port,
             certs_dir,
+            cert_request_tx,
         );
         match server {
             Ok(server) => server.run_forever(),

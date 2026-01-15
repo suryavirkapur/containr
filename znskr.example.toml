@@ -19,6 +19,8 @@ http_port = 80
 https_port = 443
 # base domain for apps (apps accessible at appname.base_domain)
 base_domain = "example.com"
+# server public ip for dns validation (optional, required for custom domains)
+public_ip = ""
 # load balancing strategy: round_robin, least_connections, random
 load_balance = "round_robin"
 
