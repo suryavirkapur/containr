@@ -4,6 +4,7 @@
 //! Supports dynamic routing, ACME challenges, TLS termination,
 //! WebSocket upgrades, gRPC (HTTP/2), and Server-Sent Events.
 
+use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -266,9 +267,22 @@ impl ProxyHttp for ZnskrProxy {
             .as_ref()
             .ok_or_else(|| Error::explain(ErrorType::InternalError, "no upstream configured"))?;
 
+        let mut resolved = addr
+            .to_socket_addrs()
+            .map_err(|error| {
+                Error::explain(
+                    ErrorType::InternalError,
+                    format!("failed to resolve upstream address: {}", error),
+                )
+            })?;
+
+        let socket_addr = resolved.next().ok_or_else(|| {
+            Error::explain(ErrorType::InternalError, "no upstream address resolved")
+        })?;
+
         // Create peer - Pingora handles HTTP/1.1 upgrade for WebSocket
         // and HTTP/2 for gRPC automatically based on negotiation
-        let mut peer = HttpPeer::new(addr, false, String::new());
+        let mut peer = HttpPeer::new(socket_addr, false, String::new());
 
         // For gRPC, prefer HTTP/2
         if ctx.is_grpc {

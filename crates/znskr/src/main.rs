@@ -103,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
         let acme_enabled = !acme_email.is_empty();
         let acme_manager = if acme_enabled {
             Some(znskr_proxy::acme::AcmeManager::new(
-                acme_db,
+                acme_db.clone(),
                 acme_certs_dir,
                 acme_email,
                 acme_staging,
