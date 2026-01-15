@@ -178,6 +178,9 @@ async fn main() -> anyhow::Result<()> {
     let https_port = config.proxy.https_port;
     let certs_dir = PathBuf::from(config.acme.certs_dir.clone());
     let cert_request_tx = Some(cert_request_tx);
+    let base_domain = config.proxy.base_domain.clone();
+    let api_host = resolve_api_host(&config.server.host);
+    let api_upstream = format!("{}:{}", api_host, config.server.port);
 
     std::thread::spawn(move || {
         let server = znskr_proxy::pingora_proxy::create_proxy_server(
@@ -187,6 +190,8 @@ async fn main() -> anyhow::Result<()> {
             https_port,
             certs_dir,
             cert_request_tx,
+            base_domain,
+            api_upstream,
         );
         match server {
             Ok(server) => server.run_forever(),
@@ -492,4 +497,14 @@ fn get_container_ip(container_name: &str, network_name: &str) -> Option<String> 
     }
 
     None
+}
+
+fn resolve_api_host(host: &str) -> String {
+    if host == "0.0.0.0" {
+        return "127.0.0.1".to_string();
+    }
+    if host == "::" {
+        return "::1".to_string();
+    }
+    host.to_string()
 }

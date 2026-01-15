@@ -44,14 +44,23 @@ pub struct ProxyCtx {
 pub struct ZnskrProxy {
     routes: Arc<RouteManager>,
     challenges: Arc<ChallengeStore>,
+    base_domain: String,
+    api_upstream: String,
 }
 
 impl ZnskrProxy {
     /// Creates a new pingora proxy
-    pub fn new(routes: RouteManager, challenges: ChallengeStore) -> Self {
+    pub fn new(
+        routes: RouteManager,
+        challenges: ChallengeStore,
+        base_domain: String,
+        api_upstream: String,
+    ) -> Self {
         Self {
             routes: Arc::new(routes),
             challenges: Arc::new(challenges),
+            base_domain,
+            api_upstream,
         }
     }
 }
@@ -190,6 +199,12 @@ impl ProxyHttp for ZnskrProxy {
 
                 return Ok(true); // Request handled, don't forward
             }
+        }
+
+        if host == self.base_domain && path.starts_with("/api") {
+            ctx.upstream_addr = Some(self.api_upstream.clone());
+            ctx.upstream_selection = None;
+            return Ok(false);
         }
 
         // Find route for this host
@@ -352,11 +367,13 @@ pub fn create_proxy_server(
     https_port: u16,
     certs_dir: PathBuf,
     cert_request_tx: Option<mpsc::Sender<String>>,
+    base_domain: String,
+    api_upstream: String,
 ) -> anyhow::Result<Server> {
     let mut server = Server::new(None).unwrap();
     server.bootstrap();
 
-    let proxy = ZnskrProxy::new(routes, challenges);
+    let proxy = ZnskrProxy::new(routes, challenges, base_domain, api_upstream);
 
     let mut proxy_service = pingora_proxy::http_proxy_service(&server.configuration, proxy);
 

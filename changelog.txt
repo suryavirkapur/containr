@@ -5,6 +5,7 @@ changelog
 - trigger acme issuance when tls certs are missing
 - add acme request worker with in-flight dedupe
 - avoid upstream resolution panics in proxy
+- route base domain api requests to the api server
 
 0.1.0-alpha - 2026-01-15
 ------------------------

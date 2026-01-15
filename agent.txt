@@ -2,6 +2,7 @@ current context:
 - added acme request worker triggered by tls certificate misses
 - proxy now queues certificate issuance when no cert is found
 - proxy resolves upstream socket addresses to avoid pingora panics
+- base domain /api requests now route to the api server
 
 pending tasks:
 - none
@@ -14,3 +15,4 @@ architectural notes:
 - acme manager runs on tokio runtime and serves http-01 via shared challenge store
 - pingora tls callback only queues issuance to avoid blocking handshake path
 - upstream resolution errors return a proxy error instead of panicking
+- api upstream uses loopback when config host is 0.0.0.0 or ::
