@@ -1,34 +1,176 @@
-# Repository Guidelines
+# znskr agent guidelines
 
-## Project Structure & Module Organization
-- `crates/` contains the Rust workspace modules: `znskr` (main binary), `znskr-api`, `znskr-proxy`, `znskr-runtime`, and shared code in `znskr-common`.
-- `web/` hosts the SolidJS dashboard (Vite + Tailwind) and its static assets.
-- `data/` is runtime storage (database, certificates); don’t commit real data.
-- `znskr.toml` is the main config file; use `znskr.example.json` for app payload examples.
+## project structure
 
-## Build, Test, and Development Commands
-- `cargo build --release`: builds the Rust binaries for production.
-- `sudo ./target/release/znskr`: runs the server on ports 80/443 (root required).
-- `./target/release/znskr --http-port 8080 --https-port 8443 --api-port 3000`: runs with custom ports.
-- `cd web && bun install`: installs frontend dependencies.
-- `cd web && bun dev`: runs the dashboard locally.
-- `cd web && bun build`: builds the frontend assets.
+rust monorepo with solidjs frontend.
 
-## Coding Style & Naming Conventions
-- Rust: 4-space indentation, `snake_case` for functions/modules, `CamelCase` for types. Prefer small, focused modules in `crates/*/src`.
-- Frontend: 4-space indentation, `PascalCase` for components, `camelCase` for props/utilities. Keep UI components in `web/src/components` and pages in `web/src/pages`.
-- Format Rust with `cargo fmt` (no custom `rustfmt` config is present).
+- `crates/znskr` - main binary
+- `crates/znskr-api` - axum api server
+- `crates/znskr-runtime` - docker container management
+- `crates/znskr-proxy` - pingora reverse proxy
+- `crates/znskr-common` - shared types and database
+- `web/` - solidjs frontend
+- `data/` - runtime storage (database, certs); don't commit
+- `znskr.toml` - main config file
+- `znskr.example.json` - app payload examples
 
-## Testing Guidelines
-- Run Rust tests with `cargo test` at the workspace root.
-- Tests currently live in module-level `#[cfg(test)]` blocks (e.g., `crates/znskr-common/src/encryption.rs`); follow that pattern for new unit tests.
-- No dedicated frontend test runner is configured; call out manual UI verification in PRs when relevant.
+## build commands
 
-## Commit & Pull Request Guidelines
-- Commit messages follow Conventional Commits (e.g., `feat: ...`, `fix: ...`, `chore: ...`).
-- PRs should include: a concise summary, testing notes (commands run), and screenshots/gifs for UI changes.
-- Link related issues or describe the motivation if no issue exists.
+```bash
+cargo build                      # debug build
+cargo build --release            # release build
+cargo run                        # run binary
+cargo check                      # type check only
 
-## Security & Configuration Tips
-- Do not commit secrets; set real values in `znskr.toml` locally.
-- Keep `jwt_secret`, GitHub OAuth secrets, and ACME email out of version control.
+cd web && bun install            # install deps (use bun, not npm)
+cd web && bun dev                # dev server port 3001
+cd web && bun build              # production build
+```
+
+## test commands
+
+```bash
+cargo test                       # all tests
+cargo test <name>                # tests matching name
+cargo test --package znskr-api   # specific crate
+cargo test <name> -- --nocapture # single test with output
+```
+
+## lint and format
+
+```bash
+cargo fmt                        # format rust
+cargo fmt -- --check             # check formatting
+cargo clippy                     # lint rust
+bunx prettier --write .          # format typescript
+bunx tsc --noEmit                # type check frontend
+```
+
+## running locally
+
+```bash
+# terminal 1
+cargo run
+
+# terminal 2
+cd web && bun dev
+```
+
+ports: api 3000, http 80, https 443, frontend dev 3001
+
+## rust code style
+
+imports (grouped with blank lines between):
+```rust
+use std::collections::HashMap;
+
+use tokio::sync::mpsc;
+use tracing::{error, info};
+
+use crate::docker::DockerContainerManager;
+use znskr_common::models::App;
+```
+
+naming:
+- structs/enums: PascalCase
+- functions/variables: snake_case
+- constants: SCREAMING_SNAKE_CASE
+
+error handling:
+- thiserror for library errors
+- anyhow for application errors
+- define Result<T> type alias per crate
+
+documentation (essential only, all lowercase):
+```rust
+/// creates a new container with the given config
+pub fn new(config: ContainerConfig) -> Self {
+    // validate port range
+    Self { config }
+}
+```
+
+derives:
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")] // for enums
+```
+
+## typescript code style
+
+framework: solidjs (not react)
+- createSignal for state
+- createResource for data fetching
+- Show/For for conditionals/lists
+- A from @solidjs/router for links
+
+components:
+```typescript
+/** fetches all apps from the api */
+const Dashboard: Component = () => {
+    const [apps] = createResource(fetchApps);
+    return <div>...</div>;
+};
+export default Dashboard;
+```
+
+naming:
+- components: PascalCase
+- functions/variables: camelCase
+- interfaces: PascalCase
+
+documentation (tsdoc, essential only, all lowercase):
+```typescript
+/** handles user authentication */
+{/* inline jsx comment */}
+```
+
+## styling - tailwind css
+
+design: no rounded corners, dark theme, flowbite-inspired
+- all border-radius: 0 (sharp edges)
+- backgrounds: gray-900, gray-950
+- accents: primary-500/600 (indigo)
+- status: green (success), yellow (pending), red (error)
+
+patterns:
+- cards: `bg-gray-900 border border-gray-800 p-6`
+- buttons: `px-4 py-2 bg-primary-600 hover:bg-primary-700`
+
+## configuration
+
+- use toml only (not json, not yaml)
+- config file: znskr.toml
+- always install latest versions from crates.io and npm
+
+key dependencies:
+- rust: tokio, axum, serde, sled, thiserror, anyhow, tracing, pingora
+- frontend: solid-js, @solidjs/router, tailwindcss, bun
+
+## file conventions
+
+- .txt over .md for documentation
+- all content lowercase
+- no emojis
+- toml for configs
+
+## common tasks
+
+add api endpoint:
+1. handler in `crates/znskr-api/src/handlers/`
+2. route in `crates/znskr-api/src/server.rs`
+3. types in `crates/znskr-common/src/models.rs`
+
+add frontend page:
+1. component in `web/src/pages/`
+2. route in `web/src/App.tsx`
+
+## git conventions
+
+- commit messages: lowercase, imperative mood
+- example: "add user authentication endpoint"
+
+## security
+
+- do not commit secrets; set real values in znskr.toml locally
+- keep jwt_secret, github oauth secrets, and acme email out of version control

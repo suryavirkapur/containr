@@ -1,0 +1,65 @@
+changelog
+=========
+
+0.1.0-alpha - 2026-01-15
+------------------------
+
+initial alpha release
+
+core features:
+- docker container deployment from github repositories
+- automatic containerfile/dockerfile detection and building
+- pingora reverse proxy with http/https routing
+- acme/let's encrypt automatic ssl certificates
+- sled embedded database for persistent state
+
+protocol support:
+- websocket passthrough for real-time applications
+- grpc (http/2) passthrough support
+- server-sent events (sse) streaming support
+
+multi-container apps:
+- container services with replica scaling
+- service dependencies (depends_on)
+- health checks with configurable intervals
+- restart policies (never, always, onfailure)
+- memory and cpu limits per service
+
+environment and secrets:
+- environment variables per app
+- secret masking (values hidden in api responses)
+- encrypted storage for sensitive values
+
+managed services:
+- managed databases (postgres, mysql, redis)
+- managed queues (redis, rabbitmq)
+- storage buckets
+
+dashboard:
+- solidjs dashboard with dark theme
+- real-time container logs via websocket
+- deployment history and status
+- certificate management ui
+
+authentication:
+- jwt-based authentication
+- github oauth integration
+- user registration and login
+
+api:
+- restful api for all operations
+- openapi documentation at /api/docs
+- webhook support for github push events
+
+documentation:
+- docs/quickstart.txt: 5-minute quickstart guide
+- docs/architecture.txt: system architecture overview
+- docs/api-reference.txt: complete api documentation
+- docs/configuration.txt: detailed config options
+- docs/deployment-guide.txt: production deployment guide
+- docs/troubleshooting.txt: common issues and solutions
+
+known limitations:
+- linux x86_64 only
+- requires root for ports 80/443 (or use custom ports)
+- acme staging mode recommended for testing

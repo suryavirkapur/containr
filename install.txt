@@ -1,180 +1,286 @@
-# znskr installation guide
+installation
+============
 
-a rust-native paas for deploying docker containers with automatic ssl.
+znskr is a rust-native paas for deploying docker containers with automatic ssl.
 
----
+requirements
+------------
 
-## installation from cargo
-
-```bash
-cargo install --git https://github.com/suryavirkapur/znskr-paas znskr
-```
-
-### with specific version/tag
-
-```bash
-cargo install --git https://github.com/suryavirkapur/znskr-paas --tag v0.1.0 znskr
-```
-
-### from local clone
-
-```bash
-git clone https://github.com/suryavirkapur/znskr-paas.git
-cd znskr-paas
-cargo install --path crates/znskr
-```
-
----
-
-## requirements
-
+- linux x86_64
 - rust 1.75+ (install via https://rustup.rs)
 - docker (containerd runtime)
-- bun (for frontend, optional if using pre-built binary)
+- bun (for frontend, optional for binary-only install)
+- openssl (for generating secrets)
 
----
+quick install
+-------------
 
-## post-install configuration
+  cargo install --git https://github.com/suryavirkapur/znskr-paas znskr
+  ./install.sh
+  sudo znskr
 
-1. generate a config file with secure secrets using the install script:
+detailed installation
+---------------------
 
-```bash
-./install.sh
-```
+option 1: install from cargo (recommended)
 
-this will create `znskr.toml` with randomized secrets and set up `./data/certs`.
+  cargo install --git https://github.com/suryavirkapur/znskr-paas znskr
 
-2. or create the config file `znskr.toml` manually:
+with specific version/tag:
 
-```toml
-[server]
-host = "0.0.0.0"
-port = 3000
+  cargo install --git https://github.com/suryavirkapur/znskr-paas --tag v0.1.0 znskr
 
-[database]
-path = "./data/znskr.db"
+option 2: build from source
 
-[proxy]
-http_port = 80
-https_port = 443
-base_domain = "your-domain.com"
+  git clone https://github.com/suryavirkapur/znskr-paas.git
+  cd znskr-paas
+  cargo build --release
+  sudo cp target/release/znskr /usr/local/bin/
 
-[github]
-client_id = "your-github-oauth-client-id"
-client_secret = "your-github-oauth-client-secret"
-webhook_secret = "your-webhook-secret"
+option 3: install to cargo bin
 
-[auth]
-jwt_secret = "generate-a-secure-secret-here"
-jwt_expiry_hours = 24
+  git clone https://github.com/suryavirkapur/znskr-paas.git
+  cd znskr-paas
+  cargo install --path crates/znskr
 
-[security]
-encryption_key = "generate-a-secure-encryption-key"
+post-install configuration
+--------------------------
 
-[acme]
-email = "you@example.com"
-certs_dir = "./data/certs"
-staging = false
+option 1: use install script (recommended)
 
-[storage]
-data_dir = "/data/znskr"
-max_volume_size_gb = 10
-backup_enabled = false
-rustfs_endpoint = "http://localhost:9000"
-```
+  ./install.sh
 
-3. create required directories:
+this creates znskr.toml with randomized secrets and creates ./data/certs directory.
 
-```bash
-mkdir -p ./data/certs
-```
+option 2: create config manually
 
----
+  cat > znskr.toml << 'EOF'
+  [server]
+  host = "0.0.0.0"
+  port = 3000
 
-## running
+  [database]
+  path = "./data/znskr.db"
 
-### with default ports (requires root for 80/443)
+  [proxy]
+  http_port = 80
+  https_port = 443
+  base_domain = "your-domain.com"
 
-```bash
-sudo znskr
-```
+  [github]
+  client_id = ""
+  client_secret = ""
+  webhook_secret = ""
 
-### with custom ports (no root required)
+  [auth]
+  jwt_secret = "$(openssl rand -hex 32)"
+  jwt_expiry_hours = 24
 
-```bash
-znskr --http-port 8080 --https-port 8443 --api-port 3000
-```
+  [security]
+  encryption_key = "$(openssl rand -hex 32)"
 
----
+  [acme]
+  email = "you@example.com"
+  certs_dir = "./data/certs"
+  staging = true
 
-## systemd service (optional)
+  [storage]
+  data_dir = "/data/znskr"
+  max_volume_size_gb = 10
+  backup_enabled = false
+  rustfs_endpoint = "http://localhost:9000"
+  EOF
 
-create `/etc/systemd/system/znskr.service`:
+  mkdir -p ./data/certs
 
-```ini
-[unit]
-description=znskr paas
-after=network.target docker.service
-requires=docker.service
+running
+-------
 
-[service]
-type=simple
-user=root
-workingdirectory=/opt/znskr
-execstart=/usr/local/cargo/bin/znskr
-restart=always
-environment=rust_log=info
+with default ports (requires root for 80/443):
 
-[install]
-wantedby=multi-user.target
-```
+  sudo znskr
 
-then enable and start:
+with custom ports (no root required):
 
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable znskr
-sudo systemctl start znskr
-```
+  znskr --http-port 8080 --https-port 8443 --api-port 3000
 
----
+command line options:
 
-## verify installation
+  --config <path>      config file path (default: znskr.toml)
+  --http-port <port>   http proxy port (default: 80)
+  --https-port <port>  https proxy port (default: 443)
+  --api-port <port>    api server port (default: 3000)
+  --version            print version
+  --help               print help
 
-```bash
-# check version
-znskr --version
+frontend development
+--------------------
 
-# check if running
-curl http://localhost:3000/api/health
-```
+the frontend is optional for deployment but required for development:
 
----
+  cd web
+  bun install
+  bun dev
 
-## dns setup
+for production build:
+
+  cd web
+  bun build
+
+systemd service
+---------------
+
+create /etc/systemd/system/znskr.service:
+
+  [unit]
+  description=znskr paas
+  after=network.target docker.service
+  requires=docker.service
+
+  [service]
+  type=simple
+  user=root
+  workingdirectory=/opt/znskr
+  execstart=/usr/local/bin/znskr
+  restart=always
+  restartsec=5
+  environment=rust_log=info
+
+  [install]
+  wantedby=multi-user.target
+
+enable and start:
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable znskr
+  sudo systemctl start znskr
+
+view logs:
+
+  sudo journalctl -u znskr -f
+
+docker install (alternative)
+----------------------------
+
+build docker image:
+
+  docker build -t znskr .
+
+run with docker:
+
+  docker run -d \
+    --name znskr \
+    --restart unless-stopped \
+    -p 80:80 \
+    -p 443:443 \
+    -p 3000:3000 \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v $(pwd)/data:/app/data \
+    -v $(pwd)/znskr.toml:/app/znskr.toml:ro \
+    znskr
+
+docker compose:
+
+  version: '3.8'
+  services:
+    znskr:
+      build: .
+      restart: unless-stopped
+      ports:
+        - "80:80"
+        - "443:443"
+        - "3000:3000"
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - ./data:/app/data
+        - ./znskr.toml:/app/znskr.toml:ro
+
+verify installation
+-------------------
+
+check version:
+
+  znskr --version
+
+check health:
+
+  curl http://localhost:3000/health
+
+expected response:
+
+  {"status":"ok"}
+
+access dashboard:
+
+  open http://localhost:3000
+
+dns setup
+---------
 
 point your base domain and wildcard to your server:
 
-```
-your-domain.com     A     your-server-ip
-*.your-domain.com   A     your-server-ip
-```
+  your-domain.com     A     your-server-ip
+  *.your-domain.com   A     your-server-ip
 
-apps will be accessible at `app-name.your-domain.com`.
+or for testing with /etc/hosts:
 
----
+  127.0.0.1  your-domain.com
+  127.0.0.1  app1.your-domain.com
+  127.0.0.1  app2.your-domain.com
 
-## troubleshooting
+github oauth setup
+------------------
 
-### port 80/443 permission denied
-run with sudo or use custom non-privileged ports (8080/8443).
+1. go to github settings > developer settings > oauth apps
+2. create new oauth app:
+   - application name: znskr
+   - homepage url: https://your-domain.com
+   - callback url: https://your-domain.com/api/auth/github/callback
+3. copy client id and client secret to znskr.toml
 
-### docker not found
-ensure docker is installed and the user is in the docker group:
-```bash
-sudo usermod -ag docker $user
-```
+github webhooks setup
+---------------------
 
-### ssl certificate errors
-set `staging = true` in `[acme]` section for testing.
-use `staging = false` for production certificates.
+for automatic deployments on push:
+
+1. go to your repo settings > webhooks
+2. add webhook:
+   - payload url: https://your-domain.com/webhooks/github
+   - content type: application/json
+   - secret: same as webhook_secret in znskr.toml
+   - events: just the push event
+3. test with a push to your repo
+
+troubleshooting
+---------------
+
+permission denied on port 80/443:
+  run with sudo or use custom ports:
+    znskr --http-port 8080 --https-port 8443
+
+docker not found:
+  install docker and add user to docker group:
+    sudo usermod -aG docker $USER
+
+config file not found:
+  run install.sh or create znskr.toml manually
+
+ssl certificate errors:
+  set staging = true for testing
+  ensure dns is configured correctly
+  check acme email is valid
+
+database errors:
+  ensure ./data directory exists and is writable
+
+more help:
+  see docs/troubleshooting.txt
+
+next steps
+----------
+
+1. create your first user at http://localhost:3000
+2. connect your github account
+3. deploy your first app
+
+see docs/quickstart.txt for a guided walkthrough.

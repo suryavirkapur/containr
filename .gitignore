@@ -1,10 +1,10 @@
 # znskr build artifacts
 /target/
 
-# data directory
+# data directory (runtime storage)
 /data/
 
-# config with secrets
+# config with secrets (znskr.toml may contain secrets, commit znskr.example.toml instead)
 znskr.json
 
 # ide
@@ -12,8 +12,19 @@ znskr.json
 .vscode/
 *.swp
 *.swo
+*~
 
 # macos
 .DS_Store
-node_modules
-web/dist
+
+# frontend
+node_modules/
+web/dist/
+web/node_modules/
+
+# logs
+*.log
+
+# temporary files
+*.tmp
+*.bak

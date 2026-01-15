@@ -1,0 +1,346 @@
+znskr production deployment guide
+===================================
+
+this guide covers deploying znskr to a production environment.
+
+--------------------------------------------------------------------------------
+system requirements
+--------------------------------------------------------------------------------
+
+minimum:
+    - 2 cpu cores
+    - 2gb ram
+    - 20gb disk
+    - linux (kernel 4.18+)
+
+recommended:
+    - 4+ cpu cores
+    - 8gb+ ram
+    - 100gb+ ssd
+    - ubuntu 22.04 or debian 12
+
+required software:
+    - docker 24.0+
+    - docker compose v2 (optional)
+
+--------------------------------------------------------------------------------
+vps deployment
+--------------------------------------------------------------------------------
+
+step 1: prepare the server
+
+    # update system
+    apt update && apt upgrade -y
+
+    # install docker
+    curl -fsSL https://get.docker.com | sh
+    systemctl enable docker
+    systemctl start docker
+
+    # add user to docker group (logout/login after)
+    usermod -aG docker $USER
+
+step 2: install znskr
+
+    # download latest release
+    curl -fsSL https://github.com/suryavirkapur/znskr-paas/releases/latest/download/znskr-linux-amd64.tar.gz | tar xz
+    mv znskr /usr/local/bin/
+
+    # create directories
+    mkdir -p /etc/znskr
+    mkdir -p /var/lib/znskr/{data,certs}
+
+step 3: configure znskr
+
+    # create config file
+    cat > /etc/znskr/znskr.toml << 'EOF'
+    [server]
+    host = "0.0.0.0"
+    port = 3000
+
+    [database]
+    path = "/var/lib/znskr/znskr.db"
+
+    [proxy]
+    http_port = 80
+    https_port = 443
+    base_domain = "your-domain.com"
+    public_ip = "YOUR_SERVER_IP"
+    load_balance = "round_robin"
+
+    [github]
+    client_id = "YOUR_GITHUB_CLIENT_ID"
+    client_secret = "YOUR_GITHUB_CLIENT_SECRET"
+    webhook_secret = "YOUR_WEBHOOK_SECRET"
+
+    [auth]
+    jwt_secret = "YOUR_JWT_SECRET"
+    jwt_expiry_hours = 24
+
+    [security]
+    encryption_key = "YOUR_ENCRYPTION_KEY"
+
+    [acme]
+    email = "admin@your-domain.com"
+    certs_dir = "/var/lib/znskr/certs"
+    staging = false
+
+    [storage]
+    data_dir = "/var/lib/znskr/data"
+    max_volume_size_gb = 20
+    backup_enabled = false
+    rustfs_endpoint = "http://localhost:9000"
+    EOF
+
+    # generate secrets
+    sed -i "s/YOUR_JWT_SECRET/$(openssl rand -hex 32)/" /etc/znskr/znskr.toml
+    sed -i "s/YOUR_ENCRYPTION_KEY/$(openssl rand -hex 32)/" /etc/znskr/znskr.toml
+    sed -i "s/YOUR_WEBHOOK_SECRET/$(openssl rand -hex 32)/" /etc/znskr/znskr.toml
+    sed -i "s/YOUR_SERVER_IP/$(curl -s ifconfig.me)/" /etc/znskr/znskr.toml
+
+step 4: configure dns
+
+    point your domain to the server ip:
+
+    a record: your-domain.com -> YOUR_SERVER_IP
+    a record: *.your-domain.com -> YOUR_SERVER_IP
+
+    verify:
+    dig your-domain.com +short
+    dig test.your-domain.com +short
+
+step 5: configure firewall
+
+    # ufw
+    ufw allow 22/tcp   # ssh
+    ufw allow 80/tcp   # http
+    ufw allow 443/tcp  # https
+    ufw enable
+
+    # or iptables
+    iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+    iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+    iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+
+--------------------------------------------------------------------------------
+systemd service
+--------------------------------------------------------------------------------
+
+create /etc/systemd/system/znskr.service:
+
+    [Unit]
+    Description=znskr paas
+    After=network.target docker.service
+    Requires=docker.service
+
+    [Service]
+    Type=simple
+    User=root
+    ExecStart=/usr/local/bin/znskr --config /etc/znskr/znskr.toml
+    Restart=always
+    RestartSec=5
+    StandardOutput=journal
+    StandardError=journal
+
+    # security hardening
+    NoNewPrivileges=true
+    ProtectSystem=strict
+    ProtectHome=true
+    ReadWritePaths=/var/lib/znskr
+
+    [Install]
+    WantedBy=multi-user.target
+
+enable and start:
+
+    systemctl daemon-reload
+    systemctl enable znskr
+    systemctl start znskr
+
+check status:
+
+    systemctl status znskr
+    journalctl -u znskr -f
+
+--------------------------------------------------------------------------------
+docker deployment
+--------------------------------------------------------------------------------
+
+create docker-compose.yml:
+
+    version: "3.8"
+
+    services:
+      znskr:
+        image: ghcr.io/suryavirkapur/znskr:latest
+        container_name: znskr
+        restart: always
+        network_mode: host
+        volumes:
+          - /etc/znskr/znskr.toml:/etc/znskr/znskr.toml:ro
+          - /var/lib/znskr:/var/lib/znskr
+          - /var/run/docker.sock:/var/run/docker.sock
+        command: --config /etc/znskr/znskr.toml
+
+start:
+
+    docker compose up -d
+
+note: network_mode: host is required for znskr to communicate with
+containers on the docker bridge network and bind to ports 80/443.
+
+--------------------------------------------------------------------------------
+reverse proxy setup (optional)
+--------------------------------------------------------------------------------
+
+if running behind another reverse proxy (nginx, caddy, traefik):
+
+nginx example:
+
+    # /etc/nginx/sites-available/znskr
+    server {
+        listen 80;
+        server_name your-domain.com *.your-domain.com;
+
+        location / {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+
+in this setup, configure znskr proxy ports to non-standard values:
+
+    [proxy]
+    http_port = 8080
+    https_port = 8443
+
+and let nginx handle ssl termination.
+
+--------------------------------------------------------------------------------
+ssl certificates
+--------------------------------------------------------------------------------
+
+znskr handles ssl automatically via let's encrypt.
+
+first-time setup:
+    1. ensure dns is configured correctly
+    2. set acme.staging = true first
+    3. start znskr and verify http works
+    4. access https to trigger certificate issuance
+    5. check logs for acme errors
+    6. once working, set acme.staging = false
+    7. delete staging certificates: rm -rf /var/lib/znskr/certs/*
+    8. restart znskr to get production certificates
+
+certificate renewal:
+    - certificates auto-renew when expiring within 30 days
+    - renewal happens on next https request to the domain
+    - check certificate status via api or logs
+
+manual reissue:
+    curl -X POST https://your-domain.com/api/settings/certificate \
+      -H "authorization: bearer YOUR_TOKEN"
+
+--------------------------------------------------------------------------------
+monitoring
+--------------------------------------------------------------------------------
+
+health check endpoint:
+
+    curl http://localhost:3000/health
+
+prometheus metrics (planned for future release)
+
+log analysis:
+
+    # view recent logs
+    journalctl -u znskr --since "1 hour ago"
+
+    # follow logs
+    journalctl -u znskr -f
+
+    # filter errors
+    journalctl -u znskr | grep -i error
+
+--------------------------------------------------------------------------------
+backup and restore
+--------------------------------------------------------------------------------
+
+backup:
+
+    # stop znskr
+    systemctl stop znskr
+
+    # backup database
+    tar czf znskr-backup-$(date +%Y%m%d).tar.gz /var/lib/znskr
+
+    # start znskr
+    systemctl start znskr
+
+restore:
+
+    systemctl stop znskr
+    tar xzf znskr-backup-20240115.tar.gz -C /
+    systemctl start znskr
+
+automate with cron:
+
+    # /etc/cron.d/znskr-backup
+    0 3 * * * root tar czf /backups/znskr-$(date +\%Y\%m\%d).tar.gz /var/lib/znskr
+
+--------------------------------------------------------------------------------
+updating znskr
+--------------------------------------------------------------------------------
+
+binary update:
+
+    systemctl stop znskr
+    curl -fsSL https://github.com/suryavirkapur/znskr-paas/releases/latest/download/znskr-linux-amd64.tar.gz | tar xz
+    mv znskr /usr/local/bin/
+    systemctl start znskr
+
+docker update:
+
+    docker compose pull
+    docker compose up -d
+
+always backup before updating.
+
+--------------------------------------------------------------------------------
+security hardening
+--------------------------------------------------------------------------------
+
+1. use strong secrets:
+    - jwt_secret: 32+ random bytes
+    - encryption_key: 32 bytes (64 hex chars)
+    - webhook_secret: 32+ random bytes
+
+2. restrict api access:
+    - bind api to 127.0.0.1 if behind proxy
+    - use firewall to limit access
+
+3. regular updates:
+    - keep znskr updated
+    - update docker regularly
+    - update os packages
+
+4. monitor logs:
+    - watch for authentication failures
+    - monitor for unusual activity
+
+5. backup strategy:
+    - regular automated backups
+    - test restore procedures
+    - offsite backup storage
+
+--------------------------------------------------------------------------------
+troubleshooting
+--------------------------------------------------------------------------------
+
+see troubleshooting.txt for common issues and solutions.

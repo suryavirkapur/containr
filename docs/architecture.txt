@@ -1,0 +1,221 @@
+znskr architecture overview
+===========================
+
+znskr is a rust-native platform-as-a-service designed for simplicity and performance.
+
+system components
+-----------------
+
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                         znskr binary                            │
+    │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
+    │  │  api server │  │ proxy layer │  │    deployment worker    │  │
+    │  │   (axum)    │  │  (pingora)  │  │   (docker + buildkit)   │  │
+    │  └──────┬──────┘  └──────┬──────┘  └────────────┬────────────┘  │
+    │         │                │                      │               │
+    │         └────────────────┼──────────────────────┘               │
+    │                          │                                      │
+    │                   ┌──────┴──────┐                               │
+    │                   │    sled     │                               │
+    │                   │  database   │                               │
+    │                   └─────────────┘                               │
+    └─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                        docker daemon                            │
+    │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
+    │  │  app        │  │  database   │  │    queue containers     │  │
+    │  │ containers  │  │ containers  │  │   (rabbitmq, nats)      │  │
+    │  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
+    └─────────────────────────────────────────────────────────────────┘
+
+crate structure
+---------------
+
+crates/znskr
+    main binary entry point. orchestrates all components.
+
+crates/znskr-api
+    axum-based rest api server.
+    - authentication (jwt, github oauth)
+    - app/deployment management
+    - managed services (databases, queues, storage)
+    - websocket endpoints for real-time logs
+
+crates/znskr-proxy
+    pingora-based reverse proxy.
+    - http/https termination
+    - automatic ssl via acme/let's encrypt
+    - websocket passthrough
+    - grpc support
+    - sse (server-sent events) passthrough
+    - load balancing (round robin, least connections)
+
+crates/znskr-runtime
+    docker container management.
+    - container lifecycle (create, start, stop, remove)
+    - image building via buildkit
+    - stats collection (cpu, memory)
+    - managed database containers (postgresql, mariadb, valkey, qdrant)
+    - managed queue containers (rabbitmq, nats)
+
+crates/znskr-common
+    shared types and utilities.
+    - data models (app, deployment, user, etc.)
+    - configuration structs
+    - sled database wrapper
+    - managed service models
+
+request flow
+------------
+
+http request lifecycle:
+
+    client
+      │
+      ▼
+    pingora proxy (port 80/443)
+      │
+      ├─→ acme challenge path (.well-known/acme-challenge)
+      │     → serves challenge response
+      │
+      ├─→ api request (base_domain)
+      │     → forwards to api server (localhost:3000)
+      │
+      └─→ app request (app subdomain)
+            → forwards to app container (localhost:dynamic_port)
+
+deployment flow
+---------------
+
+    1. user triggers deployment (api or webhook)
+           │
+           ▼
+    2. deployment job queued
+           │
+           ▼
+    3. clone repository from github
+           │
+           ▼
+    4. build docker image
+           │
+           ▼
+    5. stop old container (if exists)
+           │
+           ▼
+    6. start new container
+           │
+           ▼
+    7. update proxy routes
+           │
+           ▼
+    8. issue ssl certificate (if needed)
+           │
+           ▼
+    9. deployment complete
+
+database layer
+--------------
+
+znskr uses sled, an embedded key-value database:
+
+    - zero configuration required
+    - acid transactions
+    - automatic compaction
+    - no external dependencies
+
+data stored:
+    - users (authentication)
+    - apps (configuration)
+    - deployments (history and logs)
+    - certificates (ssl/tls)
+    - managed databases metadata
+    - managed queues metadata
+    - storage buckets metadata
+
+proxy layer
+-----------
+
+pingora provides high-performance proxying:
+
+    ssl termination
+        - automatic certificate issuance via acme
+        - certificate caching in sled
+        - auto-renewal before expiry
+
+    routing
+        - domain-based routing to containers
+        - health checks for upstream containers
+        - connection pooling
+
+    protocol support
+        - http/1.1 and http/2
+        - websocket upgrade
+        - grpc passthrough
+        - sse streaming
+
+    load balancing
+        - round robin (default)
+        - least connections
+
+multi-container apps
+--------------------
+
+apps can define multiple services:
+
+    app
+    ├── web (main service, receives traffic)
+    ├── api (internal service)
+    ├── worker (background jobs)
+    └── db (sidecar database)
+
+services communicate via docker network using service names.
+
+managed services
+----------------
+
+built-in managed database containers:
+    - postgresql (default: postgres:16-alpine)
+    - mariadb (default: mariadb:11)
+    - valkey (redis-compatible, default: valkey/valkey:8)
+    - qdrant (vector database, default: qdrant/qdrant:v1.13)
+
+built-in managed queue containers:
+    - rabbitmq (default: rabbitmq:4-management-alpine)
+    - nats (default: nats:2-alpine)
+
+s3-compatible object storage:
+    - integrates with rustfs or any s3-compatible endpoint
+    - per-user access keys and buckets
+
+security model
+--------------
+
+authentication
+    - jwt tokens for api access
+    - github oauth for user login
+    - bcrypt password hashing
+
+authorization
+    - resource ownership (user owns apps, databases, etc.)
+    - bearer token required for all mutating operations
+
+secrets
+    - env vars marked as secret are encrypted at rest
+    - aes-256-gcm encryption with configurable key
+    - secrets masked in api responses
+
+data directory structure
+------------------------
+
+    /var/lib/znskr/
+    ├── znskr.db/           # sled database
+    ├── certs/              # acme certificates
+    └── data/
+        ├── databases/      # managed database volumes
+        │   └── {uuid}/
+        │       └── data/
+        └── queues/         # managed queue volumes
+            └── {uuid}/
+                └── data/

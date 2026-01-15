@@ -1,0 +1,297 @@
+znskr configuration reference
+==============================
+
+znskr uses toml for configuration. default location: znskr.toml
+
+--------------------------------------------------------------------------------
+server section
+--------------------------------------------------------------------------------
+
+[server]
+host = "0.0.0.0"     # api server bind address
+port = 3000          # api server port
+
+options:
+    host (string)
+        ip address to bind the api server.
+        default: "0.0.0.0" (all interfaces)
+        use "127.0.0.1" to restrict to localhost only.
+
+    port (u16)
+        port for the api server.
+        default: 3000
+        the dashboard and api are served on this port.
+
+--------------------------------------------------------------------------------
+database section
+--------------------------------------------------------------------------------
+
+[database]
+path = "./data/znskr.db"
+
+options:
+    path (string)
+        path to sled database directory.
+        default: "./data/znskr.db"
+        can be absolute or relative to working directory.
+        directory is created automatically if it doesn't exist.
+
+--------------------------------------------------------------------------------
+proxy section
+--------------------------------------------------------------------------------
+
+[proxy]
+http_port = 80
+https_port = 443
+base_domain = "example.com"
+public_ip = "203.0.113.1"
+load_balance = "round_robin"
+
+options:
+    http_port (u16)
+        port for http traffic.
+        default: 80
+        used for acme challenges and http-to-https redirects.
+
+    https_port (u16)
+        port for https traffic.
+        default: 443
+        all application traffic goes through this port.
+
+    base_domain (string)
+        primary domain for the dashboard.
+        required for proper routing.
+        example: "paas.example.com"
+        apps are accessible at: appname.paas.example.com
+
+    public_ip (string, optional)
+        public ip address of the server.
+        used for domain validation (verifies dns points to this ip).
+        required for custom domains to work.
+        example: "203.0.113.1"
+
+    load_balance (string)
+        load balancing algorithm for multi-replica services.
+        default: "round_robin"
+        options:
+            - round_robin: distribute requests evenly
+            - least_connections: prefer least busy container
+
+--------------------------------------------------------------------------------
+github section
+--------------------------------------------------------------------------------
+
+[github]
+client_id = ""
+client_secret = ""
+webhook_secret = ""
+
+options:
+    client_id (string)
+        github oauth application client id.
+        create at: https://github.com/settings/developers
+        required for github login.
+
+    client_secret (string)
+        github oauth application client secret.
+        keep this secret; never commit to version control.
+
+    webhook_secret (string)
+        secret for verifying github webhook signatures.
+        generate with: openssl rand -hex 32
+        configure same value in github repository webhook settings.
+
+setting up github oauth:
+    1. go to github settings > developer settings > oauth apps
+    2. create new oauth app
+    3. set authorization callback url to:
+       https://your-domain.com/api/auth/github/callback
+    4. copy client id and client secret to config
+
+setting up webhooks:
+    1. go to repository settings > webhooks
+    2. add webhook with url: https://your-domain.com/webhooks/github
+    3. set content type to application/json
+    4. set secret to match webhook_secret in config
+    5. select "just the push event" or specific events
+
+--------------------------------------------------------------------------------
+auth section
+--------------------------------------------------------------------------------
+
+[auth]
+jwt_secret = "change-me-in-production"
+jwt_expiry_hours = 24
+
+options:
+    jwt_secret (string)
+        secret key for signing jwt tokens.
+        must be at least 32 characters for security.
+        generate with: openssl rand -hex 32
+        never commit to version control.
+
+    jwt_expiry_hours (u64)
+        token expiration time in hours.
+        default: 24
+        users must re-authenticate after this period.
+
+--------------------------------------------------------------------------------
+security section
+--------------------------------------------------------------------------------
+
+[security]
+encryption_key = ""
+
+options:
+    encryption_key (string)
+        key for encrypting sensitive data at rest.
+        used for: secret env vars, github tokens, storage credentials.
+        must be 32 bytes (64 hex characters) for aes-256-gcm.
+        generate with: openssl rand -hex 32
+        if empty, falls back to jwt_secret (not recommended).
+        never commit to version control.
+
+--------------------------------------------------------------------------------
+acme section
+--------------------------------------------------------------------------------
+
+[acme]
+email = "admin@example.com"
+certs_dir = "./data/certs"
+staging = true
+
+options:
+    email (string)
+        email for let's encrypt account.
+        receives expiration warnings and important notices.
+        required for certificate issuance.
+
+    certs_dir (string)
+        directory for storing acme account and certificates.
+        default: "./data/certs"
+        can be absolute or relative.
+
+    staging (bool)
+        use let's encrypt staging environment.
+        default: true
+        set to false for production certificates.
+        staging has higher rate limits but issues untrusted certs.
+
+rate limits (production):
+    - 50 certificates per registered domain per week
+    - 5 duplicate certificates per week
+    - 300 new orders per account per 3 hours
+
+--------------------------------------------------------------------------------
+storage section
+--------------------------------------------------------------------------------
+
+[storage]
+data_dir = "/data/znskr"
+max_volume_size_gb = 10
+backup_enabled = false
+rustfs_endpoint = "http://localhost:9000"
+
+options:
+    data_dir (string)
+        base directory for managed service data.
+        default: "/data/znskr"
+        structure:
+            {data_dir}/databases/{uuid}/data/
+            {data_dir}/queues/{uuid}/data/
+
+    max_volume_size_gb (u32)
+        maximum volume size per database in gigabytes.
+        default: 10
+        set to 0 for unlimited.
+
+    backup_enabled (bool)
+        enable automatic backups for managed services.
+        default: false
+        not yet implemented in alpha.
+
+    rustfs_endpoint (string)
+        s3-compatible endpoint for object storage.
+        default: "http://localhost:9000"
+        used for storage buckets feature.
+
+--------------------------------------------------------------------------------
+complete example
+--------------------------------------------------------------------------------
+
+# znskr.toml - production configuration
+
+[server]
+host = "0.0.0.0"
+port = 3000
+
+[database]
+path = "/var/lib/znskr/znskr.db"
+
+[proxy]
+http_port = 80
+https_port = 443
+base_domain = "paas.example.com"
+public_ip = "203.0.113.1"
+load_balance = "round_robin"
+
+[github]
+client_id = "your_github_client_id"
+client_secret = "your_github_client_secret"
+webhook_secret = "your_webhook_secret"
+
+[auth]
+jwt_secret = "your_secure_jwt_secret_at_least_32_chars"
+jwt_expiry_hours = 24
+
+[security]
+encryption_key = "your_32_byte_hex_encryption_key_64_chars"
+
+[acme]
+email = "admin@example.com"
+certs_dir = "/var/lib/znskr/certs"
+staging = false
+
+[storage]
+data_dir = "/var/lib/znskr/data"
+max_volume_size_gb = 20
+backup_enabled = false
+rustfs_endpoint = "http://localhost:9000"
+
+--------------------------------------------------------------------------------
+environment variables
+--------------------------------------------------------------------------------
+
+znskr does not currently read environment variables for configuration.
+all settings must be in the toml file.
+
+for containerized deployments, mount the config file:
+    docker run -v /path/to/znskr.toml:/etc/znskr/znskr.toml znskr
+
+--------------------------------------------------------------------------------
+hot reload
+--------------------------------------------------------------------------------
+
+some settings can be changed via the api without restart:
+    - base_domain
+    - acme_email
+    - acme_staging
+
+changes to other settings require restart.
+
+the settings api persists changes back to the toml file.
+
+--------------------------------------------------------------------------------
+generating secrets
+--------------------------------------------------------------------------------
+
+jwt_secret:
+    openssl rand -hex 32
+
+encryption_key:
+    openssl rand -hex 32
+
+webhook_secret:
+    openssl rand -hex 32
+
+all secrets should be unique and never shared between environments.

@@ -1,0 +1,387 @@
+znskr troubleshooting guide
+============================
+
+common issues and solutions for znskr.
+
+--------------------------------------------------------------------------------
+startup issues
+--------------------------------------------------------------------------------
+
+problem: znskr fails to start with "address already in use"
+
+    cause: another process is using port 80, 443, or 3000.
+
+    solution:
+        # find what's using the port
+        ss -tlnp | grep :80
+        ss -tlnp | grep :443
+        ss -tlnp | grep :3000
+
+        # stop conflicting service
+        systemctl stop nginx
+        systemctl stop apache2
+
+        # or change ports in config
+        [proxy]
+        http_port = 8080
+        https_port = 8443
+
+problem: znskr fails with "permission denied" on ports 80/443
+
+    cause: non-root user cannot bind to privileged ports.
+
+    solutions:
+        1. run as root (not recommended for production)
+        2. use setcap:
+           setcap 'cap_net_bind_service=+ep' /usr/local/bin/znskr
+        3. use ports above 1024 and put a proxy in front
+
+problem: znskr can't connect to docker
+
+    cause: docker socket permissions or docker not running.
+
+    solution:
+        # check docker is running
+        systemctl status docker
+
+        # check socket permissions
+        ls -la /var/run/docker.sock
+
+        # add user to docker group
+        usermod -aG docker $USER
+        # logout and login again
+
+        # or run znskr as root
+
+--------------------------------------------------------------------------------
+deployment issues
+--------------------------------------------------------------------------------
+
+problem: deployment stuck on "cloning"
+
+    cause: github repository inaccessible or rate limited.
+
+    solutions:
+        1. verify repository url is correct and public
+        2. for private repos, ensure github oauth is configured
+        3. check github status: https://githubstatus.com
+        4. wait for rate limit reset
+
+problem: deployment fails with "dockerfile not found"
+
+    cause: no dockerfile in repository root.
+
+    solution:
+        add a dockerfile to your repository root.
+
+        example for node.js:
+            FROM node:20-alpine
+            WORKDIR /app
+            COPY package*.json ./
+            RUN npm ci --only=production
+            COPY . .
+            EXPOSE 3000
+            CMD ["npm", "start"]
+
+problem: deployment fails during build
+
+    cause: dockerfile build errors.
+
+    solutions:
+        1. check deployment logs for specific error
+        2. test dockerfile locally: docker build .
+        3. common issues:
+           - missing dependencies in base image
+           - incorrect copy paths
+           - failed npm/yarn/pip install
+
+problem: container starts but app is unreachable
+
+    causes:
+        1. app not listening on expected port
+        2. app listening on localhost only
+        3. healthcheck failing
+
+    solutions:
+        1. verify port in app matches port in znskr config
+        2. ensure app binds to 0.0.0.0, not 127.0.0.1
+        3. check container logs:
+           docker logs znskr-<app-id>
+
+--------------------------------------------------------------------------------
+proxy and ssl issues
+--------------------------------------------------------------------------------
+
+problem: ssl certificate not issued
+
+    causes:
+        1. dns not pointing to server
+        2. port 80 blocked
+        3. rate limited by let's encrypt
+
+    solutions:
+        1. verify dns:
+           dig your-domain.com +short
+           # should return your server ip
+
+        2. verify port 80 accessible:
+           curl http://your-domain.com/.well-known/acme-challenge/test
+           # should return 404, not connection refused
+
+        3. check logs for acme errors:
+           journalctl -u znskr | grep -i acme
+
+        4. if rate limited, wait or use staging:
+           [acme]
+           staging = true
+
+problem: "certificate is not trusted" browser warning
+
+    cause: using acme staging environment.
+
+    solution:
+        set staging = false in config and restart.
+        delete old certificates:
+            rm -rf /var/lib/znskr/certs/*
+
+problem: websocket connections fail
+
+    cause: proxy not forwarding upgrade headers.
+
+    solutions:
+        1. if behind nginx/apache, ensure websocket proxy config
+        2. check browser console for specific error
+        3. verify websocket endpoint works:
+           wscat -c wss://your-domain.com/api/apps/<id>/logs/ws
+
+problem: grpc connections fail
+
+    cause: http/2 not enabled or proxy interfering.
+
+    solutions:
+        1. ensure https is being used (grpc requires tls)
+        2. if behind another proxy, ensure it supports http/2
+        3. check grpc client is using correct port
+
+--------------------------------------------------------------------------------
+database issues
+--------------------------------------------------------------------------------
+
+problem: sled database corruption
+
+    symptoms: crashes on startup, data missing
+
+    solution:
+        1. stop znskr
+        2. remove corrupted database:
+           rm -rf /var/lib/znskr/znskr.db
+        3. restart znskr (creates fresh database)
+        4. restore from backup if available
+
+    prevention:
+        - ensure clean shutdown (systemctl stop)
+        - avoid killing with sigkill
+        - regular backups
+
+problem: managed database won't start
+
+    causes:
+        1. docker image pull failed
+        2. port conflict
+        3. insufficient disk space
+
+    solutions:
+        1. check docker logs:
+           docker logs znskr-db-<id>
+
+        2. verify image exists:
+           docker images | grep postgres
+
+        3. check disk space:
+           df -h
+
+        4. manually pull image:
+           docker pull postgres:16-alpine
+
+problem: can't connect to managed database from app
+
+    cause: network or credentials issue.
+
+    solution:
+        1. ensure containers on same docker network
+        2. use internal hostname from database details:
+           host: znskr-db-<uuid>
+        3. verify credentials match connection string
+        4. test from container:
+           docker exec znskr-<app> ping znskr-db-<uuid>
+
+--------------------------------------------------------------------------------
+authentication issues
+--------------------------------------------------------------------------------
+
+problem: "invalid credentials" when logging in
+
+    solutions:
+        1. verify email and password
+        2. check if account uses github login instead
+        3. reset password via register (same email updates account)
+
+problem: github oauth fails
+
+    causes:
+        1. incorrect client_id or client_secret
+        2. wrong callback url in github app settings
+
+    solutions:
+        1. verify github oauth app settings
+        2. callback url must be:
+           https://your-domain.com/api/auth/github/callback
+        3. ensure client_id and client_secret match config
+
+problem: jwt token expired
+
+    solution:
+        login again to get new token.
+        increase jwt_expiry_hours if needed.
+
+--------------------------------------------------------------------------------
+performance issues
+--------------------------------------------------------------------------------
+
+problem: high cpu usage
+
+    causes:
+        1. too many concurrent deployments
+        2. runaway container
+        3. proxy under heavy load
+
+    solutions:
+        1. limit concurrent deployments
+        2. check container cpu usage:
+           docker stats
+        3. add cpu limits to apps
+
+problem: high memory usage
+
+    solutions:
+        1. set memory limits on containers
+        2. reduce number of concurrent apps
+        3. check for memory leaks in apps:
+           docker stats
+
+problem: slow deployments
+
+    causes:
+        1. large docker images
+        2. slow internet for pulling images
+        3. slow disk
+
+    solutions:
+        1. use smaller base images (alpine)
+        2. use multi-stage builds
+        3. cache dependencies layer in dockerfile
+
+--------------------------------------------------------------------------------
+container issues
+--------------------------------------------------------------------------------
+
+problem: container keeps restarting
+
+    causes:
+        1. app crashes on startup
+        2. healthcheck failing
+        3. out of memory
+
+    solutions:
+        1. check container logs:
+           docker logs znskr-<app-id>
+        2. check exit code:
+           docker inspect znskr-<app-id> --format='{{.State.ExitCode}}'
+        3. increase memory limit
+
+problem: can't view container files
+
+    cause: volume not mounted or incorrect path.
+
+    solution:
+        1. list container mounts:
+           curl /api/containers/<id>/mounts
+        2. use correct mount destination in query
+        3. check volume exists on host
+
+--------------------------------------------------------------------------------
+network issues
+--------------------------------------------------------------------------------
+
+problem: containers can't reach internet
+
+    cause: docker network or dns issue.
+
+    solutions:
+        1. check docker network:
+           docker network ls
+        2. test dns in container:
+           docker exec <container> nslookup google.com
+        3. restart docker:
+           systemctl restart docker
+
+problem: custom domain not working
+
+    causes:
+        1. dns not configured
+        2. domain validation failed
+        3. certificate not issued
+
+    solutions:
+        1. verify dns:
+           dig custom-domain.com +short
+           # should show your server ip or cname
+
+        2. verify domain in app config points to
+           either a/cname to your base domain
+
+        3. check certificate status via api
+
+--------------------------------------------------------------------------------
+logs and debugging
+--------------------------------------------------------------------------------
+
+view znskr logs:
+
+    journalctl -u znskr -f
+
+view specific container logs:
+
+    docker logs znskr-<app-id> --tail 100 -f
+
+view all container logs:
+
+    docker logs $(docker ps -q) 2>&1
+
+check system resources:
+
+    htop
+    docker stats
+    df -h
+
+check network connectivity:
+
+    curl -v https://your-domain.com
+    openssl s_client -connect your-domain.com:443
+
+--------------------------------------------------------------------------------
+getting help
+--------------------------------------------------------------------------------
+
+1. check logs first:
+   journalctl -u znskr | tail -100
+
+2. search existing issues:
+   https://github.com/suryavirkapur/znskr-paas/issues
+
+3. open new issue with:
+   - znskr version
+   - os and docker version
+   - relevant config (redact secrets)
+   - full error messages
+   - steps to reproduce

@@ -1,0 +1,171 @@
+znskr quickstart guide
+======================
+
+get znskr running in 5 minutes.
+
+prerequisites
+-------------
+- linux server (ubuntu 22.04+ recommended)
+- docker installed and running
+- domain name pointing to your server
+- ports 80 and 443 open
+
+step 1: install znskr
+---------------------
+
+download and extract:
+
+    curl -fsSL https://github.com/suryavirkapur/znskr-paas/releases/latest/download/znskr-linux-amd64.tar.gz | tar xz
+    sudo mv znskr /usr/local/bin/
+
+or build from source:
+
+    git clone https://github.com/suryavirkapur/znskr-paas.git
+    cd znskr-paas
+    cargo build --release
+    sudo cp target/release/znskr /usr/local/bin/
+
+step 2: configure
+-----------------
+
+create configuration file:
+
+    mkdir -p /etc/znskr
+    cat > /etc/znskr/znskr.toml << 'EOF'
+    [server]
+    host = "0.0.0.0"
+    port = 3000
+
+    [database]
+    path = "/var/lib/znskr/znskr.db"
+
+    [proxy]
+    http_port = 80
+    https_port = 443
+    base_domain = "your-domain.com"
+    public_ip = "YOUR_SERVER_IP"
+
+    [github]
+    client_id = ""
+    client_secret = ""
+    webhook_secret = ""
+
+    [auth]
+    jwt_secret = "generate-a-secure-random-string-here"
+    jwt_expiry_hours = 24
+
+    [acme]
+    email = "admin@your-domain.com"
+    certs_dir = "/var/lib/znskr/certs"
+    staging = false
+
+    [storage]
+    data_dir = "/var/lib/znskr/data"
+    max_volume_size_gb = 10
+    backup_enabled = false
+    rustfs_endpoint = "http://localhost:9000"
+    EOF
+
+replace:
+- your-domain.com with your actual domain
+- YOUR_SERVER_IP with your server's public ip
+- generate a secure jwt_secret (use: openssl rand -hex 32)
+
+step 3: create data directories
+-------------------------------
+
+    sudo mkdir -p /var/lib/znskr/{data,certs}
+
+step 4: start znskr
+-------------------
+
+    znskr --config /etc/znskr/znskr.toml
+
+znskr starts three components:
+- api server on port 3000
+- http proxy on port 80
+- https proxy on port 443
+
+step 5: create your account
+---------------------------
+
+register via api:
+
+    curl -X POST http://localhost:3000/api/auth/register \
+      -H "content-type: application/json" \
+      -d '{"email": "admin@example.com", "password": "your-password"}'
+
+response contains your jwt token.
+
+step 6: deploy your first app
+-----------------------------
+
+create an app:
+
+    curl -X POST http://localhost:3000/api/apps \
+      -H "content-type: application/json" \
+      -H "authorization: bearer YOUR_JWT_TOKEN" \
+      -d '{
+        "name": "my-app",
+        "github_url": "https://github.com/user/repo",
+        "branch": "main",
+        "domain": "app.your-domain.com",
+        "port": 3000
+      }'
+
+trigger deployment:
+
+    curl -X POST http://localhost:3000/api/apps/APP_ID/deployments \
+      -H "authorization: bearer YOUR_JWT_TOKEN"
+
+your app is now deploying. check status:
+
+    curl http://localhost:3000/api/apps/APP_ID/deployments \
+      -H "authorization: bearer YOUR_JWT_TOKEN"
+
+step 7: access dashboard
+------------------------
+
+open https://your-domain.com in your browser.
+
+login with your credentials to manage apps through the web interface.
+
+next steps
+----------
+
+- see configuration.txt for all config options
+- see api-reference.txt for complete api documentation
+- see deployment-guide.txt for production setup
+- set up github oauth for one-click deployments
+- configure webhooks for automatic deployments on push
+
+common dockerfile requirements
+------------------------------
+
+your repository needs a dockerfile. example for a node.js app:
+
+    FROM node:20-alpine
+    WORKDIR /app
+    COPY package*.json ./
+    RUN npm ci --only=production
+    COPY . .
+    EXPOSE 3000
+    CMD ["npm", "start"]
+
+znskr builds and runs this container automatically.
+
+environment variables
+---------------------
+
+set env vars when creating the app:
+
+    {
+      "name": "my-app",
+      "github_url": "https://github.com/user/repo",
+      "env_vars": [
+        {"key": "NODE_ENV", "value": "production"},
+        {"key": "DATABASE_URL", "value": "postgres://...", "secret": true}
+      ]
+    }
+
+secret env vars are encrypted at rest and masked in api responses.

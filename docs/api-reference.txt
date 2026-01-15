@@ -1,0 +1,643 @@
+znskr api reference
+===================
+
+base url: https://your-domain.com/api
+
+all endpoints except auth require bearer token authentication:
+    authorization: bearer <jwt_token>
+
+interactive api docs available at: /api/docs
+
+--------------------------------------------------------------------------------
+authentication
+--------------------------------------------------------------------------------
+
+post /api/auth/register
+    register a new user account.
+
+    request:
+        {
+            "email": "user@example.com",
+            "password": "min8characters"
+        }
+
+    response (200):
+        {
+            "token": "jwt.token.here",
+            "user": {
+                "id": "uuid",
+                "email": "user@example.com",
+                "github_username": null
+            }
+        }
+
+    errors:
+        400 - password must be at least 8 characters
+        409 - email already registered
+
+post /api/auth/login
+    login with email and password.
+
+    request:
+        {
+            "email": "user@example.com",
+            "password": "yourpassword"
+        }
+
+    response (200):
+        {
+            "token": "jwt.token.here",
+            "user": {
+                "id": "uuid",
+                "email": "user@example.com",
+                "github_username": "username"
+            }
+        }
+
+    errors:
+        401 - invalid credentials
+        401 - this account uses github login
+
+get /api/auth/github
+    start github oauth flow. redirects to github authorization page.
+
+    response (302): redirect to github oauth
+
+get /api/auth/github/callback
+    github oauth callback. called by github after authorization.
+
+    query parameters:
+        code - authorization code from github
+        state - csrf state token
+
+    response (200):
+        {
+            "token": "jwt.token.here",
+            "user": {
+                "id": "uuid",
+                "email": "user@example.com",
+                "github_username": "username"
+            }
+        }
+
+    errors:
+        400 - invalid oauth code or state
+
+--------------------------------------------------------------------------------
+settings
+--------------------------------------------------------------------------------
+
+get /api/settings
+    get current server settings.
+
+    response (200):
+        {
+            "base_domain": "example.com",
+            "http_port": 80,
+            "https_port": 443,
+            "acme_email": "admin@example.com",
+            "acme_staging": false
+        }
+
+put /api/settings
+    update server settings.
+
+    request:
+        {
+            "base_domain": "newdomain.com",
+            "acme_email": "admin@newdomain.com",
+            "acme_staging": false
+        }
+
+    all fields are optional.
+
+    response (200): updated settings object
+
+post /api/settings/certificate
+    request new ssl certificate for dashboard domain.
+
+    response (200):
+        {
+            "message": "certificate issuance initiated...",
+            "domain": "example.com"
+        }
+
+    errors:
+        400 - no base domain configured
+
+--------------------------------------------------------------------------------
+apps
+--------------------------------------------------------------------------------
+
+get /api/apps
+    list all apps owned by the authenticated user.
+
+    response (200):
+        [
+            {
+                "id": "uuid",
+                "name": "my-app",
+                "github_url": "https://github.com/user/repo",
+                "branch": "main",
+                "domain": "app.example.com",
+                "port": 3000,
+                "env_vars": [
+                    {"key": "NODE_ENV", "value": "production", "secret": false},
+                    {"key": "API_KEY", "value": "********", "secret": true}
+                ],
+                "services": [],
+                "created_at": "2024-01-15t10:30:00z"
+            }
+        ]
+
+post /api/apps
+    create a new app.
+
+    request:
+        {
+            "name": "my-app",
+            "github_url": "https://github.com/user/repo",
+            "branch": "main",
+            "domain": "app.example.com",
+            "port": 3000,
+            "env_vars": [
+                {"key": "NODE_ENV", "value": "production", "secret": false}
+            ],
+            "services": [
+                {
+                    "name": "web",
+                    "image": "",
+                    "port": 3000,
+                    "replicas": 1,
+                    "memory_limit_mb": 512,
+                    "cpu_limit": 1.0,
+                    "depends_on": [],
+                    "health_check": {
+                        "path": "/health",
+                        "interval_secs": 30,
+                        "timeout_secs": 5,
+                        "retries": 3
+                    },
+                    "restart_policy": "always"
+                }
+            ]
+        }
+
+    required: name, github_url
+    optional: branch (default: main), domain, port, env_vars, services
+
+    response (201): app object
+
+    errors:
+        400 - domain validation failed
+        409 - domain already in use
+
+get /api/apps/{id}
+    get a single app by id.
+
+    response (200): app object
+
+    errors:
+        403 - access denied
+        404 - app not found
+
+put /api/apps/{id}
+    update an app.
+
+    request: same as create, all fields optional
+
+    response (200): updated app object
+
+    errors:
+        403 - access denied
+        404 - app not found
+        409 - domain already in use
+
+delete /api/apps/{id}
+    delete an app and its containers.
+
+    response (204): no content
+
+    errors:
+        403 - access denied
+        404 - app not found
+
+get /api/apps/{id}/metrics
+    get container metrics for an app.
+
+    response (200):
+        [
+            {
+                "container": "znskr-abc123-web",
+                "cpu_percent": 5.2,
+                "mem_usage_bytes": 134217728,
+                "mem_limit_bytes": 536870912
+            }
+        ]
+
+--------------------------------------------------------------------------------
+deployments
+--------------------------------------------------------------------------------
+
+get /api/apps/{id}/deployments
+    list all deployments for an app.
+
+    response (200):
+        [
+            {
+                "id": "uuid",
+                "app_id": "uuid",
+                "commit_sha": "abc123",
+                "commit_message": "fix: bug",
+                "status": "running",
+                "container_id": "abc123",
+                "created_at": "2024-01-15t10:30:00z",
+                "started_at": "2024-01-15t10:30:05z",
+                "finished_at": "2024-01-15t10:31:00z"
+            }
+        ]
+
+    status values: pending, cloning, building, pushing, starting, running, failed, stopped
+
+post /api/apps/{id}/deployments
+    trigger a new deployment.
+
+    request: empty body
+
+    response (201): deployment object
+
+get /api/apps/{app_id}/deployments/{id}
+    get a single deployment.
+
+    response (200): deployment object
+
+get /api/apps/{app_id}/deployments/{id}/logs
+    get deployment build logs.
+
+    response (200):
+        ["cloning repository...", "building image...", "starting container..."]
+
+--------------------------------------------------------------------------------
+certificates
+--------------------------------------------------------------------------------
+
+get /api/apps/{id}/certificate
+    get ssl certificate status for an app.
+
+    response (200):
+        {
+            "domain": "app.example.com",
+            "status": "valid",
+            "expires_at": "2024-04-15t00:00:00z"
+        }
+
+    status values: none, pending, valid, expiring_soon, expired, failed
+
+post /api/apps/{id}/certificate/reissue
+    force reissue ssl certificate for an app.
+
+    response (200):
+        {
+            "message": "certificate reissue initiated",
+            "domain": "app.example.com"
+        }
+
+--------------------------------------------------------------------------------
+websocket logs
+--------------------------------------------------------------------------------
+
+get /api/apps/{id}/logs/ws
+    stream container logs via websocket.
+
+    upgrade to websocket connection. receives log lines as text messages.
+
+get /api/apps/{app_id}/deployments/{id}/logs/ws
+    stream deployment logs via websocket.
+
+    upgrade to websocket connection. receives log lines as text messages.
+
+--------------------------------------------------------------------------------
+containers
+--------------------------------------------------------------------------------
+
+get /api/containers
+    list all containers owned by the user.
+
+    response (200):
+        [
+            {
+                "id": "znskr-abc123",
+                "resource_type": "app",
+                "resource_id": "uuid",
+                "name": "my-app"
+            },
+            {
+                "id": "znskr-db-xyz789",
+                "resource_type": "database",
+                "resource_id": "uuid",
+                "name": "my-postgres"
+            }
+        ]
+
+get /api/containers/{id}/status
+    get container status and metrics.
+
+    response (200):
+        {
+            "status": "running",
+            "health_status": "healthy",
+            "started_at": "2024-01-15t10:30:00z",
+            "finished_at": null,
+            "restart_count": 0,
+            "cpu_percent": 5.2,
+            "mem_usage_bytes": 134217728,
+            "mem_limit_bytes": 536870912
+        }
+
+get /api/containers/{id}/logs
+    get container logs.
+
+    query parameters:
+        tail - number of lines to return (default: all)
+
+    response (200):
+        {
+            "logs": "log output here..."
+        }
+
+get /api/containers/{id}/mounts
+    list container mount points.
+
+    response (200):
+        [
+            {
+                "destination": "/var/lib/postgresql/data",
+                "mount_type": "bind",
+                "name": null,
+                "read_only": false
+            }
+        ]
+
+get /api/containers/{id}/files
+    list files in a container volume.
+
+    query parameters:
+        mount - mount destination path (required)
+        path - relative path within mount (optional)
+
+    response (200):
+        [
+            {
+                "name": "data",
+                "path": "data",
+                "is_dir": true,
+                "size_bytes": 0,
+                "modified_at": "2024-01-15t10:30:00z"
+            }
+        ]
+
+delete /api/containers/{id}/files
+    delete a file or directory in a container volume.
+
+    query parameters:
+        mount - mount destination path (required)
+        path - relative path to delete (required)
+
+    response (204): no content
+
+    errors:
+        403 - mount is read-only
+
+get /api/containers/{id}/files/download
+    download a file from a container volume.
+
+    query parameters:
+        mount - mount destination path (required)
+        path - relative path to file (required)
+
+    response (200): file content with content-disposition header
+
+post /api/containers/{id}/files/upload
+    upload files to a container volume.
+
+    query parameters:
+        mount - mount destination path (required)
+        path - relative path to upload directory (optional)
+
+    body: multipart/form-data with file(s)
+
+    response (200): ok
+
+--------------------------------------------------------------------------------
+managed databases
+--------------------------------------------------------------------------------
+
+get /api/databases
+    list all databases owned by the user.
+
+    response (200):
+        [
+            {
+                "id": "uuid",
+                "name": "my-postgres",
+                "db_type": "postgresql",
+                "version": "16",
+                "status": "running",
+                "internal_host": "znskr-db-abc123",
+                "port": 5432,
+                "connection_string": "postgresql://user:pass@znskr-db-abc123:5432/db",
+                "username": "znskr",
+                "memory_limit_mb": 512,
+                "cpu_limit": 1.0,
+                "created_at": "2024-01-15t10:30:00z"
+            }
+        ]
+
+post /api/databases
+    create a new managed database.
+
+    request:
+        {
+            "name": "my-postgres",
+            "db_type": "postgresql",
+            "version": "16",
+            "memory_limit_mb": 512,
+            "cpu_limit": 1.0
+        }
+
+    required: name, db_type
+    supported db_type: postgresql, mariadb, valkey, qdrant
+
+    response (201): database object
+
+get /api/databases/{id}
+    get a single database.
+
+    response (200): database object
+
+delete /api/databases/{id}
+    delete a database and its data.
+
+    response (204): no content
+
+post /api/databases/{id}/start
+    start a stopped database.
+
+    response (200): database object with status "running"
+
+post /api/databases/{id}/stop
+    stop a running database.
+
+    response (200): database object with status "stopped"
+
+--------------------------------------------------------------------------------
+managed queues
+--------------------------------------------------------------------------------
+
+get /api/queues
+    list all queues owned by the user.
+
+    response (200):
+        [
+            {
+                "id": "uuid",
+                "name": "my-rabbitmq",
+                "queue_type": "rabbitmq",
+                "version": "4",
+                "status": "running",
+                "internal_host": "znskr-queue-abc123",
+                "port": 5672,
+                "connection_string": "amqp://user:pass@znskr-queue-abc123:5672",
+                "username": "znskr",
+                "memory_limit_mb": 256,
+                "cpu_limit": 0.5,
+                "created_at": "2024-01-15t10:30:00z"
+            }
+        ]
+
+post /api/queues
+    create a new managed queue.
+
+    request:
+        {
+            "name": "my-rabbitmq",
+            "queue_type": "rabbitmq",
+            "version": "4",
+            "memory_limit_mb": 256,
+            "cpu_limit": 0.5
+        }
+
+    required: name, queue_type
+    supported queue_type: rabbitmq, nats
+
+    response (201): queue object
+
+get /api/queues/{id}
+    get a single queue.
+
+    response (200): queue object
+
+delete /api/queues/{id}
+    delete a queue and its data.
+
+    response (204): no content
+
+post /api/queues/{id}/start
+    start a stopped queue.
+
+    response (200): queue object with status "running"
+
+post /api/queues/{id}/stop
+    stop a running queue.
+
+    response (200): queue object with status "stopped"
+
+--------------------------------------------------------------------------------
+storage buckets
+--------------------------------------------------------------------------------
+
+get /api/buckets
+    list all storage buckets owned by the user.
+
+    response (200):
+        [
+            {
+                "id": "uuid",
+                "name": "my-bucket",
+                "access_key": "access_key_here",
+                "secret_key": "abcd****",
+                "endpoint": "http://localhost:9000",
+                "size_bytes": 1048576,
+                "created_at": "2024-01-15t10:30:00z"
+            }
+        ]
+
+post /api/buckets
+    create a new storage bucket.
+
+    request:
+        {
+            "name": "my-bucket"
+        }
+
+    response (201): bucket object (secret_key shown unmasked only on creation)
+
+get /api/buckets/{id}
+    get a single bucket.
+
+    response (200): bucket object
+
+delete /api/buckets/{id}
+    delete a bucket and its contents.
+
+    response (204): no content
+
+--------------------------------------------------------------------------------
+webhooks
+--------------------------------------------------------------------------------
+
+post /webhooks/github
+    github webhook endpoint for automatic deployments.
+
+    headers:
+        x-hub-signature-256 - hmac signature
+        x-github-event - event type (push, pull_request, etc.)
+
+    body: github webhook payload
+
+    response (200): ok
+
+    configure in github repository settings:
+        payload url: https://your-domain.com/webhooks/github
+        content type: application/json
+        secret: your webhook_secret from config
+
+--------------------------------------------------------------------------------
+health
+--------------------------------------------------------------------------------
+
+get /health
+    health check endpoint.
+
+    response (200):
+        {
+            "status": "ok"
+        }
+
+--------------------------------------------------------------------------------
+error responses
+--------------------------------------------------------------------------------
+
+all errors return json:
+
+    {
+        "error": "error message here"
+    }
+
+common status codes:
+    400 - bad request (invalid input)
+    401 - unauthorized (missing or invalid token)
+    403 - forbidden (not owner of resource)
+    404 - not found
+    409 - conflict (duplicate domain, etc.)
+    500 - internal server error
