@@ -36,7 +36,15 @@ cargo install --path crates/znskr
 
 ## post-install configuration
 
-1. create the config file `znskr.toml` in your working directory:
+1. generate a config file with secure secrets using the install script:
+
+```bash
+./install.sh
+```
+
+this will create `znskr.toml` with randomized secrets and set up `./data/certs`.
+
+2. or create the config file `znskr.toml` manually:
 
 ```toml
 [server]
@@ -60,13 +68,22 @@ webhook_secret = "your-webhook-secret"
 jwt_secret = "generate-a-secure-secret-here"
 jwt_expiry_hours = 24
 
+[security]
+encryption_key = "generate-a-secure-encryption-key"
+
 [acme]
 email = "you@example.com"
 certs_dir = "./data/certs"
 staging = false
+
+[storage]
+data_dir = "/data/znskr"
+max_volume_size_gb = 10
+backup_enabled = false
+rustfs_endpoint = "http://localhost:9000"
 ```
 
-2. create required directories:
+3. create required directories:
 
 ```bash
 mkdir -p ./data/certs
