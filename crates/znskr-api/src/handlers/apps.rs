@@ -6,6 +6,10 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
+use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
+use trust_dns_resolver::proto::rr::RecordType;
+use trust_dns_resolver::TokioAsyncResolver;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -13,6 +17,7 @@ use crate::auth::{extract_bearer_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
 use znskr_common::models::{App, ContainerService, EnvVar, HealthCheck, RestartPolicy};
+use znskr_runtime::DockerContainerManager;
 
 /// create app request
 #[derive(Debug, Deserialize, ToSchema)]
@@ -112,6 +117,15 @@ pub struct ServiceResponse {
     pub depends_on: Vec<String>,
     /// restart policy
     pub restart_policy: String,
+}
+
+/// app container metrics response
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AppMetricsResponse {
+    pub container: String,
+    pub cpu_percent: f64,
+    pub mem_usage_bytes: u64,
+    pub mem_limit_bytes: u64,
 }
 
 /// update app request
@@ -312,6 +326,17 @@ pub async fn create_app(
         }
     }
 
+    if let Some(ref domain) = req.domain {
+        validate_domain(domain, &config.proxy.base_domain, config.proxy.public_ip.as_deref())
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse { error: e }),
+                )
+            })?;
+    }
+
     // create app
     let mut app = App::new(req.name, req.github_url, user_id);
     if let Some(branch) = req.branch {
@@ -420,6 +445,79 @@ pub async fn get_app(
     Ok(Json(AppResponse::from(&app)))
 }
 
+/// get app container metrics
+#[utoipa::path(
+    get,
+    path = "/api/apps/{id}/metrics",
+    tag = "apps",
+    params(("id" = Uuid, Path, description = "app id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "container metrics", body = Vec<AppMetricsResponse>),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "not found", body = ErrorResponse)
+    )
+)]
+pub async fn get_app_metrics(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<AppMetricsResponse>>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+
+    let app = state
+        .db
+        .get_app(id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "app not found".to_string(),
+                }),
+            )
+        })?;
+
+    if app.owner_id != user_id {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "access denied".to_string(),
+            }),
+        ));
+    }
+
+    let output = std::process::Command::new("docker")
+        .args([
+            "ps",
+            "--format",
+            "{{.Names}}",
+            "--filter",
+            &format!("name=znskr-{}", app.id),
+        ])
+        .output()
+        .map_err(|e| internal_error(e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let manager = DockerContainerManager::new();
+    let mut metrics = Vec::new();
+
+    for container in stdout.lines().map(|line| line.trim()).filter(|line| !line.is_empty()) {
+        if let Ok(stats) = manager.get_stats(container).await {
+            metrics.push(AppMetricsResponse {
+                container: container.to_string(),
+                cpu_percent: stats.cpu_percent,
+                mem_usage_bytes: stats.mem_usage_bytes,
+                mem_limit_bytes: stats.mem_limit_bytes,
+            });
+        }
+    }
+
+    Ok(Json(metrics))
+}
+
 /// update an app
 #[utoipa::path(
     put,
@@ -476,6 +574,14 @@ pub async fn update_app(
         app.branch = branch;
     }
     if let Some(domain) = req.domain {
+        validate_domain(&domain, &config.proxy.base_domain, config.proxy.public_ip.as_deref())
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse { error: e }),
+                )
+            })?;
         // check domain uniqueness
         if let Some(existing) = state
             .db
@@ -588,4 +694,49 @@ fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse
             error: "internal server error".to_string(),
         }),
     )
+}
+
+async fn validate_domain(
+    domain: &str,
+    base_domain: &str,
+    public_ip: Option<&str>,
+) -> Result<(), String> {
+    if domain == base_domain {
+        return Err("domain is reserved for the dashboard".to_string());
+    }
+
+    if domain.starts_with("www.") {
+        return Err("www subdomains are not supported".to_string());
+    }
+
+    let public_ip = public_ip
+        .ok_or_else(|| "public_ip must be configured for domain validation".to_string())?;
+    let public_ip: IpAddr = public_ip
+        .parse()
+        .map_err(|_| "public_ip is not a valid IP address".to_string())?;
+
+    let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+
+    if let Ok(lookup) = resolver.lookup_ip(domain).await {
+        if lookup.iter().any(|ip| ip == public_ip) {
+            return Ok(());
+        }
+    }
+
+    let cname_lookup = resolver
+        .lookup(domain, RecordType::CNAME)
+        .await
+        .map_err(|_| "domain does not resolve to required records".to_string())?;
+
+    let suffix = format!(".{}", base_domain.trim_end_matches('.'));
+    for record in cname_lookup.iter() {
+        if let trust_dns_resolver::proto::rr::RData::CNAME(cname) = record {
+            let target = cname.to_utf8();
+            if target.trim_end_matches('.').ends_with(&suffix) {
+                return Ok(());
+            }
+        }
+    }
+
+    Err("domain must have an A record pointing to the public IP or CNAME to the base domain".to_string())
 }

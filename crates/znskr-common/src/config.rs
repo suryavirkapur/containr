@@ -11,6 +11,8 @@ pub struct Config {
     pub proxy: ProxyConfig,
     pub github: GithubConfig,
     pub auth: AuthConfig,
+    #[serde(default)]
+    pub security: SecurityConfig,
     pub acme: AcmeConfig,
     #[serde(default)]
     pub storage: StorageConfig,
@@ -24,6 +26,7 @@ impl Default for Config {
             proxy: ProxyConfig::default(),
             github: GithubConfig::default(),
             auth: AuthConfig::default(),
+            security: SecurityConfig::default(),
             acme: AcmeConfig::default(),
             storage: StorageConfig::default(),
         }
@@ -67,6 +70,8 @@ pub struct ProxyConfig {
     pub https_port: u16,
     pub base_domain: String,
     #[serde(default)]
+    pub public_ip: Option<String>,
+    #[serde(default)]
     pub load_balance: LoadBalanceAlgorithm,
 }
 
@@ -76,6 +81,7 @@ impl Default for ProxyConfig {
             http_port: 80,
             https_port: 443,
             base_domain: "svk77.com".to_string(),
+            public_ip: None,
             load_balance: LoadBalanceAlgorithm::default(),
         }
     }
@@ -129,6 +135,20 @@ impl Default for AuthConfig {
     }
 }
 
+/// encryption configuration for sensitive data at rest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityConfig {
+    pub encryption_key: String,
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            encryption_key: String::new(),
+        }
+    }
+}
+
 /// acme / let's encrypt configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcmeConfig {
@@ -151,7 +171,7 @@ impl Default for AcmeConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {
     /// base directory for all managed service data
-    /// structure: {data_dir}/{db_id}/data
+    /// structure: {data_dir}/{service_type}/{id}/data
     pub data_dir: PathBuf,
     /// maximum volume size in gb per database (0 = unlimited)
     pub max_volume_size_gb: u32,
@@ -181,5 +201,27 @@ impl StorageConfig {
     /// returns the backup directory path for a specific database
     pub fn database_backup_path(&self, db_id: &str) -> PathBuf {
         self.data_dir.join("databases").join(db_id).join("backups")
+    }
+
+    /// returns the data directory path for a specific queue
+    pub fn queue_data_path(&self, queue_id: &str) -> PathBuf {
+        self.data_dir.join("queues").join(queue_id).join("data")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_security_is_empty() {
+        let config = Config::default();
+        assert!(config.security.encryption_key.is_empty());
+    }
+
+    #[test]
+    fn default_public_ip_is_none() {
+        let config = Config::default();
+        assert!(config.proxy.public_ip.is_none());
     }
 }

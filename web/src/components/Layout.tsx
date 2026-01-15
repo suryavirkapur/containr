@@ -49,6 +49,24 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
                                 databases
                             </A>
                             <A
+                                href="/containers"
+                                class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
+                            >
+                                containers
+                            </A>
+                            <A
+                                href="/volumes"
+                                class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
+                            >
+                                volumes
+                            </A>
+                            <A
+                                href="/queues"
+                                class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
+                            >
+                                queues
+                            </A>
+                            <A
                                 href="/storage"
                                 class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
                             >
@@ -104,7 +122,7 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
             <footer class="border-t border-neutral-200 py-6">
                 <div class="max-w-6xl mx-auto px-6">
                     <p class="text-center text-neutral-400 text-sm font-serif italic">
-                        znskr — deploy containers with ease
+                        znskr - deploy containers with ease
                     </p>
                 </div>
             </footer>

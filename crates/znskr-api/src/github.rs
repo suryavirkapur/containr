@@ -1,7 +1,7 @@
 //! github integration - webhooks and oauth
 
 use hmac::{Hmac, Mac};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sha2::Sha256;
 
 use znskr_common::{Error, Result};

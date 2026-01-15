@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use dashmap::DashMap;
 use tokio::sync::{mpsc, RwLock};
 use znskr_common::{Config, Database};
 
@@ -14,6 +15,7 @@ pub struct AppState {
     pub config_path: PathBuf,
     pub db: Database,
     pub deployment_tx: mpsc::Sender<DeploymentJob>,
+    pub oauth_states: Arc<DashMap<String, i64>>,
 }
 
 impl AppState {
@@ -29,7 +31,7 @@ impl AppState {
             config_path,
             db,
             deployment_tx,
+            oauth_states: Arc::new(DashMap::new()),
         }
     }
 }
-

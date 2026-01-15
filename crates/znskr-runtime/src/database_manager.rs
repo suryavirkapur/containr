@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::Command;
 use tracing::{info, warn, error};
 
-use crate::client::{ClientError, Result};
+use crate::error::{ClientError, Result};
 use znskr_common::managed_services::{ManagedDatabase, ServiceStatus};
 
 /// manages database container lifecycle

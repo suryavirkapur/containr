@@ -1,13 +1,13 @@
 //! Docker-based container management
 //!
-//! Simple container operations using Docker CLI as a fallback
-//! when containerd task creation is not yet fully implemented.
+//! Simple container operations using Docker CLI.
 
 use std::collections::HashMap;
 use std::process::Command;
 use tracing::{info, warn};
 
-use crate::client::{ClientError, Result};
+use crate::error::{ClientError, Result};
+use serde::Deserialize;
 
 /// health check command configuration for docker
 #[derive(Debug, Clone)]
@@ -44,6 +44,39 @@ pub struct DockerContainerConfig {
 pub struct DockerContainerStatus {
     pub running: bool,
     pub container_id: Option<String>,
+}
+
+/// Docker container stats
+#[derive(Debug, Clone)]
+pub struct DockerContainerStats {
+    pub cpu_percent: f64,
+    pub mem_usage_bytes: u64,
+    pub mem_limit_bytes: u64,
+}
+
+/// Docker container runtime state
+#[derive(Debug, Clone)]
+pub struct DockerContainerState {
+    pub status: String,
+    pub health_status: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub restart_count: u64,
+}
+
+/// Docker mount info
+#[derive(Debug, Clone, Deserialize)]
+pub struct DockerMountInfo {
+    #[serde(rename = "Type")]
+    pub mount_type: String,
+    #[serde(rename = "Source")]
+    pub source: String,
+    #[serde(rename = "Destination")]
+    pub destination: String,
+    #[serde(rename = "Name")]
+    pub name: Option<String>,
+    #[serde(rename = "RW")]
+    pub rw: Option<bool>,
 }
 
 /// Docker container info
@@ -114,11 +147,6 @@ impl DockerContainerManager {
             args.push("--network".to_string());
             args.push(network.clone());
         }
-
-        // Add port mapping - use 0 for host port to let Docker pick an available port
-        // The container port stays fixed, proxy will route to the container via Docker network
-        args.push("-p".to_string());
-        args.push(format!("0:{}", config.port));
 
         // Add environment variables
         for (key, value) in &config.env_vars {
@@ -241,6 +269,58 @@ impl DockerContainerManager {
         Ok(format!("{}{}", stdout, stderr))
     }
 
+    /// gets basic stats for a container
+    pub async fn get_stats(&self, id: &str) -> Result<DockerContainerStats> {
+        if self.stub_mode {
+            return Ok(DockerContainerStats {
+                cpu_percent: 0.0,
+                mem_usage_bytes: 0,
+                mem_limit_bytes: 0,
+            });
+        }
+
+        let output = Command::new("docker")
+            .args([
+                "stats",
+                "--no-stream",
+                "--format",
+                "{{.CPUPerc}}|{{.MemUsage}}",
+                id,
+            ])
+            .output()
+            .map_err(|e| ClientError::Operation(format!("docker stats failed: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ClientError::Operation(format!(
+                "docker stats failed: {}",
+                stderr
+            )));
+        }
+
+        let line = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let parts: Vec<&str> = line.split('|').collect();
+        if parts.len() < 2 {
+            return Err(ClientError::Operation("unexpected stats format".to_string()));
+        }
+
+        let cpu_percent = parts[0]
+            .trim()
+            .trim_end_matches('%')
+            .parse::<f64>()
+            .unwrap_or(0.0);
+
+        let mem_parts: Vec<&str> = parts[1].split('/').collect();
+        let mem_usage = mem_parts.get(0).map(|s| s.trim()).unwrap_or("0B");
+        let mem_limit = mem_parts.get(1).map(|s| s.trim()).unwrap_or("0B");
+
+        Ok(DockerContainerStats {
+            cpu_percent,
+            mem_usage_bytes: parse_bytes(mem_usage),
+            mem_limit_bytes: parse_bytes(mem_limit),
+        })
+    }
+
     /// checks if a container is running
     pub async fn is_running(&self, id: &str) -> Result<bool> {
         if self.stub_mode {
@@ -303,6 +383,82 @@ impl DockerContainerManager {
             .collect();
 
         Ok(containers)
+    }
+
+    /// gets container state info
+    pub async fn get_state(&self, id: &str) -> Result<DockerContainerState> {
+        if self.stub_mode {
+            return Ok(DockerContainerState {
+                status: "running".to_string(),
+                health_status: Some("healthy".to_string()),
+                started_at: None,
+                finished_at: None,
+                restart_count: 0,
+            });
+        }
+
+        let output = Command::new("docker")
+            .args([
+                "inspect",
+                "-f",
+                "{{.State.Status}}|{{.State.Health.Status}}|{{.State.StartedAt}}|{{.State.FinishedAt}}|{{.RestartCount}}",
+                id,
+            ])
+            .output()
+            .map_err(|e| ClientError::Operation(format!("docker inspect failed: {}", e)))?;
+
+        if !output.status.success() {
+            return Err(ClientError::Operation("docker inspect failed".to_string()));
+        }
+
+        let line = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let parts: Vec<&str> = line.split('|').collect();
+        if parts.len() < 5 {
+            return Err(ClientError::Operation("unexpected inspect format".to_string()));
+        }
+
+        let health_raw = parts[1].trim();
+        let health_status = if health_raw.is_empty() || health_raw == "<no value>" {
+            None
+        } else {
+            Some(health_raw.to_string())
+        };
+
+        Ok(DockerContainerState {
+            status: parts[0].trim().to_string(),
+            health_status,
+            started_at: {
+                let v = parts[2].trim();
+                if v.is_empty() || v == "<no value>" { None } else { Some(v.to_string()) }
+            },
+            finished_at: {
+                let v = parts[3].trim();
+                if v.is_empty() || v == "<no value>" { None } else { Some(v.to_string()) }
+            },
+            restart_count: parts[4].trim().parse::<u64>().unwrap_or(0),
+        })
+    }
+
+    /// lists mounts for a container
+    pub async fn list_mounts(&self, id: &str) -> Result<Vec<DockerMountInfo>> {
+        if self.stub_mode {
+            return Ok(vec![]);
+        }
+
+        let output = Command::new("docker")
+            .args(["inspect", "-f", "{{json .Mounts}}", id])
+            .output()
+            .map_err(|e| ClientError::Operation(format!("docker inspect failed: {}", e)))?;
+
+        if !output.status.success() {
+            return Err(ClientError::Operation("docker inspect failed".to_string()));
+        }
+
+        let mounts_json = String::from_utf8_lossy(&output.stdout);
+        let mounts: Vec<DockerMountInfo> = serde_json::from_str(mounts_json.trim())
+            .map_err(|e| ClientError::Operation(format!("failed to parse mounts: {}", e)))?;
+
+        Ok(mounts)
     }
 
     /// creates a docker network for an app
@@ -400,6 +556,61 @@ impl DockerContainerManager {
             let _ = self.remove_container(&id).await;
         }
         Ok(())
+    }
+}
+
+fn parse_bytes(value: &str) -> u64 {
+    let value = value.trim();
+    if value.is_empty() {
+        return 0;
+    }
+
+    let mut number = String::new();
+    let mut unit = String::new();
+    for ch in value.chars() {
+        if ch.is_ascii_digit() || ch == '.' {
+            number.push(ch);
+        } else if !ch.is_whitespace() {
+            unit.push(ch);
+        }
+    }
+
+    let parsed = number.parse::<f64>().unwrap_or(0.0);
+    let multiplier = match unit.as_str() {
+        "B" => 1.0,
+        "KB" => 1_000.0,
+        "MB" => 1_000_000.0,
+        "GB" => 1_000_000_000.0,
+        "TB" => 1_000_000_000_000.0,
+        "KiB" => 1024.0,
+        "MiB" => 1024.0 * 1024.0,
+        "GiB" => 1024.0 * 1024.0 * 1024.0,
+        "TiB" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => 1.0,
+    };
+
+    (parsed * multiplier) as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_bytes;
+
+    #[test]
+    fn parse_bytes_supports_binary_units() {
+        assert_eq!(parse_bytes("1KiB"), 1024);
+        assert_eq!(parse_bytes("2MiB"), 2 * 1024 * 1024);
+    }
+
+    #[test]
+    fn parse_bytes_supports_decimal_units() {
+        assert_eq!(parse_bytes("1KB"), 1000);
+        assert_eq!(parse_bytes("1GB"), 1_000_000_000);
+    }
+
+    #[test]
+    fn parse_bytes_handles_empty() {
+        assert_eq!(parse_bytes(""), 0);
     }
 }
 

@@ -2,7 +2,7 @@
 //!
 //! this is the main binary that orchestrates all znskr services:
 //! - api server (axum)
-//! - deployment worker (containerd)
+//! - deployment worker (docker)
 //! - reverse proxy (pingora)
 
 use clap::Parser;
@@ -119,8 +119,6 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // start deployment worker
-    // on macos, containerd isn't available so we use stub mode
-    // on linux, try to connect to containerd, fallback to stub if not available
     let work_dir = args.data_dir.join("builds");
 
     let (proxy_update_tx, mut proxy_update_rx) =
@@ -144,34 +142,16 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    #[cfg(target_os = "macos")]
-    {
-        tracing::warn!("containerd not available on macos - using stub mode");
-        let worker =
-            znskr_runtime::DeploymentWorker::new_stub(db.clone(), work_dir, Some(proxy_update_tx))?;
-        tokio::spawn(async move {
-            worker.run(deployment_rx).await;
-        });
-        info!("deployment worker started (stub mode)");
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let worker = znskr_runtime::DeploymentWorker::new(
-            db.clone(),
-            work_dir,
-            Some(proxy_update_tx),
-        )
-        .await?;
-        let stub_mode = worker.is_stub();
-        tokio::spawn(async move {
-            worker.run(deployment_rx).await;
-        });
-        if stub_mode {
-            info!("deployment worker started (stub mode - containerd not available)");
-        } else {
-            info!("deployment worker started (containerd connected)");
-        }
+    let worker =
+        znskr_runtime::DeploymentWorker::new(db.clone(), work_dir, Some(proxy_update_tx)).await?;
+    let stub_mode = worker.is_stub();
+    tokio::spawn(async move {
+        worker.run(deployment_rx).await;
+    });
+    if stub_mode {
+        info!("deployment worker started (stub mode - docker not available)");
+    } else {
+        info!("deployment worker started (docker connected)");
     }
 
     info!("znskr is ready");
@@ -261,6 +241,7 @@ fn refresh_routes_for_app(
     };
 
     let mut upstreams = Vec::new();
+    let network_name = format!("znskr-{}", app.id);
 
     if app.has_services() {
         let service = match select_exposed_service(&app) {
@@ -278,7 +259,7 @@ fn refresh_routes_for_app(
             .args([
                 "ps",
                 "--format",
-                "{{.Names}}\t{{.Ports}}",
+                "{{.Names}}",
                 "--filter",
                 &format!("name=znskr-{}", app.id),
             ])
@@ -296,25 +277,19 @@ fn refresh_routes_for_app(
         let prefix = format!("znskr-{}-{}-", app.id, service.name);
 
         for line in stdout.lines() {
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() < 2 {
+            let name = line.trim();
+            if !name.starts_with(&prefix) || name.is_empty() {
                 continue;
             }
 
-            let name = parts[0];
-            let ports = parts[1];
-            if !name.starts_with(&prefix) {
-                continue;
-            }
-
-            let host_port = parse_docker_host_port(ports, service.port);
-            if host_port == 0 {
-                continue;
-            }
+            let container_ip = match get_container_ip(name, &network_name) {
+                Some(ip) => ip,
+                None => continue,
+            };
 
             upstreams.push(znskr_proxy::routes::Upstream {
-                host: "127.0.0.1".to_string(),
-                port: host_port,
+                host: container_ip,
+                port: service.port,
             });
         }
     } else {
@@ -322,7 +297,7 @@ fn refresh_routes_for_app(
             .args([
                 "ps",
                 "--format",
-                "{{.Names}}\t{{.Ports}}",
+                "{{.Names}}",
                 "--filter",
                 &format!("name=znskr-{}", app.id),
             ])
@@ -340,25 +315,19 @@ fn refresh_routes_for_app(
         let name = format!("znskr-{}", app.id);
 
         for line in stdout.lines() {
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() < 2 {
+            let container_name = line.trim();
+            if container_name != name || container_name.is_empty() {
                 continue;
             }
 
-            let container_name = parts[0];
-            let ports = parts[1];
-            if container_name != name {
-                continue;
-            }
-
-            let host_port = parse_docker_host_port(ports, app.port);
-            if host_port == 0 {
-                continue;
-            }
+            let container_ip = match get_container_ip(container_name, &network_name) {
+                Some(ip) => ip,
+                None => continue,
+            };
 
             upstreams.push(znskr_proxy::routes::Upstream {
-                host: "127.0.0.1".to_string(),
-                port: host_port,
+                host: container_ip,
+                port: app.port,
             });
         }
     }
@@ -406,22 +375,39 @@ fn parse_app_id_from_container_name(name: &str) -> Option<uuid::Uuid> {
     uuid::Uuid::parse_str(id_str).ok()
 }
 
-/// Parses Docker port mapping to extract host port
-fn parse_docker_host_port(ports_str: &str, container_port: u16) -> u16 {
-    // Format: "0.0.0.0:32768->8080/tcp, ..."
-    for mapping in ports_str.split(", ") {
-        if mapping.contains(&format!("->{}/", container_port))
-            || mapping.contains(&format!("->{}", container_port))
-        {
-            // Extract host port from "0.0.0.0:32768->8080/tcp"
-            if let Some(host_part) = mapping.split("->").next() {
-                if let Some(port_str) = host_part.rsplit(':').next() {
-                    if let Ok(port) = port_str.parse::<u16>() {
-                        return port;
-                    }
-                }
-            }
+fn get_container_ip(container_name: &str, network_name: &str) -> Option<String> {
+    let format = format!(
+        "{{{{with index .NetworkSettings.Networks \"{}\"}}}}{{{{.IPAddress}}}}{{{{end}}}}",
+        network_name
+    );
+    let output = std::process::Command::new("docker")
+        .args(["inspect", "-f", &format, container_name])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let ip = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !ip.is_empty() {
+            return Some(ip);
         }
     }
-    0
+
+    let fallback_output = std::process::Command::new("docker")
+        .args([
+            "inspect",
+            "-f",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+            container_name,
+        ])
+        .output()
+        .ok()?;
+    if fallback_output.status.success() {
+        let ip = String::from_utf8_lossy(&fallback_output.stdout)
+            .trim()
+            .to_string();
+        if !ip.is_empty() {
+            return Some(ip);
+        }
+    }
+
+    None
 }

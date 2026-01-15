@@ -3,14 +3,18 @@
 use axum::{
     extract::{Query, State},
     http::StatusCode,
+    response::Redirect,
     Json,
 };
+use base64::Engine;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::auth::{create_token, hash_password, verify_password};
 use crate::github::{exchange_code_for_token, get_github_user};
+use crate::security::encrypt_value;
 use crate::state::AppState;
 use znskr_common::models::User;
 
@@ -63,6 +67,31 @@ pub struct ErrorResponse {
 #[derive(Debug, Deserialize)]
 pub struct GithubCallbackQuery {
     pub code: String,
+    pub state: String,
+}
+
+/// start github oauth flow
+#[utoipa::path(
+    get,
+    path = "/api/auth/github",
+    tag = "auth",
+    responses((status = 302, description = "redirect to github oauth"))
+)]
+pub async fn github_start(State(state): State<AppState>) -> Redirect {
+    let state_value = generate_oauth_state();
+    let expires_at = chrono::Utc::now().timestamp() + 600;
+    state.oauth_states.insert(state_value.clone(), expires_at);
+
+    let config = state.config.read().await;
+    let mut auth_url = url::Url::parse("https://github.com/login/oauth/authorize")
+        .expect("valid github oauth url");
+    auth_url
+        .query_pairs_mut()
+        .append_pair("client_id", &config.github.client_id)
+        .append_pair("state", &state_value)
+        .append_pair("scope", "repo");
+
+    Redirect::temporary(auth_url.as_str())
 }
 
 /// register a new user with email/password
@@ -218,6 +247,18 @@ pub async fn github_callback(
     State(state): State<AppState>,
     Query(query): Query<GithubCallbackQuery>,
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // verify state
+    let now = chrono::Utc::now().timestamp();
+    let expires_at = state.oauth_states.remove(&query.state).map(|entry| entry.1);
+    if expires_at.is_none() || expires_at.unwrap_or(0) < now {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "invalid oauth state".to_string(),
+            }),
+        ));
+    }
+
     // exchange code for token
     let config = state.config.read().await;
     let token_response = exchange_code_for_token(
@@ -248,13 +289,22 @@ pub async fn github_callback(
         })?;
 
     // find or create user
+    let token_to_store = encrypt_value(&config, &token_response.access_token).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("token encryption failed: {}", e),
+            }),
+        )
+    })?;
+
     let user = if let Some(mut user) = state
         .db
         .get_user_by_github_id(github_user.id)
         .map_err(internal_error)?
     {
         // update access token
-        user.github_access_token = Some(token_response.access_token);
+        user.github_access_token = Some(token_to_store);
         state.db.save_user(&user).map_err(internal_error)?;
         user
     } else {
@@ -263,7 +313,7 @@ pub async fn github_callback(
             .email
             .unwrap_or_else(|| format!("{}@github.local", github_user.login));
         let mut user = User::new_with_github(email, github_user.id, github_user.login);
-        user.github_access_token = Some(token_response.access_token);
+        user.github_access_token = Some(token_to_store);
         state.db.save_user(&user).map_err(internal_error)?;
         user
     };
@@ -297,4 +347,10 @@ fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse
             error: "internal server error".to_string(),
         }),
     )
+}
+
+fn generate_oauth_state() -> String {
+    let mut bytes = [0u8; 32];
+    rand::rng().fill(&mut bytes);
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }

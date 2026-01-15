@@ -14,6 +14,7 @@ use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
 use znskr_common::managed_services::StorageBucket;
 use znskr_runtime::StorageManager;
+use crate::security::{decrypt_value, encrypt_value};
 
 /// bucket creation request
 #[derive(Debug, Deserialize, ToSchema)]
@@ -191,16 +192,14 @@ pub async fn create_bucket(
     })?;
 
     // encrypt secret key before storing
-    let encryption_key = znskr_common::derive_key(&state.config.read().await.auth.jwt_secret);
-    let encrypted_secret = znskr_common::encrypt(&bucket.secret_key, &encryption_key)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("encryption failed: {}", e),
-                }),
-            )
-        })?;
+    let encrypted_secret = encrypt_value(&*state.config.read().await, &bucket.secret_key).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("encryption failed: {}", e),
+            }),
+        )
+    })?;
 
     // save bucket with encrypted secret
     let mut bucket_to_save = bucket.clone();
@@ -314,9 +313,8 @@ pub async fn delete_bucket(
     }
 
     // decrypt secret key for rustfs api
-    let encryption_key = znskr_common::derive_key(&config.auth.jwt_secret);
-    let secret_key = znskr_common::decrypt(&bucket.secret_key, &encryption_key)
-        .unwrap_or_else(|_| bucket.secret_key.clone()); // fallback for old unencrypted keys
+    let secret_key = decrypt_value(&config, &bucket.secret_key, Some(&config.auth.jwt_secret))
+        .unwrap_or_else(|_| bucket.secret_key.clone());
 
     // delete bucket in rustfs via s3 api
     let storage_mgr = StorageManager::new(

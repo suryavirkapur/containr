@@ -1,4 +1,4 @@
-//! managed databases api handlers
+//! managed queues api handlers
 
 use axum::{
     extract::{Path, State},
@@ -12,16 +12,16 @@ use uuid::Uuid;
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
-use znskr_common::managed_services::{DatabaseType, ManagedDatabase};
-use znskr_runtime::DatabaseManager;
+use znskr_common::managed_services::{ManagedQueue, QueueType};
+use znskr_runtime::QueueManager;
 
-/// database creation request
+/// queue creation request
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct CreateDatabaseRequest {
-    /// database name
+pub struct CreateQueueRequest {
+    /// queue name
     pub name: String,
-    /// database type
-    pub db_type: String,
+    /// queue type
+    pub queue_type: String,
     /// version (optional, uses default)
     pub version: Option<String>,
     /// memory limit in mb (optional)
@@ -30,12 +30,12 @@ pub struct CreateDatabaseRequest {
     pub cpu_limit: Option<f64>,
 }
 
-/// database response
+/// queue response
 #[derive(Debug, Serialize, ToSchema)]
-pub struct DatabaseResponse {
+pub struct QueueResponse {
     pub id: String,
     pub name: String,
-    pub db_type: String,
+    pub queue_type: String,
     pub version: String,
     pub status: String,
     pub internal_host: String,
@@ -47,21 +47,21 @@ pub struct DatabaseResponse {
     pub created_at: String,
 }
 
-impl From<&ManagedDatabase> for DatabaseResponse {
-    fn from(db: &ManagedDatabase) -> Self {
+impl From<&ManagedQueue> for QueueResponse {
+    fn from(queue: &ManagedQueue) -> Self {
         Self {
-            id: db.id.to_string(),
-            name: db.name.clone(),
-            db_type: format!("{:?}", db.db_type).to_lowercase(),
-            version: db.version.clone(),
-            status: format!("{:?}", db.status).to_lowercase(),
-            internal_host: db.internal_host.clone(),
-            port: db.port,
-            connection_string: db.connection_string(),
-            username: db.credentials.username.clone(),
-            memory_limit_mb: db.memory_limit / (1024 * 1024),
-            cpu_limit: db.cpu_limit,
-            created_at: db.created_at.to_rfc3339(),
+            id: queue.id.to_string(),
+            name: queue.name.clone(),
+            queue_type: format!("{:?}", queue.queue_type).to_lowercase(),
+            version: queue.version.clone(),
+            status: format!("{:?}", queue.status).to_lowercase(),
+            internal_host: queue.internal_host.clone(),
+            port: queue.port,
+            connection_string: queue.connection_string(),
+            username: queue.credentials.username.clone(),
+            memory_limit_mb: queue.memory_limit / (1024 * 1024),
+            cpu_limit: queue.cpu_limit,
+            created_at: queue.created_at.to_rfc3339(),
         }
     }
 }
@@ -115,51 +115,51 @@ fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse
     )
 }
 
-/// list all databases for the authenticated user
+/// list all queues for the authenticated user
 #[utoipa::path(
     get,
-    path = "/api/databases",
-    tag = "databases",
+    path = "/api/queues",
+    tag = "queues",
     security(("bearer" = [])),
     responses(
-        (status = 200, description = "list of databases", body = Vec<DatabaseResponse>),
+        (status = 200, description = "list of queues", body = Vec<QueueResponse>),
         (status = 401, description = "unauthorized", body = ErrorResponse)
     )
 )]
-pub async fn list_databases(
+pub async fn list_queues(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<Vec<DatabaseResponse>>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<Vec<QueueResponse>>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
-    let databases = state
+    let queues = state
         .db
-        .list_managed_databases_by_owner(user_id)
+        .list_managed_queues_by_owner(user_id)
         .map_err(internal_error)?;
 
-    let responses: Vec<DatabaseResponse> = databases.iter().map(DatabaseResponse::from).collect();
+    let responses: Vec<QueueResponse> = queues.iter().map(QueueResponse::from).collect();
     Ok(Json(responses))
 }
 
-/// create a new managed database
+/// create a new managed queue
 #[utoipa::path(
     post,
-    path = "/api/databases",
-    tag = "databases",
+    path = "/api/queues",
+    tag = "queues",
     security(("bearer" = [])),
-    request_body = CreateDatabaseRequest,
+    request_body = CreateQueueRequest,
     responses(
-        (status = 201, description = "database created", body = DatabaseResponse),
+        (status = 201, description = "queue created", body = QueueResponse),
         (status = 400, description = "invalid request", body = ErrorResponse),
         (status = 401, description = "unauthorized", body = ErrorResponse)
     )
 )]
-pub async fn create_database(
+pub async fn create_queue(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(req): Json<CreateDatabaseRequest>,
-) -> Result<(StatusCode, Json<DatabaseResponse>), (StatusCode, Json<ErrorResponse>)> {
+    Json(req): Json<CreateQueueRequest>,
+) -> Result<(StatusCode, Json<QueueResponse>), (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
@@ -173,108 +173,105 @@ pub async fn create_database(
         ));
     }
 
-    // parse database type
-    let db_type = match req.db_type.to_lowercase().as_str() {
-        "postgresql" | "postgres" => DatabaseType::Postgresql,
-        "mariadb" | "mysql" => DatabaseType::Mariadb,
-        "valkey" | "redis" => DatabaseType::Valkey,
-        "qdrant" => DatabaseType::Qdrant,
+    // parse queue type
+    let queue_type = match req.queue_type.to_lowercase().as_str() {
+        "rabbitmq" => QueueType::Rabbitmq,
+        "nats" => QueueType::Nats,
         _ => {
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: "invalid db_type. supported: postgresql, mariadb, valkey, qdrant".to_string(),
+                    error: "invalid queue_type. supported: rabbitmq, nats".to_string(),
                 }),
             ));
         }
     };
 
-    // create database
-    let mut db = ManagedDatabase::new_with_path(
+    // create queue
+    let mut queue = ManagedQueue::new_with_path(
         user_id,
         req.name,
-        db_type,
+        queue_type,
         &config.storage.data_dir,
     );
 
     if let Some(version) = req.version {
-        db.version = version;
+        queue.version = version;
     }
     if let Some(mem) = req.memory_limit_mb {
-        db.memory_limit = mem * 1024 * 1024;
+        queue.memory_limit = mem * 1024 * 1024;
     }
     if let Some(cpu) = req.cpu_limit {
-        db.cpu_limit = cpu;
+        queue.cpu_limit = cpu;
     }
 
-    state.db.save_managed_database(&db).map_err(internal_error)?;
+    state.db.save_managed_queue(&queue).map_err(internal_error)?;
 
-    Ok((StatusCode::CREATED, Json(DatabaseResponse::from(&db))))
+    Ok((StatusCode::CREATED, Json(QueueResponse::from(&queue))))
 }
 
-/// get a single database by id
+/// get a single queue by id
 #[utoipa::path(
     get,
-    path = "/api/databases/{id}",
-    tag = "databases",
-    params(("id" = Uuid, Path, description = "database id")),
+    path = "/api/queues/{id}",
+    tag = "queues",
+    params(("id" = Uuid, Path, description = "queue id")),
     security(("bearer" = [])),
     responses(
-        (status = 200, description = "database details", body = DatabaseResponse),
+        (status = 200, description = "queue details", body = QueueResponse),
         (status = 401, description = "unauthorized", body = ErrorResponse),
         (status = 403, description = "forbidden", body = ErrorResponse),
-        (status = 404, description = "not found", body = ErrorResponse)
+        (status = 404, description = "queue not found", body = ErrorResponse)
     )
 )]
-pub async fn get_database(
+pub async fn get_queue(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-) -> Result<Json<DatabaseResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<QueueResponse>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
-    let db = state
+    let queue = state
         .db
-        .get_managed_database(id)
+        .get_managed_queue(id)
         .map_err(internal_error)?
         .ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse {
-                    error: "database not found".to_string(),
+                    error: "queue not found".to_string(),
                 }),
             )
         })?;
 
-    // check ownership
-    if db.owner_id != user_id {
+    if queue.owner_id != user_id {
         return Err((
             StatusCode::FORBIDDEN,
             Json(ErrorResponse {
-                error: "access denied".to_string(),
+                error: "forbidden".to_string(),
             }),
         ));
     }
 
-    Ok(Json(DatabaseResponse::from(&db)))
+    Ok(Json(QueueResponse::from(&queue)))
 }
 
-/// delete a managed database
+/// delete a managed queue
 #[utoipa::path(
     delete,
-    path = "/api/databases/{id}",
-    tag = "databases",
-    params(("id" = Uuid, Path, description = "database id")),
+    path = "/api/queues/{id}",
+    tag = "queues",
+    params(("id" = Uuid, Path, description = "queue id")),
     security(("bearer" = [])),
     responses(
-        (status = 204, description = "database deleted"),
+        (status = 204, description = "queue deleted"),
         (status = 401, description = "unauthorized", body = ErrorResponse),
         (status = 403, description = "forbidden", body = ErrorResponse),
-        (status = 404, description = "not found", body = ErrorResponse)
+        (status = 404, description = "queue not found", body = ErrorResponse)
     )
 )]
-pub async fn delete_database(
+pub async fn delete_queue(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
@@ -282,162 +279,158 @@ pub async fn delete_database(
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
-    let db = state
+    let queue = state
         .db
-        .get_managed_database(id)
+        .get_managed_queue(id)
         .map_err(internal_error)?
         .ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse {
-                    error: "database not found".to_string(),
+                    error: "queue not found".to_string(),
                 }),
             )
         })?;
 
-    // check ownership
-    if db.owner_id != user_id {
+    if queue.owner_id != user_id {
         return Err((
             StatusCode::FORBIDDEN,
             Json(ErrorResponse {
-                error: "access denied".to_string(),
+                error: "forbidden".to_string(),
             }),
         ));
     }
 
     // stop container and remove data directory
-    let db_manager = DatabaseManager::new();
-    let mut db_to_stop = db.clone();
-    let _ = db_manager.stop_database(&mut db_to_stop);
+    let queue_manager = QueueManager::new();
+    let mut queue_to_stop = queue.clone();
+    let _ = queue_manager.stop_queue(&mut queue_to_stop);
 
-    let data_dir = std::path::Path::new(&db.host_data_path);
+    let data_dir = std::path::Path::new(&queue.host_data_path);
     if data_dir.starts_with(&config.storage.data_dir) {
         let _ = std::fs::remove_dir_all(data_dir);
     }
 
-    state.db.delete_managed_database(id).map_err(internal_error)?;
-
+    state.db.delete_managed_queue(id).map_err(internal_error)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// update database status (start/stop)
+/// start a queue
 #[utoipa::path(
     post,
-    path = "/api/databases/{id}/start",
-    tag = "databases",
-    params(("id" = Uuid, Path, description = "database id")),
+    path = "/api/queues/{id}/start",
+    tag = "queues",
+    params(("id" = Uuid, Path, description = "queue id")),
     security(("bearer" = [])),
     responses(
-        (status = 200, description = "database started", body = DatabaseResponse),
+        (status = 200, description = "queue started", body = QueueResponse),
         (status = 401, description = "unauthorized", body = ErrorResponse),
         (status = 403, description = "forbidden", body = ErrorResponse),
-        (status = 404, description = "not found", body = ErrorResponse)
+        (status = 404, description = "queue not found", body = ErrorResponse)
     )
 )]
-pub async fn start_database(
+pub async fn start_queue(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-) -> Result<Json<DatabaseResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<QueueResponse>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
-    let mut db = state
+    let mut queue = state
         .db
-        .get_managed_database(id)
+        .get_managed_queue(id)
         .map_err(internal_error)?
         .ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse {
-                    error: "database not found".to_string(),
+                    error: "queue not found".to_string(),
                 }),
             )
         })?;
 
-    if db.owner_id != user_id {
+    if queue.owner_id != user_id {
         return Err((
             StatusCode::FORBIDDEN,
             Json(ErrorResponse {
-                error: "access denied".to_string(),
+                error: "forbidden".to_string(),
             }),
         ));
     }
 
-    // start the container via database manager
-    let db_manager = DatabaseManager::new();
-    db_manager.start_database(&mut db).map_err(|e| {
-        tracing::error!("failed to start database: {}", e);
+    // start the container via queue manager
+    let queue_manager = QueueManager::new();
+    queue_manager.start_queue(&mut queue).map_err(|e| {
+        tracing::error!("failed to start queue: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
-                error: format!("failed to start database: {}", e),
+                error: format!("failed to start queue: {}", e),
             }),
         )
     })?;
 
-    state.db.save_managed_database(&db).map_err(internal_error)?;
-
-    Ok(Json(DatabaseResponse::from(&db)))
+    state.db.save_managed_queue(&queue).map_err(internal_error)?;
+    Ok(Json(QueueResponse::from(&queue)))
 }
 
-/// stop a database
+/// stop a queue
 #[utoipa::path(
     post,
-    path = "/api/databases/{id}/stop",
-    tag = "databases",
-    params(("id" = Uuid, Path, description = "database id")),
+    path = "/api/queues/{id}/stop",
+    tag = "queues",
+    params(("id" = Uuid, Path, description = "queue id")),
     security(("bearer" = [])),
     responses(
-        (status = 200, description = "database stopped", body = DatabaseResponse),
+        (status = 200, description = "queue stopped", body = QueueResponse),
         (status = 401, description = "unauthorized", body = ErrorResponse),
         (status = 403, description = "forbidden", body = ErrorResponse),
-        (status = 404, description = "not found", body = ErrorResponse)
+        (status = 404, description = "queue not found", body = ErrorResponse)
     )
 )]
-pub async fn stop_database(
+pub async fn stop_queue(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-) -> Result<Json<DatabaseResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<QueueResponse>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
-    let mut db = state
+    let mut queue = state
         .db
-        .get_managed_database(id)
+        .get_managed_queue(id)
         .map_err(internal_error)?
         .ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse {
-                    error: "database not found".to_string(),
+                    error: "queue not found".to_string(),
                 }),
             )
         })?;
 
-    if db.owner_id != user_id {
+    if queue.owner_id != user_id {
         return Err((
             StatusCode::FORBIDDEN,
             Json(ErrorResponse {
-                error: "access denied".to_string(),
+                error: "forbidden".to_string(),
             }),
         ));
     }
 
-    // stop the container via database manager
-    let db_manager = DatabaseManager::new();
-    db_manager.stop_database(&mut db).map_err(|e| {
-        tracing::error!("failed to stop database: {}", e);
+    // stop the container via queue manager
+    let queue_manager = QueueManager::new();
+    queue_manager.stop_queue(&mut queue).map_err(|e| {
+        tracing::error!("failed to stop queue: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
-                error: format!("failed to stop database: {}", e),
+                error: format!("failed to stop queue: {}", e),
             }),
         )
     })?;
 
-    state.db.save_managed_database(&db).map_err(internal_error)?;
-
-    Ok(Json(DatabaseResponse::from(&db)))
+    state.db.save_managed_queue(&queue).map_err(internal_error)?;
+    Ok(Json(QueueResponse::from(&queue)))
 }

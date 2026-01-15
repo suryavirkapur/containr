@@ -10,7 +10,12 @@ const AppDetail = lazy(() => import('./pages/AppDetail'));
 const NewApp = lazy(() => import('./pages/NewApp'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Databases = lazy(() => import('./pages/Databases'));
+const DatabaseDetail = lazy(() => import('./pages/DatabaseDetail'));
+const Containers = lazy(() => import('./pages/Containers'));
+const Queues = lazy(() => import('./pages/Queues'));
+const QueueDetail = lazy(() => import('./pages/QueueDetail'));
 const Storage = lazy(() => import('./pages/Storage'));
+const Volumes = lazy(() => import('./pages/Volumes'));
 
 const App: Component = () => {
     return (
@@ -22,7 +27,12 @@ const App: Component = () => {
                 <Route path="/apps/new" component={NewApp} />
                 <Route path="/apps/:id" component={AppDetail} />
                 <Route path="/databases" component={Databases} />
+                <Route path="/databases/:id" component={DatabaseDetail} />
+                <Route path="/containers" component={Containers} />
+                <Route path="/queues" component={Queues} />
+                <Route path="/queues/:id" component={QueueDetail} />
                 <Route path="/storage" component={Storage} />
+                <Route path="/volumes" component={Volumes} />
                 <Route path="/settings" component={Settings} />
             </Route>
         </Suspense>
@@ -30,5 +40,3 @@ const App: Component = () => {
 };
 
 export default App;
-
-

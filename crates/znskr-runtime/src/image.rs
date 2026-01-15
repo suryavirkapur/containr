@@ -1,11 +1,11 @@
 //! image management
 //!
-//! high-level api for container image operations using containerd.
+//! high-level api for container image operations using docker.
 
 use std::process::Command;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
-use crate::client::{ClientError, ContainerdClient, Result};
+use crate::error::{ClientError, Result};
 
 /// image information
 #[derive(Debug, Clone)]
@@ -18,24 +18,19 @@ pub struct ImageInfo {
 /// manages container image operations
 #[derive(Clone)]
 pub struct ImageManager {
-    client: Option<ContainerdClient>,
     stub_mode: bool,
 }
 
 impl ImageManager {
-    /// creates a new image manager with a containerd client
-    pub fn new(client: ContainerdClient) -> Self {
-        Self {
-            client: Some(client),
-            stub_mode: false,
-        }
+    /// creates a new image manager
+    pub fn new() -> Self {
+        Self { stub_mode: false }
     }
 
     /// creates a new image manager in stub mode (for development)
     pub fn new_stub() -> Self {
         warn!("image manager running in stub mode");
         Self {
-            client: None,
             stub_mode: true,
         }
     }
@@ -43,10 +38,7 @@ impl ImageManager {
     /// creates a new image manager with no client but NOT in stub mode
     /// useful for testing build/pull commands that use external binaries
     pub fn new_headless() -> Self {
-        Self {
-            client: None,
-            stub_mode: false,
-        }
+        Self { stub_mode: false }
     }
 
     /// returns true if running in stub mode
@@ -66,19 +58,11 @@ impl ImageManager {
             });
         }
 
-        // use ctr or nerdctl to pull image since containerd-client
-        // doesn't expose the content service easily
-        let output = if which::which("nerdctl").is_ok() {
-            Command::new("nerdctl")
-                .args(["--namespace", "znskr", "pull", name])
-                .output()
-        } else if which::which("ctr").is_ok() {
-            Command::new("ctr")
-                .args(["--namespace", "znskr", "images", "pull", name])
-                .output()
+        let output = if which::which("docker").is_ok() {
+            Command::new("docker").args(["pull", name]).output()
         } else {
             return Err(ClientError::Operation(
-                "neither nerdctl nor ctr found for image pull".to_string(),
+                "docker not found for image pull".to_string(),
             ));
         };
 
@@ -150,40 +134,19 @@ impl ImageManager {
 
         info!(name = %name, context = %context_path, containerfile = %containerfile, "building image with containerfile");
 
-        // use buildah or docker for building since containerd doesn't build images
-        // buildah natively supports Containerfile, docker uses -f flag
-        let output = if which::which("buildah").is_ok() {
-            Command::new("buildah")
-                .args(["build", "-f", &containerfile, "-t", name, context_path])
-                .output()
-        } else if which::which("docker").is_ok() {
+        let output = if which::which("docker").is_ok() {
             Command::new("docker")
                 .args(["build", "-f", &containerfile, "-t", name, context_path])
                 .output()
         } else {
             return Err(ClientError::Operation(
-                "neither buildah nor docker found for image build".to_string(),
+                "docker not found for image build".to_string(),
             ));
         };
 
         match output {
             Ok(out) if out.status.success() => {
                 info!(name = %name, "image built successfully");
-
-                // push to containerd if using buildah
-                if which::which("buildah").is_ok() {
-                    let push_output = Command::new("buildah")
-                        .args([
-                            "push",
-                            name,
-                            &format!("containers-storage:[overlay@/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs]{}:latest", name),
-                        ])
-                        .output();
-
-                    if let Err(e) = push_output {
-                        warn!(error = %e, "failed to push image to containerd storage");
-                    }
-                }
 
                 Ok(ImageInfo {
                     name: name.to_string(),
@@ -208,10 +171,12 @@ impl ImageManager {
             return Ok(true);
         }
 
-        match &self.client {
-            Some(client) => client.image_exists(name).await,
-            None => Ok(false),
-        }
+        let output = Command::new("docker")
+            .args(["image", "inspect", name])
+            .output()
+            .map_err(|e| ClientError::Operation(format!("docker image inspect failed: {}", e)))?;
+
+        Ok(output.status.success())
     }
 
     /// lists all images
@@ -220,24 +185,32 @@ impl ImageManager {
             return Ok(vec![]);
         }
 
-        let client = self
-            .client
-            .as_ref()
-            .ok_or_else(|| ClientError::Operation("no containerd client".to_string()))?;
+        let output = Command::new("docker")
+            .args(["images", "--format", "{{.Repository}}:{{.Tag}}|{{.ID}}|{{.Size}}"])
+            .output()
+            .map_err(|e| ClientError::Operation(format!("docker images failed: {}", e)))?;
 
-        let images = client.list_images().await?;
+        if !output.status.success() {
+            return Err(ClientError::Operation("docker images failed".to_string()));
+        }
 
-        Ok(images
-            .into_iter()
-            .map(|img| ImageInfo {
-                name: img.name,
-                digest: img
-                    .target
-                    .map(|t| t.digest)
-                    .unwrap_or_else(|| "unknown".to_string()),
-                size: 0,
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let images = stdout
+            .lines()
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split('|').collect();
+                if parts.len() < 2 {
+                    return None;
+                }
+                Some(ImageInfo {
+                    name: parts[0].to_string(),
+                    digest: parts[1].to_string(),
+                    size: 0,
+                })
             })
-            .collect())
+            .collect();
+
+        Ok(images)
     }
 
     /// removes an image
@@ -248,10 +221,7 @@ impl ImageManager {
             return Ok(());
         }
 
-        // use ctr to remove image
-        let output = Command::new("ctr")
-            .args(["--namespace", "znskr", "images", "rm", name])
-            .output();
+        let output = Command::new("docker").args(["rmi", name]).output();
 
         match output {
             Ok(out) if out.status.success() => Ok(()),

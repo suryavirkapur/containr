@@ -1,6 +1,7 @@
-import { Component, createResource, createSignal, For, Show } from 'solid-js';
+import { Component, createEffect, createMemo, createResource, createSignal, For, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
 import { parseAnsi } from '../utils/ansi';
+import ContainerMonitor from '../components/ContainerMonitor';
 
 interface AppService {
     id: string;
@@ -43,6 +44,13 @@ interface CertificateStatus {
     status: 'none' | 'pending' | 'valid' | 'expiringsoon' | 'expired' | 'failed';
     expires_at: string | null;
     issued_at: string | null;
+}
+
+interface ContainerListItem {
+    id: string;
+    resource_type: string;
+    resource_id: string;
+    name: string;
 }
 
 /**
@@ -98,6 +106,22 @@ const fetchCertificate = async (appId: string): Promise<CertificateStatus> => {
 };
 
 /**
+ * fetches containers for the user
+ */
+const fetchContainers = async (): Promise<ContainerListItem[]> => {
+    const token = localStorage.getItem('znskr_token');
+    const res = await fetch('/api/containers', {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!res.ok) {
+        throw new Error('failed to fetch containers');
+    }
+
+    return res.json();
+};
+
+/**
  * app detail page
  */
 const AppDetail: Component = () => {
@@ -120,6 +144,21 @@ const AppDetail: Component = () => {
         () => params.id,
         fetchCertificate
     );
+
+    const [containers] = createResource(fetchContainers);
+    const [selectedContainer, setSelectedContainer] = createSignal('');
+
+    const appContainers = createMemo(() =>
+        (containers() || []).filter(
+            (item) => item.resource_type === 'app' && item.resource_id === params.id
+        )
+    );
+
+    createEffect(() => {
+        if (!selectedContainer() && appContainers().length > 0) {
+            setSelectedContainer(appContainers()[0].id);
+        }
+    });
 
     const [reissuing, setReissuing] = createSignal(false);
 
@@ -404,7 +443,7 @@ const AppDetail: Component = () => {
                         <h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">domain</h3>
                         <Show
                             when={app()!.domain}
-                            fallback={<span class="text-neutral-400 text-sm">—</span>}
+                            fallback={<span class="text-neutral-400 text-sm">n/a</span>}
                         >
                             <a
                                 href={`https://${app()!.domain}`}
@@ -452,7 +491,7 @@ const AppDetail: Component = () => {
                                         <span class="text-neutral-500 text-sm">failed</span>
                                     </Show>
                                     <Show when={certificate()!.status === 'none'}>
-                                        <span class="text-neutral-400 text-sm">—</span>
+                                        <span class="text-neutral-400 text-sm">n/a</span>
                                     </Show>
                                 </div>
                                 <Show when={app()!.domain && certificate()!.status !== 'pending'}>
@@ -544,6 +583,39 @@ const AppDetail: Component = () => {
                         </div>
                     </div>
                 </Show>
+
+                {/* container monitor */}
+                <div class="border border-neutral-200 mb-8">
+                    <div class="border-b border-neutral-200 px-5 py-3 flex items-center justify-between">
+                        <div>
+                            <h2 class="text-sm font-serif text-black">container monitor</h2>
+                            <p class="text-xs text-neutral-500 mt-1">health, metrics, logs, volumes</p>
+                        </div>
+                        <Show when={appContainers().length > 0}>
+                            <select
+                                value={selectedContainer()}
+                                onChange={(e) => setSelectedContainer(e.currentTarget.value)}
+                                class="px-2 py-1.5 border border-neutral-300 text-xs text-neutral-700"
+                            >
+                                <For each={appContainers()}>
+                                    {(container) => (
+                                        <option value={container.id}>{container.name}</option>
+                                    )}
+                                </For>
+                            </select>
+                        </Show>
+                    </div>
+                    <div class="p-5">
+                        <Show when={appContainers().length > 0}>
+                            <ContainerMonitor containerId={selectedContainer()} />
+                        </Show>
+                        <Show when={appContainers().length === 0}>
+                            <div class="border border-dashed border-neutral-200 p-8 text-center text-neutral-400 text-sm">
+                                no running containers for this app
+                            </div>
+                        </Show>
+                    </div>
+                </div>
 
                 {/* deployments */}
                 <div class="border border-neutral-200">

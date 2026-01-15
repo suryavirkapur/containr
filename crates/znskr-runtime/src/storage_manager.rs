@@ -8,13 +8,13 @@ use aws_sdk_s3::{
 };
 use tracing::{info, error};
 
-use crate::client::{ClientError, Result};
+use crate::error::{ClientError, Result};
 use znskr_common::managed_services::StorageBucket;
 
 /// manages rustfs storage operations
 pub struct StorageManager {
     client: Client,
-    endpoint: String,
+    _endpoint: String,
 }
 
 impl StorageManager {
@@ -33,7 +33,7 @@ impl StorageManager {
 
         Ok(Self {
             client,
-            endpoint: endpoint.to_string(),
+            _endpoint: endpoint.to_string(),
         })
     }
 

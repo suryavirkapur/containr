@@ -13,7 +13,7 @@ use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
 use crate::github::DeploymentJob;
-use crate::handlers::{apps, auth, certificates, databases, deployments, health, settings, storage, webhooks, websocket};
+use crate::handlers::{apps, auth, certificates, containers, databases, deployments, health, queues, settings, storage, webhooks, websocket};
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
 use znskr_common::{Config, Database, Result};
@@ -45,6 +45,7 @@ pub async fn run_server(
         // auth
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))
+        .route("/api/auth/github", get(auth::github_start))
         .route("/api/auth/github/callback", get(auth::github_callback))
         // settings
         .route("/api/settings", get(settings::get_settings))
@@ -59,6 +60,7 @@ pub async fn run_server(
         .route("/api/apps/{id}", get(apps::get_app))
         .route("/api/apps/{id}", put(apps::update_app))
         .route("/api/apps/{id}", delete(apps::delete_app))
+        .route("/api/apps/{id}/metrics", get(apps::get_app_metrics))
         // deployments
         .route(
             "/api/apps/{id}/deployments",
@@ -91,6 +93,21 @@ pub async fn run_server(
             "/api/apps/{app_id}/deployments/{id}/logs/ws",
             get(websocket::deployment_logs_ws),
         )
+        // containers
+        .route("/api/containers", get(containers::list_containers))
+        .route("/api/containers/{id}/status", get(containers::get_container_status))
+        .route("/api/containers/{id}/logs", get(containers::get_container_logs))
+        .route("/api/containers/{id}/mounts", get(containers::list_container_mounts))
+        .route("/api/containers/{id}/files", get(containers::list_volume_entries))
+        .route("/api/containers/{id}/files", delete(containers::delete_volume_entry))
+        .route(
+            "/api/containers/{id}/files/download",
+            get(containers::download_volume_entry),
+        )
+        .route(
+            "/api/containers/{id}/files/upload",
+            post(containers::upload_volume_entry),
+        )
         // managed databases
         .route("/api/databases", get(databases::list_databases))
         .route("/api/databases", post(databases::create_database))
@@ -98,6 +115,13 @@ pub async fn run_server(
         .route("/api/databases/{id}", delete(databases::delete_database))
         .route("/api/databases/{id}/start", post(databases::start_database))
         .route("/api/databases/{id}/stop", post(databases::stop_database))
+        // managed queues
+        .route("/api/queues", get(queues::list_queues))
+        .route("/api/queues", post(queues::create_queue))
+        .route("/api/queues/{id}", get(queues::get_queue))
+        .route("/api/queues/{id}", delete(queues::delete_queue))
+        .route("/api/queues/{id}/start", post(queues::start_queue))
+        .route("/api/queues/{id}/stop", post(queues::stop_queue))
         // storage buckets
         .route("/api/buckets", get(storage::list_buckets))
         .route("/api/buckets", post(storage::create_bucket))
@@ -126,4 +150,3 @@ pub async fn run_server(
 
     Ok(rx)
 }
-

@@ -36,7 +36,7 @@ impl DeploymentWorker {
         work_dir: PathBuf,
         proxy_updates: Option<mpsc::Sender<ProxyRouteUpdate>>,
     ) -> anyhow::Result<Self> {
-        // Use Docker for container management (simpler than containerd tasks)
+        // Use Docker for container management
         let docker_manager = DockerContainerManager::new();
         let image_manager = ImageManager::new_headless(); // Uses docker/buildah CLI
 
@@ -459,5 +459,49 @@ impl DeploymentWorker {
                 .send(ProxyRouteUpdate::RefreshApp { app_id })
                 .await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use znskr_common::models::ContainerService;
+
+    fn make_worker() -> DeploymentWorker {
+        let root = std::env::temp_dir().join(format!("znskr-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let db_path = root.join("znskr.db");
+        let db = Database::open(db_path.to_str().unwrap()).unwrap();
+        let work_dir = root.join("work");
+        DeploymentWorker::new_stub(db, work_dir, None).unwrap()
+    }
+
+    #[test]
+    fn topological_sort_orders_dependencies() {
+        let worker = make_worker();
+        let app_id = Uuid::new_v4();
+
+        let web = ContainerService::new(app_id, "web".to_string(), "".to_string(), 8080);
+        let mut api = ContainerService::new(app_id, "api".to_string(), "".to_string(), 8081);
+        api.depends_on = vec!["web".to_string()];
+
+        let sorted = worker.topological_sort_services(&[api.clone(), web.clone()]).unwrap();
+        let names: Vec<String> = sorted.into_iter().map(|s| s.name).collect();
+
+        assert_eq!(names, vec!["web".to_string(), "api".to_string()]);
+    }
+
+    #[test]
+    fn topological_sort_detects_cycles() {
+        let worker = make_worker();
+        let app_id = Uuid::new_v4();
+
+        let mut web = ContainerService::new(app_id, "web".to_string(), "".to_string(), 8080);
+        let mut api = ContainerService::new(app_id, "api".to_string(), "".to_string(), 8081);
+        web.depends_on = vec!["api".to_string()];
+        api.depends_on = vec!["web".to_string()];
+
+        let result = worker.topological_sort_services(&[api, web]);
+        assert!(result.is_err());
     }
 }

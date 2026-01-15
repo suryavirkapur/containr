@@ -111,6 +111,84 @@ pub enum ServiceStatus {
     Failed,
 }
 
+/// supported queue types
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum QueueType {
+    Rabbitmq,
+    Nats,
+}
+
+impl QueueType {
+    /// returns the docker image for this queue type
+    pub fn docker_image(&self, version: &str) -> String {
+        match self {
+            QueueType::Rabbitmq => format!("rabbitmq:{}", version),
+            QueueType::Nats => format!("nats:{}", version),
+        }
+    }
+
+    /// returns the default port for this queue type
+    pub fn default_port(&self) -> u16 {
+        match self {
+            QueueType::Rabbitmq => 5672,
+            QueueType::Nats => 4222,
+        }
+    }
+
+    /// returns the data volume path inside the container
+    pub fn volume_path(&self) -> &'static str {
+        match self {
+            QueueType::Rabbitmq => "/var/lib/rabbitmq",
+            QueueType::Nats => "/data",
+        }
+    }
+
+    /// returns default memory limit in bytes
+    pub fn default_memory_limit(&self) -> u64 {
+        match self {
+            QueueType::Rabbitmq => 512 * 1024 * 1024,
+            QueueType::Nats => 256 * 1024 * 1024,
+        }
+    }
+
+    /// returns default cpu limit
+    pub fn default_cpu_limit(&self) -> f64 {
+        match self {
+            QueueType::Rabbitmq => 1.0,
+            QueueType::Nats => 0.5,
+        }
+    }
+
+    /// returns the default version
+    pub fn default_version(&self) -> &'static str {
+        match self {
+            QueueType::Rabbitmq => "3-management",
+            QueueType::Nats => "2",
+        }
+    }
+}
+
+/// queue credentials
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueueCredentials {
+    pub username: String,
+    /// plaintext password (encrypt before storing)
+    pub password: String,
+}
+
+impl QueueCredentials {
+    /// generates new credentials with random password
+    pub fn generate(queue_type: QueueType) -> Self {
+        let password = generate_random_password(24);
+        let username = match queue_type {
+            QueueType::Rabbitmq => "rabbitmq".to_string(),
+            QueueType::Nats => "nats".to_string(),
+        };
+        Self { username, password }
+    }
+}
+
 /// database credentials (password stored encrypted)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseCredentials {
@@ -252,6 +330,102 @@ impl ManagedDatabase {
     /// returns docker image for this database
     pub fn docker_image(&self) -> String {
         self.db_type.docker_image(&self.version)
+    }
+}
+
+/// managed queue instance
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManagedQueue {
+    pub id: Uuid,
+    pub owner_id: Uuid,
+    pub name: String,
+    pub queue_type: QueueType,
+    pub version: String,
+    pub container_id: Option<String>,
+    /// deprecated: use host_data_path for bind mounts instead
+    pub volume_name: String,
+    /// host directory for bind mount storage
+    pub host_data_path: String,
+    pub internal_host: String,
+    pub port: u16,
+    pub credentials: QueueCredentials,
+    pub memory_limit: u64,
+    pub cpu_limit: f64,
+    pub status: ServiceStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl ManagedQueue {
+    /// creates a new managed queue with defaults
+    pub fn new(owner_id: Uuid, name: String, queue_type: QueueType) -> Self {
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        Self {
+            id,
+            owner_id,
+            name,
+            queue_type,
+            version: queue_type.default_version().to_string(),
+            container_id: None,
+            volume_name: format!("znskr-queue-{}", id),
+            host_data_path: format!("/data/znskr/queues/{}/data", id),
+            internal_host: format!("queue-{}.internal", id),
+            port: queue_type.default_port(),
+            credentials: QueueCredentials::generate(queue_type),
+            memory_limit: queue_type.default_memory_limit(),
+            cpu_limit: queue_type.default_cpu_limit(),
+            status: ServiceStatus::Pending,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// creates a new managed queue with custom data path from config
+    pub fn new_with_path(
+        owner_id: Uuid,
+        name: String,
+        queue_type: QueueType,
+        data_dir: &std::path::Path,
+    ) -> Self {
+        let mut queue = Self::new(owner_id, name, queue_type);
+        queue.host_data_path = data_dir
+            .join("queues")
+            .join(queue.id.to_string())
+            .join("data")
+            .to_string_lossy()
+            .to_string();
+        queue
+    }
+
+    /// returns the bind mount argument for docker (host:container)
+    pub fn bind_mount_arg(&self) -> String {
+        format!("{}:{}", self.host_data_path, self.queue_type.volume_path())
+    }
+
+    /// returns the connection string for this queue
+    pub fn connection_string(&self) -> String {
+        match self.queue_type {
+            QueueType::Rabbitmq => format!(
+                "amqp://{}:{}@{}:{}",
+                self.credentials.username,
+                self.credentials.password,
+                self.internal_host,
+                self.port
+            ),
+            QueueType::Nats => format!(
+                "nats://{}:{}@{}:{}",
+                self.credentials.username,
+                self.credentials.password,
+                self.internal_host,
+                self.port
+            ),
+        }
+    }
+
+    /// returns docker image for this queue
+    pub fn docker_image(&self) -> String {
+        self.queue_type.docker_image(&self.version)
     }
 }
 

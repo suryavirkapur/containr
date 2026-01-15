@@ -5,7 +5,7 @@ use sled::Db;
 use uuid::Uuid;
 
 use crate::error::Result;
-use crate::managed_services::{ManagedDatabase, StorageBucket};
+use crate::managed_services::{ManagedDatabase, ManagedQueue, StorageBucket};
 use crate::models::{App, Certificate, ContainerService, Deployment, ServiceDeployment, User};
 
 /// database wrapper providing typed access to sled trees
@@ -355,6 +355,41 @@ impl Database {
         self.delete(&tree, &id.to_string())
     }
 
+    // --- managed queues ---
+
+    /// inserts or updates a managed queue
+    pub fn save_managed_queue(&self, queue: &ManagedQueue) -> Result<()> {
+        let tree = self.get_tree("managed_queues")?;
+        self.insert(&tree, &queue.id.to_string(), queue)
+    }
+
+    /// gets a managed queue by id
+    pub fn get_managed_queue(&self, id: Uuid) -> Result<Option<ManagedQueue>> {
+        let tree = self.get_tree("managed_queues")?;
+        self.get(&tree, &id.to_string())
+    }
+
+    /// lists all managed queues for an owner
+    pub fn list_managed_queues_by_owner(&self, owner_id: Uuid) -> Result<Vec<ManagedQueue>> {
+        let tree = self.get_tree("managed_queues")?;
+        let mut queues = Vec::new();
+        for result in tree.iter() {
+            let (_, value) = result?;
+            let queue: ManagedQueue = serde_json::from_slice(&value)?;
+            if queue.owner_id == owner_id {
+                queues.push(queue);
+            }
+        }
+        queues.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Ok(queues)
+    }
+
+    /// deletes a managed queue by id
+    pub fn delete_managed_queue(&self, id: Uuid) -> Result<bool> {
+        let tree = self.get_tree("managed_queues")?;
+        self.delete(&tree, &id.to_string())
+    }
+
     // --- storage buckets ---
 
     /// inserts or updates a storage bucket
@@ -390,4 +425,3 @@ impl Database {
         self.delete(&tree, &id.to_string())
     }
 }
-

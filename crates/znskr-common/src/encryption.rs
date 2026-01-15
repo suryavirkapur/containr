@@ -100,7 +100,7 @@ fn base64_decode(data: &str) -> Result<Vec<u8>> {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD
         .decode(data)
-        .map_err(|e| EncryptionError::InvalidFormat)
+        .map_err(|_e| EncryptionError::InvalidFormat)
 }
 
 #[cfg(test)]
