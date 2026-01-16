@@ -109,6 +109,10 @@ pub async fn run_server(
             "/api/containers/{id}/files/upload",
             post(containers::upload_volume_entry),
         )
+        .route(
+            "/api/containers/{id}/files/mkdir",
+            post(containers::create_volume_directory),
+        )
         // managed databases
         .route("/api/databases", get(databases::list_databases))
         .route("/api/databases", post(databases::create_database))

@@ -111,6 +111,7 @@ const ContainerMonitor: Component<{ containerId: string; defaultTab?: 'overview'
     );
     const [selectedMount, setSelectedMount] = createSignal('');
     const [currentPath, setCurrentPath] = createSignal('');
+    const [newFolderName, setNewFolderName] = createSignal('');
 
     const [entries, entriesActions] = createResource(
         () => {
@@ -137,6 +138,20 @@ const ContainerMonitor: Component<{ containerId: string; defaultTab?: 'overview'
             setSelectedMount(mountOptions()[0].destination);
         }
     });
+
+    const handleCreateFolder = async () => {
+        const name = newFolderName().trim();
+        if (!name || !selectedMount()) return;
+        const token = localStorage.getItem('znskr_token');
+        const folderPath = currentPath() ? `${currentPath()}/${name}` : name;
+        const params = new URLSearchParams({ mount: selectedMount(), path: folderPath });
+        await fetch(`/api/containers/${props.containerId}/files/mkdir?${params.toString()}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        setNewFolderName('');
+        refetchEntries();
+    };
 
     const handleUpload = async (files: FileList | null) => {
         if (!files || !selectedMount()) return;
@@ -284,6 +299,22 @@ const ContainerMonitor: Component<{ containerId: string; defaultTab?: 'overview'
                                     onChange={(e) => handleUpload(e.currentTarget.files)}
                                 />
                             </label>
+                            <div class="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="folder name"
+                                    value={newFolderName()}
+                                    onInput={(e) => setNewFolderName(e.currentTarget.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
+                                    class="px-2 py-1 border border-neutral-300 text-xs text-neutral-700 w-32"
+                                />
+                                <button
+                                    onClick={handleCreateFolder}
+                                    class="px-3 py-1 text-xs border border-neutral-300 text-neutral-700 hover:border-neutral-400"
+                                >
+                                    create folder
+                                </button>
+                            </div>
                         </Show>
                     </div>
 
