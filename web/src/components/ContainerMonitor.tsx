@@ -33,6 +33,35 @@ const formatBytes = (bytes: number) => {
     return `${(bytes / Math.pow(1024, idx)).toFixed(1)} ${units[idx]}`;
 };
 
+const ansiColors: Record<string, string> = {
+    '30': '#000', '31': '#e74c3c', '32': '#2ecc71', '33': '#f1c40f',
+    '34': '#3498db', '35': '#9b59b6', '36': '#1abc9c', '37': '#ecf0f1',
+    '90': '#7f8c8d', '91': '#e74c3c', '92': '#2ecc71', '93': '#f1c40f',
+    '94': '#3498db', '95': '#9b59b6', '96': '#1abc9c', '97': '#fff',
+};
+
+const ansiToHtml = (text: string): string => {
+    let result = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    
+    result = result.replace(/\x1b\[([0-9;]*)m/g, (_, codes) => {
+        if (!codes || codes === '0') return '</span>';
+        const parts = codes.split(';');
+        const styles: string[] = [];
+        for (const code of parts) {
+            if (code === '1') styles.push('font-weight:bold');
+            else if (code === '3') styles.push('font-style:italic');
+            else if (code === '4') styles.push('text-decoration:underline');
+            else if (ansiColors[code]) styles.push(`color:${ansiColors[code]}`);
+        }
+        return styles.length ? `<span style="${styles.join(';')}">` : '';
+    });
+    
+    return result;
+};
+
 const formatUptime = (startedAt: string | null) => {
     if (!startedAt) return 'n/a';
     const start = new Date(startedAt).getTime();
@@ -264,9 +293,10 @@ const ContainerMonitor: Component<{ containerId: string; defaultTab?: 'overview'
             </Show>
 
             <Show when={tab() === 'logs'}>
-                <div class="bg-black text-white text-xs font-mono p-4 h-64 overflow-auto whitespace-pre-wrap">
-                    {logs() || 'no logs'}
-                </div>
+                <div
+                    class="bg-black text-white text-xs font-mono p-4 h-64 overflow-auto whitespace-pre-wrap"
+                    innerHTML={ansiToHtml(logs() || 'no logs')}
+                />
             </Show>
 
             <Show when={tab() === 'volumes'}>

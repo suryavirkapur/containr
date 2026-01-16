@@ -21,7 +21,6 @@ use pingora_core::tls::{
 };
 use pingora_http::{RequestHeader, ResponseHeader};
 use pingora_proxy::{ProxyHttp, Session};
-use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use crate::acme::ChallengeStore;
@@ -67,15 +66,11 @@ impl ZnskrProxy {
 
 pub struct DynamicCertResolver {
     certs_dir: PathBuf,
-    cert_request_tx: Option<mpsc::Sender<String>>,
 }
 
 impl DynamicCertResolver {
-    pub fn new(certs_dir: PathBuf, cert_request_tx: Option<mpsc::Sender<String>>) -> Self {
-        Self {
-            certs_dir,
-            cert_request_tx,
-        }
+    pub fn new(certs_dir: PathBuf) -> Self {
+        Self { certs_dir }
     }
 
     async fn load_cert(&self, domain: &str) -> Option<(X509, PKey<Private>)> {
@@ -116,9 +111,6 @@ impl TlsAccept for DynamicCertResolver {
             }
             None => {
                 warn!(domain = %domain, "no tls certificate found for domain");
-                if let Some(tx) = &self.cert_request_tx {
-                    let _ = tx.try_send(domain);
-                }
             }
         }
     }
@@ -373,7 +365,6 @@ pub fn create_proxy_server(
     http_port: u16,
     https_port: u16,
     certs_dir: PathBuf,
-    cert_request_tx: Option<mpsc::Sender<String>>,
     base_domain: String,
     api_upstream: String,
 ) -> anyhow::Result<Server> {
@@ -386,7 +377,7 @@ pub fn create_proxy_server(
 
     proxy_service.add_tcp(&format!("0.0.0.0:{}", http_port));
 
-    let resolver = DynamicCertResolver::new(certs_dir, cert_request_tx);
+    let resolver = DynamicCertResolver::new(certs_dir);
     let callbacks: TlsAcceptCallbacks = Box::new(resolver);
     let mut tls_settings = TlsSettings::with_callbacks(callbacks)?;
     tls_settings.enable_h2();
