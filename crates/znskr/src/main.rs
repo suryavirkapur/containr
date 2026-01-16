@@ -183,7 +183,6 @@ async fn main() -> anyhow::Result<()> {
     let http_port = config.proxy.http_port;
     let https_port = config.proxy.https_port;
     let certs_dir = PathBuf::from(config.acme.certs_dir.clone());
-    let cert_request_tx = Some(cert_request_tx);
     let base_domain = config.proxy.base_domain.clone();
     let base_domain_for_proxy = base_domain.clone();
     let api_host = resolve_api_host(&config.server.host);
@@ -196,7 +195,6 @@ async fn main() -> anyhow::Result<()> {
             http_port,
             https_port,
             certs_dir,
-            cert_request_tx,
             base_domain_for_proxy,
             api_upstream,
         );

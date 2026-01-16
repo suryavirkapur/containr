@@ -1,5 +1,7 @@
 //! Certificate management handlers
 
+use std::net::ToSocketAddrs;
+
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
@@ -138,14 +140,50 @@ pub async fn reissue_certificate(
         )
     })?;
 
-    // Delete existing certificate to force reissue
-    // The ACME manager will issue a new one on next request
+    // perform dns a record check
+    let dns_ok = format!("{}:443", domain)
+        .to_socket_addrs()
+        .map(|mut addrs| addrs.next().is_some())
+        .unwrap_or(false);
+
+    if !dns_ok {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!(
+                    "dns check failed: no a record found for {}. configure dns before requesting a certificate.",
+                    domain
+                ),
+            }),
+        ));
+    }
+
+    // delete existing certificate to force reissue
     let _ = state.db.delete_certificate(&domain);
 
-    tracing::info!(domain = %domain, "certificate reissue requested");
+    // trigger certificate issuance
+    if let Some(ref tx) = state.cert_request_tx {
+        tx.try_send(domain.clone()).map_err(|_| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ErrorResponse {
+                    error: "certificate service unavailable".to_string(),
+                }),
+            )
+        })?;
+    } else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                error: "certificate issuance not available".to_string(),
+            }),
+        ));
+    }
+
+    tracing::info!(domain = %domain, "certificate issuance requested");
 
     Ok(Json(ReissueResponse {
-        message: "Certificate reissue initiated. The new certificate will be issued on the next HTTPS request.".to_string(),
+        message: "certificate issuance initiated. this may take a few moments.".to_string(),
         domain,
     }))
 }
