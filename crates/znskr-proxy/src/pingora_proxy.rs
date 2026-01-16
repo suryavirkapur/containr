@@ -190,6 +190,7 @@ impl ProxyHttp for ZnskrProxy {
                 // Send challenge response
                 let mut header = ResponseHeader::build(200, None)?;
                 header.insert_header("Content-Type", "text/plain")?;
+                header.insert_header("Content-Length", key_auth.len().to_string())?;
                 session
                     .write_response_header(Box::new(header), false)
                     .await?;
@@ -219,6 +220,7 @@ impl ProxyHttp for ZnskrProxy {
                 if let Some(asset) = crate::static_files::load_static(path) {
                     let mut header = ResponseHeader::build(200, None)?;
                     header.insert_header("Content-Type", asset.content_type)?;
+                    header.insert_header("Content-Length", asset.data.len().to_string())?;
                     session
                         .write_response_header(Box::new(header), false)
                         .await?;
@@ -231,13 +233,15 @@ impl ProxyHttp for ZnskrProxy {
                 warn!(host = %host, "no route found");
 
                 // Send 404 response
+                let body = "No route configured for this host";
                 let mut header = ResponseHeader::build(404, None)?;
                 header.insert_header("Content-Type", "text/plain")?;
+                header.insert_header("Content-Length", body.len().to_string())?;
                 session
                     .write_response_header(Box::new(header), false)
                     .await?;
                 session
-                    .write_response_body(Some("No route configured for this host".into()), true)
+                    .write_response_body(Some(body.into()), true)
                     .await?;
 
                 Ok(true) // Request handled
