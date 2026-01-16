@@ -142,10 +142,13 @@ impl ProxyHttp for ZnskrProxy {
     async fn request_filter(&self, session: &mut Session, ctx: &mut Self::CTX) -> Result<bool> {
         let req_header = session.req_header();
         let path = req_header.uri.path();
+        // try Host header first, then :authority pseudo-header (HTTP/2), then URI host
         let host = req_header
             .headers
             .get("host")
             .and_then(|h| h.to_str().ok())
+            .or_else(|| req_header.uri.host())
+            .or_else(|| req_header.uri.authority().map(|a| a.as_str()))
             .map(|h| h.split(':').next().unwrap_or(h))
             .unwrap_or("");
 

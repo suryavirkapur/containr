@@ -1,7 +1,5 @@
-# znskr configuration file
-
 [server]
-host = "0.0.0.0"
+host = "217.182.171.22"
 port = 3000
 
 [database]
@@ -11,24 +9,25 @@ path = "./data/znskr.db"
 http_port = 80
 https_port = 443
 base_domain = "svk77.com"
+public_ip = "217.182.171.22"
 load_balance = "round_robin"
 
 [github]
 client_id = ""
 client_secret = ""
-webhook_secret = ""
+webhook_secret = "9650b0405e1d4be1536924452f67317bd7a6bc7a957c7f27ab591a6194b546c7"
 
 [auth]
-jwt_secret = "change-me-in-production"
+jwt_secret = "e1cf6d4e9498f5c4924388670bcad83b13d508997dcacc303e7a9e305b557009"
 jwt_expiry_hours = 24
 
 [security]
-encryption_key = ""
+encryption_key = "2c9de326a4b4c91495a5b6142a669b2da03406eb2e580884e5effcf0b5dcccab"
 
 [acme]
-email = ""
+email = "suryavirkapur@hotmail.com"
 certs_dir = "./data/certs"
-staging = true
+staging = false
 
 [storage]
 data_dir = "/data/znskr"

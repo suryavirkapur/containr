@@ -85,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
     let challenges = znskr_proxy::acme::ChallengeStore::new();
 
     // Load existing routes from database
-    load_routes_from_db(&db, &routes, config.proxy.load_balance);
+    load_routes_from_db(&db, &routes, config.proxy.load_balance, &config.proxy.base_domain);
 
     // create certificate request channel (shared between api and proxy)
     let (cert_request_tx, mut cert_request_rx) =
@@ -185,6 +185,7 @@ async fn main() -> anyhow::Result<()> {
     let certs_dir = PathBuf::from(config.acme.certs_dir.clone());
     let cert_request_tx = Some(cert_request_tx);
     let base_domain = config.proxy.base_domain.clone();
+    let base_domain_for_proxy = base_domain.clone();
     let api_host = resolve_api_host(&config.server.host);
     let api_upstream = format!("{}:{}", api_host, config.server.port);
 
@@ -196,7 +197,7 @@ async fn main() -> anyhow::Result<()> {
             https_port,
             certs_dir,
             cert_request_tx,
-            base_domain,
+            base_domain_for_proxy,
             api_upstream,
         );
         match server {
@@ -226,8 +227,9 @@ async fn main() -> anyhow::Result<()> {
                 znskr_runtime::ProxyRouteUpdate::RefreshApp { app_id } => {
                     let routes = proxy_routes_for_updates.clone();
                     let db = proxy_db_for_updates.clone();
+                    let base_domain = base_domain.clone();
                     let _ = tokio::task::spawn_blocking(move || {
-                        refresh_routes_for_app(&db, &routes, app_id, proxy_algorithm);
+                        refresh_routes_for_app(&db, &routes, app_id, proxy_algorithm, &base_domain);
                     })
                     .await;
                 }
@@ -290,6 +292,7 @@ fn load_routes_from_db(
     db: &znskr_common::Database,
     routes: &znskr_proxy::RouteManager,
     algorithm: znskr_common::config::LoadBalanceAlgorithm,
+    base_domain: &str,
 ) {
     let output = std::process::Command::new("docker")
         .args(["ps", "--format", "{{.Names}}", "--filter", "name=znskr-"])
@@ -313,7 +316,7 @@ fn load_routes_from_db(
     }
 
     for app_id in apps {
-        refresh_routes_for_app(db, routes, app_id, algorithm);
+        refresh_routes_for_app(db, routes, app_id, algorithm, base_domain);
     }
 }
 
@@ -322,15 +325,11 @@ fn refresh_routes_for_app(
     routes: &znskr_proxy::RouteManager,
     app_id: uuid::Uuid,
     algorithm: znskr_common::config::LoadBalanceAlgorithm,
+    base_domain: &str,
 ) {
     let app = match db.get_app(app_id) {
         Ok(Some(app)) => app,
         _ => return,
-    };
-
-    let domain = match &app.domain {
-        Some(domain) => domain.clone(),
-        None => return,
     };
 
     let mut upstreams = Vec::new();
@@ -425,20 +424,36 @@ fn refresh_routes_for_app(
         }
     }
 
+    // always register subdomain route: {app.name}.{base_domain}
+    let subdomain = format!("{}.{}", app.name, base_domain);
+
     if upstreams.is_empty() {
-        routes.remove_route(&domain);
-        tracing::info!(domain = %domain, "removed route (no active upstreams)");
+        routes.remove_route(&subdomain);
+        if let Some(ref custom_domain) = app.domain {
+            routes.remove_route(custom_domain);
+        }
+        tracing::info!(subdomain = %subdomain, "removed routes (no active upstreams)");
         return;
     }
 
     routes.add_route(znskr_proxy::routes::Route {
-        domain: domain.clone(),
-        upstreams,
+        domain: subdomain.clone(),
+        upstreams: upstreams.clone(),
         ssl_enabled: false,
         algorithm,
     });
+    tracing::info!(subdomain = %subdomain, "refreshed subdomain route for app");
 
-    tracing::info!(domain = %domain, "refreshed routes for app");
+    // also register custom domain if set
+    if let Some(ref custom_domain) = app.domain {
+        routes.add_route(znskr_proxy::routes::Route {
+            domain: custom_domain.clone(),
+            upstreams,
+            ssl_enabled: false,
+            algorithm,
+        });
+        tracing::info!(domain = %custom_domain, "refreshed custom domain route for app");
+    }
 }
 
 fn select_exposed_service(
