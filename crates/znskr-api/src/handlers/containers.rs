@@ -654,3 +654,46 @@ pub async fn upload_volume_entry(
 
     Ok(StatusCode::OK)
 }
+
+#[utoipa::path(
+    post,
+    path = "/api/containers/{id}/files/mkdir",
+    tag = "containers",
+    params(
+        ("id" = String, Path, description = "container id"),
+        ("mount" = String, Query, description = "mount point"),
+        ("path" = String, Query, description = "directory path to create")
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "directory created"),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse)
+    )
+)]
+pub async fn create_volume_directory(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<VolumeQuery>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+    ensure_container_owned(&state, user_id, &id).await?;
+
+    let docker = DockerContainerManager::new();
+    let (base, rel, read_only) = resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
+    if read_only {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "mount is read-only".to_string(),
+            }),
+        ));
+    }
+
+    let target_dir = base.join(&rel);
+    tokio::fs::create_dir_all(&target_dir).await.map_err(internal_error)?;
+
+    Ok(StatusCode::OK)
+}

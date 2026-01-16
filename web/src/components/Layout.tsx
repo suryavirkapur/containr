@@ -40,25 +40,13 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
                                 href="/"
                                 class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
                             >
-                                apps
+                                web
                             </A>
                             <A
                                 href="/databases"
                                 class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
                             >
                                 databases
-                            </A>
-                            <A
-                                href="/containers"
-                                class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
-                            >
-                                containers
-                            </A>
-                            <A
-                                href="/volumes"
-                                class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
-                            >
-                                volumes
                             </A>
                             <A
                                 href="/queues"
