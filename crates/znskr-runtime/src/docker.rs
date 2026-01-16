@@ -401,7 +401,7 @@ impl DockerContainerManager {
             .args([
                 "inspect",
                 "-f",
-                "{{.State.Status}}|{{.State.Health.Status}}|{{.State.StartedAt}}|{{.State.FinishedAt}}|{{.RestartCount}}",
+                "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{.State.StartedAt}}|{{.State.FinishedAt}}|{{.RestartCount}}",
                 id,
             ])
             .output()
