@@ -16,6 +16,7 @@ pub struct AppState {
     pub db: Database,
     pub deployment_tx: mpsc::Sender<DeploymentJob>,
     pub oauth_states: Arc<DashMap<String, i64>>,
+    pub cert_request_tx: Option<mpsc::Sender<String>>,
 }
 
 impl AppState {
@@ -25,6 +26,7 @@ impl AppState {
         config_path: PathBuf,
         db: Database,
         deployment_tx: mpsc::Sender<DeploymentJob>,
+        cert_request_tx: Option<mpsc::Sender<String>>,
     ) -> Self {
         Self {
             config: Arc::new(RwLock::new(config)),
@@ -32,6 +34,7 @@ impl AppState {
             db,
             deployment_tx,
             oauth_states: Arc::new(DashMap::new()),
+            cert_request_tx,
         }
     }
 }

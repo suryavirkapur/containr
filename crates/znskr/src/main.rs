@@ -80,10 +80,6 @@ async fn main() -> anyhow::Result<()> {
     let db = Database::open(db_path.to_str().unwrap())?;
     info!(path = %db_path.display(), "database opened");
 
-    // start api server and get deployment queue receiver
-    let deployment_rx = znskr_api::run_server(config.clone(), args.config.clone(), db.clone()).await?;
-    info!(port = %config.server.port, "api server started");
-
     // create route manager and challenge store for proxy
     let routes = znskr_proxy::RouteManager::new();
     let challenges = znskr_proxy::acme::ChallengeStore::new();
@@ -91,8 +87,18 @@ async fn main() -> anyhow::Result<()> {
     // Load existing routes from database
     load_routes_from_db(&db, &routes, config.proxy.load_balance);
 
+    // create certificate request channel (shared between api and proxy)
     let (cert_request_tx, mut cert_request_rx) =
         tokio::sync::mpsc::channel::<String>(64);
+
+    // start api server and get deployment queue receiver
+    let deployment_rx = znskr_api::run_server(
+        config.clone(),
+        args.config.clone(),
+        db.clone(),
+        Some(cert_request_tx.clone()),
+    ).await?;
+    info!(port = %config.server.port, "api server started");
     let acme_email = config.acme.email.clone();
     let acme_staging = config.acme.staging;
     let acme_certs_dir = PathBuf::from(config.acme.certs_dir.clone());

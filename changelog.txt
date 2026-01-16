@@ -1,6 +1,10 @@
 changelog
 =========
 
+0.1.3-alpha - 2026-01-16
+- auto-generate ssl certificates when app is created/updated with a domain
+- add cert_request_tx channel to api state for proactive certificate issuance
+
 0.1.2-alpha - 2026-01-16
 - fix missing content-length headers in pingora proxy responses
 - browsers now correctly load static files, acme challenges, and error pages

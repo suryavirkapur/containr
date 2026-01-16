@@ -23,12 +23,13 @@ pub async fn run_server(
     config: Config,
     config_path: PathBuf,
     db: Database,
+    cert_request_tx: Option<mpsc::Sender<String>>,
 ) -> Result<mpsc::Receiver<DeploymentJob>> {
     // create deployment queue channel
     let (tx, rx) = mpsc::channel::<DeploymentJob>(100);
 
     // create shared state
-    let state = AppState::new(config.clone(), config_path, db, tx);
+    let state = AppState::new(config.clone(), config_path, db, tx, cert_request_tx);
 
     // cors layer
     let cors = CorsLayer::new()

@@ -394,6 +394,13 @@ pub async fn create_app(
 
     state.db.save_app(&app).map_err(internal_error)?;
 
+    // trigger certificate generation for custom domain
+    if let Some(ref domain) = app.domain {
+        if let Some(ref tx) = state.cert_request_tx {
+            let _ = tx.try_send(domain.clone());
+        }
+    }
+
     Ok((StatusCode::CREATED, Json(AppResponse::from(&app))))
 }
 
@@ -631,6 +638,13 @@ pub async fn update_app(
 
     app.updated_at = chrono::Utc::now();
     state.db.save_app(&app).map_err(internal_error)?;
+
+    // trigger certificate generation for new/updated domain
+    if let Some(ref domain) = app.domain {
+        if let Some(ref tx) = state.cert_request_tx {
+            let _ = tx.try_send(domain.clone());
+        }
+    }
 
     Ok(Json(AppResponse::from(&app)))
 }
