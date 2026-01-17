@@ -491,7 +491,9 @@ const AppDetail: Component = () => {
                                         <span class="text-neutral-500 text-sm">failed</span>
                                     </Show>
                                     <Show when={certificate()!.status === 'none'}>
-                                        <span class="text-neutral-400 text-sm">n/a</span>
+                                        <span class="text-neutral-400 text-sm">
+                                            {app()!.domain ? 'awaiting issuance' : 'n/a'}
+                                        </span>
                                     </Show>
                                 </div>
                                 <Show when={app()!.domain && certificate()!.status !== 'pending'}>
@@ -702,6 +704,9 @@ const AppDetail: Component = () => {
                                     class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
                                     placeholder="app.example.com"
                                 />
+                                <p class="text-xs text-neutral-400 mt-2">
+                                    saving requests tls automatically and http will be refused until ready
+                                </p>
                             </div>
 
                             <div>

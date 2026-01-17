@@ -55,8 +55,6 @@ impl DatabaseManager {
             container_name.clone(),
             "-v".to_string(),
             db.bind_mount_arg(),
-            "-p".to_string(),
-            format!("{}:{}", db.port, db.port),
             "--restart".to_string(),
             "unless-stopped".to_string(),
             "--memory".to_string(),
@@ -70,6 +68,12 @@ impl DatabaseManager {
             "--network-alias".to_string(),
             format!("db-{}", db.id),
         ];
+
+        // only expose port to host if external access is enabled
+        if let Some(ext_port) = db.external_port {
+            args.push("-p".to_string());
+            args.push(format!("0.0.0.0:{}:{}", ext_port, db.port));
+        }
 
         // add labels
         args.push("--label".to_string());

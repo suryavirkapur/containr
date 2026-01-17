@@ -96,12 +96,15 @@ pub async fn update_settings(
     // verify auth
     let _ = get_user_id(&headers, &state.config.read().await.auth.jwt_secret)?;
 
+    let mut requested_base_domain: Option<String> = None;
+
     // update config in memory
     {
         let mut config = state.config.write().await;
 
         if let Some(base_domain) = req.base_domain {
             config.proxy.base_domain = base_domain;
+            requested_base_domain = Some(config.proxy.base_domain.clone());
         }
 
         if let Some(acme_email) = req.acme_email {
@@ -117,6 +120,14 @@ pub async fn update_settings(
     save_config(&state).await.map_err(internal_error)?;
 
     let config = state.config.read().await;
+
+    if let Some(domain) = requested_base_domain {
+        if !domain.is_empty() {
+            if let Some(tx) = &state.cert_request_tx {
+                let _ = tx.try_send(domain);
+            }
+        }
+    }
 
     tracing::info!(base_domain = %config.proxy.base_domain, "settings updated");
 
@@ -163,10 +174,14 @@ pub async fn issue_dashboard_certificate(
     // delete existing certificate to force reissue
     let _ = state.db.delete_certificate(&domain);
 
+    if let Some(ref tx) = state.cert_request_tx {
+        let _ = tx.try_send(domain.clone());
+    }
+
     tracing::info!(domain = %domain, "dashboard certificate issuance requested");
 
     Ok(Json(DashboardCertResponse {
-        message: "certificate issuance initiated. the new certificate will be issued on the next https request.".to_string(),
+        message: "certificate issuance initiated. the new certificate will be issued shortly.".to_string(),
         domain,
     }))
 }

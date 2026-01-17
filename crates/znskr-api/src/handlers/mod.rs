@@ -10,5 +10,6 @@ pub mod health;
 pub mod queues;
 pub mod settings;
 pub mod storage;
+pub mod system;
 pub mod webhooks;
 pub mod websocket;

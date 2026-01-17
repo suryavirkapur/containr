@@ -45,6 +45,7 @@ pub struct ZnskrProxy {
     challenges: Arc<ChallengeStore>,
     base_domain: String,
     api_upstream: String,
+    certs_dir: PathBuf,
 }
 
 impl ZnskrProxy {
@@ -54,13 +55,19 @@ impl ZnskrProxy {
         challenges: ChallengeStore,
         base_domain: String,
         api_upstream: String,
+        certs_dir: PathBuf,
     ) -> Self {
         Self {
             routes: Arc::new(routes),
             challenges: Arc::new(challenges),
             base_domain,
             api_upstream,
+            certs_dir,
         }
+    }
+
+    fn has_certificate(&self, domain: &str) -> bool {
+        self.certs_dir.join(format!("{}.pem", domain)).exists()
     }
 }
 
@@ -176,7 +183,7 @@ impl ProxyHttp for ZnskrProxy {
             }
         }
 
-        // Check for ACME challenge
+        // Check for ACME challenge (always allow over HTTP)
         if path.starts_with("/.well-known/acme-challenge/") {
             let token = path.trim_start_matches("/.well-known/acme-challenge/");
             if let Some(key_auth) = self.challenges.get(token) {
@@ -197,6 +204,42 @@ impl ProxyHttp for ZnskrProxy {
             }
         }
 
+        // enforce https for managed domains
+        let is_tls = session.digest().map(|d| d.ssl_digest.is_some()).unwrap_or(false);
+        let https_required = if host.is_empty() {
+            false
+        } else if host == self.base_domain {
+            true
+        } else if let Some(route) = self.routes.get_route(host) {
+            route.ssl_enabled
+        } else {
+            false
+        };
+
+        if !is_tls && https_required {
+            if self.has_certificate(host) {
+                let uri = req_header.uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
+                let redirect_url = format!("https://{}{}", host, uri);
+                info!(host = %host, "redirecting http to https");
+
+                let mut header = ResponseHeader::build(301, None)?;
+                header.insert_header("Location", &redirect_url)?;
+                header.insert_header("Content-Length", "0")?;
+                session.write_response_header(Box::new(header), true).await?;
+            } else {
+                let body = "https required; certificate provisioning in progress";
+                let mut header = ResponseHeader::build(426, None)?;
+                header.insert_header("Content-Type", "text/plain")?;
+                header.insert_header("Content-Length", body.len().to_string())?;
+                session
+                    .write_response_header(Box::new(header), false)
+                    .await?;
+                session.write_response_body(Some(body.into()), true).await?;
+            }
+
+            return Ok(true);
+        }
+
         if host == self.base_domain && path.starts_with("/api") {
             ctx.upstream_addr = Some(self.api_upstream.clone());
             ctx.upstream_selection = None;
@@ -211,24 +254,26 @@ impl ProxyHttp for ZnskrProxy {
                 Ok(false) // Continue to upstream
             }
             None => {
-                // serve embedded static assets if no route is configured
-                if let Some(asset) = crate::static_files::load_static(path) {
-                    let mut header = ResponseHeader::build(200, None)?;
-                    header.insert_header("Content-Type", asset.content_type)?;
-                    header.insert_header("Content-Length", asset.data.len().to_string())?;
-                    session
-                        .write_response_header(Box::new(header), false)
-                        .await?;
-                    session
-                        .write_response_body(Some(Bytes::from(asset.data)), true)
-                        .await?;
-                    return Ok(true);
+                // serve embedded static assets only for the base domain
+                if host == self.base_domain {
+                    if let Some(asset) = crate::static_files::load_static(path) {
+                        let mut header = ResponseHeader::build(200, None)?;
+                        header.insert_header("Content-Type", asset.content_type)?;
+                        header.insert_header("Content-Length", asset.data.len().to_string())?;
+                        session
+                            .write_response_header(Box::new(header), false)
+                            .await?;
+                        session
+                            .write_response_body(Some(Bytes::from(asset.data)), true)
+                            .await?;
+                        return Ok(true);
+                    }
                 }
 
                 warn!(host = %host, "no route found");
 
                 // Send 404 response
-                let body = "No route configured for this host";
+                let body = "no route found";
                 let mut header = ResponseHeader::build(404, None)?;
                 header.insert_header("Content-Type", "text/plain")?;
                 header.insert_header("Content-Length", body.len().to_string())?;
@@ -371,7 +416,7 @@ pub fn create_proxy_server(
     let mut server = Server::new(None).unwrap();
     server.bootstrap();
 
-    let proxy = ZnskrProxy::new(routes, challenges, base_domain, api_upstream);
+    let proxy = ZnskrProxy::new(routes, challenges, base_domain, api_upstream, certs_dir.clone());
 
     let mut proxy_service = pingora_proxy::http_proxy_service(&server.configuration, proxy);
 

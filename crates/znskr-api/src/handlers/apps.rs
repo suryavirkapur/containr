@@ -1,12 +1,14 @@
 //! app management handlers
 
+use std::net::IpAddr;
+
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
 use serde::{Deserialize, Serialize};
-use std::net::IpAddr;
+use tracing::warn;
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 use trust_dns_resolver::proto::rr::RecordType;
 use trust_dns_resolver::TokioAsyncResolver;
@@ -394,6 +396,14 @@ pub async fn create_app(
 
     state.db.save_app(&app).map_err(internal_error)?;
 
+    if let Some(domain) = app.domain.clone() {
+        if let Some(tx) = &state.cert_request_tx {
+            let _ = tx.try_send(domain);
+        } else {
+            warn!("certificate issuance not available for new app domain");
+        }
+    }
+
     Ok((StatusCode::CREATED, Json(AppResponse::from(&app))))
 }
 
@@ -566,6 +576,8 @@ pub async fn update_app(
         ));
     }
 
+    let mut requested_domain: Option<String> = None;
+
     // update fields
     if let Some(name) = req.name {
         app.name = name;
@@ -598,6 +610,7 @@ pub async fn update_app(
             }
         }
         app.domain = Some(domain);
+        requested_domain = app.domain.clone();
     }
     if let Some(port) = req.port {
         app.port = port;
@@ -631,6 +644,14 @@ pub async fn update_app(
 
     app.updated_at = chrono::Utc::now();
     state.db.save_app(&app).map_err(internal_error)?;
+
+    if let Some(domain) = requested_domain {
+        if let Some(tx) = &state.cert_request_tx {
+            let _ = tx.try_send(domain);
+        } else {
+            warn!("certificate issuance not available for updated app domain");
+        }
+    }
 
     Ok(Json(AppResponse::from(&app)))
 }

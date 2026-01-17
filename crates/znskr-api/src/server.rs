@@ -13,7 +13,7 @@ use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
 use crate::github::DeploymentJob;
-use crate::handlers::{apps, auth, certificates, containers, databases, deployments, health, queues, settings, storage, webhooks, websocket};
+use crate::handlers::{apps, auth, certificates, containers, databases, deployments, health, queues, settings, storage, system, webhooks, websocket};
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
 use znskr_common::{Config, Database, Result};
@@ -41,6 +41,7 @@ pub async fn run_server(
     let app = Router::new()
         // health
         .route("/health", get(health::health))
+        .route("/api/system/stats", get(system::get_system_stats))
         // openapi docs
         .merge(Scalar::with_url("/api/docs", ApiDoc::openapi()))
         // auth
@@ -120,6 +121,11 @@ pub async fn run_server(
         .route("/api/databases/{id}", delete(databases::delete_database))
         .route("/api/databases/{id}/start", post(databases::start_database))
         .route("/api/databases/{id}/stop", post(databases::stop_database))
+        .route("/api/databases/{id}/logs", get(databases::get_database_logs))
+        .route("/api/databases/{id}/expose", post(databases::expose_database))
+        .route("/api/databases/{id}/export", post(databases::export_database))
+        .route("/api/databases/{id}/backups", get(databases::list_backups))
+        .route("/api/databases/{id}/backups/download", get(databases::download_backup))
         // managed queues
         .route("/api/queues", get(queues::list_queues))
         .route("/api/queues", post(queues::create_queue))
