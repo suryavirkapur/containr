@@ -1,13 +1,24 @@
-//! Docker-based container management
+//! docker-based container management
 //!
-//! Simple container operations using Docker CLI.
+//! async container operations using bollard docker api.
 
 use std::collections::HashMap;
-use std::process::Command;
-use tracing::{info, warn};
+use std::sync::Arc;
+
+use bollard::query_parameters::{
+    CreateContainerOptions, InspectContainerOptions, ListContainersOptions,
+    LogsOptions, RemoveContainerOptions, StartContainerOptions, StatsOptions, StopContainerOptions,
+};
+use bollard::models::{
+    ContainerCreateBody, ContainerStateStatusEnum, ContainerSummaryStateEnum, HealthStatusEnum, HostConfig,
+    RestartPolicy, RestartPolicyNameEnum, NetworkCreateRequest,
+};
+use bollard::Docker;
+use futures::StreamExt;
+use serde::Deserialize;
+use tracing::{error, info, warn};
 
 use crate::error::{ClientError, Result};
-use serde::Deserialize;
 
 /// health check command configuration for docker
 #[derive(Debug, Clone)]
@@ -39,14 +50,14 @@ pub struct DockerContainerConfig {
     pub restart_policy: String,
 }
 
-/// Docker container status
+/// docker container status
 #[derive(Debug, Clone)]
 pub struct DockerContainerStatus {
     pub running: bool,
     pub container_id: Option<String>,
 }
 
-/// Docker container stats
+/// docker container stats
 #[derive(Debug, Clone)]
 pub struct DockerContainerStats {
     pub cpu_percent: f64,
@@ -54,7 +65,7 @@ pub struct DockerContainerStats {
     pub mem_limit_bytes: u64,
 }
 
-/// Docker container runtime state
+/// docker container runtime state
 #[derive(Debug, Clone)]
 pub struct DockerContainerState {
     pub status: String,
@@ -64,7 +75,7 @@ pub struct DockerContainerState {
     pub restart_count: u64,
 }
 
-/// Docker mount info
+/// docker mount info
 #[derive(Debug, Clone, Deserialize)]
 pub struct DockerMountInfo {
     #[serde(rename = "Type")]
@@ -79,7 +90,7 @@ pub struct DockerMountInfo {
     pub rw: Option<bool>,
 }
 
-/// Docker container info
+/// docker container info
 #[derive(Debug, Clone)]
 pub struct DockerContainerInfo {
     pub id: String,
@@ -87,31 +98,48 @@ pub struct DockerContainerInfo {
     pub status: DockerContainerStatus,
 }
 
-/// manages container lifecycle using Docker CLI
+/// manages container lifecycle using bollard docker api
 #[derive(Clone)]
 pub struct DockerContainerManager {
+    docker: Option<Arc<Docker>>,
     stub_mode: bool,
 }
 
 impl DockerContainerManager {
-    /// creates a new Docker container manager
+    /// creates a new docker container manager
+    /// panics if unable to connect to docker socket
     pub fn new() -> Self {
-        if which::which("docker").is_err() {
-            warn!("docker not found - running in stub mode");
-            return Self { stub_mode: true };
+        match Docker::connect_with_socket_defaults() {
+            Ok(docker) => {
+                info!("connected to docker socket");
+                Self {
+                    docker: Some(Arc::new(docker)),
+                    stub_mode: false,
+                }
+            }
+            Err(e) => {
+                panic!("failed to connect to docker socket: {}", e);
+            }
         }
-        Self { stub_mode: false }
     }
 
     /// creates a new manager in stub mode
     pub fn new_stub() -> Self {
         warn!("docker container manager running in stub mode");
-        Self { stub_mode: true }
+        Self {
+            docker: None,
+            stub_mode: true,
+        }
     }
 
     /// returns true if running in stub mode
     pub fn is_stub(&self) -> bool {
         self.stub_mode
+    }
+
+    /// gets the docker client (panics if in stub mode)
+    fn client(&self) -> &Docker {
+        self.docker.as_ref().expect("docker client not available in stub mode")
     }
 
     /// creates and starts a new container
@@ -132,69 +160,88 @@ impl DockerContainerManager {
             });
         }
 
-        // Build docker run command
-        let mut args = vec![
-            "run".to_string(),
-            "-d".to_string(),
-            "--name".to_string(),
-            config.id.clone(),
-            "--restart".to_string(),
-            config.restart_policy.clone(),
-        ];
+        // build environment variables
+        let env: Vec<String> = config
+            .env_vars
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect();
 
-        // attach to network if specified
-        if let Some(ref network) = config.network {
-            args.push("--network".to_string());
-            args.push(network.clone());
-        }
+        // build restart policy
+        let restart_policy = match config.restart_policy.as_str() {
+            "no" => Some(RestartPolicy {
+                name: Some(RestartPolicyNameEnum::NO),
+                maximum_retry_count: None,
+            }),
+            "always" => Some(RestartPolicy {
+                name: Some(RestartPolicyNameEnum::ALWAYS),
+                maximum_retry_count: None,
+            }),
+            "on-failure" => Some(RestartPolicy {
+                name: Some(RestartPolicyNameEnum::ON_FAILURE),
+                maximum_retry_count: None,
+            }),
+            "unless-stopped" => Some(RestartPolicy {
+                name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                maximum_retry_count: None,
+            }),
+            _ => Some(RestartPolicy {
+                name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                maximum_retry_count: None,
+            }),
+        };
 
-        // Add environment variables
-        for (key, value) in &config.env_vars {
-            args.push("-e".to_string());
-            args.push(format!("{}={}", key, value));
-        }
-
-        // Add memory limit
-        if let Some(mem) = config.memory_limit {
-            args.push("-m".to_string());
-            args.push(format!("{}b", mem));
-        }
-
-        // Add CPU limit
-        if let Some(cpu) = config.cpu_limit {
-            args.push("--cpus".to_string());
-            args.push(format!("{:.2}", cpu));
-        }
+        // build host config
+        let host_config = HostConfig {
+            memory: config.memory_limit.map(|m| m as i64),
+            nano_cpus: config.cpu_limit.map(|c| (c * 1_000_000_000.0) as i64),
+            restart_policy,
+            network_mode: config.network.clone(),
+            ..Default::default()
+        };
 
         // add health check if configured
-        if let Some(ref hc) = config.health_check {
-            args.push("--health-cmd".to_string());
-            args.push(hc.cmd.join(" "));
-            args.push("--health-interval".to_string());
-            args.push(format!("{}s", hc.interval_secs));
-            args.push("--health-timeout".to_string());
-            args.push(format!("{}s", hc.timeout_secs));
-            args.push("--health-retries".to_string());
-            args.push(hc.retries.to_string());
-        }
+        let healthcheck = config.health_check.as_ref().map(|hc| {
+            bollard::models::HealthConfig {
+                test: Some(vec!["CMD-SHELL".to_string(), hc.cmd.join(" ")]),
+                interval: Some((hc.interval_secs as i64) * 1_000_000_000),
+                timeout: Some((hc.timeout_secs as i64) * 1_000_000_000),
+                retries: Some(hc.retries as i64),
+                start_period: None,
+                start_interval: None,
+            }
+        });
 
-        // Add image
-        args.push(config.image.clone());
+        let container_config = ContainerCreateBody {
+            image: Some(config.image.clone()),
+            hostname: Some(config.id.to_string()),
+            env: Some(env),
+            labels: Some(HashMap::from([("znskr".to_string(), "true".to_string())])),
+            host_config: Some(host_config),
+            healthcheck,
+            ..Default::default()
+        };
 
-        let output = Command::new("docker")
-            .args(&args)
-            .output()
-            .map_err(|e| ClientError::Operation(format!("docker run failed: {}", e)))?;
+        let options = CreateContainerOptions {
+            name: Some(config.id.to_string()),
+            ..Default::default()
+        };
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(ClientError::Operation(format!(
-                "docker run failed: {}",
-                stderr
-            )));
-        }
+        // create container
+        let response = self
+            .client()
+            .create_container(Some(options), container_config)
+            .await
+            .map_err(|e| ClientError::Operation(format!("docker create failed: {}", e)))?;
 
-        let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let container_id = response.id.clone();
+
+        // start container
+        self.client()
+            .start_container(&container_id, None::<StartContainerOptions>)
+            .await
+            .map_err(|e| ClientError::Operation(format!("docker start failed: {}", e)))?;
+
         info!(id = %config.id, container_id = %container_id, "docker container started");
 
         Ok(DockerContainerInfo {
@@ -215,14 +262,10 @@ impl DockerContainerManager {
             return Ok(());
         }
 
-        let output = Command::new("docker")
-            .args(["stop", id])
-            .output()
-            .map_err(|e| ClientError::Operation(format!("docker stop failed: {}", e)))?;
+        let options = StopContainerOptions { t: Some(10), ..Default::default() };
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!(id = %id, error = %stderr, "docker stop failed (container may not exist)");
+        if let Err(e) = self.client().stop_container(id, Some(options)).await {
+            warn!(id = %id, error = %e, "docker stop failed (container may not exist)");
         }
 
         Ok(())
@@ -236,17 +279,16 @@ impl DockerContainerManager {
             return Ok(());
         }
 
-        // Stop first
+        // stop first
         let _ = self.stop_container(id).await;
 
-        let output = Command::new("docker")
-            .args(["rm", "-f", id])
-            .output()
-            .map_err(|e| ClientError::Operation(format!("docker rm failed: {}", e)))?;
+        let options = RemoveContainerOptions {
+            force: true,
+            ..Default::default()
+        };
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!(id = %id, error = %stderr, "docker rm failed (container may not exist)");
+        if let Err(e) = self.client().remove_container(id, Some(options)).await {
+            warn!(id = %id, error = %e, "docker rm failed (container may not exist)");
         }
 
         Ok(())
@@ -258,15 +300,28 @@ impl DockerContainerManager {
             return Ok(format!("[stub] container {} logs would appear here", id));
         }
 
-        let output = Command::new("docker")
-            .args(["logs", "--tail", &tail.to_string(), id])
-            .output()
-            .map_err(|e| ClientError::Operation(format!("docker logs failed: {}", e)))?;
+        let options = LogsOptions {
+            follow: false,
+            stdout: true,
+            stderr: true,
+            tail: tail.to_string(),
+            ..Default::default()
+        };
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let mut stream = self.client().logs(id, Some(options));
+        let mut logs = String::new();
 
-        Ok(format!("{}{}", stdout, stderr))
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(output) => logs.push_str(&output.to_string()),
+                Err(e) => {
+                    error!(id = %id, error = %e, "error reading logs");
+                    break;
+                }
+            }
+        }
+
+        Ok(logs)
     }
 
     /// gets basic stats for a container
@@ -279,46 +334,64 @@ impl DockerContainerManager {
             });
         }
 
-        let output = Command::new("docker")
-            .args([
-                "stats",
-                "--no-stream",
-                "--format",
-                "{{.CPUPerc}}|{{.MemUsage}}",
-                id,
-            ])
-            .output()
-            .map_err(|e| ClientError::Operation(format!("docker stats failed: {}", e)))?;
+        let options = StatsOptions {
+            stream: false,
+            one_shot: true,
+        };
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(ClientError::Operation(format!(
-                "docker stats failed: {}",
-                stderr
-            )));
+        let mut stream = self.client().stats(id, Some(options));
+
+        if let Some(result) = stream.next().await {
+            match result {
+                Ok(stats) => {
+                    // calculate cpu percent - need to unwrap the option types
+                    let cpu_stats = match stats.cpu_stats {
+                        Some(cs) => cs,
+                        None => return Ok(DockerContainerStats {
+                            cpu_percent: 0.0,
+                            mem_usage_bytes: 0,
+                            mem_limit_bytes: 0,
+                        }),
+                    };
+
+                    let precpu_stats = stats.precpu_stats.unwrap_or_default();
+
+                    let cpu_usage = cpu_stats.cpu_usage.as_ref()
+                        .and_then(|u| u.total_usage)
+                        .unwrap_or(0);
+                    let precpu_usage = precpu_stats.cpu_usage.as_ref()
+                        .and_then(|u| u.total_usage)
+                        .unwrap_or(0);
+                    let cpu_delta = cpu_usage.saturating_sub(precpu_usage);
+
+                    let system_delta = cpu_stats.system_cpu_usage
+                        .unwrap_or(0)
+                        .saturating_sub(precpu_stats.system_cpu_usage.unwrap_or(0));
+
+                    let cpu_percent = if system_delta > 0 && cpu_delta > 0 {
+                        let num_cpus = cpu_stats.online_cpus.unwrap_or(1) as f64;
+                        (cpu_delta as f64 / system_delta as f64) * num_cpus * 100.0
+                    } else {
+                        0.0
+                    };
+
+                    let memory_stats = stats.memory_stats.unwrap_or_default();
+                    let mem_usage = memory_stats.usage.unwrap_or(0);
+                    let mem_limit = memory_stats.limit.unwrap_or(0);
+
+                    return Ok(DockerContainerStats {
+                        cpu_percent,
+                        mem_usage_bytes: mem_usage,
+                        mem_limit_bytes: mem_limit,
+                    });
+                }
+                Err(e) => {
+                    return Err(ClientError::Operation(format!("docker stats failed: {}", e)));
+                }
+            }
         }
 
-        let line = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let parts: Vec<&str> = line.split('|').collect();
-        if parts.len() < 2 {
-            return Err(ClientError::Operation("unexpected stats format".to_string()));
-        }
-
-        let cpu_percent = parts[0]
-            .trim()
-            .trim_end_matches('%')
-            .parse::<f64>()
-            .unwrap_or(0.0);
-
-        let mem_parts: Vec<&str> = parts[1].split('/').collect();
-        let mem_usage = mem_parts.get(0).map(|s| s.trim()).unwrap_or("0B");
-        let mem_limit = mem_parts.get(1).map(|s| s.trim()).unwrap_or("0B");
-
-        Ok(DockerContainerStats {
-            cpu_percent,
-            mem_usage_bytes: parse_bytes(mem_usage),
-            mem_limit_bytes: parse_bytes(mem_limit),
-        })
+        Err(ClientError::Operation("no stats returned".to_string()))
     }
 
     /// checks if a container is running
@@ -327,17 +400,20 @@ impl DockerContainerManager {
             return Ok(true);
         }
 
-        let output = Command::new("docker")
-            .args(["inspect", "-f", "{{.State.Running}}", id])
-            .output()
-            .map_err(|e| ClientError::Operation(format!("docker inspect failed: {}", e)))?;
-
-        if !output.status.success() {
-            return Ok(false);
+        match self
+            .client()
+            .inspect_container(id, None::<InspectContainerOptions>)
+            .await
+        {
+            Ok(inspect) => {
+                let running = inspect
+                    .state
+                    .and_then(|s| s.running)
+                    .unwrap_or(false);
+                Ok(running)
+            }
+            Err(_) => Ok(false),
         }
-
-        let running = String::from_utf8_lossy(&output.stdout).trim() == "true";
-        Ok(running)
     }
 
     /// lists all znskr containers
@@ -346,43 +422,54 @@ impl DockerContainerManager {
             return Ok(vec![]);
         }
 
-        let output = Command::new("docker")
-            .args([
-                "ps",
-                "-a",
-                "--filter",
-                "name=znskr-",
-                "--format",
-                "{{.Names}}|{{.Image}}|{{.Status}}",
-            ])
-            .output()
+        let mut filters = HashMap::new();
+        filters.insert("name", vec!["znskr-"]);
+
+        let options = ListContainersOptions {
+            all: true,
+            filters: Some(
+                filters
+                    .into_iter()
+                    .map(|(k, v)| {
+                        (
+                            k.to_string(),
+                            v.into_iter().map(|s| s.to_string()).collect(),
+                        )
+                    })
+                    .collect(),
+            ),
+            ..Default::default()
+        };
+
+        let containers = self
+            .client()
+            .list_containers(Some(options))
+            .await
             .map_err(|e| ClientError::Operation(format!("docker ps failed: {}", e)))?;
 
-        if !output.status.success() {
-            return Ok(vec![]);
-        }
+        let infos: Vec<DockerContainerInfo> = containers
+            .into_iter()
+            .map(|c| {
+                let id = c.names.as_ref()
+                    .and_then(|names| names.first())
+                    .map(|n| n.trim_start_matches('/').to_string())
+                    .unwrap_or_default();
+                let image = c.image.unwrap_or_default();
+                let running = matches!(c.state, Some(ContainerSummaryStateEnum::RUNNING));
+                let container_id = c.id.clone();
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let containers: Vec<DockerContainerInfo> = stdout
-            .lines()
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.split('|').collect();
-                if parts.len() >= 3 {
-                    Some(DockerContainerInfo {
-                        id: parts[0].to_string(),
-                        image: parts[1].to_string(),
-                        status: DockerContainerStatus {
-                            running: parts[2].starts_with("Up"),
-                            container_id: Some(parts[0].to_string()),
-                        },
-                    })
-                } else {
-                    None
+                DockerContainerInfo {
+                    id,
+                    image,
+                    status: DockerContainerStatus {
+                        running,
+                        container_id,
+                    },
                 }
             })
             .collect();
 
-        Ok(containers)
+        Ok(infos)
     }
 
     /// gets container state info
@@ -397,45 +484,47 @@ impl DockerContainerManager {
             });
         }
 
-        let output = Command::new("docker")
-            .args([
-                "inspect",
-                "-f",
-                "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{.State.StartedAt}}|{{.State.FinishedAt}}|{{.RestartCount}}",
-                id,
-            ])
-            .output()
+        let inspect = self
+            .client()
+            .inspect_container(id, None::<InspectContainerOptions>)
+            .await
             .map_err(|e| ClientError::Operation(format!("docker inspect failed: {}", e)))?;
 
-        if !output.status.success() {
-            return Err(ClientError::Operation("docker inspect failed".to_string()));
-        }
+        let state = inspect.state.unwrap_or_default();
 
-        let line = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let parts: Vec<&str> = line.split('|').collect();
-        if parts.len() < 5 {
-            return Err(ClientError::Operation("unexpected inspect format".to_string()));
-        }
+        let status = state
+            .status
+            .map(|s| match s {
+                ContainerStateStatusEnum::CREATED => "created",
+                ContainerStateStatusEnum::RUNNING => "running",
+                ContainerStateStatusEnum::PAUSED => "paused",
+                ContainerStateStatusEnum::RESTARTING => "restarting",
+                ContainerStateStatusEnum::REMOVING => "removing",
+                ContainerStateStatusEnum::EXITED => "exited",
+                ContainerStateStatusEnum::DEAD => "dead",
+                ContainerStateStatusEnum::EMPTY => "empty",
+            })
+            .unwrap_or("unknown")
+            .to_string();
 
-        let health_raw = parts[1].trim();
-        let health_status = if health_raw.is_empty() || health_raw == "<no value>" {
-            None
-        } else {
-            Some(health_raw.to_string())
-        };
+        let health_status = state.health.and_then(|h| {
+            h.status.map(|s| match s {
+                HealthStatusEnum::NONE => "none".to_string(),
+                HealthStatusEnum::STARTING => "starting".to_string(),
+                HealthStatusEnum::HEALTHY => "healthy".to_string(),
+                HealthStatusEnum::UNHEALTHY => "unhealthy".to_string(),
+                HealthStatusEnum::EMPTY => "".to_string(),
+            })
+        });
+
+        let restart_count = inspect.restart_count.unwrap_or(0) as u64;
 
         Ok(DockerContainerState {
-            status: parts[0].trim().to_string(),
+            status,
             health_status,
-            started_at: {
-                let v = parts[2].trim();
-                if v.is_empty() || v == "<no value>" { None } else { Some(v.to_string()) }
-            },
-            finished_at: {
-                let v = parts[3].trim();
-                if v.is_empty() || v == "<no value>" { None } else { Some(v.to_string()) }
-            },
-            restart_count: parts[4].trim().parse::<u64>().unwrap_or(0),
+            started_at: state.started_at,
+            finished_at: state.finished_at,
+            restart_count,
         })
     }
 
@@ -445,18 +534,24 @@ impl DockerContainerManager {
             return Ok(vec![]);
         }
 
-        let output = Command::new("docker")
-            .args(["inspect", "-f", "{{json .Mounts}}", id])
-            .output()
+        let inspect = self
+            .client()
+            .inspect_container(id, None::<InspectContainerOptions>)
+            .await
             .map_err(|e| ClientError::Operation(format!("docker inspect failed: {}", e)))?;
 
-        if !output.status.success() {
-            return Err(ClientError::Operation("docker inspect failed".to_string()));
-        }
-
-        let mounts_json = String::from_utf8_lossy(&output.stdout);
-        let mounts: Vec<DockerMountInfo> = serde_json::from_str(mounts_json.trim())
-            .map_err(|e| ClientError::Operation(format!("failed to parse mounts: {}", e)))?;
+        let mounts: Vec<DockerMountInfo> = inspect
+            .mounts
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| DockerMountInfo {
+                mount_type: m.typ.map(|t| format!("{:?}", t)).unwrap_or_default(),
+                source: m.source.unwrap_or_default(),
+                destination: m.destination.unwrap_or_default(),
+                name: m.name,
+                rw: m.rw,
+            })
+            .collect();
 
         Ok(mounts)
     }
@@ -469,23 +564,27 @@ impl DockerContainerManager {
             return Ok(());
         }
 
-        let output = Command::new("docker")
-            .args(["network", "create", "--driver", "bridge", name])
-            .output()
-            .map_err(|e| ClientError::Operation(format!("docker network create failed: {}", e)))?;
+        let options = NetworkCreateRequest {
+            name: name.to_string(),
+            driver: Some("bridge".to_string()),
+            ..Default::default()
+        };
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            // ignore "already exists" errors
-            if !stderr.contains("already exists") {
-                return Err(ClientError::Operation(format!(
-                    "docker network create failed: {}",
-                    stderr
-                )));
+        match self.client().create_network(options).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let err_str = e.to_string();
+                // ignore "already exists" errors
+                if err_str.contains("already exists") {
+                    Ok(())
+                } else {
+                    Err(ClientError::Operation(format!(
+                        "docker network create failed: {}",
+                        e
+                    )))
+                }
             }
         }
-
-        Ok(())
     }
 
     /// removes a docker network
@@ -496,14 +595,8 @@ impl DockerContainerManager {
             return Ok(());
         }
 
-        let output = Command::new("docker")
-            .args(["network", "rm", name])
-            .output()
-            .map_err(|e| ClientError::Operation(format!("docker network rm failed: {}", e)))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!(network = %name, error = %stderr, "docker network rm failed");
+        if let Err(e) = self.client().remove_network(name).await {
+            warn!(network = %name, error = %e, "docker network rm failed");
         }
 
         Ok(())
@@ -515,19 +608,26 @@ impl DockerContainerManager {
             return Ok(true);
         }
 
-        let output = Command::new("docker")
-            .args(["inspect", "-f", "{{.State.Health.Status}}", id])
-            .output()
-            .map_err(|e| ClientError::Operation(format!("docker inspect failed: {}", e)))?;
+        match self
+            .client()
+            .inspect_container(id, None::<InspectContainerOptions>)
+            .await
+        {
+            Ok(inspect) => {
+                let health_status = inspect
+                    .state
+                    .and_then(|s| s.health)
+                    .and_then(|h| h.status);
 
-        if !output.status.success() {
-            // container might not exist or have no health check
-            return Ok(true);
+                match health_status {
+                    Some(HealthStatusEnum::HEALTHY) => Ok(true),
+                    Some(HealthStatusEnum::NONE) => Ok(true),
+                    None => Ok(true), // no health check configured
+                    _ => Ok(false),
+                }
+            }
+            Err(_) => Ok(true), // container might not exist
         }
-
-        let status = String::from_utf8_lossy(&output.stdout).trim().to_lowercase();
-        // "healthy", "none" (no healthcheck), or empty means healthy
-        Ok(status == "healthy" || status == "none" || status.is_empty())
     }
 
     /// waits for a container to become healthy with timeout
@@ -557,60 +657,56 @@ impl DockerContainerManager {
         }
         Ok(())
     }
-}
 
-fn parse_bytes(value: &str) -> u64 {
-    let value = value.trim();
-    if value.is_empty() {
-        return 0;
-    }
+    /// inspects a container and returns its ip address on a given network
+    pub async fn get_container_ip(&self, container_name: &str, network_name: &str) -> Option<String> {
+        if self.stub_mode {
+            return None;
+        }
 
-    let mut number = String::new();
-    let mut unit = String::new();
-    for ch in value.chars() {
-        if ch.is_ascii_digit() || ch == '.' {
-            number.push(ch);
-        } else if !ch.is_whitespace() {
-            unit.push(ch);
+        match self
+            .client()
+            .inspect_container(container_name, None::<InspectContainerOptions>)
+            .await
+        {
+            Ok(inspect) => {
+                let networks = inspect
+                    .network_settings
+                    .and_then(|ns| ns.networks)?;
+
+                // try specific network first
+                if let Some(network) = networks.get(network_name) {
+                    if let Some(ip) = &network.ip_address {
+                        if !ip.is_empty() {
+                            return Some(ip.clone());
+                        }
+                    }
+                }
+
+                // fallback: return first available ip
+                for (_, network) in networks {
+                    if let Some(ip) = network.ip_address {
+                        if !ip.is_empty() {
+                            return Some(ip);
+                        }
+                    }
+                }
+
+                None
+            }
+            Err(_) => None,
         }
     }
-
-    let parsed = number.parse::<f64>().unwrap_or(0.0);
-    let multiplier = match unit.as_str() {
-        "B" => 1.0,
-        "KB" => 1_000.0,
-        "MB" => 1_000_000.0,
-        "GB" => 1_000_000_000.0,
-        "TB" => 1_000_000_000_000.0,
-        "KiB" => 1024.0,
-        "MiB" => 1024.0 * 1024.0,
-        "GiB" => 1024.0 * 1024.0 * 1024.0,
-        "TiB" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
-        _ => 1.0,
-    };
-
-    (parsed * multiplier) as u64
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_bytes;
+    use super::*;
 
     #[test]
-    fn parse_bytes_supports_binary_units() {
-        assert_eq!(parse_bytes("1KiB"), 1024);
-        assert_eq!(parse_bytes("2MiB"), 2 * 1024 * 1024);
-    }
-
-    #[test]
-    fn parse_bytes_supports_decimal_units() {
-        assert_eq!(parse_bytes("1KB"), 1000);
-        assert_eq!(parse_bytes("1GB"), 1_000_000_000);
-    }
-
-    #[test]
-    fn parse_bytes_handles_empty() {
-        assert_eq!(parse_bytes(""), 0);
+    fn stub_mode_returns_expected_values() {
+        let manager = DockerContainerManager::new_stub();
+        assert!(manager.is_stub());
     }
 }
 

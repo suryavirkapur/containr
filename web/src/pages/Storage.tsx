@@ -1,4 +1,5 @@
 import { Component, createResource, createSignal, For, Show } from 'solid-js';
+import { A } from '@solidjs/router';
 
 interface Bucket {
     id: string;
@@ -250,7 +251,7 @@ const Storage: Component = () => {
                                     <div>
                                         <div class="flex items-center gap-3">
                                             <span class="w-2 h-2 bg-black"></span>
-                                            <span class="text-black font-medium">{bucket.name}</span>
+                                            <A href={`/storage/${bucket.id}`} class="text-black font-medium hover:underline">{bucket.name}</A>
                                         </div>
                                         <p class="text-xs text-neutral-500 mt-2 font-mono">
                                             {bucket.endpoint}/{bucket.name}

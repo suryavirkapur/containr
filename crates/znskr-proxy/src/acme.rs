@@ -230,18 +230,43 @@ impl AcmeManager {
             LetsEncrypt::Production.url().to_owned()
         };
 
-        // check for existing account key
-        let account_key_path = self.certs_dir.join("account.key");
+        // path to persisted account credentials
+        let account_creds_path = self.certs_dir.join("account.json");
 
-        if account_key_path.exists() {
-            // load existing account
-            let _key_pem = fs::read_to_string(&account_key_path).await?;
-            // todo: implement account loading from key
-            warn!("account reuse not fully implemented - creating new account");
+        // try to load existing account from saved credentials
+        if account_creds_path.exists() {
+            match fs::read_to_string(&account_creds_path).await {
+                Ok(json_str) => {
+                    match serde_json::from_str::<instant_acme::AccountCredentials>(&json_str) {
+                        Ok(credentials) => {
+                            match Account::builder() {
+                                Ok(builder) => match builder.from_credentials(credentials).await {
+                                    Ok(account) => {
+                                        info!("restored acme account from saved credentials");
+                                        return Ok(account);
+                                    }
+                                    Err(e) => {
+                                        warn!(error = %e, "failed to restore account - creating new");
+                                    }
+                                },
+                                Err(e) => {
+                                    warn!(error = %e, "failed to create account builder - creating new");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "failed to parse account credentials - creating new");
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!(error = %e, "failed to read account credentials file - creating new");
+                }
+            }
         }
 
         // create new account
-        let (account, _credentials) = Account::builder()?
+        let (account, credentials) = Account::builder()?
             .create(
                 &NewAccount {
                     contact: &[&format!("mailto:{}", self.email)],
@@ -253,9 +278,11 @@ impl AcmeManager {
             )
             .await?;
 
-        // save account key
+        // save account credentials for reuse
         fs::create_dir_all(&self.certs_dir).await?;
-        // todo: save credentials for reuse
+        let json_str = serde_json::to_string_pretty(&credentials)?;
+        fs::write(&account_creds_path, &json_str).await?;
+        info!("created and saved new acme account");
 
         Ok(account)
     }

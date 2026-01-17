@@ -14,6 +14,7 @@ const DatabaseDetail = lazy(() => import('./pages/DatabaseDetail'));
 const Queues = lazy(() => import('./pages/Queues'));
 const QueueDetail = lazy(() => import('./pages/QueueDetail'));
 const Storage = lazy(() => import('./pages/Storage'));
+const BucketDetail = lazy(() => import('./pages/BucketDetail'));
 
 const App: Component = () => {
     return (
@@ -29,6 +30,7 @@ const App: Component = () => {
                 <Route path="/queues" component={Queues} />
                 <Route path="/queues/:id" component={QueueDetail} />
                 <Route path="/storage" component={Storage} />
+                <Route path="/storage/:id" component={BucketDetail} />
                 <Route path="/settings" component={Settings} />
             </Route>
         </Suspense>

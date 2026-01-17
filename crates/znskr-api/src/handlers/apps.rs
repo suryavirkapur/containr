@@ -499,25 +499,16 @@ pub async fn get_app_metrics(
         ));
     }
 
-    let output = std::process::Command::new("docker")
-        .args([
-            "ps",
-            "--format",
-            "{{.Names}}",
-            "--filter",
-            &format!("name=znskr-{}", app.id),
-        ])
-        .output()
-        .map_err(|e| internal_error(e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let manager = DockerContainerManager::new();
+    let containers = manager.list_containers().await.map_err(internal_error)?;
+    
     let mut metrics = Vec::new();
+    let prefix = format!("znskr-{}", app.id);
 
-    for container in stdout.lines().map(|line| line.trim()).filter(|line| !line.is_empty()) {
-        if let Ok(stats) = manager.get_stats(container).await {
+    for container in containers.iter().filter(|c| c.id.starts_with(&prefix)) {
+        if let Ok(stats) = manager.get_stats(&container.id).await {
             metrics.push(AppMetricsResponse {
-                container: container.to_string(),
+                container: container.id.clone(),
                 cpu_percent: stats.cpu_percent,
                 mem_usage_bytes: stats.mem_usage_bytes,
                 mem_limit_bytes: stats.mem_limit_bytes,

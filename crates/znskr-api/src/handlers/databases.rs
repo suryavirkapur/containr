@@ -373,7 +373,7 @@ pub async fn start_database(
 
     // start the container via database manager
     let db_manager = DatabaseManager::new();
-    db_manager.start_database(&mut db).map_err(|e| {
+    db_manager.start_database(&mut db).await.map_err(|e| {
         tracing::error!("failed to start database: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -434,7 +434,7 @@ pub async fn stop_database(
 
     // stop the container via database manager
     let db_manager = DatabaseManager::new();
-    db_manager.stop_database(&mut db).map_err(|e| {
+    db_manager.stop_database(&mut db).await.map_err(|e| {
         tracing::error!("failed to stop database: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -515,7 +515,7 @@ pub async fn get_database_logs(
     }
 
     let db_manager = DatabaseManager::new();
-    let logs = db_manager.get_logs(&db, query.tail).map_err(|e| {
+    let logs = db_manager.get_logs(&db, query.tail).await.map_err(|e| {
         tracing::error!("failed to get logs: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -583,7 +583,7 @@ pub async fn expose_database(
     let db_manager = DatabaseManager::new();
 
     // stop existing container
-    db_manager.stop_database(&mut db).map_err(|e| {
+    db_manager.stop_database(&mut db).await.map_err(|e| {
         tracing::error!("failed to stop database: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -602,7 +602,7 @@ pub async fn expose_database(
     }
 
     // restart container (start_database respects external_port if set)
-    db_manager.start_database(&mut db).map_err(|e| {
+    db_manager.start_database(&mut db).await.map_err(|e| {
         tracing::error!("failed to start database: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -671,7 +671,7 @@ pub async fn export_database(
     std::fs::create_dir_all(&backup_dir).map_err(internal_error)?;
 
     let db_manager = DatabaseManager::new();
-    let backup_path = db_manager.export_database(&db, &backup_dir).map_err(|e| {
+    let backup_path = db_manager.export_database(&db, &backup_dir).await.map_err(|e| {
         tracing::error!("failed to export database: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,

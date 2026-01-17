@@ -1,27 +1,48 @@
 //! managed queue container orchestration
 //!
 //! handles starting, stopping, and managing queue containers
-//! with bind mount storage for data persistence.
+//! with bind mount storage for data persistence using bollard.
 
+use std::collections::HashMap;
 use std::path::Path;
-use std::process::Command;
-use tracing::{error, info, warn};
+use std::sync::Arc;
+
+use bollard::query_parameters::{
+    CreateContainerOptions, RemoveContainerOptions, StopContainerOptions,
+    InspectNetworkOptions, StartContainerOptions,
+};
+use bollard::models::{
+    ContainerCreateBody, HostConfig, Mount, MountTypeEnum, RestartPolicy, RestartPolicyNameEnum,
+    NetworkCreateRequest,
+};
+use bollard::Docker;
+use tracing::{info, warn};
 
 use crate::error::{ClientError, Result};
 use znskr_common::managed_services::{ManagedQueue, QueueType, ServiceStatus};
 
 /// manages queue container lifecycle
-pub struct QueueManager;
+pub struct QueueManager {
+    docker: Arc<Docker>,
+}
 
 impl QueueManager {
     /// creates a new queue manager
+    /// panics if unable to connect to docker socket
     pub fn new() -> Self {
-        Self
+        match Docker::connect_with_socket_defaults() {
+            Ok(docker) => Self {
+                docker: Arc::new(docker),
+            },
+            Err(e) => {
+                panic!("failed to connect to docker socket: {}", e);
+            }
+        }
     }
 
     /// starts a managed queue container
     /// creates the data directory and runs the container with bind mount
-    pub fn start_queue(&self, queue: &mut ManagedQueue) -> Result<String> {
+    pub async fn start_queue(&self, queue: &mut ManagedQueue) -> Result<String> {
         info!(
             "starting queue: {} ({})",
             queue.name,
@@ -49,97 +70,128 @@ impl QueueManager {
         let container_name = format!("znskr-queue-{}", queue.id);
 
         // ensure network exists
-        self.ensure_network("znskr-infra")?;
+        self.ensure_network("znskr-infra").await?;
 
-        // build docker run command
-        let mut args = vec![
-            "run".to_string(),
-            "-d".to_string(),
-            "--name".to_string(),
-            container_name.clone(),
-            "-v".to_string(),
-            queue.bind_mount_arg(),
-            "-p".to_string(),
-            format!("{}:{}", queue.port, queue.port),
-            "--restart".to_string(),
-            "unless-stopped".to_string(),
-            "--memory".to_string(),
-            format!("{}m", queue.memory_limit / (1024 * 1024)),
-            "--cpus".to_string(),
-            format!("{:.1}", queue.cpu_limit),
-            "--network".to_string(),
-            "znskr-infra".to_string(),
-            "--hostname".to_string(),
-            format!("queue-{}", queue.id),
-            "--network-alias".to_string(),
-            format!("queue-{}", queue.id),
-        ];
-
-        // add labels
-        args.push("--label".to_string());
-        args.push("znskr.type=managed-queue".to_string());
-        args.push("--label".to_string());
-        args.push(format!("znskr.queue.id={}", queue.id));
-        args.push("--label".to_string());
-        args.push(format!("znskr.queue.type={:?}", queue.queue_type).to_lowercase());
-
-        // add environment variables or command flags
+        // build environment variables
+        let mut env = Vec::new();
         match queue.queue_type {
             QueueType::Rabbitmq => {
-                args.push("-e".to_string());
-                args.push(format!(
+                env.push(format!(
                     "RABBITMQ_DEFAULT_USER={}",
                     queue.credentials.username
                 ));
-                args.push("-e".to_string());
-                args.push(format!(
+                env.push(format!(
                     "RABBITMQ_DEFAULT_PASS={}",
                     queue.credentials.password
                 ));
-
-                // add health check
-                args.push("--health-cmd".to_string());
-                args.push("rabbitmq-diagnostics -q ping".to_string());
-                args.push("--health-interval".to_string());
-                args.push("10s".to_string());
-                args.push("--health-timeout".to_string());
-                args.push("5s".to_string());
-                args.push("--health-retries".to_string());
-                args.push("3".to_string());
             }
             QueueType::Nats => {}
         }
 
-        // add image
-        args.push(queue.docker_image());
+        // build labels
+        let mut labels = HashMap::new();
+        labels.insert("znskr.type".to_string(), "managed-queue".to_string());
+        labels.insert("znskr.queue.id".to_string(), queue.id.to_string());
+        labels.insert(
+            "znskr.queue.type".to_string(),
+            format!("{:?}", queue.queue_type).to_lowercase(),
+        );
 
-        // add command args for nats auth/monitoring
-        if queue.queue_type == QueueType::Nats {
-            args.push("-m".to_string());
-            args.push("8222".to_string());
-            args.push("-js".to_string());
-            args.push("-sd".to_string());
-            args.push("/data".to_string());
-            args.push("--user".to_string());
-            args.push(queue.credentials.username.clone());
-            args.push("--pass".to_string());
-            args.push(queue.credentials.password.clone());
-        }
+        // build port bindings
+        let mut port_bindings = HashMap::new();
+        port_bindings.insert(
+            format!("{}/tcp", queue.port),
+            Some(vec![bollard::models::PortBinding {
+                host_ip: Some("0.0.0.0".to_string()),
+                host_port: Some(queue.port.to_string()),
+            }]),
+        );
 
-        info!("running: docker {}", args.join(" "));
+        // build mount using queue_type.volume_path()
+        let mount = Mount {
+            target: Some(queue.queue_type.volume_path().to_string()),
+            source: Some(queue.host_data_path.clone()),
+            typ: Some(MountTypeEnum::BIND),
+            ..Default::default()
+        };
 
-        let output = Command::new("docker")
-            .args(&args)
-            .output()
-            .map_err(|e| ClientError::Operation(e.to_string()))?;
+        // build health check for rabbitmq
+        let healthcheck = match queue.queue_type {
+            QueueType::Rabbitmq => Some(bollard::models::HealthConfig {
+                test: Some(vec![
+                    "CMD-SHELL".to_string(),
+                    "rabbitmq-diagnostics -q ping".to_string(),
+                ]),
+                interval: Some(10_000_000_000), // 10s
+                timeout: Some(5_000_000_000),   // 5s
+                retries: Some(3),
+                start_period: None,
+                start_interval: None,
+            }),
+            QueueType::Nats => None,
+        };
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("docker run failed: {}", stderr);
-            return Err(ClientError::Operation(format!("docker run failed: {}", stderr)));
-        }
+        let host_config = HostConfig {
+            mounts: Some(vec![mount]),
+            memory: Some((queue.memory_limit / (1024 * 1024)) as i64 * 1024 * 1024),
+            nano_cpus: Some((queue.cpu_limit * 1_000_000_000.0) as i64),
+            restart_policy: Some(RestartPolicy {
+                name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                maximum_retry_count: None,
+            }),
+            network_mode: Some("znskr-infra".to_string()),
+            port_bindings: Some(port_bindings),
+            ..Default::default()
+        };
 
-        let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        // build command args for nats
+        let cmd = match queue.queue_type {
+            QueueType::Nats => Some(vec![
+                "-m".to_string(),
+                "8222".to_string(),
+                "-js".to_string(),
+                "-sd".to_string(),
+                "/data".to_string(),
+                "--user".to_string(),
+                queue.credentials.username.clone(),
+                "--pass".to_string(),
+                queue.credentials.password.clone(),
+            ]),
+            QueueType::Rabbitmq => None,
+        };
+
+        let container_config = ContainerCreateBody {
+            image: Some(queue.docker_image()),
+            env: Some(env),
+            labels: Some(labels),
+            hostname: Some(format!("queue-{}", queue.id)),
+            host_config: Some(host_config),
+            healthcheck,
+            cmd,
+            ..Default::default()
+        };
+
+        let options = CreateContainerOptions {
+            name: Some(container_name.clone()),
+            ..Default::default()
+        };
+
+        info!("creating container: {}", container_name);
+
+        // create container
+        let response = self
+            .docker
+            .create_container(Some(options), container_config)
+            .await
+            .map_err(|e| ClientError::Operation(format!("docker create failed: {}", e)))?;
+
+        let container_id = response.id.clone();
+
+        // start container
+        self.docker
+            .start_container(&container_id, None::<StartContainerOptions>)
+            .await
+            .map_err(|e| ClientError::Operation(format!("docker start failed: {}", e)))?;
 
         // update queue record
         queue.container_id = Some(container_id.clone());
@@ -151,44 +203,48 @@ impl QueueManager {
     }
 
     /// ensures the infrastructure network exists
-    fn ensure_network(&self, name: &str) -> Result<()> {
-        let output = Command::new("docker")
-            .args(["network", "inspect", name])
-            .output()
-            .map_err(|e| ClientError::Operation(e.to_string()))?;
-
-        if output.status.success() {
-            return Ok(());
+    async fn ensure_network(&self, name: &str) -> Result<()> {
+        // check if network exists
+        match self.docker.inspect_network(name, None::<InspectNetworkOptions>).await {
+            Ok(_) => return Ok(()),
+            Err(_) => {}
         }
 
         info!("creating docker network: {}", name);
-        let output = Command::new("docker")
-            .args(["network", "create", name])
-            .output()
-            .map_err(|e| ClientError::Operation(e.to_string()))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if !stderr.contains("already exists") {
-                warn!("failed to create network: {}", stderr);
+        let options = NetworkCreateRequest {
+            name: name.to_string(),
+            driver: Some("bridge".to_string()),
+            ..Default::default()
+        };
+
+        match self.docker.create_network(options).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let err_str = e.to_string();
+                if err_str.contains("already exists") {
+                    Ok(())
+                } else {
+                    warn!("failed to create network: {}", err_str);
+                    Ok(())
+                }
             }
         }
-
-        Ok(())
     }
 
     /// stops a managed queue container
-    pub fn stop_queue(&self, queue: &mut ManagedQueue) -> Result<()> {
+    pub async fn stop_queue(&self, queue: &mut ManagedQueue) -> Result<()> {
         if let Some(ref container_id) = queue.container_id {
             info!("stopping queue: {} ({})", queue.name, container_id);
 
-            let _ = Command::new("docker")
-                .args(["stop", container_id])
-                .output();
+            let stop_options = StopContainerOptions { t: Some(10), ..Default::default() };
+            let _ = self.docker.stop_container(container_id, Some(stop_options)).await;
 
-            let _ = Command::new("docker")
-                .args(["rm", container_id])
-                .output();
+            let rm_options = RemoveContainerOptions {
+                force: true,
+                ..Default::default()
+            };
+            let _ = self.docker.remove_container(container_id, Some(rm_options)).await;
 
             queue.container_id = None;
             queue.status = ServiceStatus::Stopped;
@@ -196,5 +252,11 @@ impl QueueManager {
         }
 
         Ok(())
+    }
+}
+
+impl Default for QueueManager {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -130,6 +130,14 @@ const AppDetail: Component = () => {
     const [deploying, setDeploying] = createSignal(false);
     const [deleting, setDeleting] = createSignal(false);
 
+    // deployment logs state
+    const [selectedDeployment, setSelectedDeployment] = createSignal<Deployment | null>(null);
+    const [deploymentLogs, setDeploymentLogs] = createSignal<string[]>([]);
+    const [deploymentLogsConnected, setDeploymentLogsConnected] = createSignal(false);
+    const [deploymentLogsLoading, setDeploymentLogsLoading] = createSignal(false);
+    let deploymentLogsSocket: WebSocket | null = null;
+    let deploymentLogsRef: HTMLDivElement | undefined;
+
     const [app, { refetch: refetchApp }] = createResource(
         () => params.id,
         fetchApp
@@ -310,6 +318,90 @@ const AppDetail: Component = () => {
             setShowLogs(true);
             connectLogs();
         }
+    };
+
+    // fetch historical deployment logs
+    const fetchDeploymentLogs = async (deploymentId: string) => {
+        setDeploymentLogsLoading(true);
+        try {
+            const token = localStorage.getItem('znskr_token');
+            const res = await fetch(`/api/apps/${params.id}/deployments/${deploymentId}/logs`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            if (!res.ok) {
+                throw new Error('failed to fetch deployment logs');
+            }
+
+            const logs = await res.json();
+            setDeploymentLogs(logs);
+        } catch (err) {
+            console.error(err);
+            setDeploymentLogs(['error fetching logs']);
+        } finally {
+            setDeploymentLogsLoading(false);
+        }
+    };
+
+    // connect to live deployment logs
+    const connectDeploymentLogs = (deploymentId: string) => {
+        if (typeof window === 'undefined') return;
+
+        try {
+            if (deploymentLogsSocket) {
+                deploymentLogsSocket.close();
+            }
+
+            setDeploymentLogsConnected(false);
+
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/api/apps/${params.id}/deployments/${deploymentId}/logs/ws`;
+
+            deploymentLogsSocket = new WebSocket(wsUrl);
+
+            deploymentLogsSocket.onopen = () => {
+                setDeploymentLogsConnected(true);
+                setDeploymentLogs(prev => [...prev, '[live connection established]']);
+            };
+
+            deploymentLogsSocket.onmessage = (event) => {
+                setDeploymentLogs(prev => [...prev, event.data]);
+                if (deploymentLogsRef) {
+                    deploymentLogsRef.scrollTop = deploymentLogsRef.scrollHeight;
+                }
+            };
+
+            deploymentLogsSocket.onclose = () => {
+                setDeploymentLogsConnected(false);
+            };
+
+            deploymentLogsSocket.onerror = () => {
+                setDeploymentLogsConnected(false);
+            };
+        } catch (err) {
+            setDeploymentLogsConnected(false);
+        }
+    };
+
+    const openDeploymentLogs = async (deployment: Deployment) => {
+        setSelectedDeployment(deployment);
+        setDeploymentLogs([]);
+        await fetchDeploymentLogs(deployment.id);
+
+        // connect live logs for running deployments
+        if (['pending', 'cloning', 'building', 'starting'].includes(deployment.status)) {
+            connectDeploymentLogs(deployment.id);
+        }
+    };
+
+    const closeDeploymentLogs = () => {
+        if (deploymentLogsSocket) {
+            deploymentLogsSocket.close();
+            deploymentLogsSocket = null;
+        }
+        setSelectedDeployment(null);
+        setDeploymentLogs([]);
+        setDeploymentLogsConnected(false);
     };
 
     const triggerDeploy = async () => {
@@ -654,11 +746,17 @@ const AppDetail: Component = () => {
                                                 </p>
                                             </div>
                                         </div>
-                                        <div class="flex items-center gap-6 text-xs">
+                                        <div class="flex items-center gap-4 text-xs">
                                             <span class="text-neutral-500">{deployment.status}</span>
                                             <span class="text-neutral-400">
                                                 {new Date(deployment.created_at).toLocaleString()}
                                             </span>
+                                            <button
+                                                onClick={() => openDeploymentLogs(deployment)}
+                                                class="px-2 py-1 border border-neutral-300 text-neutral-600 hover:text-black hover:border-neutral-400 transition-colors"
+                                            >
+                                                logs
+                                            </button>
                                         </div>
                                     </div>
                                 )}
@@ -810,6 +908,69 @@ const AppDetail: Component = () => {
                                 class="flex-1 px-4 py-2 bg-black text-white hover:bg-neutral-800 disabled:opacity-50 transition-colors text-sm"
                             >
                                 {saving() ? 'saving...' : 'save'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </Show>
+
+            {/* deployment logs modal */}
+            <Show when={selectedDeployment()}>
+                <div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">
+                    <div class="bg-white border border-neutral-300 w-full max-w-4xl max-h-[90vh] flex flex-col">
+                        <div class="border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
+                            <div>
+                                <h2 class="text-lg font-serif text-black">deployment logs</h2>
+                                <p class="text-xs text-neutral-500 mt-1 font-mono">
+                                    {selectedDeployment()!.commit_sha.substring(0, 8)} - {selectedDeployment()!.status}
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <Show when={deploymentLogsConnected()}>
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-1.5 h-1.5 bg-black"></span>
+                                        <span class="text-xs text-neutral-500">live</span>
+                                    </div>
+                                </Show>
+                                <button
+                                    onClick={closeDeploymentLogs}
+                                    class="text-neutral-400 hover:text-black"
+                                >
+                                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div
+                            ref={deploymentLogsRef}
+                            class="flex-1 p-4 overflow-y-auto font-mono text-xs bg-neutral-50 min-h-[300px] max-h-[60vh]"
+                        >
+                            <Show when={deploymentLogsLoading()}>
+                                <p class="text-neutral-400">loading logs...</p>
+                            </Show>
+                            <Show when={!deploymentLogsLoading() && deploymentLogs().length === 0}>
+                                <p class="text-neutral-400">no logs available</p>
+                            </Show>
+                            <For each={deploymentLogs()}>
+                                {(line) => (
+                                    <div class="text-neutral-700 leading-relaxed whitespace-pre-wrap break-all" innerHTML={parseAnsi(line)}></div>
+                                )}
+                            </For>
+                        </div>
+                        <div class="border-t border-neutral-200 px-6 py-3 flex justify-between items-center text-xs text-neutral-500">
+                            <div>
+                                <span>started: {new Date(selectedDeployment()!.created_at).toLocaleString()}</span>
+                                <Show when={selectedDeployment()!.finished_at}>
+                                    <span class="mx-2">|</span>
+                                    <span>finished: {new Date(selectedDeployment()!.finished_at!).toLocaleString()}</span>
+                                </Show>
+                            </div>
+                            <button
+                                onClick={() => setDeploymentLogs([])}
+                                class="text-neutral-500 hover:text-black"
+                            >
+                                clear
                             </button>
                         </div>
                     </div>

@@ -1,4 +1,6 @@
-//! WebSocket handlers for live log streaming
+//! websocket handlers for live log streaming
+
+use std::sync::Arc;
 
 use axum::{
     extract::{
@@ -7,11 +9,10 @@ use axum::{
     },
     response::IntoResponse,
 };
-use futures::FutureExt;
+use bollard::query_parameters::LogsOptions;
+use bollard::Docker;
+use futures::{FutureExt, StreamExt};
 use serde::Deserialize;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
 use tracing::info;
 use uuid::Uuid;
 
@@ -27,7 +28,7 @@ fn default_tail() -> usize {
     100
 }
 
-/// WebSocket endpoint for container logs
+/// websocket endpoint for container logs
 pub async fn container_logs_ws(
     ws: WebSocketUpgrade,
     Path(app_id): Path<Uuid>,
@@ -37,16 +38,16 @@ pub async fn container_logs_ws(
     ws.on_upgrade(move |socket| handle_container_logs(socket, app_id, query, state))
 }
 
-/// Handle WebSocket connection for container logs
+/// handle websocket connection for container logs
 async fn handle_container_logs(
     mut socket: WebSocket,
     app_id: Uuid,
     query: LogsQuery,
     _state: AppState,
 ) {
-    info!(app_id = %app_id, "container logs WebSocket connected");
+    info!(app_id = %app_id, "container logs websocket connected");
 
-    // Send welcome message
+    // send welcome message
     if socket
         .send(Message::Text(
             format!("[connected to container logs for {}]", app_id).into(),
@@ -57,73 +58,34 @@ async fn handle_container_logs(
         return;
     }
 
-    // Get the container ID
-    let container_name = format!("znskr-{}", app_id);
-
-    // Spawn docker logs -f process
-    let child = Command::new("docker")
-        .args([
-            "logs",
-            "-f",
-            "--tail",
-            &query.tail.to_string(),
-            &container_name,
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(c) => c,
+    // connect to docker
+    let docker = match Docker::connect_with_socket_defaults() {
+        Ok(d) => Arc::new(d),
         Err(e) => {
             let _ = socket
                 .send(Message::Text(
-                    format!("[error: failed to start docker logs: {}]", e).into(),
+                    format!("[error: failed to connect to docker: {}]", e).into(),
                 ))
                 .await;
             return;
         }
     };
 
-    // Stream stdout
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
+    // get the container name
+    let container_name = format!("znskr-{}", app_id);
 
-    // Create readers for both stdout and stderr
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(100);
+    // set up log streaming options
+    let options = LogsOptions {
+        stdout: true,
+        stderr: true,
+        follow: true,
+        tail: query.tail.to_string(),
+        ..Default::default()
+    };
 
-    // Stream stdout lines
-    if let Some(stdout) = stdout {
-        let tx = tx.clone();
-        tokio::spawn(async move {
-            let reader = BufReader::new(stdout);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                if tx.send(line).await.is_err() {
-                    break;
-                }
-            }
-        });
-    }
+    let mut log_stream = docker.logs(&container_name, Some(options));
 
-    // Stream stderr lines
-    if let Some(stderr) = stderr {
-        let tx = tx.clone();
-        tokio::spawn(async move {
-            let reader = BufReader::new(stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                if tx.send(format!("[stderr] {}", line)).await.is_err() {
-                    break;
-                }
-            }
-        });
-    }
-
-    // Drop extra tx so the channel can close when readers are done
-    drop(tx);
-
-    // Forward logs to WebSocket
+    // stream logs to websocket
     loop {
         tokio::select! {
             msg = socket.recv() => {
@@ -134,15 +96,22 @@ async fn handle_container_logs(
                     _ => {}
                 }
             }
-            line = rx.recv() => {
-                match line {
-                    Some(line) => {
-                        if socket.send(Message::Text(line.into())).await.is_err() {
+            log_entry = log_stream.next() => {
+                match log_entry {
+                    Some(Ok(output)) => {
+                        let text = output.to_string();
+                        if socket.send(Message::Text(text.into())).await.is_err() {
                             break;
                         }
                     }
+                    Some(Err(e)) => {
+                        let _ = socket.send(Message::Text(
+                            format!("[error reading logs: {}]", e).into()
+                        )).await;
+                        break;
+                    }
                     None => {
-                        // Channel closed, docker logs exited
+                        // stream ended
                         let _ = socket.send(Message::Text("[container logs stream ended]".into())).await;
                         break;
                     }
@@ -151,12 +120,10 @@ async fn handle_container_logs(
         }
     }
 
-    // Kill docker logs process
-    let _ = child.kill().await;
-    info!(app_id = %app_id, "container logs WebSocket disconnected");
+    info!(app_id = %app_id, "container logs websocket disconnected");
 }
 
-/// WebSocket endpoint for deployment build logs
+/// websocket endpoint for deployment build logs
 pub async fn deployment_logs_ws(
     ws: WebSocketUpgrade,
     Path((app_id, deployment_id)): Path<(Uuid, Uuid)>,
@@ -165,16 +132,16 @@ pub async fn deployment_logs_ws(
     ws.on_upgrade(move |socket| handle_deployment_logs(socket, app_id, deployment_id, state))
 }
 
-/// Handle WebSocket connection for deployment build logs
+/// handle websocket connection for deployment build logs
 async fn handle_deployment_logs(
     mut socket: WebSocket,
     app_id: Uuid,
     deployment_id: Uuid,
     state: AppState,
 ) {
-    info!(app_id = %app_id, deployment_id = %deployment_id, "build logs WebSocket connected");
+    info!(app_id = %app_id, deployment_id = %deployment_id, "build logs websocket connected");
 
-    // Get deployment from database
+    // get deployment from database
     let deployment = match state.db.get_deployment(deployment_id) {
         Ok(Some(d)) => d,
         Ok(None) => {
@@ -191,7 +158,7 @@ async fn handle_deployment_logs(
         }
     };
 
-    // Send existing logs
+    // send existing logs
     for log in &deployment.logs {
         if socket
             .send(Message::Text(log.clone().into()))
@@ -202,12 +169,12 @@ async fn handle_deployment_logs(
         }
     }
 
-    // Poll for new logs (simple polling approach)
+    // poll for new logs (simple polling approach)
     let mut last_log_count = deployment.logs.len();
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-        // Check for client disconnect
+        // check for client disconnect
         match socket.recv().now_or_never() {
             Some(Some(Ok(Message::Close(_)))) => break,
             Some(Some(Err(_))) => break,
@@ -215,13 +182,13 @@ async fn handle_deployment_logs(
             _ => {}
         }
 
-        // Get updated deployment
+        // get updated deployment
         let deployment = match state.db.get_deployment(deployment_id) {
             Ok(Some(d)) => d,
             _ => continue,
         };
 
-        // Send new logs
+        // send new logs
         if deployment.logs.len() > last_log_count {
             for log in &deployment.logs[last_log_count..] {
                 if socket
@@ -235,7 +202,7 @@ async fn handle_deployment_logs(
             last_log_count = deployment.logs.len();
         }
 
-        // Check if deployment is complete
+        // check if deployment is complete
         let status = deployment.status;
         if status == znskr_common::models::DeploymentStatus::Running
             || status == znskr_common::models::DeploymentStatus::Failed
@@ -250,5 +217,5 @@ async fn handle_deployment_logs(
         }
     }
 
-    info!(app_id = %app_id, deployment_id = %deployment_id, "build logs WebSocket disconnected");
+    info!(app_id = %app_id, deployment_id = %deployment_id, "build logs websocket disconnected");
 }

@@ -5,7 +5,9 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::Command;
+
+use git2::build::RepoBuilder;
+use git2::FetchOptions;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -394,7 +396,7 @@ impl DeploymentWorker {
         Ok(sorted)
     }
 
-    /// clones the git repository
+    /// clones the git repository using git2
     async fn clone_repo(&self, job: &DeploymentJob) -> anyhow::Result<PathBuf> {
         let commit_prefix = if job.commit_sha.len() >= 8 {
             &job.commit_sha[..8]
@@ -415,23 +417,23 @@ impl DeploymentWorker {
             "cloning repository"
         );
 
-        // clone with depth 1 for speed
-        let output = Command::new("git")
-            .args([
-                "clone",
-                "--depth",
-                "1",
-                "--branch",
-                &job.branch,
-                &job.github_url,
-                repo_path.to_str().unwrap(),
-            ])
-            .output()?;
+        // clone with shallow depth using git2
+        // git2 is synchronous, so we spawn_blocking
+        let url = job.github_url.clone();
+        let branch = job.branch.clone();
+        let path = repo_path.clone();
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("git clone failed: {}", stderr));
-        }
+        tokio::task::spawn_blocking(move || {
+            let mut fetch_opts = FetchOptions::new();
+            fetch_opts.depth(1);
+
+            RepoBuilder::new()
+                .branch(&branch)
+                .fetch_options(fetch_opts)
+                .clone(&url, &path)
+        })
+        .await?
+        .map_err(|e| anyhow::anyhow!("git clone failed: {}", e))?;
 
         Ok(repo_path)
     }

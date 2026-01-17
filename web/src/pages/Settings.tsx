@@ -39,6 +39,7 @@ const fetchSettings = async (): Promise<Settings> => {
 const Settings: Component = () => {
     const [settings, { refetch }] = createResource(fetchSettings);
     const [saving, setSaving] = createSignal(false);
+    const [issuingCert, setIssuingCert] = createSignal(false);
     const [message, setMessage] = createSignal<{ type: 'success' | 'error'; text: string } | null>(null);
 
     // form values
@@ -121,8 +122,8 @@ const Settings: Component = () => {
                 <Show when={message()}>
                     <div
                         class={`mb-6 p-4 border ${message()?.type === 'success'
-                                ? 'border-green-300 bg-green-50 text-green-800'
-                                : 'border-red-300 bg-red-50 text-red-800'
+                            ? 'border-green-300 bg-green-50 text-green-800'
+                            : 'border-red-300 bg-red-50 text-red-800'
                             }`}
                     >
                         {message()?.text}
@@ -198,10 +199,38 @@ const Settings: Component = () => {
                                 </label>
                             </div>
 
-                            <div class="pt-4 border-t border-neutral-100">
+                            <div class="pt-4 border-t border-neutral-100 flex items-center justify-between">
                                 <p class="text-xs text-neutral-400">
                                     certificates are issued automatically when you update the base domain
                                 </p>
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        setIssuingCert(true);
+                                        setMessage(null);
+                                        try {
+                                            const token = localStorage.getItem('znskr_token');
+                                            const res = await fetch('/api/settings/certificate', {
+                                                method: 'POST',
+                                                headers: { Authorization: `Bearer ${token}` },
+                                            });
+                                            if (!res.ok) {
+                                                const err = await res.json();
+                                                throw new Error(err.error || 'failed to issue certificate');
+                                            }
+                                            const data = await res.json();
+                                            setMessage({ type: 'success', text: data.message });
+                                        } catch (err) {
+                                            setMessage({ type: 'error', text: (err as Error).message });
+                                        } finally {
+                                            setIssuingCert(false);
+                                        }
+                                    }}
+                                    disabled={issuingCert() || !settings()?.base_domain}
+                                    class="px-4 py-2 text-xs border border-neutral-300 text-neutral-700 hover:text-black hover:border-black disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    {issuingCert() ? 'issuing...' : 'reissue certificate'}
+                                </button>
                             </div>
                         </div>
                     </section>
