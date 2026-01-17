@@ -84,8 +84,15 @@ async fn main() -> anyhow::Result<()> {
     let routes = znskr_proxy::RouteManager::new();
     let challenges = znskr_proxy::acme::ChallengeStore::new();
 
-    // Load existing routes from database
-    load_routes_from_db(&db, &routes, config.proxy.load_balance, &config.proxy.base_domain);
+    // Load existing routes from database (async)
+    // Run in a blocking context since we're in main before async starts
+    let routes_clone = routes.clone();
+    let db_clone = db.clone();
+    let algorithm = config.proxy.load_balance;
+    let base_domain_clone = config.proxy.base_domain.clone();
+    tokio::spawn(async move {
+        load_routes_from_db(&db_clone, &routes_clone, algorithm, &base_domain_clone).await;
+    });
 
     // create certificate request channel (shared between api and proxy)
     let (cert_request_tx, mut cert_request_rx) =
@@ -250,9 +257,24 @@ async fn main() -> anyhow::Result<()> {
                     let routes = proxy_routes_for_updates.clone();
                     let db = proxy_db_for_updates.clone();
                     let base_domain = base_domain.clone();
-                    let _ = tokio::task::spawn_blocking(move || {
-                        refresh_routes_for_app(&db, &routes, app_id, proxy_algorithm, &base_domain);
-                    })
+                    
+                    // connect to docker for route refresh
+                    let docker = match bollard::Docker::connect_with_socket_defaults() {
+                        Ok(d) => d,
+                        Err(e) => {
+                            tracing::warn!("failed to connect to docker for route refresh: {}", e);
+                            continue;
+                        }
+                    };
+                    
+                    refresh_routes_for_app(
+                        &db,
+                        &routes,
+                        app_id,
+                        proxy_algorithm,
+                        &base_domain,
+                        &docker,
+                    )
                     .await;
                 }
             }
@@ -309,45 +331,62 @@ async fn load_or_create_config(args: &Args) -> anyhow::Result<Config> {
     }
 }
 
-/// Loads routes from database for all apps with domains
-fn load_routes_from_db(
+/// loads routes from database for all apps with domains
+async fn load_routes_from_db(
     db: &znskr_common::Database,
     routes: &znskr_proxy::RouteManager,
     algorithm: znskr_common::config::LoadBalanceAlgorithm,
     base_domain: &str,
 ) {
-    let output = std::process::Command::new("docker")
-        .args(["ps", "--format", "{{.Names}}", "--filter", "name=znskr-"])
-        .output();
+    let docker = match bollard::Docker::connect_with_socket_defaults() {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!("failed to connect to docker for routes: {}", e);
+            return;
+        }
+    };
 
-    let output = match output {
-        Ok(o) => o,
+    let mut filters: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    filters.insert("name".to_string(), vec!["znskr-".to_string()]);
+
+    let options = bollard::query_parameters::ListContainersOptions {
+        all: false,
+        filters: Some(filters),
+        ..Default::default()
+    };
+
+    let containers = match docker.list_containers(Some(options)).await {
+        Ok(c) => c,
         Err(e) => {
             tracing::warn!("failed to list containers for routes: {}", e);
             return;
         }
     };
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let mut apps = HashSet::new();
-
-    for name in stdout.lines() {
-        if let Some(app_id) = parse_app_id_from_container_name(name) {
-            apps.insert(app_id);
+    for container in containers {
+        if let Some(names) = container.names {
+            for name in names {
+                let name = name.trim_start_matches('/');
+                if let Some(app_id) = parse_app_id_from_container_name(name) {
+                    apps.insert(app_id);
+                }
+            }
         }
     }
 
     for app_id in apps {
-        refresh_routes_for_app(db, routes, app_id, algorithm, base_domain);
+        refresh_routes_for_app(db, routes, app_id, algorithm, base_domain, &docker).await;
     }
 }
 
-fn refresh_routes_for_app(
+async fn refresh_routes_for_app(
     db: &znskr_common::Database,
     routes: &znskr_proxy::RouteManager,
     app_id: uuid::Uuid,
     algorithm: znskr_common::config::LoadBalanceAlgorithm,
     base_domain: &str,
+    docker: &bollard::Docker,
 ) {
     let app = match db.get_app(app_id) {
         Ok(Some(app)) => app,
@@ -356,6 +395,24 @@ fn refresh_routes_for_app(
 
     let mut upstreams = Vec::new();
     let network_name = format!("znskr-{}", app.id);
+
+    // list containers for this app
+    let mut filters: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    filters.insert("name".to_string(), vec![format!("znskr-{}", app.id)]);
+
+    let options = bollard::query_parameters::ListContainersOptions {
+        all: false,
+        filters: Some(filters),
+        ..Default::default()
+    };
+
+    let containers = match docker.list_containers(Some(options)).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(app_id = %app.id, "failed to list containers: {}", e);
+            return;
+        }
+    };
 
     if app.has_services() {
         let service = match select_exposed_service(&app) {
@@ -369,80 +426,44 @@ fn refresh_routes_for_app(
             }
         };
 
-        let output = std::process::Command::new("docker")
-            .args([
-                "ps",
-                "--format",
-                "{{.Names}}",
-                "--filter",
-                &format!("name=znskr-{}", app.id),
-            ])
-            .output();
-
-        let output = match output {
-            Ok(o) => o,
-            Err(e) => {
-                tracing::warn!(app_id = %app.id, "failed to list containers: {}", e);
-                return;
-            }
-        };
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
         let prefix = format!("znskr-{}-{}-", app.id, service.name);
 
-        for line in stdout.lines() {
-            let name = line.trim();
-            if !name.starts_with(&prefix) || name.is_empty() {
-                continue;
+        for container in &containers {
+            if let Some(names) = &container.names {
+                for name in names {
+                    let name = name.trim_start_matches('/');
+                    if !name.starts_with(&prefix) || name.is_empty() {
+                        continue;
+                    }
+
+                    if let Some(ip) = get_container_ip(docker, name, &network_name).await {
+                        upstreams.push(znskr_proxy::routes::Upstream {
+                            host: ip,
+                            port: service.port,
+                        });
+                    }
+                }
             }
-
-            let container_ip = match get_container_ip(name, &network_name) {
-                Some(ip) => ip,
-                None => continue,
-            };
-
-            upstreams.push(znskr_proxy::routes::Upstream {
-                host: container_ip,
-                port: service.port,
-            });
         }
     } else {
-        let output = std::process::Command::new("docker")
-            .args([
-                "ps",
-                "--format",
-                "{{.Names}}",
-                "--filter",
-                &format!("name=znskr-{}", app.id),
-            ])
-            .output();
+        let expected_name = format!("znskr-{}", app.id);
 
-        let output = match output {
-            Ok(o) => o,
-            Err(e) => {
-                tracing::warn!(app_id = %app.id, "failed to list containers: {}", e);
-                return;
+        for container in &containers {
+            if let Some(names) = &container.names {
+                for name in names {
+                    let name = name.trim_start_matches('/');
+                    if name != expected_name || name.is_empty() {
+                        continue;
+                    }
+
+                    if let Some(ip) = get_container_ip(docker, name, &network_name).await {
+                        upstreams.push(znskr_proxy::routes::Upstream {
+                            host: ip,
+                            port: app.port,
+                        });
+                    }
+                }
             }
-        };
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let name = format!("znskr-{}", app.id);
-
-        for line in stdout.lines() {
-            let container_name = line.trim();
-            if container_name != name || container_name.is_empty() {
-                continue;
-            }
-
-            let container_ip = match get_container_ip(container_name, &network_name) {
-                Some(ip) => ip,
-                None => continue,
-            };
-
-            upstreams.push(znskr_proxy::routes::Upstream {
-                host: container_ip,
-                port: app.port,
-            });
         }
     }
 
@@ -505,37 +526,35 @@ fn parse_app_id_from_container_name(name: &str) -> Option<uuid::Uuid> {
     uuid::Uuid::parse_str(id_str).ok()
 }
 
-fn get_container_ip(container_name: &str, network_name: &str) -> Option<String> {
-    let format = format!(
-        "{{{{with index .NetworkSettings.Networks \"{}\"}}}}{{{{.IPAddress}}}}{{{{end}}}}",
-        network_name
-    );
-    let output = std::process::Command::new("docker")
-        .args(["inspect", "-f", &format, container_name])
-        .output()
+async fn get_container_ip(
+    docker: &bollard::Docker,
+    container_name: &str,
+    network_name: &str,
+) -> Option<String> {
+    use bollard::query_parameters::InspectContainerOptions;
+
+    let inspect = docker
+        .inspect_container(container_name, None::<InspectContainerOptions>)
+        .await
         .ok()?;
-    if output.status.success() {
-        let ip = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !ip.is_empty() {
-            return Some(ip);
+
+    let networks = inspect.network_settings?.networks?;
+
+    // try specific network first
+    if let Some(network) = networks.get(network_name) {
+        if let Some(ip) = &network.ip_address {
+            if !ip.is_empty() {
+                return Some(ip.clone());
+            }
         }
     }
 
-    let fallback_output = std::process::Command::new("docker")
-        .args([
-            "inspect",
-            "-f",
-            "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-            container_name,
-        ])
-        .output()
-        .ok()?;
-    if fallback_output.status.success() {
-        let ip = String::from_utf8_lossy(&fallback_output.stdout)
-            .trim()
-            .to_string();
-        if !ip.is_empty() {
-            return Some(ip);
+    // fallback: return first available ip
+    for (_, network) in networks {
+        if let Some(ip) = network.ip_address {
+            if !ip.is_empty() {
+                return Some(ip);
+            }
         }
     }
 

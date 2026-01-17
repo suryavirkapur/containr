@@ -77,5 +77,11 @@ base64 = "0.22"
 url = "2"
 trust-dns-resolver = { version = "0.23", default-features = false, features = ["tokio-runtime"] }
 
+# docker api
+bollard = "0.20"
+
+# git operations
+git2 = { version = "0.20", features = ["https", "ssh"] }
+
 # pin sfv for pingora compatibility
 sfv = "=0.9.4"

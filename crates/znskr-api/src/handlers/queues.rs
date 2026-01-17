@@ -361,7 +361,7 @@ pub async fn start_queue(
 
     // start the container via queue manager
     let queue_manager = QueueManager::new();
-    queue_manager.start_queue(&mut queue).map_err(|e| {
+    queue_manager.start_queue(&mut queue).await.map_err(|e| {
         tracing::error!("failed to start queue: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -421,7 +421,7 @@ pub async fn stop_queue(
 
     // stop the container via queue manager
     let queue_manager = QueueManager::new();
-    queue_manager.stop_queue(&mut queue).map_err(|e| {
+    queue_manager.stop_queue(&mut queue).await.map_err(|e| {
         tracing::error!("failed to stop queue: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,

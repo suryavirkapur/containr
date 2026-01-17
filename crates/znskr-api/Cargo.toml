@@ -52,3 +52,6 @@ toml = { workspace = true }
 # openapi documentation
 utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
 utoipa-scalar = { version = "0.3", features = ["axum"] }
+
+# docker api
+bollard = { workspace = true }

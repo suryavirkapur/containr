@@ -24,3 +24,6 @@ toml = { workspace = true }
 uuid = { workspace = true }
 
 clap = { version = "4", features = ["derive"] }
+
+# docker api
+bollard = { workspace = true }

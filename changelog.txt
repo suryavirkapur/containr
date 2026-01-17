@@ -1,6 +1,25 @@
 changelog
 =========
 
+0.1.6-alpha - 2026-01-17
+- add deployment logs modal to appdetail page
+- add logs button to each deployment row with historical and live streaming
+- add reissue certificate button to settings page
+- create bucketdetail page with connection info and copy buttons
+- add /storage/:id route for bucket details
+- make bucket names clickable links in storage list
+- improve queuedetail page with credentials section and copy buttons
+
+0.1.5-alpha - 2026-01-17
+- migrate to bollard 0.20 api for docker operations
+- replace sync docker cli calls with async bollard client
+- update all container/network/image operations to use bollard::query_parameters
+- fix option types and generics for bollard 0.20 compatibility
+
+0.1.4-alpha - 2026-01-17
+- persist acme account credentials to avoid let's encrypt rate-limiting
+- account credentials saved as account.json and reused across restarts
+
 0.1.3-alpha - 2026-01-16
 - auto-generate ssl certificates when app is created/updated with a domain
 - add cert_request_tx channel to api state for proactive certificate issuance

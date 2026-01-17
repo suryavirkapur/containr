@@ -1,28 +1,55 @@
 //! managed database container orchestration
 //!
 //! handles starting, stopping, and managing database containers
-//! with bind mount storage for data persistence.
+//! with bind mount storage for data persistence using bollard.
 
+use std::collections::HashMap;
 use std::path::Path;
-use std::process::Command;
-use tracing::{info, warn, error};
+use std::sync::Arc;
+
+use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
+use bollard::query_parameters::{
+    CreateContainerOptions, InspectContainerOptions, LogsOptions,
+    RemoveContainerOptions, StopContainerOptions, InspectNetworkOptions, StartContainerOptions,
+};
+use bollard::models::{
+    ContainerCreateBody, HostConfig, Mount, MountTypeEnum, RestartPolicy, RestartPolicyNameEnum,
+    NetworkCreateRequest, HealthConfig,
+};
+use bollard::Docker;
+use futures::StreamExt;
+use tracing::{error, info, warn};
 
 use crate::error::{ClientError, Result};
-use znskr_common::managed_services::{ManagedDatabase, ServiceStatus};
+use znskr_common::managed_services::{DatabaseType, ManagedDatabase, ServiceStatus};
 
 /// manages database container lifecycle
-pub struct DatabaseManager;
+pub struct DatabaseManager {
+    docker: Arc<Docker>,
+}
 
 impl DatabaseManager {
     /// creates a new database manager
+    /// panics if unable to connect to docker socket
     pub fn new() -> Self {
-        Self
+        match Docker::connect_with_socket_defaults() {
+            Ok(docker) => Self {
+                docker: Arc::new(docker),
+            },
+            Err(e) => {
+                panic!("failed to connect to docker socket: {}", e);
+            }
+        }
     }
 
     /// starts a managed database container
     /// creates the data directory and runs the container with bind mount
-    pub fn start_database(&self, db: &mut ManagedDatabase) -> Result<String> {
-        info!("starting database: {} ({})", db.name, db.db_type.docker_image(&db.version));
+    pub async fn start_database(&self, db: &mut ManagedDatabase) -> Result<String> {
+        info!(
+            "starting database: {} ({})",
+            db.name,
+            db.db_type.docker_image(&db.version)
+        );
 
         // create data directory
         let data_path = Path::new(&db.host_data_path);
@@ -45,80 +72,108 @@ impl DatabaseManager {
         let container_name = format!("znskr-db-{}", db.id);
 
         // ensure network exists
-        self.ensure_network("znskr-infra")?;
+        self.ensure_network("znskr-infra").await?;
 
-        // build docker run command
-        let mut args = vec![
-            "run".to_string(),
-            "-d".to_string(),
-            "--name".to_string(),
-            container_name.clone(),
-            "-v".to_string(),
-            db.bind_mount_arg(),
-            "--restart".to_string(),
-            "unless-stopped".to_string(),
-            "--memory".to_string(),
-            format!("{}m", db.memory_limit / (1024 * 1024)),
-            "--cpus".to_string(),
-            format!("{:.1}", db.cpu_limit),
-            "--network".to_string(),
-            "znskr-infra".to_string(),
-            "--hostname".to_string(),
-            format!("db-{}", db.id),
-            "--network-alias".to_string(),
-            format!("db-{}", db.id),
-        ];
+        // build environment variables
+        let env: Vec<String> = db
+            .db_type
+            .env_vars(&db.credentials)
+            .into_iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect();
 
-        // only expose port to host if external access is enabled
+        // build labels
+        let mut labels = HashMap::new();
+        labels.insert("znskr.type".to_string(), "managed-database".to_string());
+        labels.insert("znskr.db.id".to_string(), db.id.to_string());
+        labels.insert(
+            "znskr.db.type".to_string(),
+            format!("{:?}", db.db_type).to_lowercase(),
+        );
+
+        // build port bindings if external access enabled
+        let mut port_bindings = HashMap::new();
         if let Some(ext_port) = db.external_port {
-            args.push("-p".to_string());
-            args.push(format!("0.0.0.0:{}:{}", ext_port, db.port));
+            port_bindings.insert(
+                format!("{}/tcp", db.port),
+                Some(vec![bollard::models::PortBinding {
+                    host_ip: Some("0.0.0.0".to_string()),
+                    host_port: Some(ext_port.to_string()),
+                }]),
+            );
         }
 
-        // add labels
-        args.push("--label".to_string());
-        args.push("znskr.type=managed-database".to_string());
-        args.push("--label".to_string());
-        args.push(format!("znskr.db.id={}", db.id));
-        args.push("--label".to_string());
-        args.push(format!("znskr.db.type={:?}", db.db_type).to_lowercase());
+        // build mount using db_type.volume_path()
+        let mount = Mount {
+            target: Some(db.db_type.volume_path().to_string()),
+            source: Some(db.host_data_path.clone()),
+            typ: Some(MountTypeEnum::BIND),
+            ..Default::default()
+        };
 
-        // add environment variables
-        for (key, value) in db.db_type.env_vars(&db.credentials) {
-            args.push("-e".to_string());
-            args.push(format!("{}={}", key, value));
-        }
-
-        // add health check
+        // build health check
         let health_cmd = self.get_health_check_cmd(db);
-        if !health_cmd.is_empty() {
-            args.push("--health-cmd".to_string());
-            args.push(health_cmd);
-            args.push("--health-interval".to_string());
-            args.push("10s".to_string());
-            args.push("--health-timeout".to_string());
-            args.push("5s".to_string());
-            args.push("--health-retries".to_string());
-            args.push("3".to_string());
-        }
+        let healthcheck = if !health_cmd.is_empty() {
+            Some(HealthConfig {
+                test: Some(vec!["CMD-SHELL".to_string(), health_cmd]),
+                interval: Some(10_000_000_000), // 10s
+                timeout: Some(5_000_000_000),   // 5s
+                retries: Some(3),
+                start_period: None,
+                start_interval: None,
+            })
+        } else {
+            None
+        };
 
-        // add image
-        args.push(db.docker_image());
+        let host_config = HostConfig {
+            mounts: Some(vec![mount]),
+            memory: Some((db.memory_limit / (1024 * 1024)) as i64 * 1024 * 1024),
+            nano_cpus: Some((db.cpu_limit * 1_000_000_000.0) as i64),
+            restart_policy: Some(RestartPolicy {
+                name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                maximum_retry_count: None,
+            }),
+            network_mode: Some("znskr-infra".to_string()),
+            port_bindings: if port_bindings.is_empty() {
+                None
+            } else {
+                Some(port_bindings)
+            },
+            ..Default::default()
+        };
 
-        info!("running: docker {}", args.join(" "));
+        let container_config = ContainerCreateBody {
+            image: Some(db.docker_image()),
+            env: Some(env),
+            labels: Some(labels),
+            hostname: Some(format!("db-{}", db.id)),
+            host_config: Some(host_config),
+            healthcheck,
+            ..Default::default()
+        };
 
-        let output = Command::new("docker")
-            .args(&args)
-            .output()
-            .map_err(|e| ClientError::Operation(e.to_string()))?;
+        let options = CreateContainerOptions {
+            name: Some(container_name.clone()),
+            ..Default::default()
+        };
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("docker run failed: {}", stderr);
-            return Err(ClientError::Operation(format!("docker run failed: {}", stderr)));
-        }
+        info!("creating container: {}", container_name);
 
-        let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        // create container
+        let response = self
+            .docker
+            .create_container(Some(options), container_config)
+            .await
+            .map_err(|e| ClientError::Operation(format!("docker create failed: {}", e)))?;
+
+        let container_id = response.id.clone();
+
+        // start container
+        self.docker
+            .start_container(&container_id, None::<StartContainerOptions>)
+            .await
+            .map_err(|e| ClientError::Operation(format!("docker start failed: {}", e)))?;
 
         // update database record
         db.container_id = Some(container_id.clone());
@@ -130,36 +185,37 @@ impl DatabaseManager {
     }
 
     /// ensures the infrastructure network exists
-    fn ensure_network(&self, name: &str) -> Result<()> {
-        let output = Command::new("docker")
-            .args(["network", "inspect", name])
-            .output()
-            .map_err(|e| ClientError::Operation(e.to_string()))?;
-
-        if output.status.success() {
-            return Ok(());
+    async fn ensure_network(&self, name: &str) -> Result<()> {
+        // check if network exists
+        match self.docker.inspect_network(name, None::<InspectNetworkOptions>).await {
+            Ok(_) => return Ok(()),
+            Err(_) => {}
         }
 
         info!("creating docker network: {}", name);
-        let output = Command::new("docker")
-            .args(["network", "create", name])
-            .output()
-            .map_err(|e| ClientError::Operation(e.to_string()))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if !stderr.contains("already exists") {
-                warn!("failed to create network: {}", stderr);
+        let options = NetworkCreateRequest {
+            name: name.to_string(),
+            driver: Some("bridge".to_string()),
+            ..Default::default()
+        };
+
+        match self.docker.create_network(options).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let err_str = e.to_string();
+                if err_str.contains("already exists") {
+                    Ok(())
+                } else {
+                    warn!("failed to create network: {}", err_str);
+                    Ok(())
+                }
             }
         }
-
-        Ok(())
     }
 
     /// returns health check command for database type
     fn get_health_check_cmd(&self, db: &ManagedDatabase) -> String {
-        use znskr_common::managed_services::DatabaseType;
-
         match db.db_type {
             DatabaseType::Postgresql => format!(
                 "pg_isready -U {} -d {}",
@@ -175,17 +231,18 @@ impl DatabaseManager {
     }
 
     /// stops a managed database container
-    pub fn stop_database(&self, db: &mut ManagedDatabase) -> Result<()> {
+    pub async fn stop_database(&self, db: &mut ManagedDatabase) -> Result<()> {
         if let Some(ref container_id) = db.container_id {
             info!("stopping database: {} ({})", db.name, container_id);
 
-            let _ = Command::new("docker")
-                .args(["stop", container_id])
-                .output();
+            let stop_options = StopContainerOptions { t: Some(10), ..Default::default() };
+            let _ = self.docker.stop_container(container_id, Some(stop_options)).await;
 
-            let _ = Command::new("docker")
-                .args(["rm", container_id])
-                .output();
+            let rm_options = RemoveContainerOptions {
+                force: true,
+                ..Default::default()
+            };
+            let _ = self.docker.remove_container(container_id, Some(rm_options)).await;
 
             db.container_id = None;
             db.status = ServiceStatus::Stopped;
@@ -196,29 +253,37 @@ impl DatabaseManager {
     }
 
     /// exports database data to a backup file
-    pub fn export_database(&self, db: &ManagedDatabase, output_path: &Path) -> Result<String> {
-        use znskr_common::managed_services::DatabaseType;
-
+    pub async fn export_database(
+        &self,
+        db: &ManagedDatabase,
+        output_path: &Path,
+    ) -> Result<String> {
         let container_name = format!("znskr-db-{}", db.id);
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
         let backup_file = output_path.join(format!("{}_{}.sql", db.name, timestamp));
 
         info!("exporting database {} to {:?}", db.name, backup_file);
 
-        let dump_cmd = match db.db_type {
-            DatabaseType::Postgresql => format!(
-                "docker exec {} pg_dump -U {} -d {} > {:?}",
-                container_name, db.credentials.username, db.credentials.database_name, backup_file
-            ),
-            DatabaseType::Mariadb => format!(
-                "docker exec {} mariadb-dump -u{} -p{} {} > {:?}",
-                container_name, db.credentials.username, db.credentials.password,
-                db.credentials.database_name, backup_file
-            ),
-            DatabaseType::Valkey => format!(
-                "docker exec {} valkey-cli -a {} --rdb {:?}",
-                container_name, db.credentials.password, backup_file
-            ),
+        let cmd = match db.db_type {
+            DatabaseType::Postgresql => vec![
+                "pg_dump".to_string(),
+                "-U".to_string(),
+                db.credentials.username.clone(),
+                "-d".to_string(),
+                db.credentials.database_name.clone(),
+            ],
+            DatabaseType::Mariadb => vec![
+                "mariadb-dump".to_string(),
+                format!("-u{}", db.credentials.username),
+                format!("-p{}", db.credentials.password),
+                db.credentials.database_name.clone(),
+            ],
+            DatabaseType::Valkey => vec![
+                "valkey-cli".to_string(),
+                "-a".to_string(),
+                db.credentials.password.clone(),
+                "BGSAVE".to_string(),
+            ],
             DatabaseType::Qdrant => {
                 return Err(ClientError::Operation(
                     "qdrant export requires api call".to_string(),
@@ -226,29 +291,68 @@ impl DatabaseManager {
             }
         };
 
-        let output = Command::new("sh")
-            .args(["-c", &dump_cmd])
-            .output()
-            .map_err(|e| ClientError::Operation(e.to_string()))?;
+        let exec_options = CreateExecOptions {
+            cmd: Some(cmd),
+            attach_stdout: Some(true),
+            attach_stderr: Some(true),
+            ..Default::default()
+        };
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(ClientError::Operation(format!("backup failed: {}", stderr)));
+        let exec = self
+            .docker
+            .create_exec(&container_name, exec_options)
+            .await
+            .map_err(|e| ClientError::Operation(format!("create exec failed: {}", e)))?;
+
+        let start_options = StartExecOptions {
+            detach: false,
+            ..Default::default()
+        };
+
+        let mut output_data = Vec::new();
+
+        match self.docker.start_exec(&exec.id, Some(start_options)).await {
+            Ok(StartExecResults::Attached { mut output, .. }) => {
+                while let Some(Ok(msg)) = output.next().await {
+                    output_data.extend_from_slice(&msg.into_bytes());
+                }
+            }
+            Ok(StartExecResults::Detached) => {}
+            Err(e) => {
+                return Err(ClientError::Operation(format!("exec failed: {}", e)));
+            }
         }
+
+        // write output to file
+        std::fs::write(&backup_file, &output_data)
+            .map_err(|e| ClientError::Operation(format!("write backup failed: {}", e)))?;
 
         Ok(backup_file.to_string_lossy().to_string())
     }
 
     /// gets logs from a database container
-    pub fn get_logs(&self, db: &ManagedDatabase, tail: usize) -> Result<String> {
+    pub async fn get_logs(&self, db: &ManagedDatabase, _tail: usize) -> Result<String> {
         if let Some(ref container_id) = db.container_id {
-            let output = Command::new("docker")
-                .args(["logs", "--tail", &tail.to_string(), container_id])
-                .output()
-                .map_err(|e| ClientError::Operation(e.to_string()))?;
+            let options = LogsOptions {
+                follow: true,
+                stdout: true,
+                stderr: true,
+                tail: "100".to_string(),
+                ..Default::default()
+            };
+            let mut stream = self.docker.logs(container_id, Some(options));
+            let mut logs = String::new();
 
-            let logs = String::from_utf8_lossy(&output.stdout).to_string()
-                + &String::from_utf8_lossy(&output.stderr);
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(output) => logs.push_str(&output.to_string()),
+                    Err(e) => {
+                        error!(container_id = %container_id, error = %e, "error reading logs");
+                        break;
+                    }
+                }
+            }
+
             Ok(logs)
         } else {
             Ok("container not running".to_string())
@@ -256,14 +360,17 @@ impl DatabaseManager {
     }
 
     /// checks if database container is running
-    pub fn is_running(&self, db: &ManagedDatabase) -> bool {
+    pub async fn is_running(&self, db: &ManagedDatabase) -> bool {
         if let Some(ref container_id) = db.container_id {
-            let output = Command::new("docker")
-                .args(["inspect", "-f", "{{.State.Running}}", container_id])
-                .output();
-
-            match output {
-                Ok(o) => String::from_utf8_lossy(&o.stdout).trim() == "true",
+            match self
+                .docker
+                .inspect_container(container_id, None::<InspectContainerOptions>)
+                .await
+            {
+                Ok(inspect) => inspect
+                    .state
+                    .and_then(|s| s.running)
+                    .unwrap_or(false),
                 Err(_) => false,
             }
         } else {
