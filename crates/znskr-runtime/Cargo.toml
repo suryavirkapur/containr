@@ -21,7 +21,7 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 dashmap = { workspace = true }
 which = "8"
-aws-sdk-s3 = "1.119.0"
+aws-sdk-s3 = { version = "1.119.0", features = ["behavior-version-latest"] }
 aws-config = "1.8.12"
 
 [dev-dependencies]

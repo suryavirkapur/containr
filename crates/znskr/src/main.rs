@@ -118,6 +118,30 @@ async fn main() -> anyhow::Result<()> {
         } else {
             None
         };
+        if let Some(manager) = acme_manager.as_ref() {
+            if !acme_base_domain.is_empty() {
+                match acme_db.get_certificate(&acme_base_domain) {
+                    Ok(Some(_)) => {}
+                    Ok(None) => {
+                        info!(domain = %acme_base_domain, "issuing base domain certificate");
+                        if let Err(error) = manager.ensure_certificate(&acme_base_domain).await {
+                            warn!(
+                                domain = %acme_base_domain,
+                                error = %error,
+                                "base domain certificate issuance failed"
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        warn!(
+                            domain = %acme_base_domain,
+                            error = %error,
+                            "failed to check base domain certificate"
+                        );
+                    }
+                }
+            }
+        }
         let mut in_flight = HashSet::new();
         let mut blocked = HashSet::new();
         let mut logged_disabled = false;
@@ -447,7 +471,7 @@ fn refresh_routes_for_app(
         routes.add_route(znskr_proxy::routes::Route {
             domain: custom_domain.clone(),
             upstreams,
-            ssl_enabled: false,
+            ssl_enabled: true,
             algorithm,
         });
         tracing::info!(domain = %custom_domain, "refreshed custom domain route for app");

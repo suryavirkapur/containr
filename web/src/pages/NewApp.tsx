@@ -164,6 +164,9 @@ const NewApp: Component = () => {
                             class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
                             placeholder="app.example.com"
                         />
+                        <p class="mt-1.5 text-xs text-neutral-400">
+                            tls is provisioned automatically and http will be refused until ready
+                        </p>
                     </div>
 
                     {/* multi-service toggle */}

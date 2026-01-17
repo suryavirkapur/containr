@@ -1,10 +1,11 @@
 //! managed databases api handlers
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -40,8 +41,11 @@ pub struct DatabaseResponse {
     pub status: String,
     pub internal_host: String,
     pub port: u16,
+    pub external_port: Option<u16>,
     pub connection_string: String,
     pub username: String,
+    pub password: String,
+    pub database_name: String,
     pub memory_limit_mb: u64,
     pub cpu_limit: f64,
     pub created_at: String,
@@ -57,8 +61,11 @@ impl From<&ManagedDatabase> for DatabaseResponse {
             status: format!("{:?}", db.status).to_lowercase(),
             internal_host: db.internal_host.clone(),
             port: db.port,
+            external_port: db.external_port,
             connection_string: db.connection_string(),
             username: db.credentials.username.clone(),
+            password: db.credentials.password.clone(),
+            database_name: db.credentials.database_name.clone(),
             memory_limit_mb: db.memory_limit / (1024 * 1024),
             cpu_limit: db.cpu_limit,
             created_at: db.created_at.to_rfc3339(),
@@ -440,4 +447,426 @@ pub async fn stop_database(
     state.db.save_managed_database(&db).map_err(internal_error)?;
 
     Ok(Json(DatabaseResponse::from(&db)))
+}
+
+/// logs query params
+#[derive(Debug, Deserialize)]
+pub struct LogsQuery {
+    #[serde(default = "default_tail")]
+    pub tail: usize,
+}
+
+fn default_tail() -> usize {
+    100
+}
+
+/// logs response
+#[derive(Debug, Serialize, ToSchema)]
+pub struct LogsResponse {
+    pub logs: String,
+}
+
+/// get database container logs
+#[utoipa::path(
+    get,
+    path = "/api/databases/{id}/logs",
+    tag = "databases",
+    params(
+        ("id" = Uuid, Path, description = "database id"),
+        ("tail" = Option<usize>, Query, description = "number of log lines")
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "container logs", body = LogsResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "not found", body = ErrorResponse)
+    )
+)]
+pub async fn get_database_logs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Query(query): Query<LogsQuery>,
+) -> Result<Json<LogsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+
+    let db = state
+        .db
+        .get_managed_database(id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "database not found".to_string(),
+                }),
+            )
+        })?;
+
+    if db.owner_id != user_id {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "access denied".to_string(),
+            }),
+        ));
+    }
+
+    let db_manager = DatabaseManager::new();
+    let logs = db_manager.get_logs(&db, query.tail).map_err(|e| {
+        tracing::error!("failed to get logs: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("failed to get logs: {}", e),
+            }),
+        )
+    })?;
+
+    Ok(Json(LogsResponse { logs }))
+}
+
+/// expose request
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ExposeRequest {
+    pub enabled: bool,
+}
+
+/// toggle external exposure for a database
+#[utoipa::path(
+    post,
+    path = "/api/databases/{id}/expose",
+    tag = "databases",
+    params(("id" = Uuid, Path, description = "database id")),
+    request_body = ExposeRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "exposure toggled", body = DatabaseResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "not found", body = ErrorResponse)
+    )
+)]
+pub async fn expose_database(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(req): Json<ExposeRequest>,
+) -> Result<Json<DatabaseResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+
+    let mut db = state
+        .db
+        .get_managed_database(id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "database not found".to_string(),
+                }),
+            )
+        })?;
+
+    if db.owner_id != user_id {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "access denied".to_string(),
+            }),
+        ));
+    }
+
+    let db_manager = DatabaseManager::new();
+
+    // stop existing container
+    db_manager.stop_database(&mut db).map_err(|e| {
+        tracing::error!("failed to stop database: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("failed to stop database: {}", e),
+            }),
+        )
+    })?;
+
+    // set or clear external port
+    if req.enabled {
+        let mut rng = rand::rng();
+        db.external_port = Some(rng.random_range(30000..40000));
+    } else {
+        db.external_port = None;
+    }
+
+    // restart container (start_database respects external_port if set)
+    db_manager.start_database(&mut db).map_err(|e| {
+        tracing::error!("failed to start database: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("failed to start database: {}", e),
+            }),
+        )
+    })?;
+
+    state.db.save_managed_database(&db).map_err(internal_error)?;
+
+    Ok(Json(DatabaseResponse::from(&db)))
+}
+
+/// export response
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ExportResponse {
+    pub backup_path: String,
+}
+
+/// export database backup
+#[utoipa::path(
+    post,
+    path = "/api/databases/{id}/export",
+    tag = "databases",
+    params(("id" = Uuid, Path, description = "database id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "backup created", body = ExportResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "not found", body = ErrorResponse)
+    )
+)]
+pub async fn export_database(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ExportResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+
+    let db = state
+        .db
+        .get_managed_database(id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "database not found".to_string(),
+                }),
+            )
+        })?;
+
+    if db.owner_id != user_id {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "access denied".to_string(),
+            }),
+        ));
+    }
+
+    let backup_dir = std::path::Path::new(&config.storage.data_dir).join("backups");
+    std::fs::create_dir_all(&backup_dir).map_err(internal_error)?;
+
+    let db_manager = DatabaseManager::new();
+    let backup_path = db_manager.export_database(&db, &backup_dir).map_err(|e| {
+        tracing::error!("failed to export database: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("failed to export database: {}", e),
+            }),
+        )
+    })?;
+
+    Ok(Json(ExportResponse { backup_path }))
+}
+
+/// backup info
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BackupInfo {
+    pub filename: String,
+    pub size_bytes: u64,
+    pub created_at: String,
+}
+
+/// list database backups
+#[utoipa::path(
+    get,
+    path = "/api/databases/{id}/backups",
+    tag = "databases",
+    params(("id" = Uuid, Path, description = "database id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "list of backups", body = Vec<BackupInfo>),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "not found", body = ErrorResponse)
+    )
+)]
+pub async fn list_backups(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<BackupInfo>>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+
+    let db = state
+        .db
+        .get_managed_database(id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "database not found".to_string(),
+                }),
+            )
+        })?;
+
+    if db.owner_id != user_id {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "access denied".to_string(),
+            }),
+        ));
+    }
+
+    let backup_dir = std::path::Path::new(&config.storage.data_dir).join("backups");
+    let mut backups = Vec::new();
+
+    if backup_dir.exists() {
+        let prefix = format!("{}_", db.name);
+        if let Ok(entries) = std::fs::read_dir(&backup_dir) {
+            for entry in entries.flatten() {
+                let filename = entry.file_name().to_string_lossy().to_string();
+                if filename.starts_with(&prefix) {
+                    if let Ok(meta) = entry.metadata() {
+                        let created_at = meta
+                            .modified()
+                            .ok()
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0))
+                            .flatten()
+                            .map(|dt| dt.to_rfc3339())
+                            .unwrap_or_default();
+
+                        backups.push(BackupInfo {
+                            filename,
+                            size_bytes: meta.len(),
+                            created_at,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    backups.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    Ok(Json(backups))
+}
+
+/// download query params
+#[derive(Debug, Deserialize)]
+pub struct DownloadQuery {
+    pub filename: String,
+}
+
+/// download a backup file
+#[utoipa::path(
+    get,
+    path = "/api/databases/{id}/backups/download",
+    tag = "databases",
+    params(
+        ("id" = Uuid, Path, description = "database id"),
+        ("filename" = String, Query, description = "backup filename")
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "backup file", content_type = "application/octet-stream"),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "not found", body = ErrorResponse)
+    )
+)]
+pub async fn download_backup(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Query(query): Query<DownloadQuery>,
+) -> Result<axum::response::Response, (StatusCode, Json<ErrorResponse>)> {
+    use axum::body::Body;
+    use axum::response::IntoResponse;
+
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+
+    let db = state
+        .db
+        .get_managed_database(id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "database not found".to_string(),
+                }),
+            )
+        })?;
+
+    if db.owner_id != user_id {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "access denied".to_string(),
+            }),
+        ));
+    }
+
+    // validate filename belongs to this database
+    let prefix = format!("{}_", db.name);
+    if !query.filename.starts_with(&prefix) || query.filename.contains("..") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "invalid filename".to_string(),
+            }),
+        ));
+    }
+
+    let backup_path = std::path::Path::new(&config.storage.data_dir)
+        .join("backups")
+        .join(&query.filename);
+
+    if !backup_path.exists() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "backup not found".to_string(),
+            }),
+        ));
+    }
+
+    let contents = tokio::fs::read(&backup_path).await.map_err(internal_error)?;
+
+    let response = (
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/octet-stream",
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                &format!("attachment; filename=\"{}\"", query.filename),
+            ),
+        ],
+        Body::from(contents),
+    )
+        .into_response();
+
+    Ok(response)
 }

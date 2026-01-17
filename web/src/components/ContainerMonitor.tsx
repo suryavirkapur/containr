@@ -1,4 +1,4 @@
-import { Component, createEffect, createMemo, createResource, createSignal, For, Show } from 'solid-js';
+import { Component, createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from 'solid-js';
 
 interface ContainerStatus {
     status: string;
@@ -165,6 +165,25 @@ const ContainerMonitor: Component<{ containerId: string; defaultTab?: 'overview'
     createEffect(() => {
         if (!selectedMount() && mountOptions().length > 0) {
             setSelectedMount(mountOptions()[0].destination);
+        }
+    });
+
+    // auto-refresh logs and metrics every 3 seconds when on those tabs
+    createEffect(() => {
+        const currentTab = tab();
+        const id = props.containerId;
+        if (!id) return;
+
+        if (currentTab === 'logs' || currentTab === 'metrics' || currentTab === 'overview') {
+            const interval = setInterval(() => {
+                if (currentTab === 'logs') {
+                    refetchLogs();
+                } else {
+                    refetchStatus();
+                }
+            }, 3000);
+
+            onCleanup(() => clearInterval(interval));
         }
     });
 

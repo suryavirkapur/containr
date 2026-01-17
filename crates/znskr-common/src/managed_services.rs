@@ -244,6 +244,8 @@ pub struct ManagedDatabase {
     pub host_data_path: String,
     pub internal_host: String,
     pub port: u16,
+    /// external port for host exposure (if enabled)
+    pub external_port: Option<u16>,
     pub credentials: DatabaseCredentials,
     pub memory_limit: u64,
     pub cpu_limit: f64,
@@ -268,6 +270,7 @@ impl ManagedDatabase {
             host_data_path: format!("/data/znskr/databases/{}/data", id),
             internal_host: format!("db-{}.internal", id),
             port: db_type.default_port(),
+            external_port: None,
             credentials: DatabaseCredentials::generate(db_type),
             memory_limit: db_type.default_memory_limit(),
             cpu_limit: db_type.default_cpu_limit(),

@@ -8,7 +8,7 @@ path = "./data/znskr.db"
 [proxy]
 http_port = 80
 https_port = 443
-base_domain = "svk77.com"
+base_domain = "adm.svk77.com"
 public_ip = "217.182.171.22"
 load_balance = "round_robin"
 

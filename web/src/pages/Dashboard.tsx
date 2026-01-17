@@ -3,6 +3,7 @@ import { A } from '@solidjs/router';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
+import SystemMonitor from '../components/SystemMonitor';
 
 interface App {
     id: string;
@@ -44,6 +45,9 @@ const Dashboard: Component = () => {
 
     return (
         <div>
+            {/* system monitor */}
+            <SystemMonitor />
+
             {/* header */}
             <div class="flex justify-between items-center mb-10">
                 <div>
