@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use git2::build::RepoBuilder;
-use git2::FetchOptions;
+use git2::{Cred, FetchOptions, RemoteCallbacks};
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -422,10 +422,18 @@ impl DeploymentWorker {
         let url = job.github_url.clone();
         let branch = job.branch.clone();
         let path = repo_path.clone();
+        let github_token = job.github_token.clone();
 
         tokio::task::spawn_blocking(move || {
             let mut fetch_opts = FetchOptions::new();
             fetch_opts.depth(1);
+            if let Some(token) = github_token {
+                let mut callbacks = RemoteCallbacks::new();
+                callbacks.credentials(move |_url, _username, _allowed| {
+                    Cred::userpass_plaintext("x-access-token", &token)
+                });
+                fetch_opts.remote_callbacks(callbacks);
+            }
 
             RepoBuilder::new()
                 .branch(&branch)

@@ -393,6 +393,7 @@ pub struct DeploymentJob {
     pub commit_message: Option<String>,
     pub github_url: String,
     pub branch: String,
+    pub github_token: Option<String>,
 }
 
 /// github app configuration for coolify-style integration

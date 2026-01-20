@@ -15,12 +15,16 @@ const Queues = lazy(() => import('./pages/Queues'));
 const QueueDetail = lazy(() => import('./pages/QueueDetail'));
 const Storage = lazy(() => import('./pages/Storage'));
 const BucketDetail = lazy(() => import('./pages/BucketDetail'));
+const GithubCallback = lazy(() => import('./pages/GithubCallback'));
+const GithubInstallCallback = lazy(() => import('./pages/GithubInstallCallback'));
 
 const App: Component = () => {
     return (
         <Suspense fallback={<Loading />}>
             <Route path="/login" component={Login} />
             <Route path="/register" component={Register} />
+            <Route path="/github/callback" component={GithubCallback} />
+            <Route path="/github/install/callback" component={GithubInstallCallback} />
             <Route path="/" component={Layout}>
                 <Route path="/" component={Dashboard} />
                 <Route path="/apps/new" component={NewApp} />

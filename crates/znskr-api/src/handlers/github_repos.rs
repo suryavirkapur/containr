@@ -185,7 +185,10 @@ pub async fn github_repos(
     })?;
 
     // decrypt token
-    let decrypted_token = znskr_common::encryption::decrypt(&access_token, &config.security.encryption_key)
+    let decrypted_token = znskr_common::encryption::decrypt(
+        &access_token,
+        config.security.encryption_key.as_bytes(),
+    )
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,

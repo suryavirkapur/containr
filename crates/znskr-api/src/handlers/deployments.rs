@@ -9,7 +9,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
-use crate::github::DeploymentJob;
+use crate::github::{get_repo_installation_token, DeploymentJob};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
 use znskr_common::models::{Deployment, DeploymentStatus};
@@ -221,12 +221,14 @@ pub async fn trigger_deployment(
         .map_err(internal_error)?;
 
     // queue deployment job
+    let github_token = get_github_token_for_app(&state, user_id, &app).await?;
     let job = DeploymentJob {
         app_id,
         commit_sha: "HEAD".to_string(),
         commit_message: Some("manual deployment".to_string()),
         github_url: app.github_url,
         branch: app.branch,
+        github_token,
     };
 
     state
@@ -239,6 +241,49 @@ pub async fn trigger_deployment(
         StatusCode::CREATED,
         Json(DeploymentResponse::from(&deployment)),
     ))
+}
+
+async fn get_github_token_for_app(
+    state: &AppState,
+    user_id: Uuid,
+    app: &znskr_common::models::App,
+) -> Result<Option<String>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+
+    if let Ok(Some(app_config)) = state.db.get_github_app(user_id) {
+        let token = get_repo_installation_token(
+            &app_config,
+            config.security.encryption_key.as_bytes(),
+            &app.github_url,
+        )
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(ErrorResponse {
+                    error: format!("github api error: {}", e),
+                }),
+            )
+        })?;
+
+        if token.is_some() {
+            return Ok(token);
+        }
+    }
+
+    let user = state.db.get_user(user_id).map_err(internal_error)?;
+    if let Some(user) = user {
+        if let Some(access_token) = user.github_access_token {
+            let decrypted_token = znskr_common::encryption::decrypt(
+                &access_token,
+                config.security.encryption_key.as_bytes(),
+            )
+            .map_err(internal_error)?;
+            return Ok(Some(decrypted_token));
+        }
+    }
+
+    Ok(None)
 }
 
 /// get deployment logs
