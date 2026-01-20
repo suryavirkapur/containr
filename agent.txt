@@ -1,17 +1,26 @@
 current context:
+- implemented coolify-style github app integration
+- added backend handlers for app manifest flow and installation token management
+- enhanced settings page with github app setup and management
+- enhanced new app page with repo picker supporting installations
 - added acme request worker triggered by tls certificate misses
 - proxy now queues certificate issuance when no cert is found
 - proxy resolves upstream socket addresses to avoid pingora panics
 - base domain /api requests now route to the api server
 
 pending tasks:
-- none
+- implement automatic webhooks for auto-deployment on push
+- manual trigger for deployment from image or branch in ui
 
 important decisions:
+- switched from oauth tokens to github app installation tokens for better security
+- app credentials (private key, secrets) are stored encrypted in sled
 - acme issuance is triggered on first https request and deduped per domain
 - acme requires config.acme.email to be set, otherwise it is disabled
 
 architectural notes:
+- github app auth uses jwt for app level and installation tokens for repo level
+- used sled for storing github app configuration and installations
 - acme manager runs on tokio runtime and serves http-01 via shared challenge store
 - pingora tls callback only queues issuance to avoid blocking handshake path
 - upstream resolution errors return a proxy error instead of panicking

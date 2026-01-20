@@ -131,3 +131,261 @@ pub async fn get_github_user(access_token: &str) -> Result<GithubUser> {
 
     Ok(user)
 }
+
+/// github repository info
+#[derive(Debug, Clone, serde::Serialize, Deserialize)]
+pub struct GithubRepo {
+    pub id: i64,
+    pub name: String,
+    pub full_name: String,
+    pub html_url: String,
+    pub clone_url: String,
+    pub private: bool,
+    pub default_branch: String,
+    pub description: Option<String>,
+}
+
+/// fetches the authenticated user's repositories from github
+pub async fn get_user_repos(
+    access_token: &str,
+    visibility: Option<&str>,
+) -> Result<Vec<GithubRepo>> {
+    let client = reqwest::Client::new();
+
+    let visibility = visibility.unwrap_or("all");
+    let url = format!(
+        "https://api.github.com/user/repos?visibility={}&sort=updated&per_page=100",
+        visibility
+    );
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", access_token))
+        .header("User-Agent", "znskr")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| Error::Github(format!("failed to get repos: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(Error::Github(format!(
+            "github api failed: {}",
+            response.status()
+        )));
+    }
+
+    let repos: Vec<GithubRepo> = response
+        .json()
+        .await
+        .map_err(|e| Error::Github(format!("failed to parse repos: {}", e)))?;
+
+    Ok(repos)
+}
+
+// ============================================================================
+// github app integration
+// ============================================================================
+
+use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use serde::Serialize;
+
+/// jwt claims for github app authentication
+#[derive(Debug, Serialize)]
+struct AppJwtClaims {
+    /// issued at time
+    iat: i64,
+    /// expiration time (max 10 minutes)
+    exp: i64,
+    /// github app id (issuer)
+    iss: String,
+}
+
+/// installation access token response
+#[derive(Debug, Deserialize)]
+pub struct InstallationTokenResponse {
+    pub token: String,
+    pub expires_at: String,
+}
+
+/// github app manifest response after app creation
+#[derive(Debug, Deserialize)]
+pub struct AppManifestResponse {
+    pub id: i64,
+    pub slug: String,
+    pub name: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub pem: String,
+    pub webhook_secret: String,
+    pub html_url: String,
+}
+
+/// github installation info
+#[derive(Debug, Deserialize)]
+pub struct InstallationInfo {
+    pub id: i64,
+    pub account: InstallationAccount,
+    pub repository_selection: String,
+    #[serde(default)]
+    pub repositories_url: String,
+}
+
+/// installation account info
+#[derive(Debug, Deserialize)]
+pub struct InstallationAccount {
+    pub login: String,
+    #[serde(rename = "type")]
+    pub account_type: String,
+}
+
+/// generates a jwt for github app authentication
+pub fn generate_app_jwt(app_id: i64, private_key_pem: &str) -> Result<String> {
+    let now = chrono::Utc::now().timestamp();
+    let claims = AppJwtClaims {
+        iat: now - 60, // allow 60s clock drift
+        exp: now + 600, // 10 min expiry (max allowed)
+        iss: app_id.to_string(),
+    };
+
+    let key = EncodingKey::from_rsa_pem(private_key_pem.as_bytes())
+        .map_err(|e| Error::Github(format!("invalid private key: {}", e)))?;
+
+    let header = Header::new(Algorithm::RS256);
+
+    encode(&header, &claims, &key)
+        .map_err(|e| Error::Github(format!("failed to generate jwt: {}", e)))
+}
+
+/// exchanges a jwt for an installation access token
+pub async fn get_installation_token(jwt: &str, installation_id: i64) -> Result<InstallationTokenResponse> {
+    let client = reqwest::Client::new();
+
+    let url = format!(
+        "https://api.github.com/app/installations/{}/access_tokens",
+        installation_id
+    );
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", jwt))
+        .header("User-Agent", "znskr")
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| Error::Github(format!("failed to get installation token: {}", e)))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(Error::Github(format!(
+            "github api failed: {} - {}",
+            status, body
+        )));
+    }
+
+    let token: InstallationTokenResponse = response
+        .json()
+        .await
+        .map_err(|e| Error::Github(format!("failed to parse token: {}", e)))?;
+
+    Ok(token)
+}
+
+/// lists all installations for a github app
+pub async fn list_app_installations(jwt: &str) -> Result<Vec<InstallationInfo>> {
+    let client = reqwest::Client::new();
+
+    let response = client
+        .get("https://api.github.com/app/installations")
+        .header("Authorization", format!("Bearer {}", jwt))
+        .header("User-Agent", "znskr")
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| Error::Github(format!("failed to list installations: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(Error::Github(format!(
+            "github api failed: {}",
+            response.status()
+        )));
+    }
+
+    let installations: Vec<InstallationInfo> = response
+        .json()
+        .await
+        .map_err(|e| Error::Github(format!("failed to parse installations: {}", e)))?;
+
+    Ok(installations)
+}
+
+/// fetches repos accessible to an installation
+pub async fn get_installation_repos(installation_token: &str) -> Result<Vec<GithubRepo>> {
+    let client = reqwest::Client::new();
+
+    let response = client
+        .get("https://api.github.com/installation/repositories")
+        .header("Authorization", format!("Bearer {}", installation_token))
+        .header("User-Agent", "znskr")
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| Error::Github(format!("failed to get repos: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(Error::Github(format!(
+            "github api failed: {}",
+            response.status()
+        )));
+    }
+
+    #[derive(Deserialize)]
+    struct ReposResponse {
+        repositories: Vec<GithubRepo>,
+    }
+
+    let data: ReposResponse = response
+        .json()
+        .await
+        .map_err(|e| Error::Github(format!("failed to parse repos: {}", e)))?;
+
+    Ok(data.repositories)
+}
+
+/// converts a github app manifest code to app credentials
+pub async fn convert_manifest_code(code: &str) -> Result<AppManifestResponse> {
+    let client = reqwest::Client::new();
+
+    let url = format!(
+        "https://api.github.com/app-manifests/{}/conversions",
+        code
+    );
+
+    let response = client
+        .post(&url)
+        .header("User-Agent", "znskr")
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| Error::Github(format!("failed to convert manifest: {}", e)))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(Error::Github(format!(
+            "github manifest conversion failed: {} - {}",
+            status, body
+        )));
+    }
+
+    let app: AppManifestResponse = response
+        .json()
+        .await
+        .map_err(|e| Error::Github(format!("failed to parse app: {}", e)))?;
+
+    Ok(app)
+}
