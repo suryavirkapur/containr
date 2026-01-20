@@ -155,7 +155,10 @@ pub async fn get_github_app(
             let mut installations = app.installations.clone();
             
             // try to sync with github
-            if let Ok(pem) = znskr_common::encryption::decrypt(&app.private_key, &config.security.encryption_key) {
+            if let Ok(pem) = znskr_common::encryption::decrypt(
+                &app.private_key,
+                config.security.encryption_key.as_bytes(),
+            ) {
                 if let Ok(jwt) = generate_app_jwt(app.app_id, &pem) {
                     if let Ok(github_installations) = list_app_installations(&jwt).await {
                         installations = github_installations
@@ -214,7 +217,13 @@ pub async fn get_app_manifest(
     let config = state.config.read().await;
     let _user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
-    let base_url = format!("https://{}", config.proxy.base_domain);
+    let base_domain = config.proxy.base_domain.trim_end_matches('/');
+    let base_url = if base_domain.starts_with("http://") || base_domain.starts_with("https://") {
+        base_domain.to_string()
+    } else {
+        format!("https://{}", base_domain)
+    };
+    let redirect_url = format!("{}/github/callback", base_url);
     
     let manifest = serde_json::json!({
         "name": "znskr",
@@ -222,11 +231,11 @@ pub async fn get_app_manifest(
         "hook_attributes": {
             "url": format!("{}/webhooks/github", base_url)
         },
-        "redirect_url": format!("{}/api/github/app/callback", base_url),
+        "redirect_url": redirect_url,
         "callback_urls": [
-            format!("{}/api/github/app/callback", base_url)
+            format!("{}/github/callback", base_url)
         ],
-        "setup_url": format!("{}/api/github/app/install/callback", base_url),
+        "setup_url": format!("{}/github/install/callback", base_url),
         "public": false,
         "default_permissions": {
             "contents": "read",
@@ -276,19 +285,19 @@ pub async fn github_app_callback(
     // encrypt sensitive data
     let encrypted_secret = znskr_common::encryption::encrypt(
         &app_response.client_secret,
-        &config.security.encryption_key,
+        config.security.encryption_key.as_bytes(),
     )
     .map_err(internal_error)?;
 
     let encrypted_pem = znskr_common::encryption::encrypt(
         &app_response.pem,
-        &config.security.encryption_key,
+        config.security.encryption_key.as_bytes(),
     )
     .map_err(internal_error)?;
 
     let encrypted_webhook = znskr_common::encryption::encrypt(
         &app_response.webhook_secret,
-        &config.security.encryption_key,
+        config.security.encryption_key.as_bytes(),
     )
     .map_err(internal_error)?;
 
@@ -338,7 +347,7 @@ pub async fn github_install_callback(
             // decrypt private key
             let pem = znskr_common::encryption::decrypt(
                 &app_config.private_key,
-                &config.security.encryption_key,
+                config.security.encryption_key.as_bytes(),
             )
             .map_err(internal_error)?;
 
@@ -415,7 +424,7 @@ pub async fn get_app_repos(
     // decrypt private key
     let pem = znskr_common::encryption::decrypt(
         &app_config.private_key,
-        &config.security.encryption_key,
+        config.security.encryption_key.as_bytes(),
     )
     .map_err(internal_error)?;
 

@@ -22,8 +22,7 @@ jwt_secret = "e1cf6d4e9498f5c4924388670bcad83b13d508997dcacc303e7a9e305b557009"
 jwt_expiry_hours = 24
 
 [security]
-encryption_key = "2c9de326a4b4c91495a5b6142a669b2da03406eb2e580884e5effcf0b5dcccab"
-
+encryption_key = "0123456789abcdef0123456789abcdef"
 [acme]
 email = "suryavirkapur@hotmail.com"
 certs_dir = "./data/certs"

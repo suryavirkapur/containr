@@ -8,6 +8,7 @@ use znskr_common::{Error, Result};
 
 // re-export from common
 pub use znskr_common::models::DeploymentJob;
+use znskr_common::models::GithubAppConfig;
 
 /// github push event payload
 #[derive(Debug, Deserialize)]
@@ -388,4 +389,32 @@ pub async fn convert_manifest_code(code: &str) -> Result<AppManifestResponse> {
         .map_err(|e| Error::Github(format!("failed to parse app: {}", e)))?;
 
     Ok(app)
+}
+
+/// finds an installation token for a repo, if the app has access
+pub async fn get_repo_installation_token(
+    app_config: &GithubAppConfig,
+    encryption_key: &[u8],
+    repo_url: &str,
+) -> Result<Option<String>> {
+    let normalized_repo = repo_url.trim_end_matches(".git");
+
+    let pem = znskr_common::encryption::decrypt(&app_config.private_key, encryption_key)
+        .map_err(|e| Error::Internal(format!("failed to decrypt private key: {}", e)))?;
+    let jwt = generate_app_jwt(app_config.app_id, &pem)?;
+
+    for installation in &app_config.installations {
+        let token_response = get_installation_token(&jwt, installation.id).await?;
+        let repos = get_installation_repos(&token_response.token).await?;
+
+        if repos.iter().any(|repo| {
+            let clone_url = repo.clone_url.trim_end_matches(".git");
+            let html_url = repo.html_url.trim_end_matches(".git");
+            normalized_repo == clone_url || normalized_repo == html_url
+        }) {
+            return Ok(Some(token_response.token));
+        }
+    }
+
+    Ok(None)
 }

@@ -8,7 +8,7 @@ use axum::{
 };
 use serde::Serialize;
 
-use crate::github::{extract_branch, verify_webhook_signature, DeploymentJob, PushEvent};
+use crate::github::{extract_branch, get_repo_installation_token, verify_webhook_signature, DeploymentJob, PushEvent};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
 use znskr_common::models::Deployment;
@@ -108,12 +108,14 @@ pub async fn github_webhook(
                 .map_err(internal_error)?;
 
             // queue deployment job
+            let github_token = get_github_token_for_app(&state, app.owner_id, &app).await?;
             let job = DeploymentJob {
                 app_id: app.id,
                 commit_sha: push_event.after,
                 commit_message: deployment.commit_message.clone(),
                 github_url: app.github_url,
                 branch: app.branch,
+                github_token,
             };
 
             state
@@ -138,6 +140,49 @@ pub async fn github_webhook(
             deployment_id: None,
         })),
     }
+}
+
+async fn get_github_token_for_app(
+    state: &AppState,
+    owner_id: uuid::Uuid,
+    app: &znskr_common::models::App,
+) -> Result<Option<String>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+
+    if let Ok(Some(app_config)) = state.db.get_github_app(owner_id) {
+        let token = get_repo_installation_token(
+            &app_config,
+            config.security.encryption_key.as_bytes(),
+            &app.github_url,
+        )
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(ErrorResponse {
+                    error: format!("github api error: {}", e),
+                }),
+            )
+        })?;
+
+        if token.is_some() {
+            return Ok(token);
+        }
+    }
+
+    let user = state.db.get_user(owner_id).map_err(internal_error)?;
+    if let Some(user) = user {
+        if let Some(access_token) = user.github_access_token {
+            let decrypted_token = znskr_common::encryption::decrypt(
+                &access_token,
+                config.security.encryption_key.as_bytes(),
+            )
+            .map_err(internal_error)?;
+            return Ok(Some(decrypted_token));
+        }
+    }
+
+    Ok(None)
 }
 
 /// finds an app by repository url and branch
