@@ -394,3 +394,87 @@ pub struct DeploymentJob {
     pub github_url: String,
     pub branch: String,
 }
+
+/// github app configuration for coolify-style integration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GithubAppConfig {
+    pub id: Uuid,
+    /// github app id
+    pub app_id: i64,
+    /// github app name (slug)
+    pub app_name: String,
+    /// github app client id
+    pub client_id: String,
+    /// github app client secret (encrypted)
+    pub client_secret: String,
+    /// github app private key (encrypted, pem format)
+    pub private_key: String,
+    /// webhook secret for verifying github webhooks (encrypted)
+    pub webhook_secret: String,
+    /// html url to the app on github
+    pub html_url: String,
+    /// owner user id
+    pub owner_id: Uuid,
+    /// installations of this app
+    #[serde(default)]
+    pub installations: Vec<GithubInstallation>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl GithubAppConfig {
+    /// creates a new github app config
+    pub fn new(
+        app_id: i64,
+        app_name: String,
+        client_id: String,
+        client_secret: String,
+        private_key: String,
+        webhook_secret: String,
+        html_url: String,
+        owner_id: Uuid,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4(),
+            app_id,
+            app_name,
+            client_id,
+            client_secret,
+            private_key,
+            webhook_secret,
+            html_url,
+            owner_id,
+            installations: Vec::new(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
+/// github app installation on a user/org account
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GithubInstallation {
+    /// github installation id
+    pub id: i64,
+    /// account login (username or org name)
+    pub account_login: String,
+    /// account type: "User" or "Organization"
+    pub account_type: String,
+    /// number of repos accessible
+    pub repository_count: Option<i32>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl GithubInstallation {
+    /// creates a new github installation
+    pub fn new(id: i64, account_login: String, account_type: String) -> Self {
+        Self {
+            id,
+            account_login,
+            account_type,
+            repository_count: None,
+            created_at: Utc::now(),
+        }
+    }
+}

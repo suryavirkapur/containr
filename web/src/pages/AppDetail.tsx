@@ -194,11 +194,16 @@ const AppDetail: Component = () => {
     // Edit form state
     const [editing, setEditing] = createSignal(false);
     const [saving, setSaving] = createSignal(false);
+    const [bulkEditEnv, setBulkEditEnv] = createSignal(false);
+    const [bulkEnvText, setBulkEnvText] = createSignal('');
+    const [deployingImage, setDeployingImage] = createSignal(false);
+    const [imageNameInput, setImageNameInput] = createSignal('');
     const [editForm, setEditForm] = createSignal({
         domain: '',
         port: 8080,
         github_url: '',
         branch: 'main',
+        replicas: 1,
         env_vars: [] as { key: string; value: string; secret: boolean }[],
     });
 
@@ -210,9 +215,72 @@ const AppDetail: Component = () => {
                 port: currentApp.port,
                 github_url: currentApp.github_url,
                 branch: currentApp.branch,
+                replicas: currentApp.services?.[0]?.replicas || 1,
                 env_vars: currentApp.env_vars ? currentApp.env_vars.map(e => ({ ...e })) : [],
             });
+            setBulkEditEnv(false);
             setEditing(true);
+        }
+    };
+
+    // convert env vars to bulk text format
+    const envVarsToBulkText = (vars: { key: string; value: string; secret: boolean }[]) => {
+        return vars.map(v => `${v.key}=${v.value}`).join('\n');
+    };
+
+    // convert bulk text to env vars array
+    const bulkTextToEnvVars = (text: string) => {
+        return text.split('\n')
+            .filter(line => line.trim() && line.includes('='))
+            .map(line => {
+                const idx = line.indexOf('=');
+                return {
+                    key: line.substring(0, idx).trim(),
+                    value: line.substring(idx + 1).trim(),
+                    secret: false
+                };
+            });
+    };
+
+    // toggle bulk edit mode
+    const toggleBulkEdit = () => {
+        if (bulkEditEnv()) {
+            // switching from bulk to individual - parse the text
+            setEditForm(prev => ({ ...prev, env_vars: bulkTextToEnvVars(bulkEnvText()) }));
+        } else {
+            // switching to bulk - convert vars to text
+            setBulkEnvText(envVarsToBulkText(editForm().env_vars));
+        }
+        setBulkEditEnv(!bulkEditEnv());
+    };
+
+    // deploy from docker image
+    const deployFromImage = async () => {
+        const imageName = imageNameInput().trim();
+        if (!imageName) return;
+
+        setDeployingImage(true);
+        try {
+            const token = localStorage.getItem('znskr_token');
+            const res = await fetch(`/api/apps/${params.id}/deployments`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ image: imageName }),
+            });
+
+            if (!res.ok) {
+                throw new Error('failed to deploy image');
+            }
+
+            setImageNameInput('');
+            refetchDeployments();
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setDeployingImage(false);
         }
     };
 
@@ -232,7 +300,12 @@ const AppDetail: Component = () => {
                     port: form.port,
                     github_url: form.github_url,
                     branch: form.branch,
-                    env_vars: form.env_vars,
+                    env_vars: bulkEditEnv() ? bulkTextToEnvVars(bulkEnvText()) : form.env_vars,
+                    services: [{
+                        name: 'web',
+                        port: form.port,
+                        replicas: form.replicas,
+                    }],
                 }),
             });
 
@@ -711,6 +784,32 @@ const AppDetail: Component = () => {
                     </div>
                 </div>
 
+                {/* deploy via image */}
+                <div class="border border-neutral-200 mb-8">
+                    <div class="border-b border-neutral-200 px-5 py-3">
+                        <h2 class="text-sm font-serif text-black">deploy via image name</h2>
+                        <p class="text-xs text-neutral-500 mt-1">deploy directly from a docker image</p>
+                    </div>
+                    <div class="p-5">
+                        <div class="flex gap-2">
+                            <input
+                                type="text"
+                                value={imageNameInput()}
+                                onInput={(e) => setImageNameInput(e.currentTarget.value)}
+                                placeholder="nginxdemos/hello:latest"
+                                class="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
+                            />
+                            <button
+                                onClick={deployFromImage}
+                                disabled={deployingImage() || !imageNameInput().trim()}
+                                class="px-4 py-2 bg-neutral-700 text-white hover:bg-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                            >
+                                {deployingImage() ? 'deploying...' : 'deploy now'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 {/* deployments */}
                 <div class="border border-neutral-200">
                     <div class="border-b border-neutral-200 px-5 py-3">
@@ -769,133 +868,222 @@ const AppDetail: Component = () => {
             {/* edit modal */}
             <Show when={editing()}>
                 <div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">
-                    <div class="bg-white border border-neutral-300 p-6 w-full max-w-md">
-                        <h2 class="text-lg font-serif text-black mb-6">app settings</h2>
-
-                        <div class="space-y-5">
-                            <div>
-                                <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-2">github url</label>
-                                <input
-                                    type="text"
-                                    value={editForm().github_url}
-                                    onInput={(e) => setEditForm(prev => ({ ...prev, github_url: e.currentTarget.value }))}
-                                    class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
-                                />
-                            </div>
-
-                            <div>
-                                <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-2">branch</label>
-                                <input
-                                    type="text"
-                                    value={editForm().branch}
-                                    onInput={(e) => setEditForm(prev => ({ ...prev, branch: e.currentTarget.value }))}
-                                    class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
-                                />
-                            </div>
-
-                            <div>
-                                <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-2">domain</label>
-                                <input
-                                    type="text"
-                                    value={editForm().domain}
-                                    onInput={(e) => setEditForm(prev => ({ ...prev, domain: e.currentTarget.value }))}
-                                    class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
-                                    placeholder="app.example.com"
-                                />
-                                <p class="text-xs text-neutral-400 mt-2">
-                                    saving requests tls automatically and http will be refused until ready
-                                </p>
-                            </div>
-
-                            <div>
-                                <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-2">port</label>
-                                <input
-                                    type="number"
-                                    value={editForm().port}
-                                    onInput={(e) => setEditForm(prev => ({ ...prev, port: parseInt(e.currentTarget.value) || 8080 }))}
-                                    class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
-                                />
-                            </div>
+                    <div class="bg-white border border-neutral-300 w-full max-w-2xl max-h-[90vh] flex flex-col">
+                        <div class="border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
+                            <h2 class="text-lg font-serif text-black">app settings</h2>
+                            <button
+                                onClick={() => setEditing(false)}
+                                class="text-neutral-400 hover:text-black"
+                            >
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
                         </div>
 
-                        <div class="mt-6">
-                            <div class="flex justify-between items-center mb-3">
-                                <label class="text-xs text-neutral-500 uppercase tracking-wider">environment variables</label>
-                                <button
-                                    onClick={() => setEditForm(prev => ({
-                                        ...prev,
-                                        env_vars: [...prev.env_vars, { key: '', value: '', secret: false }]
-                                    }))}
-                                    class="text-xs text-neutral-500 hover:text-black"
-                                >
-                                    + add
-                                </button>
-                            </div>
-                            <div class="space-y-2">
-                                <For each={editForm().env_vars}>
-                                    {(env, i) => (
-                                        <div class="flex items-start gap-2 border border-neutral-200 p-2">
-                                            <div class="flex-1 space-y-2">
-                                                <input
-                                                    type="text"
-                                                    placeholder="KEY"
-                                                    value={env.key}
-                                                    onInput={(e) => {
-                                                        const newVars = [...editForm().env_vars];
-                                                        newVars[i()] = { ...newVars[i()], key: e.currentTarget.value };
-                                                        setEditForm(prev => ({ ...prev, env_vars: newVars }));
-                                                    }}
-                                                    class="w-full px-2 py-1.5 bg-white border border-neutral-200 text-black text-xs focus:border-neutral-400 focus:outline-none font-mono"
-                                                />
-                                                <input
-                                                    type="text"
-                                                    placeholder="VALUE"
-                                                    value={env.value}
-                                                    onInput={(e) => {
-                                                        const newVars = [...editForm().env_vars];
-                                                        newVars[i()] = { ...newVars[i()], value: e.currentTarget.value };
-                                                        setEditForm(prev => ({ ...prev, env_vars: newVars }));
-                                                    }}
-                                                    class="w-full px-2 py-1.5 bg-white border border-neutral-200 text-black text-xs focus:border-neutral-400 focus:outline-none font-mono"
-                                                />
-                                                <label class="flex items-center gap-2 cursor-pointer">
+                        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+                            {/* domain section */}
+                            <section class="border border-neutral-200 p-4">
+                                <h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-4">http settings</h3>
+
+                                <Show when={editForm().domain || app()?.domain}>
+                                    <div class="mb-4">
+                                        <p class="text-xs text-neutral-500 mb-2">your app is publicly available at:</p>
+                                        <div class="flex items-center gap-2 p-2 border border-neutral-200 bg-neutral-50">
+                                            <Show when={certificate()?.status === 'valid'}>
+                                                <span class="px-2 py-0.5 text-xs border border-neutral-300 text-neutral-600">https</span>
+                                            </Show>
+                                            <Show when={certificate()?.status !== 'valid'}>
+                                                <button
+                                                    onClick={reissueCertificate}
+                                                    disabled={reissuing()}
+                                                    class="px-2 py-0.5 text-xs border border-neutral-400 text-neutral-700 hover:border-black hover:text-black disabled:opacity-50"
+                                                >
+                                                    {reissuing() ? '...' : 'enable https'}
+                                                </button>
+                                            </Show>
+                                            <a
+                                                href={`https://${editForm().domain || app()?.domain}`}
+                                                target="_blank"
+                                                class="text-sm text-blue-600 hover:underline font-mono"
+                                            >
+                                                {editForm().domain || app()?.domain}
+                                            </a>
+                                        </div>
+                                    </div>
+                                </Show>
+
+                                <div class="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={editForm().domain}
+                                        onInput={(e) => setEditForm(prev => ({ ...prev, domain: e.currentTarget.value }))}
+                                        placeholder="your-custom-domain.com"
+                                        class="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 text-sm"
+                                    >
+                                        connect new domain
+                                    </button>
+                                </div>
+                                <p class="text-xs text-neutral-400 mt-2">
+                                    point your domain's dns to this server, then connect it above
+                                </p>
+                            </section>
+
+                            {/* source settings */}
+                            <section class="border border-neutral-200 p-4">
+                                <h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-4">source</h3>
+
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs text-neutral-500 mb-2">github url</label>
+                                        <input
+                                            type="text"
+                                            value={editForm().github_url}
+                                            onInput={(e) => setEditForm(prev => ({ ...prev, github_url: e.currentTarget.value }))}
+                                            class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-neutral-500 mb-2">branch</label>
+                                        <input
+                                            type="text"
+                                            value={editForm().branch}
+                                            onInput={(e) => setEditForm(prev => ({ ...prev, branch: e.currentTarget.value }))}
+                                            class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
+                                        />
+                                    </div>
+                                </div>
+                            </section>
+
+                            {/* environment variables */}
+                            <section class="border border-neutral-200 p-4">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-xs text-neutral-500 uppercase tracking-wider">environment variables</h3>
+                                    <div class="flex items-center gap-3">
+                                        <label class="flex items-center gap-2 cursor-pointer text-xs text-neutral-500">
+                                            <span>bulk edit</span>
+                                            <button
+                                                type="button"
+                                                onClick={toggleBulkEdit}
+                                                class={`relative w-8 h-4 transition-colors ${bulkEditEnv() ? 'bg-blue-600' : 'bg-neutral-300'}`}
+                                            >
+                                                <span class={`absolute top-0.5 w-3 h-3 bg-white transition-transform ${bulkEditEnv() ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                            </button>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <Show when={bulkEditEnv()}>
+                                    <textarea
+                                        value={bulkEnvText()}
+                                        onInput={(e) => setBulkEnvText(e.currentTarget.value)}
+                                        placeholder="KEY=value&#10;ANOTHER_KEY=another_value"
+                                        class="w-full h-32 px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono resize-none"
+                                    />
+                                    <p class="text-xs text-neutral-400 mt-2">one variable per line, format: KEY=value</p>
+                                </Show>
+
+                                <Show when={!bulkEditEnv()}>
+                                    <div class="space-y-2">
+                                        <For each={editForm().env_vars}>
+                                            {(env, i) => (
+                                                <div class="flex gap-2">
                                                     <input
-                                                        type="checkbox"
-                                                        checked={env.secret}
-                                                        onChange={(e) => {
+                                                        type="text"
+                                                        placeholder="key"
+                                                        value={env.key}
+                                                        onInput={(e) => {
                                                             const newVars = [...editForm().env_vars];
-                                                            newVars[i()] = { ...newVars[i()], secret: e.currentTarget.checked };
+                                                            newVars[i()] = { ...newVars[i()], key: e.currentTarget.value };
                                                             setEditForm(prev => ({ ...prev, env_vars: newVars }));
                                                         }}
-                                                        class="w-3 h-3 bg-white border border-neutral-300"
+                                                        class="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 text-white text-sm focus:border-neutral-400 focus:outline-none font-mono"
                                                     />
-                                                    <span class="text-xs text-neutral-500">secret</span>
-                                                </label>
-                                            </div>
-                                            <button
-                                                onClick={() => {
-                                                    const newVars = [...editForm().env_vars];
-                                                    newVars.splice(i(), 1);
-                                                    setEditForm(prev => ({ ...prev, env_vars: newVars }));
-                                                }}
-                                                class="text-neutral-400 hover:text-black p-1"
-                                            >
-                                                <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                            </button>
-                                        </div>
-                                    )}
-                                </For>
-                                <Show when={editForm().env_vars.length === 0}>
-                                    <p class="text-xs text-neutral-400 text-center py-3 border border-dashed border-neutral-200">
-                                        no environment variables
-                                    </p>
+                                                    <input
+                                                        type={env.secret ? 'password' : 'text'}
+                                                        placeholder="value"
+                                                        value={env.value}
+                                                        onInput={(e) => {
+                                                            const newVars = [...editForm().env_vars];
+                                                            newVars[i()] = { ...newVars[i()], value: e.currentTarget.value };
+                                                            setEditForm(prev => ({ ...prev, env_vars: newVars }));
+                                                        }}
+                                                        class="flex-[2] px-3 py-2 bg-neutral-900 border border-neutral-700 text-white text-sm focus:border-neutral-400 focus:outline-none font-mono"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const newVars = [...editForm().env_vars];
+                                                            newVars[i()] = { ...newVars[i()], secret: !newVars[i()].secret };
+                                                            setEditForm(prev => ({ ...prev, env_vars: newVars }));
+                                                        }}
+                                                        class={`px-2 py-1 text-xs border ${env.secret ? 'border-blue-500 text-blue-500' : 'border-neutral-600 text-neutral-500'}`}
+                                                        title="toggle secret"
+                                                    >
+                                                        🔒
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const newVars = [...editForm().env_vars];
+                                                            newVars.splice(i(), 1);
+                                                            setEditForm(prev => ({ ...prev, env_vars: newVars }));
+                                                        }}
+                                                        class="px-2 py-1 text-neutral-500 hover:text-black border border-neutral-600"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </For>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setEditForm(prev => ({
+                                            ...prev,
+                                            env_vars: [...prev.env_vars, { key: '', value: '', secret: false }]
+                                        }))}
+                                        class="mt-3 px-3 py-1.5 border border-neutral-300 text-neutral-700 hover:border-black hover:text-black text-xs"
+                                    >
+                                        add key/value pair
+                                    </button>
                                 </Show>
-                            </div>
+                            </section>
+
+                            {/* app config */}
+                            <section class="border border-neutral-200 p-4">
+                                <h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-4">app config</h3>
+
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs text-neutral-500 mb-2">container port</label>
+                                        <input
+                                            type="number"
+                                            value={editForm().port}
+                                            onInput={(e) => setEditForm(prev => ({ ...prev, port: parseInt(e.currentTarget.value) || 8080 }))}
+                                            class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-neutral-500 mb-2">instance count</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="10"
+                                            value={editForm().replicas}
+                                            onInput={(e) => setEditForm(prev => ({ ...prev, replicas: parseInt(e.currentTarget.value) || 1 }))}
+                                            class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
+                                        />
+                                    </div>
+                                </div>
+                            </section>
                         </div>
 
-                        <div class="flex gap-2 mt-8">
+                        <div class="border-t border-neutral-200 px-6 py-4 flex gap-2">
                             <button
                                 onClick={() => setEditing(false)}
                                 class="flex-1 px-4 py-2 border border-neutral-300 text-neutral-700 hover:text-black hover:border-neutral-400 transition-colors text-sm"
@@ -907,12 +1095,13 @@ const AppDetail: Component = () => {
                                 disabled={saving()}
                                 class="flex-1 px-4 py-2 bg-black text-white hover:bg-neutral-800 disabled:opacity-50 transition-colors text-sm"
                             >
-                                {saving() ? 'saving...' : 'save'}
+                                {saving() ? 'saving...' : 'save changes'}
                             </button>
                         </div>
                     </div>
                 </div>
             </Show>
+
 
             {/* deployment logs modal */}
             <Show when={selectedDeployment()}>

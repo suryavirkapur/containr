@@ -13,7 +13,7 @@ use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
 use crate::github::DeploymentJob;
-use crate::handlers::{apps, auth, certificates, containers, databases, deployments, health, queues, settings, storage, system, webhooks, websocket};
+use crate::handlers::{apps, auth, certificates, containers, databases, deployments, github_app, github_repos, health, queues, settings, storage, system, webhooks, websocket};
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
 use znskr_common::{Config, Database, Result};
@@ -56,6 +56,17 @@ pub async fn run_server(
             "/api/settings/certificate",
             post(settings::issue_dashboard_certificate),
         )
+        // github oauth (legacy)
+        .route("/api/github/status", get(github_repos::github_status))
+        .route("/api/github/repos", get(github_repos::github_repos))
+        .route("/api/github/disconnect", post(github_repos::github_disconnect))
+        // github app integration
+        .route("/api/github/app", get(github_app::get_github_app))
+        .route("/api/github/app", delete(github_app::delete_github_app))
+        .route("/api/github/app/manifest", get(github_app::get_app_manifest))
+        .route("/api/github/app/callback", get(github_app::github_app_callback))
+        .route("/api/github/app/install/callback", get(github_app::github_install_callback))
+        .route("/api/github/app/repos", get(github_app::get_app_repos))
         // apps
         .route("/api/apps", get(apps::list_apps))
         .route("/api/apps", post(apps::create_app))

@@ -1,6 +1,21 @@
 changelog
 =========
 
+0.1.8-alpha - 2026-01-20
+- add github app integration (coolify-style) with app manifest flow
+- support jwt authentication and installation tokens for github api
+- settings page: create/delete github app, manage installations
+- newapp page: repo picker fetches from github app installations
+- encrypted storage of app credentials (private key, secrets)
+
+0.1.7-alpha - 2026-01-20
+- enhance appdetail settings modal with caprover-style ui
+- add environment variables bulk edit toggle for key=value format
+- add instance count (replicas) configuration in app config section
+- add deploy via image name section for direct docker image deployment
+- add enable https button in http settings section
+- reorganize modal into scrollable sections: http settings, source, env vars, app config
+
 0.1.6-alpha - 2026-01-17
 - add deployment logs modal to appdetail page
 - add logs button to each deployment row with historical and live streaming

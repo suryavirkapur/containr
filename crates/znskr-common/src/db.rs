@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::error::Result;
 use crate::managed_services::{ManagedDatabase, ManagedQueue, StorageBucket};
-use crate::models::{App, Certificate, ContainerService, Deployment, ServiceDeployment, User};
+use crate::models::{App, Certificate, ContainerService, Deployment, GithubAppConfig, ServiceDeployment, User};
 
 /// database wrapper providing typed access to sled trees
 #[derive(Clone)]
@@ -423,5 +423,25 @@ impl Database {
     pub fn delete_storage_bucket(&self, id: Uuid) -> Result<bool> {
         let tree = self.get_tree("storage_buckets")?;
         self.delete(&tree, &id.to_string())
+    }
+
+    // --- github app config ---
+
+    /// saves a github app configuration
+    pub fn save_github_app(&self, app: &GithubAppConfig) -> Result<()> {
+        let tree = self.get_tree("github_apps")?;
+        self.insert(&tree, &app.owner_id.to_string(), app)
+    }
+
+    /// gets github app config by owner id
+    pub fn get_github_app(&self, owner_id: Uuid) -> Result<Option<GithubAppConfig>> {
+        let tree = self.get_tree("github_apps")?;
+        self.get(&tree, &owner_id.to_string())
+    }
+
+    /// deletes github app config by owner id
+    pub fn delete_github_app(&self, owner_id: Uuid) -> Result<bool> {
+        let tree = self.get_tree("github_apps")?;
+        self.delete(&tree, &owner_id.to_string())
     }
 }
