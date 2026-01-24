@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use dashmap::DashMap;
 use pingora_core::listeners::tls::TlsSettings;
 use pingora_core::listeners::{TlsAccept, TlsAcceptCallbacks};
 use pingora_core::prelude::*;
@@ -73,14 +74,22 @@ impl ZnskrProxy {
 
 pub struct DynamicCertResolver {
     certs_dir: PathBuf,
+    cache: Arc<DashMap<String, (X509, PKey<Private>)>>,
 }
 
 impl DynamicCertResolver {
     pub fn new(certs_dir: PathBuf) -> Self {
-        Self { certs_dir }
+        Self {
+            certs_dir,
+            cache: Arc::new(DashMap::new()),
+        }
     }
 
     async fn load_cert(&self, domain: &str) -> Option<(X509, PKey<Private>)> {
+        if let Some(cached) = self.cache.get(domain) {
+            return Some(cached.value().clone());
+        }
+
         let cert_path = self.certs_dir.join(format!("{}.pem", domain));
         let key_path = self.certs_dir.join(format!("{}.key", domain));
 
@@ -90,7 +99,10 @@ impl DynamicCertResolver {
         let cert = X509::from_pem(&cert_bytes).ok()?;
         let key = PKey::private_key_from_pem(&key_bytes).ok()?;
 
-        Some((cert, key))
+        let pair = (cert, key);
+        self.cache.insert(domain.to_string(), pair.clone());
+
+        Some(pair)
     }
 }
 
