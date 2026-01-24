@@ -1,4 +1,11 @@
-import { Component, createResource, createSignal, onCleanup, Show } from "solid-js";
+import {
+  Component,
+  createResource,
+  createSignal,
+  onCleanup,
+  Show,
+} from "solid-js";
+import { apiGet } from "../api/client";
 
 interface SystemStats {
   cpu_percent: number;
@@ -11,14 +18,7 @@ interface SystemStats {
 }
 
 const fetchStats = async (): Promise<SystemStats> => {
-  const token = localStorage.getItem("znskr_token");
-  const res = await fetch("/api/system/stats", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error("failed to fetch stats");
-  }
-  return res.json();
+  return apiGet<SystemStats>("/api/system/stats");
 };
 
 const formatBytes = (bytes: number) => {
@@ -40,9 +40,11 @@ const formatUptime = (seconds: number) => {
   return `${mins}m`;
 };
 
-const ProgressBar: Component<{ value: number; max?: number; color?: string }> = (
-  props,
-) => {
+const ProgressBar: Component<{
+  value: number;
+  max?: number;
+  color?: string;
+}> = (props) => {
   const percent = () => Math.min((props.value / (props.max || 100)) * 100, 100);
   return (
     <div class="h-1.5 bg-neutral-200 w-full">
@@ -139,7 +141,8 @@ const SystemMonitor: Component = () => {
             <ProgressBar value={stats()!.cpu_percent} color={cpuColor()} />
             <div class="text-xs text-neutral-400 mt-1">
               load: {stats()!.load_avg[0].toFixed(2)},{" "}
-              {stats()!.load_avg[1].toFixed(2)}, {stats()!.load_avg[2].toFixed(2)}
+              {stats()!.load_avg[1].toFixed(2)},{" "}
+              {stats()!.load_avg[2].toFixed(2)}
             </div>
           </div>
 

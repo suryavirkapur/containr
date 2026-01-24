@@ -1,11 +1,17 @@
 //! build script for znskr-api
 //!
 //! runs vite build before compiling rust to embed frontend assets.
+//! skipped when the `skip-web-build` feature is enabled.
 
 use std::path::Path;
 use std::process::Command;
 
 fn main() {
+    // skip web build if feature is enabled (used for openapi generation)
+    if std::env::var("CARGO_FEATURE_SKIP_WEB_BUILD").is_ok() {
+        return;
+    }
+
     let web_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()

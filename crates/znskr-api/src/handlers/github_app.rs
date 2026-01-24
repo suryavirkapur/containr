@@ -16,6 +16,7 @@ use crate::github::{
     list_app_installations, GithubRepo,
 };
 use crate::handlers::auth::ErrorResponse;
+use crate::security::{decrypt_value, encrypt_value};
 use crate::state::AppState;
 use znskr_common::models::{GithubAppConfig, GithubInstallation};
 
@@ -155,10 +156,7 @@ pub async fn get_github_app(
             let mut installations = app.installations.clone();
             
             // try to sync with github
-            if let Ok(pem) = znskr_common::encryption::decrypt(
-                &app.private_key,
-                config.security.encryption_key.as_bytes(),
-            ) {
+            if let Ok(pem) = decrypt_value(&config, &app.private_key, Some(&config.auth.jwt_secret)) {
                 if let Ok(jwt) = generate_app_jwt(app.app_id, &pem) {
                     if let Ok(github_installations) = list_app_installations(&jwt).await {
                         installations = github_installations
@@ -283,23 +281,14 @@ pub async fn github_app_callback(
     })?;
 
     // encrypt sensitive data
-    let encrypted_secret = znskr_common::encryption::encrypt(
-        &app_response.client_secret,
-        config.security.encryption_key.as_bytes(),
-    )
-    .map_err(internal_error)?;
+    let encrypted_secret = encrypt_value(&config, &app_response.client_secret)
+        .map_err(internal_error)?;
 
-    let encrypted_pem = znskr_common::encryption::encrypt(
-        &app_response.pem,
-        config.security.encryption_key.as_bytes(),
-    )
-    .map_err(internal_error)?;
+    let encrypted_pem = encrypt_value(&config, &app_response.pem)
+        .map_err(internal_error)?;
 
-    let encrypted_webhook = znskr_common::encryption::encrypt(
-        &app_response.webhook_secret,
-        config.security.encryption_key.as_bytes(),
-    )
-    .map_err(internal_error)?;
+    let encrypted_webhook = encrypt_value(&config, &app_response.webhook_secret)
+        .map_err(internal_error)?;
 
     // create app config
     let app_config = GithubAppConfig::new(
@@ -345,11 +334,8 @@ pub async fn github_install_callback(
         // get app config
         if let Some(mut app_config) = state.db.get_github_app(user_id).map_err(internal_error)? {
             // decrypt private key
-            let pem = znskr_common::encryption::decrypt(
-                &app_config.private_key,
-                config.security.encryption_key.as_bytes(),
-            )
-            .map_err(internal_error)?;
+            let pem = decrypt_value(&config, &app_config.private_key, Some(&config.auth.jwt_secret))
+                .map_err(internal_error)?;
 
             // generate jwt and get installation info
             let jwt = generate_app_jwt(app_config.app_id, &pem).map_err(|e| {
@@ -422,11 +408,8 @@ pub async fn get_app_repos(
     }
 
     // decrypt private key
-    let pem = znskr_common::encryption::decrypt(
-        &app_config.private_key,
-        config.security.encryption_key.as_bytes(),
-    )
-    .map_err(internal_error)?;
+    let pem = decrypt_value(&config, &app_config.private_key, Some(&config.auth.jwt_secret))
+        .map_err(internal_error)?;
 
     // generate jwt
     let jwt = generate_app_jwt(app_config.app_id, &pem).map_err(|e| {

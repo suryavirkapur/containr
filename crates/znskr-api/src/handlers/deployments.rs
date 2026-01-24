@@ -6,6 +6,7 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
@@ -15,12 +16,13 @@ use crate::state::AppState;
 use znskr_common::models::{Deployment, DeploymentStatus};
 
 /// deployment response
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct DeploymentResponse {
     pub id: Uuid,
     pub app_id: Uuid,
     pub commit_sha: String,
     pub commit_message: Option<String>,
+    #[schema(value_type = String)]
     pub status: DeploymentStatus,
     pub container_id: Option<String>,
     pub created_at: String,
@@ -83,6 +85,19 @@ fn get_user_id(
 }
 
 /// list deployments for an app
+#[utoipa::path(
+    get,
+    path = "/api/apps/{id}/deployments",
+    tag = "deployments",
+    params(("id" = Uuid, Path, description = "app id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "list of deployments", body = Vec<DeploymentResponse>),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "app not found", body = ErrorResponse)
+    )
+)]
 pub async fn list_deployments(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -125,6 +140,22 @@ pub async fn list_deployments(
 }
 
 /// get a single deployment
+#[utoipa::path(
+    get,
+    path = "/api/apps/{app_id}/deployments/{id}",
+    tag = "deployments",
+    params(
+        ("app_id" = Uuid, Path, description = "app id"),
+        ("id" = Uuid, Path, description = "deployment id")
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "deployment details", body = DeploymentResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "not found", body = ErrorResponse)
+    )
+)]
 pub async fn get_deployment(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -182,6 +213,19 @@ pub async fn get_deployment(
 }
 
 /// trigger a new deployment
+#[utoipa::path(
+    post,
+    path = "/api/apps/{id}/deployments",
+    tag = "deployments",
+    params(("id" = Uuid, Path, description = "app id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 201, description = "deployment triggered", body = DeploymentResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "app not found", body = ErrorResponse)
+    )
+)]
 pub async fn trigger_deployment(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -287,6 +331,22 @@ async fn get_github_token_for_app(
 }
 
 /// get deployment logs
+#[utoipa::path(
+    get,
+    path = "/api/apps/{app_id}/deployments/{id}/logs",
+    tag = "deployments",
+    params(
+        ("app_id" = Uuid, Path, description = "app id"),
+        ("id" = Uuid, Path, description = "deployment id")
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "deployment logs", body = Vec<String>),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "not found", body = ErrorResponse)
+    )
+)]
 pub async fn get_deployment_logs(
     State(state): State<AppState>,
     headers: HeaderMap,

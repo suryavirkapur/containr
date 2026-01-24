@@ -139,14 +139,26 @@ impl Default for AuthConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityConfig {
     pub encryption_key: String,
+    #[serde(default = "default_cors_allowed_origins")]
+    pub cors_allowed_origins: Vec<String>,
 }
 
 impl Default for SecurityConfig {
     fn default() -> Self {
         Self {
             encryption_key: String::new(),
+            cors_allowed_origins: default_cors_allowed_origins(),
         }
     }
+}
+
+fn default_cors_allowed_origins() -> Vec<String> {
+    vec![
+        "http://localhost:3001".to_string(),
+        "http://127.0.0.1:3001".to_string(),
+        "http://localhost:5173".to_string(),
+        "http://127.0.0.1:5173".to_string(),
+    ]
 }
 
 /// acme / let's encrypt configuration

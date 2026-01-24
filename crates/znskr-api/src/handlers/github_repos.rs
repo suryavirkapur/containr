@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::github::{get_user_repos, GithubRepo};
 use crate::handlers::auth::ErrorResponse;
+use crate::security::decrypt_value;
 use crate::state::AppState;
 
 /// github connection status response
@@ -185,10 +186,7 @@ pub async fn github_repos(
     })?;
 
     // decrypt token
-    let decrypted_token = znskr_common::encryption::decrypt(
-        &access_token,
-        config.security.encryption_key.as_bytes(),
-    )
+    let decrypted_token = decrypt_value(&config, &access_token, Some(&config.auth.jwt_secret))
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,

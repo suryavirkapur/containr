@@ -6,6 +6,7 @@
 
 # config with secrets (znskr.toml may contain secrets, commit znskr.example.toml instead)
 znskr.json
+znskr.toml
 
 # ide
 .idea/

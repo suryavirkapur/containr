@@ -5,10 +5,14 @@
     "scripts": {
         "dev": "bunx vite",
         "build": "bunx vite build",
-        "preview": "bunx vite preview"
+        "preview": "bunx vite preview",
+        "generate:schema": "cd .. && cargo run --bin openapi --features openapi-only 2>/dev/null > web/src/api/openapi.json",
+        "generate:client": "bunx openapi-typescript src/api/openapi.json -o src/api/schema.d.ts",
+        "generate": "bun run generate:schema && bun run generate:client"
     },
     "dependencies": {
         "@solidjs/router": "^0.15.4",
+        "openapi-fetch": "^0.15.0",
         "solid-js": "^1.9.10"
     },
     "devDependencies": {
