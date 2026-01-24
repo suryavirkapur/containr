@@ -1,0 +1,4631 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "znskr api",
+    "description": "znskr paas api for managing apps and deployments",
+    "license": {
+      "name": ""
+    },
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/apps": {
+      "get": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "list all apps for the authenticated user",
+        "operationId": "list_apps",
+        "responses": {
+          "200": {
+            "description": "list of apps",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AppResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "create a new app",
+        "operationId": "create_app",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAppRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "app created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "domain conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/apps/{app_id}/deployments/{id}": {
+      "get": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "get a single deployment",
+        "operationId": "get_deployment",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "deployment id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "deployment details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/apps/{app_id}/deployments/{id}/logs": {
+      "get": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "get deployment logs",
+        "operationId": "get_deployment_logs",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "deployment id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "deployment logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/apps/{id}": {
+      "get": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "get a single app by id",
+        "operationId": "get_app",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "app details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "update an app",
+        "operationId": "update_app",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAppRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "app updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "domain conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "delete an app",
+        "operationId": "delete_app",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "app deleted"
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/apps/{id}/certificate": {
+      "get": {
+        "tags": [
+          "certificates"
+        ],
+        "summary": "Get certificate status for an app",
+        "operationId": "get_certificate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "certificate status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "app not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/apps/{id}/certificate/reissue": {
+      "post": {
+        "tags": [
+          "certificates"
+        ],
+        "summary": "Trigger certificate reissue for an app",
+        "operationId": "reissue_certificate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "certificate reissue initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReissueResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "app not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/apps/{id}/deployments": {
+      "get": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "list deployments for an app",
+        "operationId": "list_deployments",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "list of deployments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeploymentResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "app not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "trigger a new deployment",
+        "operationId": "trigger_deployment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "deployment triggered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "app not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/apps/{id}/metrics": {
+      "get": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "get app container metrics",
+        "operationId": "get_app_metrics",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "container metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AppMetricsResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/auth/github": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "start github oauth flow",
+        "operationId": "github_start",
+        "responses": {
+          "302": {
+            "description": "redirect to github oauth"
+          }
+        }
+      }
+    },
+    "/api/auth/github/callback": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "github oauth callback",
+        "operationId": "github_callback",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "description": "github oauth authorization code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successfully authenticated with github",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid oauth code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "login with email/password",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successfully logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "register a new user with email/password",
+        "operationId": "register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successfully registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "email already registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/buckets": {
+      "get": {
+        "tags": [
+          "storage"
+        ],
+        "summary": "list all buckets for the authenticated user",
+        "operationId": "list_buckets",
+        "responses": {
+          "200": {
+            "description": "list of buckets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BucketResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "storage"
+        ],
+        "summary": "create a new storage bucket",
+        "operationId": "create_bucket",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBucketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "bucket created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BucketResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/buckets/{id}": {
+      "get": {
+        "tags": [
+          "storage"
+        ],
+        "summary": "get a single bucket by id",
+        "operationId": "get_bucket",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "bucket id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "bucket details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BucketResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "storage"
+        ],
+        "summary": "delete a storage bucket",
+        "operationId": "delete_bucket",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "bucket id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "bucket deleted"
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/containers": {
+      "get": {
+        "tags": [
+          "containers"
+        ],
+        "operationId": "list_containers",
+        "responses": {
+          "200": {
+            "description": "list of containers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContainerListItem"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/containers/{id}/files": {
+      "get": {
+        "tags": [
+          "containers"
+        ],
+        "operationId": "list_volume_entries",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "container id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "volume entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VolumeEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "containers"
+        ],
+        "operationId": "delete_volume_entry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "container id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "entry deleted"
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/containers/{id}/files/download": {
+      "get": {
+        "tags": [
+          "containers"
+        ],
+        "operationId": "download_volume_entry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "container id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "file download"
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/containers/{id}/files/mkdir": {
+      "post": {
+        "tags": [
+          "containers"
+        ],
+        "operationId": "create_volume_directory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "container id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mount",
+            "in": "query",
+            "description": "mount point",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "directory path to create",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "directory created"
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/containers/{id}/files/upload": {
+      "post": {
+        "tags": [
+          "containers"
+        ],
+        "operationId": "upload_volume_entry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "container id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "file uploaded"
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/containers/{id}/logs": {
+      "get": {
+        "tags": [
+          "containers"
+        ],
+        "operationId": "get_container_logs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "container id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "container logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContainerLogsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/containers/{id}/mounts": {
+      "get": {
+        "tags": [
+          "containers"
+        ],
+        "operationId": "list_container_mounts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "container id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "container mounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContainerMountResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/containers/{id}/status": {
+      "get": {
+        "tags": [
+          "containers"
+        ],
+        "operationId": "get_container_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "container id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "container status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContainerStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases": {
+      "get": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "list all databases for the authenticated user",
+        "operationId": "list_databases",
+        "responses": {
+          "200": {
+            "description": "list of databases",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DatabaseResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "create a new managed database",
+        "operationId": "create_database",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDatabaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "database created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}": {
+      "get": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "get a single database by id",
+        "operationId": "get_database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "database details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "delete a managed database",
+        "operationId": "delete_database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "database deleted"
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/backups": {
+      "get": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "list database backups",
+        "operationId": "list_backups",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "list of backups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BackupInfo"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/backups/download": {
+      "get": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "download a backup file",
+        "operationId": "download_backup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "description": "backup filename",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "backup file",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/export": {
+      "post": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "export database backup",
+        "operationId": "export_database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "backup created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/expose": {
+      "post": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "toggle external exposure for a database",
+        "operationId": "expose_database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExposeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "exposure toggled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/logs": {
+      "get": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "get database container logs",
+        "operationId": "get_database_logs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tail",
+            "in": "query",
+            "description": "number of log lines",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "container logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/start": {
+      "post": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "update database status (start/stop)",
+        "operationId": "start_database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "database started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/stop": {
+      "post": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "stop a database",
+        "operationId": "stop_database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "database stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/github/app": {
+      "get": {
+        "tags": [
+          "github-app"
+        ],
+        "summary": "get github app status and installations",
+        "operationId": "get_github_app",
+        "responses": {
+          "200": {
+            "description": "github app status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubAppStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "github-app"
+        ],
+        "summary": "delete github app configuration",
+        "operationId": "delete_github_app",
+        "responses": {
+          "200": {
+            "description": "github app deleted"
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/github/app/callback": {
+      "get": {
+        "tags": [
+          "github-app"
+        ],
+        "summary": "handles the github app manifest callback",
+        "operationId": "github_app_callback",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "description": "manifest conversion code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "redirect to settings"
+          },
+          "400": {
+            "description": "conversion failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/github/app/install/callback": {
+      "get": {
+        "tags": [
+          "github-app"
+        ],
+        "summary": "handles the installation callback",
+        "operationId": "github_install_callback",
+        "parameters": [
+          {
+            "name": "installation_id",
+            "in": "query",
+            "description": "installation id",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "setup_action",
+            "in": "query",
+            "description": "setup action",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "redirect to settings"
+          }
+        }
+      }
+    },
+    "/api/github/app/manifest": {
+      "get": {
+        "tags": [
+          "github-app"
+        ],
+        "summary": "generates the github app manifest and returns the creation url",
+        "operationId": "get_app_manifest",
+        "responses": {
+          "200": {
+            "description": "app manifest url",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/github/app/repos": {
+      "get": {
+        "tags": [
+          "github-app"
+        ],
+        "summary": "get repos from github app installations",
+        "operationId": "get_app_repos",
+        "responses": {
+          "200": {
+            "description": "list of repositories",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppReposResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "no github app configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/queues": {
+      "get": {
+        "tags": [
+          "queues"
+        ],
+        "summary": "list all queues for the authenticated user",
+        "operationId": "list_queues",
+        "responses": {
+          "200": {
+            "description": "list of queues",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/QueueResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "queues"
+        ],
+        "summary": "create a new managed queue",
+        "operationId": "create_queue",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateQueueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "queue created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/queues/{id}": {
+      "get": {
+        "tags": [
+          "queues"
+        ],
+        "summary": "get a single queue by id",
+        "operationId": "get_queue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "queue id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "queue details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "queue not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "queues"
+        ],
+        "summary": "delete a managed queue",
+        "operationId": "delete_queue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "queue id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "queue deleted"
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "queue not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/queues/{id}/start": {
+      "post": {
+        "tags": [
+          "queues"
+        ],
+        "summary": "start a queue",
+        "operationId": "start_queue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "queue id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "queue started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "queue not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/queues/{id}/stop": {
+      "post": {
+        "tags": [
+          "queues"
+        ],
+        "summary": "stop a queue",
+        "operationId": "stop_queue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "queue id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "queue stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "queue not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "get current server settings",
+        "operationId": "get_settings",
+        "responses": {
+          "200": {
+            "description": "current settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "update server settings",
+        "operationId": "update_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "updated settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/settings/certificate": {
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "request certificate for dashboard domain",
+        "operationId": "issue_dashboard_certificate",
+        "responses": {
+          "200": {
+            "description": "certificate issuance initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardCertResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/system/stats": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "get system statistics",
+        "operationId": "get_system_stats",
+        "responses": {
+          "200": {
+            "description": "system statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStats"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "health check endpoint",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AppDetails": {
+        "type": "object",
+        "description": "app details",
+        "required": [
+          "app_id",
+          "app_name",
+          "html_url"
+        ],
+        "properties": {
+          "app_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "app_name": {
+            "type": "string"
+          },
+          "html_url": {
+            "type": "string"
+          }
+        }
+      },
+      "AppMetricsResponse": {
+        "type": "object",
+        "description": "app container metrics response",
+        "required": [
+          "container",
+          "cpu_percent",
+          "mem_usage_bytes",
+          "mem_limit_bytes"
+        ],
+        "properties": {
+          "container": {
+            "type": "string"
+          },
+          "cpu_percent": {
+            "type": "number",
+            "format": "double"
+          },
+          "mem_limit_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "mem_usage_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "AppReposResponse": {
+        "type": "object",
+        "description": "repos response",
+        "required": [
+          "repos"
+        ],
+        "properties": {
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepoInfo"
+            }
+          }
+        }
+      },
+      "AppResponse": {
+        "type": "object",
+        "description": "app response",
+        "required": [
+          "id",
+          "name",
+          "github_url",
+          "branch",
+          "port",
+          "env_vars",
+          "services",
+          "created_at"
+        ],
+        "properties": {
+          "branch": {
+            "type": "string",
+            "description": "branch being deployed"
+          },
+          "created_at": {
+            "type": "string",
+            "description": "creation timestamp"
+          },
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "custom domain"
+          },
+          "env_vars": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnvVarResponse"
+            },
+            "description": "environment variables"
+          },
+          "github_url": {
+            "type": "string",
+            "description": "github repository url"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "unique app id"
+          },
+          "name": {
+            "type": "string",
+            "description": "app name"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "app port (deprecated)",
+            "minimum": 0
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceResponse"
+            },
+            "description": "container services"
+          }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "description": "auth response with token",
+        "required": [
+          "token",
+          "user"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "jwt authentication token"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserResponse",
+            "description": "authenticated user info"
+          }
+        }
+      },
+      "BackupInfo": {
+        "type": "object",
+        "description": "backup info",
+        "required": [
+          "filename",
+          "size_bytes",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "BucketResponse": {
+        "type": "object",
+        "description": "bucket response",
+        "required": [
+          "id",
+          "name",
+          "access_key",
+          "secret_key",
+          "endpoint",
+          "size_bytes",
+          "created_at"
+        ],
+        "properties": {
+          "access_key": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "secret_key": {
+            "type": "string",
+            "description": "masked secret key"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "CertificateResponse": {
+        "type": "object",
+        "description": "Certificate status response",
+        "required": [
+          "domain",
+          "status"
+        ],
+        "properties": {
+          "domain": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issued_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "ContainerListItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "resource_type",
+          "resource_id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "resource_type": {
+            "type": "string"
+          }
+        }
+      },
+      "ContainerLogsResponse": {
+        "type": "object",
+        "required": [
+          "logs"
+        ],
+        "properties": {
+          "logs": {
+            "type": "string"
+          }
+        }
+      },
+      "ContainerMountResponse": {
+        "type": "object",
+        "required": [
+          "destination",
+          "mount_type",
+          "read_only"
+        ],
+        "properties": {
+          "destination": {
+            "type": "string"
+          },
+          "mount_type": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ContainerStatusResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "restart_count",
+          "cpu_percent",
+          "mem_usage_bytes",
+          "mem_limit_bytes"
+        ],
+        "properties": {
+          "cpu_percent": {
+            "type": "number",
+            "format": "double"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "health_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mem_limit_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "mem_usage_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "restart_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateAppRequest": {
+        "type": "object",
+        "description": "create app request",
+        "required": [
+          "name",
+          "github_url"
+        ],
+        "properties": {
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "branch to deploy (defaults to main)"
+          },
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "custom domain"
+          },
+          "env_vars": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/EnvVarRequest"
+            },
+            "description": "environment variables (shared across all services)"
+          },
+          "github_url": {
+            "type": "string",
+            "description": "github repository url"
+          },
+          "name": {
+            "type": "string",
+            "description": "app name"
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "port for the app (deprecated, use services)",
+            "minimum": 0
+          },
+          "services": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ServiceRequest"
+            },
+            "description": "container services for multi-container apps"
+          }
+        }
+      },
+      "CreateBucketRequest": {
+        "type": "object",
+        "description": "bucket creation request",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "bucket name"
+          }
+        }
+      },
+      "CreateDatabaseRequest": {
+        "type": "object",
+        "description": "database creation request",
+        "required": [
+          "name",
+          "db_type"
+        ],
+        "properties": {
+          "cpu_limit": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "cpu limit (optional)"
+          },
+          "db_type": {
+            "type": "string",
+            "description": "database type"
+          },
+          "memory_limit_mb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "memory limit in mb (optional)",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "database name"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "version (optional, uses default)"
+          }
+        }
+      },
+      "CreateQueueRequest": {
+        "type": "object",
+        "description": "queue creation request",
+        "required": [
+          "name",
+          "queue_type"
+        ],
+        "properties": {
+          "cpu_limit": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "cpu limit (optional)"
+          },
+          "memory_limit_mb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "memory limit in mb (optional)",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "queue name"
+          },
+          "queue_type": {
+            "type": "string",
+            "description": "queue type"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "version (optional, uses default)"
+          }
+        }
+      },
+      "DashboardCertResponse": {
+        "type": "object",
+        "description": "certificate issuance response",
+        "required": [
+          "message",
+          "domain"
+        ],
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "domain for certificate"
+          },
+          "message": {
+            "type": "string",
+            "description": "status message"
+          }
+        }
+      },
+      "DatabaseResponse": {
+        "type": "object",
+        "description": "database response",
+        "required": [
+          "id",
+          "name",
+          "db_type",
+          "version",
+          "status",
+          "internal_host",
+          "port",
+          "connection_string",
+          "username",
+          "password",
+          "database_name",
+          "memory_limit_mb",
+          "cpu_limit",
+          "created_at"
+        ],
+        "properties": {
+          "connection_string": {
+            "type": "string"
+          },
+          "cpu_limit": {
+            "type": "number",
+            "format": "double"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "database_name": {
+            "type": "string"
+          },
+          "db_type": {
+            "type": "string"
+          },
+          "external_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "internal_host": {
+            "type": "string"
+          },
+          "memory_limit_mb": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "DeploymentResponse": {
+        "type": "object",
+        "description": "deployment response",
+        "required": [
+          "id",
+          "app_id",
+          "commit_sha",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "commit_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commit_sha": {
+            "type": "string"
+          },
+          "container_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "EnvVarRequest": {
+        "type": "object",
+        "description": "env var in request",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "variable key"
+          },
+          "secret": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "mark as secret (hides value)"
+          },
+          "value": {
+            "type": "string",
+            "description": "variable value"
+          }
+        }
+      },
+      "EnvVarResponse": {
+        "type": "object",
+        "description": "env var in response (hides secret values)",
+        "required": [
+          "key",
+          "value",
+          "secret"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "variable key"
+          },
+          "secret": {
+            "type": "boolean",
+            "description": "whether value is secret"
+          },
+          "value": {
+            "type": "string",
+            "description": "variable value (masked if secret)"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "description": "error response",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "error message"
+          }
+        }
+      },
+      "ExportResponse": {
+        "type": "object",
+        "description": "export response",
+        "required": [
+          "backup_path"
+        ],
+        "properties": {
+          "backup_path": {
+            "type": "string"
+          }
+        }
+      },
+      "ExposeRequest": {
+        "type": "object",
+        "description": "expose request",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GithubAppStatusResponse": {
+        "type": "object",
+        "description": "github app status response",
+        "required": [
+          "configured",
+          "installations"
+        ],
+        "properties": {
+          "app": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AppDetails",
+                "description": "app details if configured"
+              }
+            ]
+          },
+          "configured": {
+            "type": "boolean",
+            "description": "whether a github app is configured"
+          },
+          "installations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstallationDetails"
+            },
+            "description": "list of installations"
+          }
+        }
+      },
+      "HealthCheckRequest": {
+        "type": "object",
+        "description": "health check configuration request",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "interval_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "interval in seconds",
+            "minimum": 0
+          },
+          "path": {
+            "type": "string",
+            "description": "http path to check"
+          },
+          "retries": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "retries before unhealthy",
+            "minimum": 0
+          },
+          "timeout_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "timeout in seconds",
+            "minimum": 0
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "description": "health check response",
+        "required": [
+          "status",
+          "version"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "current service status"
+          },
+          "version": {
+            "type": "string",
+            "description": "api version string"
+          }
+        }
+      },
+      "InstallationDetails": {
+        "type": "object",
+        "description": "installation details",
+        "required": [
+          "id",
+          "account_login",
+          "account_type"
+        ],
+        "properties": {
+          "account_login": {
+            "type": "string"
+          },
+          "account_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "repository_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "description": "login request body",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "user email address"
+          },
+          "password": {
+            "type": "string",
+            "description": "user password"
+          }
+        }
+      },
+      "LogsResponse": {
+        "type": "object",
+        "description": "logs response",
+        "required": [
+          "logs"
+        ],
+        "properties": {
+          "logs": {
+            "type": "string"
+          }
+        }
+      },
+      "QueueResponse": {
+        "type": "object",
+        "description": "queue response",
+        "required": [
+          "id",
+          "name",
+          "queue_type",
+          "version",
+          "status",
+          "internal_host",
+          "port",
+          "connection_string",
+          "username",
+          "memory_limit_mb",
+          "cpu_limit",
+          "created_at"
+        ],
+        "properties": {
+          "connection_string": {
+            "type": "string"
+          },
+          "cpu_limit": {
+            "type": "number",
+            "format": "double"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "internal_host": {
+            "type": "string"
+          },
+          "memory_limit_mb": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "queue_type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "description": "register request body",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "user email address"
+          },
+          "password": {
+            "type": "string",
+            "description": "password (min 8 characters)"
+          }
+        }
+      },
+      "ReissueResponse": {
+        "type": "object",
+        "description": "Reissue certificate response",
+        "required": [
+          "message",
+          "domain"
+        ],
+        "properties": {
+          "domain": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "RepoInfo": {
+        "type": "object",
+        "description": "repo info",
+        "required": [
+          "id",
+          "name",
+          "full_name",
+          "html_url",
+          "clone_url",
+          "private",
+          "default_branch"
+        ],
+        "properties": {
+          "clone_url": {
+            "type": "string"
+          },
+          "default_branch": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "html_url": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "private": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ServiceRequest": {
+        "type": "object",
+        "description": "service request for multi-container apps",
+        "required": [
+          "name",
+          "port"
+        ],
+        "properties": {
+          "cpu_limit": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "cpu limit (1.0 = 1 core)"
+          },
+          "depends_on": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "service names this depends on"
+          },
+          "health_check": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HealthCheckRequest",
+                "description": "health check config"
+              }
+            ]
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "docker image (empty = use built image)"
+          },
+          "memory_limit_mb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "memory limit in mb",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "service name (e.g. \"web\", \"api\", \"db\")"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "container port",
+            "minimum": 0
+          },
+          "replicas": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "number of replicas",
+            "minimum": 0
+          },
+          "restart_policy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "restart policy"
+          }
+        }
+      },
+      "ServiceResponse": {
+        "type": "object",
+        "description": "service response for multi-container apps",
+        "required": [
+          "id",
+          "name",
+          "image",
+          "port",
+          "replicas",
+          "depends_on",
+          "restart_policy"
+        ],
+        "properties": {
+          "cpu_limit": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "cpu limit"
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "dependencies"
+          },
+          "id": {
+            "type": "string",
+            "description": "service id"
+          },
+          "image": {
+            "type": "string",
+            "description": "docker image"
+          },
+          "memory_limit_mb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "memory limit in mb",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "service name"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "container port",
+            "minimum": 0
+          },
+          "replicas": {
+            "type": "integer",
+            "format": "int32",
+            "description": "number of replicas",
+            "minimum": 0
+          },
+          "restart_policy": {
+            "type": "string",
+            "description": "restart policy"
+          }
+        }
+      },
+      "SettingsResponse": {
+        "type": "object",
+        "description": "settings response - only exposes safe fields",
+        "required": [
+          "base_domain",
+          "http_port",
+          "https_port",
+          "acme_email",
+          "acme_staging"
+        ],
+        "properties": {
+          "acme_email": {
+            "type": "string",
+            "description": "email for acme certificates"
+          },
+          "acme_staging": {
+            "type": "boolean",
+            "description": "whether to use acme staging"
+          },
+          "base_domain": {
+            "type": "string",
+            "description": "base domain for all apps"
+          },
+          "http_port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "http port for proxy",
+            "minimum": 0
+          },
+          "https_port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "https port for proxy",
+            "minimum": 0
+          }
+        }
+      },
+      "SystemStats": {
+        "type": "object",
+        "description": "system statistics response",
+        "required": [
+          "cpu_percent",
+          "memory_used_bytes",
+          "memory_total_bytes",
+          "network_rx_bytes",
+          "network_tx_bytes",
+          "load_avg",
+          "uptime_seconds"
+        ],
+        "properties": {
+          "cpu_percent": {
+            "type": "number",
+            "format": "double"
+          },
+          "load_avg": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "memory_total_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "memory_used_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "network_rx_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "network_tx_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "uptime_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "UpdateAppRequest": {
+        "type": "object",
+        "description": "update app request",
+        "properties": {
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "new branch"
+          },
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "new domain"
+          },
+          "env_vars": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/EnvVarRequest"
+            },
+            "description": "updated env vars"
+          },
+          "github_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "new github url"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "new app name"
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "new port (deprecated, use services)",
+            "minimum": 0
+          },
+          "services": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ServiceRequest"
+            },
+            "description": "updated services"
+          }
+        }
+      },
+      "UpdateSettingsRequest": {
+        "type": "object",
+        "description": "update settings request",
+        "properties": {
+          "acme_email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "new acme email (optional)"
+          },
+          "acme_staging": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "use acme staging (optional)"
+          },
+          "base_domain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "new base domain (optional)"
+          }
+        }
+      },
+      "UserResponse": {
+        "type": "object",
+        "description": "user info in responses",
+        "required": [
+          "id",
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "user email"
+          },
+          "github_username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "github username if linked"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "unique user id"
+          }
+        }
+      },
+      "VolumeEntry": {
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "is_dir",
+          "size_bytes"
+        ],
+        "properties": {
+          "is_dir": {
+            "type": "boolean"
+          },
+          "modified_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "health",
+      "description": "health check endpoints"
+    },
+    {
+      "name": "auth",
+      "description": "authentication endpoints"
+    },
+    {
+      "name": "settings",
+      "description": "server settings management"
+    },
+    {
+      "name": "apps",
+      "description": "application management"
+    },
+    {
+      "name": "deployments",
+      "description": "deployment management"
+    },
+    {
+      "name": "certificates",
+      "description": "ssl certificate management"
+    },
+    {
+      "name": "databases",
+      "description": "managed databases"
+    },
+    {
+      "name": "queues",
+      "description": "managed queues"
+    },
+    {
+      "name": "storage",
+      "description": "s3-compatible storage buckets"
+    },
+    {
+      "name": "containers",
+      "description": "container monitoring and volumes"
+    },
+    {
+      "name": "github-app",
+      "description": "github app integration"
+    },
+    {
+      "name": "system",
+      "description": "system monitoring"
+    }
+  ]
+}
