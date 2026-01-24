@@ -294,6 +294,55 @@ impl Database {
         Ok(deployments.into_iter().next())
     }
 
+    // --- deployment logs ---
+
+    /// appends a log line to a deployment
+    pub fn append_deployment_log(&self, deployment_id: Uuid, log_line: &str) -> Result<()> {
+        let tree = self.get_tree("deployment_logs")?;
+        
+        // generate a monotonic key for the log line
+        // using atomic counter for this deployment
+        let _count_key = format!("count:{}", deployment_id);
+        // actually, simpler approach: use current timestamp + random or just a monotonic counter from sled
+        // for simple ordering, we can key by {deployment_id}:{timestamp_micros}:{random}
+        // but simple incrementing index is best for pagination.
+        
+        // let's use sled's generate_id to get a unique ID, but that's global.
+        // for per-deployment ordering, checking the last index is expensive without a separate counter.
+        // let's just use timestamp for now, exact ordering within same microsecond is rare and acceptably racy for logs.
+        let timestamp = chrono::Utc::now().timestamp_micros();
+        let key = format!("{}:{}", deployment_id, timestamp);
+        
+        tree.insert(key.as_bytes(), log_line.as_bytes())?;
+        Ok(())
+    }
+
+    /// gets deployment logs with pagination
+    pub fn get_deployment_logs(
+        &self, 
+        deployment_id: Uuid, 
+        limit: usize, 
+        offset: usize // offset is number of items to skip from start (oldest)
+    ) -> Result<Vec<String>> {
+        let tree = self.get_tree("deployment_logs")?;
+        let prefix = format!("{}:", deployment_id);
+        
+        let logs: Vec<String> = tree
+            .scan_prefix(prefix.as_bytes())
+            .skip(offset)
+            .take(limit)
+            .filter_map(|res| {
+                if let Ok((_, value)) = res {
+                    String::from_utf8(value.to_vec()).ok()
+                } else {
+                    None
+                }
+            })
+            .collect();
+            
+        Ok(logs)
+    }
+
     // --- certificates ---
 
     // inserts or updates a certificate

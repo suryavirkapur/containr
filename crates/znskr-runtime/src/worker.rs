@@ -110,7 +110,7 @@ impl DeploymentWorker {
                 // update deployment status to failed
                 if let Ok(Some(mut deployment)) = self.db.get_latest_deployment(job.app_id) {
                     deployment.status = DeploymentStatus::Failed;
-                    deployment.logs.push(format!("error: {}", e));
+                    let _ = self.db.append_deployment_log(deployment.id, &format!("error: {}", e));
                     let _ = self.db.save_deployment(&deployment);
                 }
             }
@@ -454,7 +454,7 @@ impl DeploymentWorker {
     ) -> anyhow::Result<()> {
         let mut updated = deployment.clone();
         updated.status = status.clone();
-        updated.logs.push(format!(
+        let _ = self.db.append_deployment_log(updated.id, &format!(
             "[{}] status: {:?}",
             chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
             status

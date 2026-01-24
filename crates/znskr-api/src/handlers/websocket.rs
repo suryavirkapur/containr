@@ -141,7 +141,10 @@ async fn handle_deployment_logs(
 ) {
     info!(app_id = %app_id, deployment_id = %deployment_id, "build logs websocket connected");
 
-    // get deployment from database
+    // initial offset
+    let mut current_offset = 0;
+
+    // get deployment from database to verify existence and check for legacy logs
     let deployment = match state.db.get_deployment(deployment_id) {
         Ok(Some(d)) => d,
         Ok(None) => {
@@ -158,62 +161,90 @@ async fn handle_deployment_logs(
         }
     };
 
-    // send existing logs
-    for log in &deployment.logs {
-        if socket
-            .send(Message::Text(log.clone().into()))
-            .await
-            .is_err()
-        {
-            return;
+    // check if we have legacy logs in the deployment struct
+    if !deployment.logs.is_empty() {
+        for log in &deployment.logs {
+            if socket
+                .send(Message::Text(log.clone().into()))
+                .await
+                .is_err()
+            {
+                return;
+            }
         }
+        // if legacy logs exist, we assume no new logs in DB for simplicity, 
+        // or we could check DB too, but usually it's one or the other.
+        // Assuming migration happened or new deployment.
+        // If it's a new deployment, deployment.logs is empty.
     }
 
-    // poll for new logs (simple polling approach)
-    let mut last_log_count = deployment.logs.len();
+    // poll for new logs from DB
     loop {
+        // get new logs from DB starting at current_offset
+        // fetch in batches
+        match state.db.get_deployment_logs(deployment_id, 100, current_offset) {
+            Ok(logs) => {
+                if !logs.is_empty() {
+                    for log in logs {
+                        if socket
+                            .send(Message::Text(log.into()))
+                            .await
+                            .is_err()
+                        {
+                            return;
+                        }
+                        current_offset += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                let _ = socket
+                    .send(Message::Text(format!("error reading logs: {}", e).into()))
+                    .await;
+                break;
+            }
+        }
+
+        // check deployment status to see if we should stop polling
+        // we check this AFTER sending logs to ensure we send everything
+        let deployment = match state.db.get_deployment(deployment_id) {
+            Ok(Some(d)) => d,
+            _ => break,
+        };
+
+        let status = deployment.status;
+        let is_finished = status == znskr_common::models::DeploymentStatus::Running
+            || status == znskr_common::models::DeploymentStatus::Failed
+            || status == znskr_common::models::DeploymentStatus::Stopped;
+
+        // if finished and we didn't get any new logs in this iteration, we are done
+        // (we rely on the previous get_deployment_logs call returning empty)
+        // actually, we should only break if finished AND we are caught up.
+        // but get_deployment_logs returning empty means we are caught up for now.
+        if is_finished {
+             // double check if there are more logs just in case race condition
+             if let Ok(logs) = state.db.get_deployment_logs(deployment_id, 1, current_offset) {
+                 if logs.is_empty() {
+                    let _ = socket
+                        .send(Message::Text(
+                            format!("[deployment {}]", format!("{:?}", status).to_lowercase()).into(),
+                        ))
+                        .await;
+                    break;
+                 }
+             } else {
+                 break;
+             }
+        }
+
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
         // check for client disconnect
         match socket.recv().now_or_never() {
             Some(Some(Ok(Message::Close(_)))) => break,
             Some(Some(Err(_))) => break,
-            Some(None) => break,
+            Some(None) => break, // stream closed
             _ => {}
-        }
-
-        // get updated deployment
-        let deployment = match state.db.get_deployment(deployment_id) {
-            Ok(Some(d)) => d,
-            _ => continue,
-        };
-
-        // send new logs
-        if deployment.logs.len() > last_log_count {
-            for log in &deployment.logs[last_log_count..] {
-                if socket
-                    .send(Message::Text(log.clone().into()))
-                    .await
-                    .is_err()
-                {
-                    return;
-                }
-            }
-            last_log_count = deployment.logs.len();
-        }
-
-        // check if deployment is complete
-        let status = deployment.status;
-        if status == znskr_common::models::DeploymentStatus::Running
-            || status == znskr_common::models::DeploymentStatus::Failed
-            || status == znskr_common::models::DeploymentStatus::Stopped
-        {
-            let _ = socket
-                .send(Message::Text(
-                    format!("[deployment {}]", format!("{:?}", status).to_lowercase()).into(),
-                ))
-                .await;
-            break;
         }
     }
 
