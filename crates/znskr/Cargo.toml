@@ -8,6 +8,15 @@ default-run = "znskr"
 name = "znskr"
 path = "src/main.rs"
 
+[[bin]]
+name = "openapi"
+path = "src/openapi.rs"
+required-features = ["openapi-only"]
+
+[features]
+default = []
+openapi-only = ["znskr-api/skip-web-build", "znskr-proxy/skip-web-build"]
+
 [dependencies]
 znskr-common = { path = "../znskr-common" }
 znskr-api = { path = "../znskr-api" }
@@ -27,3 +36,6 @@ clap = { version = "4", features = ["derive"] }
 
 # docker api
 bollard = { workspace = true }
+
+# openapi
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }

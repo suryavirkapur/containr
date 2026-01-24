@@ -9,6 +9,11 @@ import {
 } from "solid-js";
 import { useParams, A } from "@solidjs/router";
 import ContainerMonitor from "../components/ContainerMonitor";
+import { api, components } from "../api";
+import { apiPost } from "../api/client";
+
+type DatabaseResponse = components["schemas"]["DatabaseResponse"];
+type ContainerListItem = components["schemas"]["ContainerListItem"];
 
 interface BackupInfo {
   filename: string;
@@ -16,92 +21,46 @@ interface BackupInfo {
   created_at: string;
 }
 
-interface Database {
-  id: string;
-  name: string;
-  db_type: string;
-  version: string;
-  status: string;
-  internal_host: string;
-  port: number;
-  connection_string: string;
-  username: string;
-  password: string;
-  database_name: string;
-  external_port: number | null;
-  memory_limit_mb: number;
-  cpu_limit: number;
-  created_at: string;
-}
-
-interface ContainerListItem {
-  id: string;
-  resource_type: string;
-  resource_id: string;
-  name: string;
-}
-
-const fetchDatabase = async (id: string): Promise<Database> => {
-  const token = localStorage.getItem("znskr_token");
-  const res = await fetch(`/api/databases/${id}`, {
-    headers: { Authorization: `Bearer ${token}` },
+const fetchDatabase = async (id: string): Promise<DatabaseResponse> => {
+  const { data, error } = await api.GET("/api/databases/{id}", {
+    params: { path: { id } },
   });
-  if (!res.ok) {
-    throw new Error("failed to fetch database");
-  }
-  return res.json();
+  if (error) throw error;
+  return data;
 };
 
 const fetchContainers = async (): Promise<ContainerListItem[]> => {
-  const token = localStorage.getItem("znskr_token");
-  const res = await fetch("/api/containers", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error("failed to fetch containers");
-  }
-  return res.json();
+  const { data, error } = await api.GET("/api/containers");
+  if (error) throw error;
+  return data;
 };
 
+// TODO: /api/databases/{id}/expose not in schema - keep using old client
 const toggleExternalAccess = async (
   id: string,
   enabled: boolean,
-): Promise<Database> => {
-  const token = localStorage.getItem("znskr_token");
-  const res = await fetch(`/api/databases/${id}/expose`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ enabled }),
-  });
-  if (!res.ok) {
-    throw new Error("failed to toggle external access");
-  }
-  return res.json();
+): Promise<DatabaseResponse> => {
+  return apiPost<DatabaseResponse>(`/api/databases/${id}/expose`, { enabled });
 };
 
+// TODO: /api/databases/{id}/backups not in schema - keep using old client
 const fetchBackups = async (id: string): Promise<BackupInfo[]> => {
-  const token = localStorage.getItem("znskr_token");
-  const res = await fetch(`/api/databases/${id}/backups`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
+  try {
+    const response = await fetch(`/api/databases/${id}/backups`, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("znskr_token")}`,
+      },
+    });
+    if (!response.ok) return [];
+    return await response.json();
+  } catch {
     return [];
   }
-  return res.json();
 };
 
+// TODO: /api/databases/{id}/export not in schema - keep using old client
 const createBackup = async (id: string): Promise<void> => {
-  const token = localStorage.getItem("znskr_token");
-  const res = await fetch(`/api/databases/${id}/export`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error("failed to create backup");
-  }
+  await apiPost(`/api/databases/${id}/export`);
 };
 
 const formatBytes = (bytes: number) => {
@@ -174,7 +133,6 @@ const DatabaseDetail: Component = () => {
   const handleDownloadBackup = (filename: string) => {
     const db = database();
     if (!db) return;
-    const token = localStorage.getItem("znskr_token");
     window.open(
       `/api/databases/${db.id}/backups/download?filename=${encodeURIComponent(filename)}`,
       "_blank",

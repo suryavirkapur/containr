@@ -3,6 +3,10 @@ name = "znskr-proxy"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+skip-web-build = []
+
 [dependencies]
 znskr-common = { path = "../znskr-common" }
 

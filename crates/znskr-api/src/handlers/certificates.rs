@@ -8,6 +8,7 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
@@ -16,22 +17,36 @@ use crate::state::AppState;
 use znskr_common::models::CertificateStatus;
 
 /// Certificate status response
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct CertificateResponse {
     pub domain: String,
+    #[schema(value_type = String)]
     pub status: CertificateStatus,
     pub expires_at: Option<String>,
     pub issued_at: Option<String>,
 }
 
 /// Reissue certificate response
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ReissueResponse {
     pub message: String,
     pub domain: String,
 }
 
 /// Get certificate status for an app
+#[utoipa::path(
+    get,
+    path = "/api/apps/{id}/certificate",
+    tag = "certificates",
+    params(("id" = Uuid, Path, description = "app id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "certificate status", body = CertificateResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "app not found", body = ErrorResponse)
+    )
+)]
 pub async fn get_certificate(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -98,6 +113,21 @@ pub async fn get_certificate(
 }
 
 /// Trigger certificate reissue for an app
+#[utoipa::path(
+    post,
+    path = "/api/apps/{id}/certificate/reissue",
+    tag = "certificates",
+    params(("id" = Uuid, Path, description = "app id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "certificate reissue initiated", body = ReissueResponse),
+        (status = 400, description = "bad request", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "app not found", body = ErrorResponse),
+        (status = 503, description = "service unavailable", body = ErrorResponse)
+    )
+)]
 pub async fn reissue_certificate(
     State(state): State<AppState>,
     headers: HeaderMap,
