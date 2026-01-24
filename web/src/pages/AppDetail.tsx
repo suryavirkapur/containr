@@ -110,6 +110,8 @@ const AppDetail: Component = () => {
   const [selectedDeployment, setSelectedDeployment] =
     createSignal<Deployment | null>(null);
   const [deploymentLogs, setDeploymentLogs] = createSignal<string[]>([]);
+  const [deploymentLogOffset, setDeploymentLogOffset] = createSignal(0);
+  const [deploymentLogHasMore, setDeploymentLogHasMore] = createSignal(true);
   const [deploymentLogsConnected, setDeploymentLogsConnected] =
     createSignal(false);
   const [deploymentLogsLoading, setDeploymentLogsLoading] = createSignal(false);
@@ -356,18 +358,37 @@ const AppDetail: Component = () => {
   };
 
   // fetch historical deployment logs
-  const fetchDeploymentLogs = async (deploymentId: string) => {
+  const fetchDeploymentLogs = async (deploymentId: string, reset = false) => {
     setDeploymentLogsLoading(true);
     try {
+      const limit = 100;
+      const offset = reset ? 0 : deploymentLogOffset();
+
       const logs = await apiGet<string[]>(
-        `/api/apps/${params.id}/deployments/${deploymentId}/logs`,
+        `/api/apps/${params.id}/deployments/${deploymentId}/logs?limit=${limit}&offset=${offset}`,
       );
-      setDeploymentLogs(logs);
+
+      if (reset) {
+        setDeploymentLogs(logs);
+      } else {
+        setDeploymentLogs((prev) => [...prev, ...logs]);
+      }
+
+      setDeploymentLogOffset(offset + logs.length);
+      setDeploymentLogHasMore(logs.length === limit);
+
     } catch (err) {
       console.error(err);
-      setDeploymentLogs(["error fetching logs"]);
+      if (reset) setDeploymentLogs(["error fetching logs"]);
     } finally {
       setDeploymentLogsLoading(false);
+    }
+  };
+
+  const loadMoreLogs = () => {
+    const deployment = selectedDeployment();
+    if (deployment) {
+      fetchDeploymentLogs(deployment.id, false);
     }
   };
 
@@ -414,13 +435,17 @@ const AppDetail: Component = () => {
   const openDeploymentLogs = async (deployment: Deployment) => {
     setSelectedDeployment(deployment);
     setDeploymentLogs([]);
-    await fetchDeploymentLogs(deployment.id);
+    setDeploymentLogOffset(0);
+    setDeploymentLogHasMore(true);
 
-    // connect live logs for running deployments
-    if (
-      ["pending", "cloning", "building", "starting"].includes(deployment.status)
-    ) {
+    const isRunning = ["pending", "cloning", "building", "starting", "running"].includes(deployment.status);
+
+    // if running, connect websocket immediately (stream from start)
+    // if not running, fetch logs via http with pagination
+    if (isRunning) {
       connectDeploymentLogs(deployment.id);
+    } else {
+      await fetchDeploymentLogs(deployment.id, true);
     }
   };
 
@@ -1210,13 +1235,24 @@ const AppDetail: Component = () => {
               ref={deploymentLogsRef}
               class="flex-1 p-4 overflow-y-auto font-mono text-xs bg-neutral-50 min-h-[300px] max-h-[60vh]"
             >
-              <Show when={deploymentLogsLoading()}>
+              <Show when={deploymentLogsLoading() && deploymentLogs().length === 0}>
                 <p class="text-neutral-400">loading logs...</p>
               </Show>
               <Show
                 when={!deploymentLogsLoading() && deploymentLogs().length === 0}
               >
                 <p class="text-neutral-400">no logs available</p>
+              </Show>
+              <Show when={!deploymentLogsConnected() && deploymentLogHasMore() && deploymentLogs().length > 0}>
+                <div class="mb-4 text-center">
+                  <button
+                    onClick={loadMoreLogs}
+                    disabled={deploymentLogsLoading()}
+                    class="text-xs text-neutral-500 hover:text-black border border-neutral-200 px-3 py-1 bg-white hover:border-neutral-400 transition-colors disabled:opacity-50"
+                  >
+                    {deploymentLogsLoading() ? "loading..." : "load older logs"}
+                  </button>
+                </div>
               </Show>
               <For each={deploymentLogs()}>
                 {(line) => (

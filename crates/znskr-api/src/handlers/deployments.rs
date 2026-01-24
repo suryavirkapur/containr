@@ -1,11 +1,11 @@
 //! deployment handlers
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -330,6 +330,12 @@ async fn get_github_token_for_app(
     Ok(None)
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct LogsQuery {
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
+
 /// get deployment logs
 #[utoipa::path(
     get,
@@ -337,7 +343,9 @@ async fn get_github_token_for_app(
     tag = "deployments",
     params(
         ("app_id" = Uuid, Path, description = "app id"),
-        ("id" = Uuid, Path, description = "deployment id")
+        ("id" = Uuid, Path, description = "deployment id"),
+        ("limit" = Option<usize>, Query, description = "lines limit"),
+        ("offset" = Option<usize>, Query, description = "lines offset")
     ),
     security(("bearer" = [])),
     responses(
@@ -351,6 +359,7 @@ pub async fn get_deployment_logs(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((app_id, deployment_id)): Path<(Uuid, Uuid)>,
+    Query(query): Query<LogsQuery>,
 ) -> Result<Json<Vec<String>>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
@@ -400,7 +409,20 @@ pub async fn get_deployment_logs(
         ));
     }
 
-    Ok(Json(deployment.logs))
+    // get logs from new storage
+    let limit = query.limit.unwrap_or(100);
+    let offset = query.offset.unwrap_or(0);
+    let mut logs = state
+        .db
+        .get_deployment_logs(deployment_id, limit, offset)
+        .map_err(internal_error)?;
+    
+    // if new storage empty and offset is 0, fallback to old storage for backward compatibility
+    if logs.is_empty() && offset == 0 && !deployment.logs.is_empty() {
+        logs = deployment.logs;
+    }
+
+    Ok(Json(logs))
 }
 
 /// helper for internal errors

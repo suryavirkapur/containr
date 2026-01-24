@@ -245,6 +245,8 @@ pub struct Deployment {
     /// per-service deployment status for multi-container apps
     #[serde(default)]
     pub service_deployments: Vec<ServiceDeployment>,
+    /// deprecated: logs are now stored in a separate tree
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub logs: Vec<String>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
