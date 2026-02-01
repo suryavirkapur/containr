@@ -304,7 +304,7 @@ pub async fn delete_queue(
     // stop container and remove data directory
     let queue_manager = QueueManager::new();
     let mut queue_to_stop = queue.clone();
-    let _ = queue_manager.stop_queue(&mut queue_to_stop);
+    let _ = queue_manager.stop_queue(&mut queue_to_stop).await;
 
     let data_dir = std::path::Path::new(&queue.host_data_path);
     if data_dir.starts_with(&config.storage.data_dir) {

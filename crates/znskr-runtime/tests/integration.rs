@@ -4,7 +4,6 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::sync::Arc;
 
 use bollard::Docker;
 use znskr_runtime::docker::{DockerContainerConfig, DockerContainerManager};

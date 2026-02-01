@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// main configuration for the znskr paas
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     pub server: ServerConfig,
     pub database: DatabaseConfig,
@@ -16,21 +16,6 @@ pub struct Config {
     pub acme: AcmeConfig,
     #[serde(default)]
     pub storage: StorageConfig,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            server: ServerConfig::default(),
-            database: DatabaseConfig::default(),
-            proxy: ProxyConfig::default(),
-            github: GithubConfig::default(),
-            auth: AuthConfig::default(),
-            security: SecurityConfig::default(),
-            acme: AcmeConfig::default(),
-            storage: StorageConfig::default(),
-        }
-    }
 }
 
 /// api server configuration
@@ -88,35 +73,20 @@ impl Default for ProxyConfig {
 }
 
 /// load balancing algorithm for proxy upstream selection
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LoadBalanceAlgorithm {
+    #[default]
     RoundRobin,
     LeastConnections,
 }
 
-impl Default for LoadBalanceAlgorithm {
-    fn default() -> Self {
-        Self::RoundRobin
-    }
-}
-
 /// github integration configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GithubConfig {
     pub client_id: String,
     pub client_secret: String,
     pub webhook_secret: String,
-}
-
-impl Default for GithubConfig {
-    fn default() -> Self {
-        Self {
-            client_id: String::new(),
-            client_secret: String::new(),
-            webhook_secret: String::new(),
-        }
-    }
 }
 
 /// authentication configuration
@@ -226,14 +196,61 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_security_is_empty() {
-        let config = Config::default();
+    fn toml_missing_optional_sections_use_defaults() {
+        let config: Config = toml::from_str(
+            r#"
+[server]
+host = "0.0.0.0"
+port = 3000
+
+[database]
+path = "./data/znskr.db"
+
+[proxy]
+http_port = 80
+https_port = 443
+base_domain = "example.com"
+
+[github]
+client_id = "id"
+client_secret = "secret"
+webhook_secret = "webhook"
+
+[auth]
+jwt_secret = "secret"
+jwt_expiry_hours = 24
+
+[acme]
+email = "ops@example.com"
+certs_dir = "./data/certs"
+staging = true
+"#,
+        )
+        .unwrap();
+
         assert!(config.security.encryption_key.is_empty());
+        assert!(config.security.cors_allowed_origins.contains(&"http://localhost:3001".to_string()));
+        assert_eq!(config.proxy.public_ip, None);
+        assert_eq!(config.proxy.load_balance, LoadBalanceAlgorithm::RoundRobin);
+        assert_eq!(config.storage.data_dir, PathBuf::from("/data/znskr"));
+        assert_eq!(config.storage.backup_enabled, false);
     }
 
     #[test]
-    fn default_public_ip_is_none() {
-        let config = Config::default();
-        assert!(config.proxy.public_ip.is_none());
+    fn storage_paths_are_scoped() {
+        let storage = StorageConfig::default();
+
+        assert_eq!(
+            storage.database_data_path("db1"),
+            PathBuf::from("/data/znskr/databases/db1/data")
+        );
+        assert_eq!(
+            storage.database_backup_path("db1"),
+            PathBuf::from("/data/znskr/databases/db1/backups")
+        );
+        assert_eq!(
+            storage.queue_data_path("queue1"),
+            PathBuf::from("/data/znskr/queues/queue1/data")
+        );
     }
 }

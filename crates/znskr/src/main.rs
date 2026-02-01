@@ -448,12 +448,44 @@ async fn refresh_routes_for_app(
     } else {
         let expected_name = format!("znskr-{}", app.id);
 
-        for container in &containers {
+                for container in &containers {
             if let Some(names) = &container.names {
                 for name in names {
                     let name = name.trim_start_matches('/');
-                    if name != expected_name || name.is_empty() {
-                        continue;
+                    
+                    // if route is being refreshed due to a deployment, we might have a specific container ID
+                    // from the running deployment. we should prioritize that.
+                    // however, `list_containers` here is generic.
+                    // instead, we should check if the container name matches what we expect from the deployment
+                    
+                    // check against specific container id if we have one
+                    // we don't have the deployment object here readily available in this loop context
+                    // but we can trust the logic that if a container exists and matches the prefix, it's a candidate
+                    
+                    // Logic update:
+                    // 1. If the app has a specific 'running' deployment with a container_id, we should try to match that.
+                    // 2. Otherwise, fallback to any container with correctly matching name.
+                    
+                    // To do this properly, we need to know the active container ID.
+                    // We can fetch the latest running deployment.
+                    
+                    // Refined Logic:
+                    // We only want to add the upstream if it is THE active container.
+                    // If we have a running deployment, we should strictly match its container_id if possible.
+                    
+                    let active_container_id = db.get_latest_deployment(app.id).ok().flatten()
+                        .filter(|d| d.status == znskr_common::models::DeploymentStatus::Running)
+                        .and_then(|d| d.container_id);
+
+                    if let Some(target_id) = active_container_id {
+                        if name != target_id {
+                            continue; // Valid container exists but this isn't it (e.g. it's the old one being drained)
+                        }
+                    } else {
+                        // No active deployment record? Fallback to legacy name check
+                         if name != expected_name && !name.starts_with(&format!("znskr-{}-", app.id)) {
+                            continue;
+                        }
                     }
 
                     if let Some(ip) = get_container_ip(docker, name, &network_name).await {
