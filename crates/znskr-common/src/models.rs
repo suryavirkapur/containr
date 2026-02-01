@@ -103,41 +103,24 @@ fn default_health_retries() -> u32 {
     3
 }
 
-impl Default for HealthCheck {
-    fn default() -> Self {
-        Self {
-            path: "/health".to_string(),
-            interval_secs: 30,
-            timeout_secs: 5,
-            retries: 3,
-        }
-    }
-}
-
-/// represents a container service within an app
+/// container service definition for multi-container apps
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContainerService {
     pub id: Uuid,
     pub app_id: Uuid,
-    /// service name (e.g. "web", "api", "db")
     pub name: String,
-    /// docker image to use
     pub image: String,
-    /// internal container port
     pub port: u16,
-    /// number of replicas to run
     #[serde(default = "default_replicas")]
     pub replicas: u32,
-    /// memory limit in bytes
+    #[serde(default)]
     pub memory_limit: Option<u64>,
-    /// cpu limit (1.0 = 1 core)
+    #[serde(default)]
     pub cpu_limit: Option<f64>,
-    /// service names this service depends on
     #[serde(default)]
     pub depends_on: Vec<String>,
-    /// health check configuration
+    #[serde(default)]
     pub health_check: Option<HealthCheck>,
-    /// restart policy
     #[serde(default)]
     pub restart_policy: RestartPolicy,
     pub created_at: DateTime<Utc>,
@@ -329,6 +312,18 @@ pub struct Certificate {
     pub created_at: DateTime<Utc>,
 }
 
+/// certificate status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CertificateStatus {
+    None,
+    Pending,
+    Valid,
+    ExpiringSoon,
+    Expired,
+    Failed,
+}
+
 impl Certificate {
     // creates a new certificate record
     pub fn new(
@@ -358,24 +353,6 @@ impl Certificate {
             CertificateStatus::Valid
         }
     }
-}
-
-/// Status of a TLS certificate
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum CertificateStatus {
-    /// No certificate exists
-    None,
-    /// Certificate is being issued
-    Pending,
-    /// Certificate is valid
-    Valid,
-    /// Certificate expires within 30 days
-    ExpiringSoon,
-    /// Certificate has expired
-    Expired,
-    /// Certificate issuance failed
-    Failed,
 }
 
 /// route configuration for the proxy
@@ -425,33 +402,106 @@ pub struct GithubAppConfig {
     pub updated_at: DateTime<Utc>,
 }
 
-impl GithubAppConfig {
-    /// creates a new github app config
-    pub fn new(
-        app_id: i64,
-        app_name: String,
-        client_id: String,
-        client_secret: String,
-        private_key: String,
-        webhook_secret: String,
-        html_url: String,
-        owner_id: Uuid,
-    ) -> Self {
-        let now = Utc::now();
+/// builder for github app config
+pub struct GithubAppConfigBuilder {
+    app_id: i64,
+    app_name: String,
+    client_id: String,
+    client_secret: String,
+    private_key: String,
+    webhook_secret: String,
+    html_url: String,
+    owner_id: Uuid,
+}
+
+impl GithubAppConfigBuilder {
+    /// creates a new builder with required fields
+    pub fn new(app_id: i64, app_name: impl Into<String>, owner_id: Uuid) -> Self {
         Self {
-            id: Uuid::new_v4(),
             app_id,
-            app_name,
-            client_id,
-            client_secret,
-            private_key,
-            webhook_secret,
-            html_url,
+            app_name: app_name.into(),
+            client_id: String::new(),
+            client_secret: String::new(),
+            private_key: String::new(),
+            webhook_secret: String::new(),
+            html_url: String::new(),
             owner_id,
+        }
+    }
+
+    /// sets the client id
+    pub fn client_id(mut self, client_id: impl Into<String>) -> Self {
+        self.client_id = client_id.into();
+        self
+    }
+
+    /// sets the client secret
+    pub fn client_secret(mut self, client_secret: impl Into<String>) -> Self {
+        self.client_secret = client_secret.into();
+        self
+    }
+
+    /// sets the private key
+    pub fn private_key(mut self, private_key: impl Into<String>) -> Self {
+        self.private_key = private_key.into();
+        self
+    }
+
+    /// sets the webhook secret
+    pub fn webhook_secret(mut self, webhook_secret: impl Into<String>) -> Self {
+        self.webhook_secret = webhook_secret.into();
+        self
+    }
+
+    /// sets the html url
+    pub fn html_url(mut self, html_url: impl Into<String>) -> Self {
+        self.html_url = html_url.into();
+        self
+    }
+
+    /// builds the github app config
+    pub fn build(self) -> GithubAppConfig {
+        let now = Utc::now();
+        GithubAppConfig {
+            id: Uuid::new_v4(),
+            app_id: self.app_id,
+            app_name: self.app_name,
+            client_id: self.client_id,
+            client_secret: self.client_secret,
+            private_key: self.private_key,
+            webhook_secret: self.webhook_secret,
+            html_url: self.html_url,
+            owner_id: self.owner_id,
             installations: Vec::new(),
             created_at: now,
             updated_at: now,
         }
+    }
+}
+
+impl GithubAppConfig {
+    /// creates a new github app config using the builder pattern
+    ///
+    /// # example
+    /// ```
+    /// use uuid::Uuid;
+    /// use znskr_common::models::GithubAppConfig;
+    ///
+    /// let config = GithubAppConfig::builder(
+    ///     12345,
+    ///     "my-app",
+    ///     Uuid::new_v4()
+    /// )
+    /// .client_id("client123")
+    /// .client_secret("secret123")
+    /// .build();
+    /// ```
+    pub fn builder(
+        app_id: i64,
+        app_name: impl Into<String>,
+        owner_id: Uuid,
+    ) -> GithubAppConfigBuilder {
+        GithubAppConfigBuilder::new(app_id, app_name, owner_id)
     }
 }
 
@@ -478,6 +528,321 @@ impl GithubInstallation {
             account_type,
             repository_count: None,
             created_at: Utc::now(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_app_new() {
+        let owner_id = Uuid::new_v4();
+        let app = App::new(
+            "test-app".to_string(),
+            "https://github.com/user/repo".to_string(),
+            owner_id,
+        );
+
+        assert_eq!(app.name, "test-app");
+        assert_eq!(app.github_url, "https://github.com/user/repo");
+        assert_eq!(app.branch, "main");
+        assert_eq!(app.owner_id, owner_id);
+        assert!(app.env_vars.is_empty());
+        assert!(app.services.is_empty());
+        assert_eq!(app.port, 8080);
+        assert!(app.domain.is_none());
+        assert_eq!(app.created_at, app.updated_at);
+    }
+
+    #[test]
+    fn test_app_has_services() {
+        let owner_id = Uuid::new_v4();
+        let mut app = App::new(
+            "test-app".to_string(),
+            "https://github.com/user/repo".to_string(),
+            owner_id,
+        );
+
+        assert!(!app.has_services());
+
+        app.services.push(ContainerService::new(
+            app.id,
+            "web".to_string(),
+            "nginx:latest".to_string(),
+            80,
+        ));
+
+        assert!(app.has_services());
+    }
+
+    #[test]
+    fn test_app_deserialize_defaults() {
+        let now = Utc::now();
+        let value = json!({
+            "id": Uuid::new_v4(),
+            "name": "test-app",
+            "github_url": "https://github.com/user/repo",
+            "branch": "main",
+            "env_vars": [],
+            "owner_id": Uuid::new_v4(),
+            "created_at": now,
+            "updated_at": now
+        });
+
+        let app: App = serde_json::from_value(value).unwrap();
+
+        assert_eq!(app.port, 8080);
+        assert!(app.services.is_empty());
+        assert!(app.domain.is_none());
+    }
+
+    #[test]
+    fn test_health_check_deserialize_defaults() {
+        let value = json!({
+            "path": "/health"
+        });
+
+        let health_check: HealthCheck = serde_json::from_value(value).unwrap();
+
+        assert_eq!(health_check.interval_secs, 30);
+        assert_eq!(health_check.timeout_secs, 5);
+        assert_eq!(health_check.retries, 3);
+    }
+
+    #[test]
+    fn test_container_service_new() {
+        let app_id = Uuid::new_v4();
+        let service = ContainerService::new(app_id, "api".to_string(), "node:18".to_string(), 3000);
+
+        assert_eq!(service.app_id, app_id);
+        assert_eq!(service.name, "api");
+        assert_eq!(service.image, "node:18");
+        assert_eq!(service.port, 3000);
+        assert_eq!(service.replicas, 1);
+        assert!(service.memory_limit.is_none());
+        assert!(service.cpu_limit.is_none());
+        assert!(service.depends_on.is_empty());
+        assert!(service.health_check.is_none());
+        assert_eq!(service.restart_policy, RestartPolicy::Always);
+        assert_eq!(service.created_at, service.updated_at);
+    }
+
+    #[test]
+    fn test_container_service_deserialize_defaults() {
+        let now = Utc::now();
+        let value = json!({
+            "id": Uuid::new_v4(),
+            "app_id": Uuid::new_v4(),
+            "name": "api",
+            "image": "node:18",
+            "port": 3000,
+            "created_at": now,
+            "updated_at": now
+        });
+
+        let service: ContainerService = serde_json::from_value(value).unwrap();
+
+        assert_eq!(service.replicas, 1);
+        assert!(service.memory_limit.is_none());
+        assert!(service.cpu_limit.is_none());
+        assert!(service.depends_on.is_empty());
+        assert!(service.health_check.is_none());
+        assert_eq!(service.restart_policy, RestartPolicy::Always);
+    }
+
+    #[test]
+    fn test_service_deployment_new() {
+        let service_id = Uuid::new_v4();
+        let deployment_id = Uuid::new_v4();
+        let sd = ServiceDeployment::new(service_id, deployment_id, 0);
+
+        assert_eq!(sd.service_id, service_id);
+        assert_eq!(sd.deployment_id, deployment_id);
+        assert_eq!(sd.replica_index, 0);
+        assert_eq!(sd.status, DeploymentStatus::Pending);
+        assert_eq!(sd.health, ServiceHealth::Unknown);
+        assert!(sd.container_id.is_none());
+        assert!(sd.logs.is_empty());
+    }
+
+    #[test]
+    fn test_deployment_new() {
+        let app_id = Uuid::new_v4();
+        let deployment = Deployment::new(app_id, "abc123".to_string());
+
+        assert_eq!(deployment.app_id, app_id);
+        assert_eq!(deployment.commit_sha, "abc123");
+        assert!(deployment.commit_message.is_none());
+        assert_eq!(deployment.status, DeploymentStatus::Pending);
+        assert!(deployment.container_id.is_none());
+        assert!(deployment.image_id.is_none());
+        assert!(deployment.service_deployments.is_empty());
+        assert!(deployment.logs.is_empty());
+        assert!(deployment.started_at.is_none());
+        assert!(deployment.finished_at.is_none());
+    }
+
+    #[test]
+    fn test_deployment_status_serialization_strings() {
+        let cases = [
+            (DeploymentStatus::Pending, "pending"),
+            (DeploymentStatus::Cloning, "cloning"),
+            (DeploymentStatus::Building, "building"),
+            (DeploymentStatus::Pushing, "pushing"),
+            (DeploymentStatus::Starting, "starting"),
+            (DeploymentStatus::Running, "running"),
+            (DeploymentStatus::Failed, "failed"),
+            (DeploymentStatus::Stopped, "stopped"),
+        ];
+
+        for (status, expected) in cases {
+            let encoded = serde_json::to_string(&status).unwrap();
+            assert_eq!(encoded, format!("\"{}\"", expected));
+        }
+    }
+
+    #[test]
+    fn test_user_new_with_password() {
+        let user =
+            User::new_with_password("test@example.com".to_string(), "password_hash".to_string());
+
+        assert_eq!(user.email, "test@example.com");
+        assert_eq!(user.password_hash, Some("password_hash".to_string()));
+        assert!(user.github_id.is_none());
+        assert!(user.github_username.is_none());
+        assert!(user.github_access_token.is_none());
+    }
+
+    #[test]
+    fn test_user_new_with_github() {
+        let user = User::new_with_github(
+            "test@example.com".to_string(),
+            12345,
+            "github-user".to_string(),
+        );
+
+        assert_eq!(user.email, "test@example.com");
+        assert_eq!(user.github_id, Some(12345));
+        assert_eq!(user.github_username, Some("github-user".to_string()));
+        assert!(user.password_hash.is_none());
+        assert!(user.github_access_token.is_none());
+    }
+
+    #[test]
+    fn test_github_app_config_builder() {
+        let owner_id = Uuid::new_v4();
+        let config = GithubAppConfig::builder(12345, "my-app", owner_id)
+            .client_id("client123")
+            .client_secret("secret123")
+            .private_key("private-key-data")
+            .webhook_secret("webhook-secret")
+            .html_url("https://github.com/apps/my-app")
+            .build();
+
+        assert_eq!(config.app_id, 12345);
+        assert_eq!(config.app_name, "my-app");
+        assert_eq!(config.client_id, "client123");
+        assert_eq!(config.client_secret, "secret123");
+        assert_eq!(config.private_key, "private-key-data");
+        assert_eq!(config.webhook_secret, "webhook-secret");
+        assert_eq!(config.html_url, "https://github.com/apps/my-app");
+        assert_eq!(config.owner_id, owner_id);
+        assert!(config.installations.is_empty());
+    }
+
+    #[test]
+    fn test_github_app_config_builder_minimal() {
+        let owner_id = Uuid::new_v4();
+        let config = GithubAppConfig::builder(12345, "minimal-app", owner_id).build();
+
+        assert_eq!(config.app_id, 12345);
+        assert_eq!(config.app_name, "minimal-app");
+        assert!(config.client_id.is_empty());
+        assert!(config.client_secret.is_empty());
+        assert_eq!(config.owner_id, owner_id);
+    }
+
+    #[test]
+    fn test_github_installation_new() {
+        let installation =
+            GithubInstallation::new(67890, "test-user".to_string(), "User".to_string());
+
+        assert_eq!(installation.id, 67890);
+        assert_eq!(installation.account_login, "test-user");
+        assert_eq!(installation.account_type, "User");
+        assert!(installation.repository_count.is_none());
+    }
+
+    #[test]
+    fn test_certificate_new() {
+        let expires_at = Utc::now() + chrono::Duration::days(90);
+        let cert = Certificate::new(
+            "example.com".to_string(),
+            "cert-data".to_string(),
+            "key-data".to_string(),
+            expires_at,
+        );
+
+        assert_eq!(cert.domain, "example.com");
+        assert_eq!(cert.cert_pem, "cert-data");
+        assert_eq!(cert.key_pem, "key-data");
+        assert_eq!(cert.expires_at, expires_at);
+    }
+
+    #[test]
+    fn test_certificate_status_valid() {
+        let expires_at = Utc::now() + chrono::Duration::days(90);
+        let cert = Certificate::new(
+            "example.com".to_string(),
+            "cert-data".to_string(),
+            "key-data".to_string(),
+            expires_at,
+        );
+
+        assert_eq!(cert.status(), CertificateStatus::Valid);
+    }
+
+    #[test]
+    fn test_certificate_status_expiring_soon() {
+        let expires_at = Utc::now() + chrono::Duration::days(15);
+        let cert = Certificate::new(
+            "example.com".to_string(),
+            "cert-data".to_string(),
+            "key-data".to_string(),
+            expires_at,
+        );
+
+        assert_eq!(cert.status(), CertificateStatus::ExpiringSoon);
+    }
+
+    #[test]
+    fn test_certificate_status_expired() {
+        let expires_at = Utc::now() - chrono::Duration::days(1);
+        let cert = Certificate::new(
+            "example.com".to_string(),
+            "cert-data".to_string(),
+            "key-data".to_string(),
+            expires_at,
+        );
+
+        assert_eq!(cert.status(), CertificateStatus::Expired);
+    }
+
+    #[test]
+    fn test_service_health_serialization_strings() {
+        let cases = [
+            (ServiceHealth::Unknown, "unknown"),
+            (ServiceHealth::Healthy, "healthy"),
+            (ServiceHealth::Unhealthy, "unhealthy"),
+            (ServiceHealth::Starting, "starting"),
+        ];
+
+        for (health, expected) in cases {
+            let encoded = serde_json::to_string(&health).unwrap();
+            assert_eq!(encoded, format!("\"{}\"", expected));
         }
     }
 }

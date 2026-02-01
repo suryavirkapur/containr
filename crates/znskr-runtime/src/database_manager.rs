@@ -187,9 +187,8 @@ impl DatabaseManager {
     /// ensures the infrastructure network exists
     async fn ensure_network(&self, name: &str) -> Result<()> {
         // check if network exists
-        match self.docker.inspect_network(name, None::<InspectNetworkOptions>).await {
-            Ok(_) => return Ok(()),
-            Err(_) => {}
+        if self.docker.inspect_network(name, None::<InspectNetworkOptions>).await.is_ok() {
+            return Ok(());
         }
 
         info!("creating docker network: {}", name);

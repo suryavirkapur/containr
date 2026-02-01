@@ -273,7 +273,7 @@ pub async fn list_apps(
     let apps = state
         .db
         .list_apps_by_owner(user_id)
-        .map_err(|e| internal_error(e))?;
+        .map_err(internal_error)?;
 
     let responses: Vec<AppResponse> = apps.iter().map(AppResponse::from).collect();
     Ok(Json(responses))

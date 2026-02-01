@@ -703,10 +703,24 @@ impl DockerContainerManager {
 mod tests {
     use super::*;
 
-    #[test]
-    fn stub_mode_returns_expected_values() {
+    #[tokio::test]
+    async fn stub_mode_returns_safe_defaults() {
         let manager = DockerContainerManager::new_stub();
         assert!(manager.is_stub());
+
+        let stats = manager.get_stats("stub").await.unwrap();
+        assert_eq!(stats.cpu_percent, 0.0);
+        assert_eq!(stats.mem_usage_bytes, 0);
+        assert_eq!(stats.mem_limit_bytes, 0);
+
+        assert!(manager.list_containers().await.unwrap().is_empty());
+        assert!(manager.is_running("stub").await.unwrap());
+        assert!(manager.is_healthy("stub").await.unwrap());
+        assert!(manager.wait_for_healthy("stub", 1).await.unwrap());
+
+        let state = manager.get_state("stub").await.unwrap();
+        assert_eq!(state.status, "running");
+        assert_eq!(state.health_status, Some("healthy".to_string()));
     }
 }
 

@@ -290,17 +290,18 @@ pub async fn github_app_callback(
     let encrypted_webhook = encrypt_value(&config, &app_response.webhook_secret)
         .map_err(internal_error)?;
 
-    // create app config
-    let app_config = GithubAppConfig::new(
+    // create app config using builder pattern
+    let app_config = GithubAppConfig::builder(
         app_response.id,
         app_response.slug,
-        app_response.client_id,
-        encrypted_secret,
-        encrypted_pem,
-        encrypted_webhook,
-        app_response.html_url,
         user_id,
-    );
+    )
+    .client_id(app_response.client_id)
+    .client_secret(encrypted_secret)
+    .private_key(encrypted_pem)
+    .webhook_secret(encrypted_webhook)
+    .html_url(app_response.html_url)
+    .build();
 
     // save to database
     state.db.save_github_app(&app_config).map_err(internal_error)?;

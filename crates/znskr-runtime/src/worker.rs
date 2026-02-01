@@ -177,10 +177,10 @@ impl DeploymentWorker {
             // legacy single-container deployment (backward compat)
             env_vars.insert("PORT".to_string(), app.port.to_string());
 
-            // stop existing container if running
-            let container_id = format!("znskr-{}", job.app_id);
-            let _ = self.docker_manager.stop_container(&container_id).await;
-            let _ = self.docker_manager.remove_container(&container_id).await;
+            // generate unique container id for blue/green deployment
+            // format: znskr-{app_id}-{short_deployment_id}
+            let short_id = deployment.id.to_string().split('-').next().unwrap_or("0").to_string();
+            let container_id = format!("znskr-{}-{}", job.app_id, short_id);
 
             // start new container using Docker
             let config = DockerContainerConfig {
@@ -197,14 +197,31 @@ impl DeploymentWorker {
 
             let container_info = self.docker_manager.create_container(config).await?;
 
-            // update deployment with container info
+            // wait for container to be healthy (basic check for running state)
+            // in future, we should use the configured health check from app.services if available
+            // for legacy apps, we just wait a bit to ensure it doesn't crash immediately
+            info!(container_id = %container_info.id, "waiting for container to stabilize");
+            if !self.docker_manager.wait_for_healthy(&container_info.id, 10).await? {
+                 // if it failed to start/stabilize, cleanup and fail
+                 let _ = self.docker_manager.stop_container(&container_info.id).await;
+                 let _ = self.docker_manager.remove_container(&container_info.id).await;
+                 return Err(anyhow::anyhow!("container failed to stabilize"));
+            }
+
+            // update deployment with container info - THIS SWAPS TRAFFIC effectively
+            // once this is saved, the proxy will pick up this new container_id on next refresh
             let mut updated_deployment = deployment.clone();
             updated_deployment.status = DeploymentStatus::Running;
-            updated_deployment.container_id = Some(container_info.id);
+            updated_deployment.container_id = Some(container_info.id.clone());
             updated_deployment.started_at = Some(chrono::Utc::now());
             self.db.save_deployment(&updated_deployment)?;
 
+            // notify proxy to update routes to point to new container
             self.send_proxy_refresh(app.id).await;
+
+            // cleanup old containers (Blue/Green cleanup)
+            // we remove any container for this app that is NOT the new one
+            self.cleanup_old_containers(job.app_id, &container_info.id).await;
         }
 
         info!(
@@ -453,7 +470,7 @@ impl DeploymentWorker {
         status: DeploymentStatus,
     ) -> anyhow::Result<()> {
         let mut updated = deployment.clone();
-        updated.status = status.clone();
+        updated.status = status;
         let _ = self.db.append_deployment_log(updated.id, &format!(
             "[{}] status: {:?}",
             chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
@@ -468,6 +485,38 @@ impl DeploymentWorker {
             let _ = sender
                 .send(ProxyRouteUpdate::RefreshApp { app_id })
                 .await;
+        }
+    }
+
+    /// cleans up old containers for an app (all except the current one)
+    async fn cleanup_old_containers(&self, app_id: Uuid, current_container_id: &str) {
+        info!("cleaning up old containers for app {}", app_id);
+        
+        // list all containers
+        match self.docker_manager.list_containers().await {
+            Ok(containers) => {
+                let app_prefix = format!("znskr-{}-", app_id);
+                // also check for the legacy name format
+                let legacy_name = format!("znskr-{}", app_id);
+                
+                for container in containers {
+                    // skip current container
+                    if container.id == current_container_id {
+                        continue;
+                    }
+                    
+                    // check if container belongs to this app
+                    // either specific deployment ID or legacy name
+                    if container.id.starts_with(&app_prefix) || container.id == legacy_name {
+                        info!(container_id = %container.id, "removing old container");
+                        let _ = self.docker_manager.stop_container(&container.id).await;
+                        let _ = self.docker_manager.remove_container(&container.id).await;
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("failed to list containers for cleanup: {}", e);
+            }
         }
     }
 }

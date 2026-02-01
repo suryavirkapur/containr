@@ -315,7 +315,7 @@ pub async fn delete_database(
     // stop container and remove data directory
     let db_manager = DatabaseManager::new();
     let mut db_to_stop = db.clone();
-    let _ = db_manager.stop_database(&mut db_to_stop);
+    let _ = db_manager.stop_database(&mut db_to_stop).await;
 
     let data_dir = std::path::Path::new(&db.host_data_path);
     if data_dir.starts_with(&config.storage.data_dir) {
@@ -746,14 +746,13 @@ pub async fn list_backups(
                 let filename = entry.file_name().to_string_lossy().to_string();
                 if filename.starts_with(&prefix) {
                     if let Ok(meta) = entry.metadata() {
-                        let created_at = meta
-                            .modified()
-                            .ok()
-                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                            .map(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0))
-                            .flatten()
-                            .map(|dt| dt.to_rfc3339())
-                            .unwrap_or_default();
+                    let created_at = meta
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .and_then(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0))
+                        .map(|dt| dt.to_rfc3339())
+                        .unwrap_or_default();
 
                         backups.push(BackupInfo {
                             filename,
