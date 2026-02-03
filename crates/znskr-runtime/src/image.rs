@@ -134,9 +134,24 @@ impl ImageManager {
         context_path: &str,
         dockerfile: Option<&str>,
     ) -> Result<ImageInfo> {
+        self.build_image_with_logs(name, context_path, dockerfile, |_| {}).await
+    }
+
+    /// builds an image and streams log output to a callback
+    pub async fn build_image_with_logs<F>(
+        &self,
+        name: &str,
+        context_path: &str,
+        dockerfile: Option<&str>,
+        mut log_line: F,
+    ) -> Result<ImageInfo>
+    where
+        F: FnMut(&str),
+    {
         info!(name = %name, context = %context_path, "building image");
 
         if self.stub_mode {
+            log_line("[stub] build skipped (docker not available)");
             return Ok(ImageInfo {
                 name: name.to_string(),
                 digest: "sha256:stub-build".to_string(),
@@ -193,15 +208,18 @@ impl ImageManager {
                         let trimmed = stream_output.trim();
                         if !trimmed.is_empty() {
                             info!(name = %name, output = %trimmed, "build");
+                            log_line(trimmed);
                         }
                     }
                     if let Some(error_detail) = info.error_detail {
                         if let Some(msg) = error_detail.message {
+                            log_line(&format!("build error: {}", msg));
                             return Err(ClientError::Operation(format!("build failed: {}", msg)));
                         }
                     }
                 }
                 Err(e) => {
+                    log_line(&format!("build error: {}", e));
                     return Err(ClientError::Operation(format!("build failed: {}", e)));
                 }
             }

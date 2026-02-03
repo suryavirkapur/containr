@@ -147,7 +147,9 @@ impl DeploymentWorker {
         let image_name = format!("znskr/{}:{}", job.app_id, commit_prefix);
 
         self.image_manager
-            .build_image(&image_name, repo_path.to_str().unwrap(), None)
+            .build_image_with_logs(&image_name, repo_path.to_str().unwrap(), None, |line| {
+                let _ = self.db.append_deployment_log(deployment_id, line);
+            })
             .await?;
 
         // update status to starting
