@@ -8,6 +8,22 @@ use crate::error::Result;
 use crate::managed_services::{ManagedDatabase, ManagedQueue, StorageBucket};
 use crate::models::{App, Certificate, ContainerService, Deployment, GithubAppConfig, ServiceDeployment, User};
 
+fn parse_log_counter(bytes: &[u8]) -> u64 {
+    if bytes.len() != 8 {
+        return 0;
+    }
+    let mut buffer = [0u8; 8];
+    buffer.copy_from_slice(bytes);
+    u64::from_be_bytes(buffer)
+}
+
+fn build_log_key(deployment_id: Uuid, index: u64) -> Vec<u8> {
+    let mut key = Vec::with_capacity(24);
+    key.extend_from_slice(deployment_id.as_bytes());
+    key.extend_from_slice(&index.to_be_bytes());
+    key
+}
+
 /// database wrapper providing typed access to sled trees
 #[derive(Clone)]
 pub struct Database {
@@ -298,22 +314,25 @@ impl Database {
 
     /// appends a log line to a deployment
     pub fn append_deployment_log(&self, deployment_id: Uuid, log_line: &str) -> Result<()> {
-        let tree = self.get_tree("deployment_logs")?;
-        
-        // generate a monotonic key for the log line
-        // using atomic counter for this deployment
-        let _count_key = format!("count:{}", deployment_id);
-        // actually, simpler approach: use current timestamp + random or just a monotonic counter from sled
-        // for simple ordering, we can key by {deployment_id}:{timestamp_micros}:{random}
-        // but simple incrementing index is best for pagination.
-        
-        // let's use sled's generate_id to get a unique ID, but that's global.
-        // for per-deployment ordering, checking the last index is expensive without a separate counter.
-        // let's just use timestamp for now, exact ordering within same microsecond is rare and acceptably racy for logs.
-        let timestamp = chrono::Utc::now().timestamp_micros();
-        let key = format!("{}:{}", deployment_id, timestamp);
-        
-        tree.insert(key.as_bytes(), log_line.as_bytes())?;
+        let tree = self.get_tree("deployment_logs_v2")?;
+        let counters = self.get_tree("deployment_log_counters")?;
+        let counter_key = deployment_id.as_bytes();
+
+        let next_counter = counters
+            .update_and_fetch(counter_key, |prev| {
+                let next = prev
+                    .map(|bytes| parse_log_counter(bytes))
+                    .unwrap_or(0)
+                    .saturating_add(1);
+                Some(next.to_be_bytes().to_vec())
+            })?
+            .map(|bytes| parse_log_counter(bytes.as_ref()))
+            .unwrap_or(0);
+
+        let index = next_counter.saturating_sub(1);
+        let key = build_log_key(deployment_id, index);
+
+        tree.insert(key, log_line.as_bytes())?;
         Ok(())
     }
 
@@ -324,11 +343,37 @@ impl Database {
         limit: usize, 
         offset: usize // offset is number of items to skip from start (oldest)
     ) -> Result<Vec<String>> {
-        let tree = self.get_tree("deployment_logs")?;
-        let prefix = format!("{}:", deployment_id);
-        
-        let logs: Vec<String> = tree
-            .scan_prefix(prefix.as_bytes())
+        let v2_tree = self.get_tree("deployment_logs_v2")?;
+        let prefix = deployment_id.as_bytes();
+
+        let has_v2_logs = match v2_tree.scan_prefix(prefix).next() {
+            Some(Ok(_)) => true,
+            Some(Err(e)) => return Err(e.into()),
+            None => false,
+        };
+
+        if has_v2_logs {
+            let logs: Vec<String> = v2_tree
+                .scan_prefix(prefix)
+                .skip(offset)
+                .take(limit)
+                .filter_map(|res| {
+                    if let Ok((_, value)) = res {
+                        String::from_utf8(value.to_vec()).ok()
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            return Ok(logs);
+        }
+
+        let legacy_tree = self.get_tree("deployment_logs")?;
+        let legacy_prefix = format!("{}:", deployment_id);
+
+        let logs: Vec<String> = legacy_tree
+            .scan_prefix(legacy_prefix.as_bytes())
             .skip(offset)
             .take(limit)
             .filter_map(|res| {
@@ -339,7 +384,7 @@ impl Database {
                 }
             })
             .collect();
-            
+
         Ok(logs)
     }
 
