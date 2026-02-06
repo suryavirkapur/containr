@@ -31,6 +31,7 @@ interface App {
   github_url: string;
   branch: string;
   domain: string | null;
+  domains: string[] | null;
   port: number;
   created_at: string;
   env_vars: { key: string; value: string; secret: boolean }[];
@@ -54,6 +55,18 @@ interface CertificateStatus {
   status: "none" | "pending" | "valid" | "expiringsoon" | "expired" | "failed";
   expires_at: string | null;
   issued_at: string | null;
+}
+
+interface GitInfo {
+  enabled: boolean;
+  repo: string;
+  path: string;
+  http_url: string | null;
+  username: string;
+}
+
+interface GitEnableResponse extends GitInfo {
+  token: string;
 }
 
 interface ContainerListItem {
@@ -84,8 +97,10 @@ const fetchDeployments = async (appId: string): Promise<Deployment[]> => {
 /**
  * fetches certificate status for an app
  */
-const fetchCertificate = async (appId: string): Promise<CertificateStatus> => {
-  return apiGet<CertificateStatus>(`/api/apps/${appId}/certificate`);
+const fetchCertificate = async (
+  appId: string,
+): Promise<CertificateStatus[]> => {
+  return apiGet<CertificateStatus[]>(`/api/apps/${appId}/certificate`);
 };
 
 /**
@@ -95,6 +110,13 @@ const fetchContainers = async (): Promise<ContainerListItem[]> => {
   const { data, error } = await api.GET("/api/containers");
   if (error) throw error;
   return data as ContainerListItem[];
+};
+
+/**
+ * fetches git info for an app
+ */
+const fetchGitInfo = async (appId: string): Promise<GitInfo> => {
+  return apiGet<GitInfo>(`/api/apps/${appId}/git`);
 };
 
 /**
@@ -133,6 +155,14 @@ const AppDetail: Component = () => {
     fetchCertificate,
   );
 
+  const [gitInfo, { refetch: refetchGitInfo }] = createResource(
+    () => params.id,
+    fetchGitInfo,
+  );
+
+  const [gitToken, setGitToken] = createSignal("");
+  const [gitWorking, setGitWorking] = createSignal(false);
+
   const [containers] = createResource(fetchContainers);
   const [selectedContainer, setSelectedContainer] = createSignal("");
 
@@ -150,10 +180,13 @@ const AppDetail: Component = () => {
 
   const [reissuing, setReissuing] = createSignal(false);
 
-  const reissueCertificate = async () => {
+  const reissueCertificate = async (domain?: string) => {
     setReissuing(true);
     try {
-      await apiPost(`/api/apps/${params.id}/certificate/reissue`);
+      await apiPost(
+        `/api/apps/${params.id}/certificate/reissue`,
+        domain ? { domain } : undefined,
+      );
 
       refetchCertificate();
     } catch (err) {
@@ -161,6 +194,49 @@ const AppDetail: Component = () => {
     } finally {
       setReissuing(false);
     }
+  };
+
+  const gitHttpUrl = () => {
+    const info = gitInfo();
+    if (!info) return "";
+    if (info.http_url) return info.http_url;
+    if (typeof window === "undefined") return info.path;
+    return `${window.location.protocol}//${window.location.host}${info.path}`;
+  };
+
+  const enableGit = async () => {
+    setGitWorking(true);
+    try {
+      const data = await apiPost<GitEnableResponse>(
+        `/api/apps/${params.id}/git`,
+      );
+      setGitToken(data.token);
+      refetchGitInfo();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setGitWorking(false);
+    }
+  };
+
+  const rotateGit = async () => {
+    setGitWorking(true);
+    try {
+      const data = await apiPost<GitEnableResponse>(
+        `/api/apps/${params.id}/git/rotate`,
+      );
+      setGitToken(data.token);
+      refetchGitInfo();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setGitWorking(false);
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    if (!text || typeof navigator === "undefined") return;
+    navigator.clipboard.writeText(text);
   };
 
   // Edit form state
@@ -171,7 +247,7 @@ const AppDetail: Component = () => {
   const [deployingImage, setDeployingImage] = createSignal(false);
   const [imageNameInput, setImageNameInput] = createSignal("");
   const [editForm, setEditForm] = createSignal({
-    domain: "",
+    domainsText: "",
     port: 8080,
     github_url: "",
     branch: "main",
@@ -179,11 +255,76 @@ const AppDetail: Component = () => {
     env_vars: [] as { key: string; value: string; secret: boolean }[],
   });
 
+  const parseDomainsText = (value: string) => {
+    const entries = value
+      .split(/[\n,]+/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    return Array.from(new Set(entries));
+  };
+
+  const domainsToText = (domains: string[]) => domains.join("\n");
+
+  const appDomains = createMemo(() => {
+    const current = app();
+    if (!current) return [];
+    if (current.domains && current.domains.length > 0) {
+      return current.domains;
+    }
+    if (current.domain) {
+      return [current.domain];
+    }
+    return [];
+  });
+
+  const certificateList = createMemo(() => certificate() || []);
+
+  const certificateStatusLabel = (status: CertificateStatus["status"]) => {
+    switch (status) {
+      case "valid":
+        return "valid";
+      case "expiringsoon":
+        return "expiring";
+      case "expired":
+        return "expired";
+      case "pending":
+        return "pending";
+      case "failed":
+        return "failed";
+      default:
+        return "none";
+    }
+  };
+
+  const certificateDotClass = (status: CertificateStatus["status"]) => {
+    switch (status) {
+      case "valid":
+        return "bg-black";
+      case "expiringsoon":
+        return "bg-neutral-400";
+      case "expired":
+      case "failed":
+        return "bg-neutral-300";
+      case "pending":
+        return "bg-neutral-400 animate-pulse";
+      default:
+        return "bg-neutral-200";
+    }
+  };
+
+  const editDomains = createMemo(() => parseDomainsText(editForm().domainsText));
+
   const openEditModal = () => {
     const currentApp = app();
     if (currentApp) {
+      const domains =
+        currentApp.domains && currentApp.domains.length > 0
+          ? currentApp.domains
+          : currentApp.domain
+            ? [currentApp.domain]
+            : [];
       setEditForm({
-        domain: currentApp.domain || "",
+        domainsText: domainsToText(domains),
         port: currentApp.port,
         github_url: currentApp.github_url,
         branch: currentApp.branch,
@@ -256,10 +397,12 @@ const AppDetail: Component = () => {
     setSaving(true);
     try {
       const form = editForm();
+      const domains = parseDomainsText(form.domainsText);
       const { error } = await api.PUT("/api/apps/{id}", {
         params: { path: { id: params.id! } },
         body: {
-          domain: form.domain || null,
+          domains,
+          domain: domains[0] || null,
           port: form.port,
           github_url: form.github_url,
           branch: form.branch,
@@ -576,22 +719,33 @@ const AppDetail: Component = () => {
             </div>
           </div>
 
-          {/* domain */}
+          {/* domains */}
           <div class="bg-white p-5">
             <h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-              domain
+              domains
             </h3>
             <Show
-              when={app()!.domain}
+              when={appDomains().length > 0}
               fallback={<span class="text-neutral-400 text-sm">n/a</span>}
             >
-              <a
-                href={`https://${app()!.domain}`}
-                target="_blank"
-                class="text-black text-sm hover:underline"
-              >
-                {app()!.domain}
-              </a>
+              <div class="space-y-1">
+                <For each={appDomains().slice(0, 2)}>
+                  {(domain) => (
+                    <a
+                      href={`https://${domain}`}
+                      target="_blank"
+                      class="block text-black text-sm hover:underline"
+                    >
+                      {domain}
+                    </a>
+                  )}
+                </For>
+                <Show when={appDomains().length > 2}>
+                  <span class="text-xs text-neutral-400">
+                    +{appDomains().length - 2} more
+                  </span>
+                </Show>
+              </div>
             </Show>
           </div>
 
@@ -611,47 +765,38 @@ const AppDetail: Component = () => {
             <Show when={certificate.loading}>
               <span class="text-neutral-400 text-sm">loading...</span>
             </Show>
-            <Show when={!certificate.loading && certificate()}>
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <Show when={certificate()!.status === "valid"}>
-                    <span class="w-2 h-2 bg-black"></span>
-                    <span class="text-black text-sm">valid</span>
-                  </Show>
-                  <Show when={certificate()!.status === "expiringsoon"}>
-                    <span class="w-2 h-2 bg-neutral-400"></span>
-                    <span class="text-neutral-600 text-sm">expiring</span>
-                  </Show>
-                  <Show when={certificate()!.status === "expired"}>
-                    <span class="w-2 h-2 bg-neutral-300"></span>
-                    <span class="text-neutral-500 text-sm">expired</span>
-                  </Show>
-                  <Show when={certificate()!.status === "pending"}>
-                    <span class="w-2 h-2 bg-neutral-400 animate-pulse"></span>
-                    <span class="text-neutral-500 text-sm">pending</span>
-                  </Show>
-                  <Show when={certificate()!.status === "failed"}>
-                    <span class="w-2 h-2 bg-neutral-300"></span>
-                    <span class="text-neutral-500 text-sm">failed</span>
-                  </Show>
-                  <Show when={certificate()!.status === "none"}>
-                    <span class="text-neutral-400 text-sm">
-                      {app()!.domain ? "awaiting issuance" : "n/a"}
+            <Show when={!certificate.loading}>
+              <Show
+                when={certificateList().length > 0}
+                fallback={
+                  <span class="text-neutral-400 text-sm">n/a</span>
+                }
+              >
+                <div class="space-y-2">
+                  <For each={certificateList().slice(0, 2)}>
+                    {(cert) => (
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <span
+                            class={`w-2 h-2 ${certificateDotClass(cert.status)}`}
+                          ></span>
+                          <span class="text-neutral-600 text-xs">
+                            {cert.domain}
+                          </span>
+                        </div>
+                        <span class="text-xs text-neutral-500">
+                          {certificateStatusLabel(cert.status)}
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                  <Show when={certificateList().length > 2}>
+                    <span class="text-xs text-neutral-400">
+                      +{certificateList().length - 2} more
                     </span>
                   </Show>
                 </div>
-                <Show
-                  when={app()!.domain && certificate()!.status !== "pending"}
-                >
-                  <button
-                    onClick={reissueCertificate}
-                    disabled={reissuing()}
-                    class="text-xs text-neutral-500 hover:text-black disabled:opacity-50"
-                  >
-                    {reissuing() ? "..." : "reissue"}
-                  </button>
-                </Show>
-              </div>
+              </Show>
             </Show>
           </div>
         </div>
@@ -809,6 +954,107 @@ const AppDetail: Component = () => {
           </div>
         </div>
 
+        {/* git push */}
+        <div class="border border-neutral-200 mb-8">
+          <div class="border-b border-neutral-200 px-5 py-3">
+            <h2 class="text-sm font-serif text-black">git push</h2>
+            <p class="text-xs text-neutral-500 mt-1">
+              push to deploy from a local git repository
+            </p>
+          </div>
+          <div class="p-5 space-y-4">
+            <Show when={gitInfo.loading}>
+              <span class="text-neutral-400 text-sm">loading...</span>
+            </Show>
+            <Show when={!gitInfo.loading && gitInfo()}>
+              <Show
+                when={gitInfo()!.enabled}
+                fallback={
+                  <button
+                    onClick={enableGit}
+                    disabled={gitWorking()}
+                    class="px-4 py-2 bg-neutral-900 text-white hover:bg-neutral-800 disabled:opacity-50 text-sm"
+                  >
+                    {gitWorking() ? "enabling..." : "enable git push"}
+                  </button>
+                }
+              >
+                <div class="space-y-3">
+                  <div>
+                    <p class="text-xs text-neutral-500 mb-2">remote url</p>
+                    <div class="flex gap-2">
+                      <input
+                        type="text"
+                        value={gitHttpUrl()}
+                        readOnly
+                        class="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:outline-none text-sm font-mono"
+                      />
+                      <button
+                        onClick={() => copyToClipboard(gitHttpUrl())}
+                        class="px-3 py-2 bg-neutral-700 text-white hover:bg-neutral-600 text-sm"
+                      >
+                        copy
+                      </button>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-4">
+                    <div>
+                      <p class="text-xs text-neutral-500 mb-2">username</p>
+                      <div class="flex gap-2">
+                        <input
+                          type="text"
+                          value={gitInfo()!.username}
+                          readOnly
+                          class="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:outline-none text-sm font-mono"
+                        />
+                        <button
+                          onClick={() => copyToClipboard(gitInfo()!.username)}
+                          class="px-3 py-2 bg-neutral-700 text-white hover:bg-neutral-600 text-sm"
+                        >
+                          copy
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <p class="text-xs text-neutral-500 mb-2">token</p>
+                      <div class="flex gap-2">
+                        <input
+                          type="text"
+                          value={gitToken() || "rotate to view"}
+                          readOnly
+                          class="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:outline-none text-sm font-mono"
+                        />
+                        <button
+                          onClick={() => copyToClipboard(gitToken())}
+                          disabled={!gitToken()}
+                          class="px-3 py-2 bg-neutral-700 text-white hover:bg-neutral-600 disabled:opacity-50 text-sm"
+                        >
+                          copy
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <button
+                      onClick={rotateGit}
+                      disabled={gitWorking()}
+                      class="px-3 py-2 border border-neutral-300 text-neutral-700 hover:text-black hover:border-neutral-400 disabled:opacity-50 text-sm"
+                    >
+                      {gitWorking() ? "rotating..." : "rotate token"}
+                    </button>
+                    <div class="text-xs text-neutral-500 font-mono leading-5">
+                      <div>git remote add znskr {gitHttpUrl()}</div>
+                      <div>
+                        git push znskr {app()?.branch || "main"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Show>
+            </Show>
+          </div>
+        </div>
+
         {/* deployments */}
         <div class="border border-neutral-200">
           <div class="border-b border-neutral-200 px-5 py-3">
@@ -903,59 +1149,66 @@ const AppDetail: Component = () => {
                   http settings
                 </h3>
 
-                <Show when={editForm().domain || app()?.domain}>
+                <Show when={editDomains().length > 0}>
                   <div class="mb-4">
                     <p class="text-xs text-neutral-500 mb-2">
                       your app is publicly available at:
                     </p>
-                    <div class="flex items-center gap-2 p-2 border border-neutral-200 bg-neutral-50">
-                      <Show when={certificate()?.status === "valid"}>
-                        <span class="px-2 py-0.5 text-xs border border-neutral-300 text-neutral-600">
-                          https
-                        </span>
-                      </Show>
-                      <Show when={certificate()?.status !== "valid"}>
-                        <button
-                          onClick={reissueCertificate}
-                          disabled={reissuing()}
-                          class="px-2 py-0.5 text-xs border border-neutral-400 text-neutral-700 hover:border-black hover:text-black disabled:opacity-50"
-                        >
-                          {reissuing() ? "..." : "enable https"}
-                        </button>
-                      </Show>
-                      <a
-                        href={`https://${editForm().domain || app()?.domain}`}
-                        target="_blank"
-                        class="text-sm text-blue-600 hover:underline font-mono"
-                      >
-                        {editForm().domain || app()?.domain}
-                      </a>
+                    <div class="space-y-2">
+                      <For each={editDomains()}>
+                        {(domain) => {
+                          const cert = certificateList().find(
+                            (entry) => entry.domain === domain,
+                          );
+                          const status = cert?.status || "none";
+                          return (
+                            <div class="flex items-center gap-2 p-2 border border-neutral-200 bg-neutral-50">
+                              <span
+                                class={`w-2 h-2 ${certificateDotClass(status)}`}
+                              ></span>
+                              <span class="text-xs text-neutral-500">
+                                {certificateStatusLabel(status)}
+                              </span>
+                              <Show when={status !== "pending"}>
+                                <button
+                                  onClick={() => reissueCertificate(domain)}
+                                  disabled={reissuing()}
+                                  class="px-2 py-0.5 text-xs border border-neutral-400 text-neutral-700 hover:border-black hover:text-black disabled:opacity-50"
+                                >
+                                  {reissuing() ? "..." : "reissue"}
+                                </button>
+                              </Show>
+                              <a
+                                href={`https://${domain}`}
+                                target="_blank"
+                                class="text-sm text-blue-600 hover:underline font-mono ml-auto"
+                              >
+                                {domain}
+                              </a>
+                            </div>
+                          );
+                        }}
+                      </For>
                     </div>
                   </div>
                 </Show>
 
                 <div class="flex gap-2">
-                  <input
-                    type="text"
-                    value={editForm().domain}
+                  <textarea
+                    rows={3}
+                    value={editForm().domainsText}
                     onInput={(e) =>
                       setEditForm((prev) => ({
                         ...prev,
-                        domain: e.currentTarget.value,
+                        domainsText: e.currentTarget.value,
                       }))
                     }
-                    placeholder="your-custom-domain.com"
+                    placeholder="your-custom-domain.com&#10;www.your-custom-domain.com"
                     class="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
                   />
-                  <button
-                    type="button"
-                    class="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 text-sm"
-                  >
-                    connect new domain
-                  </button>
                 </div>
                 <p class="text-xs text-neutral-400 mt-2">
-                  point your domain's dns to this server, then connect it above
+                  point your domains' dns to this server, then list them above
                 </p>
               </section>
 

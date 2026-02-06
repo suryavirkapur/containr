@@ -11,7 +11,14 @@ pub struct App {
     pub name: String,
     pub github_url: String,
     pub branch: String,
+    /// custom domains for the app
+    #[serde(default)]
+    pub domains: Vec<String>,
+    /// deprecated: use domains instead
     pub domain: Option<String>,
+    /// git deploy token (encrypted, optional)
+    #[serde(default)]
+    pub git_deploy_token: Option<String>,
     /// shared environment variables for all services
     pub env_vars: Vec<EnvVar>,
     /// deprecated: use services instead. kept for backward compat
@@ -38,7 +45,9 @@ impl App {
             name,
             github_url,
             branch: "main".to_string(),
+            domains: Vec::new(),
             domain: None,
+            git_deploy_token: None,
             env_vars: Vec::new(),
             port: 8080,
             services: Vec::new(),
@@ -51,6 +60,24 @@ impl App {
     /// returns true if this app uses multi-container services
     pub fn has_services(&self) -> bool {
         !self.services.is_empty()
+    }
+
+    /// returns all custom domains for this app
+    pub fn custom_domains(&self) -> Vec<String> {
+        let mut domains = self.domains.clone();
+        if let Some(domain) = &self.domain {
+            if !domains.iter().any(|d| d == domain) {
+                domains.push(domain.clone());
+            }
+        }
+        domains
+    }
+
+    /// sets the custom domains, updating legacy domain field
+    pub fn set_domains(&mut self, mut domains: Vec<String>) {
+        domains.retain(|d| !d.trim().is_empty());
+        self.domain = domains.first().cloned();
+        self.domains = domains;
     }
 }
 
@@ -373,6 +400,7 @@ pub struct DeploymentJob {
     pub github_url: String,
     pub branch: String,
     pub github_token: Option<String>,
+    pub repo_path: Option<String>,
 }
 
 /// github app configuration for coolify-style integration
@@ -554,6 +582,7 @@ mod tests {
         assert!(app.services.is_empty());
         assert_eq!(app.port, 8080);
         assert!(app.domain.is_none());
+        assert!(app.domains.is_empty());
         assert_eq!(app.created_at, app.updated_at);
     }
 
@@ -597,6 +626,7 @@ mod tests {
         assert_eq!(app.port, 8080);
         assert!(app.services.is_empty());
         assert!(app.domain.is_none());
+        assert!(app.domains.is_empty());
     }
 
     #[test]

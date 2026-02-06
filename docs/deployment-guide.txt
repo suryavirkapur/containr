@@ -22,6 +22,7 @@ recommended:
 required software:
     - docker 24.0+
     - docker compose v2 (optional)
+    - git (for git push deployments)
 
 --------------------------------------------------------------------------------
 vps deployment

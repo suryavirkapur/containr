@@ -116,6 +116,7 @@ pub async fn github_webhook(
                 github_url: app.github_url,
                 branch: app.branch,
                 github_token,
+                repo_path: None,
             };
 
             state

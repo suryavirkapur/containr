@@ -30,6 +30,17 @@ pub struct DeploymentResponse {
     pub finished_at: Option<String>,
 }
 
+/// deployment trigger request (optional)
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DeploymentTriggerRequest {
+    /// branch to deploy
+    pub branch: Option<String>,
+    /// commit sha to record
+    pub commit_sha: Option<String>,
+    /// commit message to record
+    pub commit_message: Option<String>,
+}
+
 impl From<&Deployment> for DeploymentResponse {
     fn from(d: &Deployment) -> Self {
         Self {
@@ -219,6 +230,7 @@ pub async fn get_deployment(
     tag = "deployments",
     params(("id" = Uuid, Path, description = "app id")),
     security(("bearer" = [])),
+    request_body = DeploymentTriggerRequest,
     responses(
         (status = 201, description = "deployment triggered", body = DeploymentResponse),
         (status = 401, description = "unauthorized", body = ErrorResponse),
@@ -230,9 +242,13 @@ pub async fn trigger_deployment(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(app_id): Path<Uuid>,
+    body: Option<Json<DeploymentTriggerRequest>>,
 ) -> Result<(StatusCode, Json<DeploymentResponse>), (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
-    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+    let git_token = headers
+        .get("x-git-token")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string());
 
     // get app
     let app = state
@@ -248,31 +264,96 @@ pub async fn trigger_deployment(
             )
         })?;
 
-    if app.owner_id != user_id {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(ErrorResponse {
-                error: "access denied".to_string(),
-            }),
-        ));
+    let mut using_git_token = false;
+    let mut user_id: Option<Uuid> = None;
+
+    if let Some(token) = git_token {
+        if let Some(stored) = app.git_deploy_token.clone() {
+            let decrypted = crate::security::decrypt_value(
+                &config,
+                &stored,
+                Some(&config.auth.jwt_secret),
+            )
+            .map_err(internal_error)?;
+            if decrypted == token {
+                using_git_token = true;
+            }
+        }
     }
 
+    if !using_git_token {
+        let owner_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+        if app.owner_id != owner_id {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse {
+                    error: "access denied".to_string(),
+                }),
+            ));
+        }
+        user_id = Some(owner_id);
+    }
+
+    let trigger = body.map(|value| value.0);
+    let commit_sha = trigger
+        .as_ref()
+        .and_then(|t| t.commit_sha.clone())
+        .unwrap_or_else(|| {
+            if using_git_token {
+                "git-push".to_string()
+            } else {
+                "manual".to_string()
+            }
+        });
+    let commit_message = trigger
+        .as_ref()
+        .and_then(|t| t.commit_message.clone())
+        .or_else(|| {
+            if using_git_token {
+                Some("git push".to_string())
+            } else {
+                Some("manual deployment".to_string())
+            }
+        });
+
     // create deployment record
-    let deployment = Deployment::new(app_id, "manual".to_string());
+    let mut deployment = Deployment::new(app_id, commit_sha.clone());
+    deployment.commit_message = commit_message.clone();
     state
         .db
         .save_deployment(&deployment)
         .map_err(internal_error)?;
 
     // queue deployment job
-    let github_token = get_github_token_for_app(&state, user_id, &app).await?;
+    let github_token = if let Some(user_id) = user_id {
+        get_github_token_for_app(&state, user_id, &app).await?
+    } else {
+        None
+    };
+    let branch = trigger
+        .as_ref()
+        .and_then(|t| t.branch.clone())
+        .unwrap_or_else(|| app.branch.clone());
     let job = DeploymentJob {
         app_id,
-        commit_sha: "HEAD".to_string(),
-        commit_message: Some("manual deployment".to_string()),
+        commit_sha: commit_sha.clone(),
+        commit_message: commit_message.clone(),
         github_url: app.github_url,
-        branch: app.branch,
+        branch,
         github_token,
+        repo_path: if using_git_token {
+            Some(
+                config
+                    .storage
+                    .data_dir
+                    .join("git")
+                    .join(format!("{}.git", app_id))
+                    .to_string_lossy()
+                    .to_string(),
+            )
+        } else {
+            None
+        },
     };
 
     state

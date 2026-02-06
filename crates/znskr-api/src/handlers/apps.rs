@@ -30,6 +30,8 @@ pub struct CreateAppRequest {
     pub github_url: String,
     /// branch to deploy (defaults to main)
     pub branch: Option<String>,
+    /// custom domains
+    pub domains: Option<Vec<String>>,
     /// custom domain
     pub domain: Option<String>,
     /// port for the app (deprecated, use services)
@@ -139,6 +141,8 @@ pub struct UpdateAppRequest {
     pub github_url: Option<String>,
     /// new branch
     pub branch: Option<String>,
+    /// new domains
+    pub domains: Option<Vec<String>>,
     /// new domain
     pub domain: Option<String>,
     /// new port (deprecated, use services)
@@ -162,6 +166,8 @@ pub struct AppResponse {
     pub branch: String,
     /// custom domain
     pub domain: Option<String>,
+    /// custom domains
+    pub domains: Vec<String>,
     /// app port (deprecated)
     pub port: u16,
     /// environment variables
@@ -180,6 +186,7 @@ impl From<&App> for AppResponse {
             github_url: app.github_url.clone(),
             branch: app.branch.clone(),
             domain: app.domain.clone(),
+            domains: app.custom_domains(),
             port: app.port,
             env_vars: app
                 .env_vars
@@ -311,32 +318,38 @@ pub async fn create_app(
         ));
     }
 
-    // check domain uniqueness
-    if let Some(ref domain) = req.domain {
-        if state
-            .db
-            .get_app_by_domain(domain)
-            .map_err(internal_error)?
-            .is_some()
-        {
-            return Err((
-                StatusCode::CONFLICT,
-                Json(ErrorResponse {
-                    error: "domain already in use".to_string(),
-                }),
-            ));
-        }
-    }
+    let requested_domains = merge_domains(req.domain.clone(), req.domains.clone());
 
-    if let Some(ref domain) = req.domain {
-        validate_domain(domain, &config.proxy.base_domain, config.proxy.public_ip.as_deref())
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse { error: e }),
-                )
-            })?;
+    if !requested_domains.is_empty() {
+        // check domain uniqueness
+        for domain in &requested_domains {
+            if state
+                .db
+                .get_app_by_domain(domain)
+                .map_err(internal_error)?
+                .is_some()
+            {
+                return Err((
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error: "domain already in use".to_string(),
+                    }),
+                ));
+            }
+        }
+
+        validate_domains(
+            &requested_domains,
+            &config.proxy.base_domain,
+            config.proxy.public_ip.as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse { error: e }),
+            )
+        })?;
     }
 
     // create app
@@ -344,7 +357,9 @@ pub async fn create_app(
     if let Some(branch) = req.branch {
         app.branch = branch;
     }
-    app.domain = req.domain;
+    if !requested_domains.is_empty() {
+        app.set_domains(requested_domains);
+    }
     if let Some(port) = req.port {
         app.port = port;
     }
@@ -396,9 +411,12 @@ pub async fn create_app(
 
     state.db.save_app(&app).map_err(internal_error)?;
 
-    if let Some(domain) = app.domain.clone() {
+    let domains = app.custom_domains();
+    if !domains.is_empty() {
         if let Some(tx) = &state.cert_request_tx {
-            let _ = tx.try_send(domain);
+            for domain in domains {
+                let _ = tx.try_send(domain);
+            }
         } else {
             warn!("certificate issuance not available for new app domain");
         }
@@ -567,7 +585,7 @@ pub async fn update_app(
         ));
     }
 
-    let mut requested_domain: Option<String> = None;
+    let mut requested_domains: Option<Vec<String>> = None;
 
     // update fields
     if let Some(name) = req.name {
@@ -576,8 +594,14 @@ pub async fn update_app(
     if let Some(branch) = req.branch {
         app.branch = branch;
     }
-    if let Some(domain) = req.domain {
-        validate_domain(&domain, &config.proxy.base_domain, config.proxy.public_ip.as_deref())
+    if req.domain.is_some() || req.domains.is_some() {
+        let domains = merge_domains(req.domain, req.domains);
+        if !domains.is_empty() {
+            validate_domains(
+                &domains,
+                &config.proxy.base_domain,
+                config.proxy.public_ip.as_deref(),
+            )
             .await
             .map_err(|e| {
                 (
@@ -585,24 +609,31 @@ pub async fn update_app(
                     Json(ErrorResponse { error: e }),
                 )
             })?;
-        // check domain uniqueness
-        if let Some(existing) = state
-            .db
-            .get_app_by_domain(&domain)
-            .map_err(internal_error)?
-        {
-            if existing.id != app.id {
-                return Err((
-                    StatusCode::CONFLICT,
-                    Json(ErrorResponse {
-                        error: "domain already in use".to_string(),
-                    }),
-                ));
+
+            // check domain uniqueness
+            for domain in &domains {
+                if let Some(existing) = state
+                    .db
+                    .get_app_by_domain(domain)
+                    .map_err(internal_error)?
+                {
+                    if existing.id != app.id {
+                        return Err((
+                            StatusCode::CONFLICT,
+                            Json(ErrorResponse {
+                                error: "domain already in use".to_string(),
+                            }),
+                        ));
+                    }
+                }
             }
         }
-        app.domain = Some(domain);
-        requested_domain = app.domain.clone();
+        requested_domains = Some(domains);
     }
+    if let Some(domains) = requested_domains.clone() {
+        app.set_domains(domains);
+    }
+
     if let Some(port) = req.port {
         app.port = port;
     }
@@ -636,9 +667,11 @@ pub async fn update_app(
     app.updated_at = chrono::Utc::now();
     state.db.save_app(&app).map_err(internal_error)?;
 
-    if let Some(domain) = requested_domain {
+    if requested_domains.is_some() {
         if let Some(tx) = &state.cert_request_tx {
-            let _ = tx.try_send(domain);
+            for domain in app.custom_domains() {
+                let _ = tx.try_send(domain);
+            }
         } else {
             warn!("certificate issuance not available for updated app domain");
         }
@@ -708,11 +741,55 @@ fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse
     )
 }
 
+fn normalize_domain(input: &str) -> Option<String> {
+    let trimmed = input.trim().trim_end_matches('.');
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.to_lowercase())
+}
+
+fn normalize_domains(domains: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for domain in domains {
+        if let Some(value) = normalize_domain(&domain) {
+            if !normalized.iter().any(|d| d == &value) {
+                normalized.push(value);
+            }
+        }
+    }
+    normalized
+}
+
+fn merge_domains(domain: Option<String>, domains: Option<Vec<String>>) -> Vec<String> {
+    let mut combined = Vec::new();
+    if let Some(list) = domains {
+        combined.extend(list);
+    }
+    if let Some(single) = domain {
+        combined.push(single);
+    }
+    normalize_domains(combined)
+}
+
+async fn validate_domains(
+    domains: &[String],
+    base_domain: &str,
+    public_ip: Option<&str>,
+) -> Result<(), String> {
+    for domain in domains {
+        validate_domain(domain, base_domain, public_ip).await?;
+    }
+    Ok(())
+}
+
 async fn validate_domain(
     domain: &str,
     base_domain: &str,
     public_ip: Option<&str>,
 ) -> Result<(), String> {
+    let base_domain = base_domain.trim().to_lowercase();
+
     if domain == base_domain {
         return Err("domain is reserved for the dashboard".to_string());
     }

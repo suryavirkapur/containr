@@ -429,8 +429,14 @@ impl DeploymentWorker {
         // remove if exists
         let _ = tokio::fs::remove_dir_all(&repo_path).await;
 
+        let (source_url, github_token) = if let Some(repo_path) = &job.repo_path {
+            (repo_path.clone(), None)
+        } else {
+            (job.github_url.clone(), job.github_token.clone())
+        };
+
         info!(
-            url = %job.github_url,
+            url = %source_url,
             branch = %job.branch,
             path = %repo_path.display(),
             "cloning repository"
@@ -438,10 +444,9 @@ impl DeploymentWorker {
 
         // clone with shallow depth using git2
         // git2 is synchronous, so we spawn_blocking
-        let url = job.github_url.clone();
+        let url = source_url;
         let branch = job.branch.clone();
         let path = repo_path.clone();
-        let github_token = job.github_token.clone();
 
         tokio::task::spawn_blocking(move || {
             let mut fetch_opts = FetchOptions::new();

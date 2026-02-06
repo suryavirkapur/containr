@@ -140,6 +140,7 @@ get /api/apps
                 "github_url": "https://github.com/user/repo",
                 "branch": "main",
                 "domain": "app.example.com",
+                "domains": ["app.example.com"],
                 "port": 3000,
                 "env_vars": [
                     {"key": "NODE_ENV", "value": "production", "secret": false},
@@ -159,6 +160,7 @@ post /api/apps
             "github_url": "https://github.com/user/repo",
             "branch": "main",
             "domain": "app.example.com",
+            "domains": ["app.example.com"],
             "port": 3000,
             "env_vars": [
                 {"key": "NODE_ENV", "value": "production", "secret": false}
@@ -285,21 +287,28 @@ get /api/apps/{id}/certificate
     get ssl certificate status for an app.
 
     response (200):
-        {
-            "domain": "app.example.com",
-            "status": "valid",
-            "expires_at": "2024-04-15t00:00:00z"
-        }
+        [
+            {
+                "domain": "app.example.com",
+                "status": "valid",
+                "expires_at": "2024-04-15t00:00:00z"
+            }
+        ]
 
-    status values: none, pending, valid, expiring_soon, expired, failed
+    status values: none, pending, valid, expiringsoon, expired, failed
 
 post /api/apps/{id}/certificate/reissue
     force reissue ssl certificate for an app.
 
+    optional body:
+        {
+            "domain": "app.example.com"
+        }
+
     response (200):
         {
             "message": "certificate reissue initiated",
-            "domain": "app.example.com"
+            "domains": ["app.example.com"]
         }
 
 --------------------------------------------------------------------------------
@@ -611,6 +620,46 @@ post /webhooks/github
         payload url: https://your-domain.com/webhooks/github
         content type: application/json
         secret: your webhook_secret from config
+
+--------------------------------------------------------------------------------
+git push
+--------------------------------------------------------------------------------
+
+get /api/apps/{id}/git
+    get git push info for an app.
+
+    response (200):
+        {
+            "enabled": true,
+            "repo": "{app-id}.git",
+            "path": "/git/{app-id}.git",
+            "http_url": "https://your-domain.com/git/{app-id}.git",
+            "username": "znskr"
+        }
+
+post /api/apps/{id}/git
+    enable git push and return a deploy token.
+
+    response (200):
+        {
+            "enabled": true,
+            "repo": "{app-id}.git",
+            "path": "/git/{app-id}.git",
+            "http_url": "https://your-domain.com/git/{app-id}.git",
+            "username": "znskr",
+            "token": "your-deploy-token"
+        }
+
+post /api/apps/{id}/git/rotate
+    rotate git deploy token.
+
+    response (200): same as enable.
+
+git remote url:
+    https://your-domain.com/git/{app-id}.git
+
+auth:
+    use http basic auth with username "znskr" and the token returned by enable/rotate.
 
 --------------------------------------------------------------------------------
 health
