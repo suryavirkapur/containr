@@ -4,7 +4,7 @@ use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
 use crate::handlers::{
-    apps, auth, certificates, containers, databases, deployments, github_app, health, queues,
+    apps, auth, certificates, containers, databases, deployments, git, github_app, health, queues,
     settings, storage, system,
 };
 
@@ -23,6 +23,7 @@ use crate::handlers::{
         (name = "apps", description = "application management"),
         (name = "deployments", description = "deployment management"),
         (name = "certificates", description = "ssl certificate management"),
+        (name = "git", description = "git push management"),
         (name = "databases", description = "managed databases"),
         (name = "queues", description = "managed queues"),
         (name = "storage", description = "s3-compatible storage buckets"),
@@ -63,6 +64,10 @@ use crate::handlers::{
         deployments::get_deployment,
         deployments::trigger_deployment,
         deployments::get_deployment_logs,
+        // git
+        git::get_git_info,
+        git::enable_git,
+        git::rotate_git_token,
         // certificates
         certificates::get_certificate,
         certificates::reissue_certificate,
@@ -132,9 +137,14 @@ use crate::handlers::{
             apps::AppMetricsResponse,
             // deployments
             deployments::DeploymentResponse,
+            deployments::DeploymentTriggerRequest,
             // certificates
             certificates::CertificateResponse,
+            certificates::ReissueRequest,
             certificates::ReissueResponse,
+            // git
+            git::GitInfoResponse,
+            git::GitEnableResponse,
             // databases
             databases::CreateDatabaseRequest,
             databases::DatabaseResponse,

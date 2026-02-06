@@ -153,7 +153,7 @@ impl Database {
         for result in tree.iter() {
             let (_, value) = result?;
             let app: App = serde_json::from_slice(&value)?;
-            if app.domain.as_deref() == Some(domain) {
+            if app.domain.as_deref() == Some(domain) || app.domains.iter().any(|d| d == domain) {
                 return Ok(Some(app));
             }
         }

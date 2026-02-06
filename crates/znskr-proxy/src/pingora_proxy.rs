@@ -252,7 +252,7 @@ impl ProxyHttp for ZnskrProxy {
             return Ok(true);
         }
 
-        if host == self.base_domain && path.starts_with("/api") {
+        if host == self.base_domain && (path.starts_with("/api") || path.starts_with("/git")) {
             ctx.upstream_addr = Some(self.api_upstream.clone());
             ctx.upstream_selection = None;
             return Ok(false);

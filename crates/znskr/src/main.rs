@@ -504,8 +504,8 @@ async fn refresh_routes_for_app(
 
     if upstreams.is_empty() {
         routes.remove_route(&subdomain);
-        if let Some(ref custom_domain) = app.domain {
-            routes.remove_route(custom_domain);
+        for custom_domain in app.custom_domains() {
+            routes.remove_route(&custom_domain);
         }
         tracing::info!(subdomain = %subdomain, "removed routes (no active upstreams)");
         return;
@@ -519,11 +519,11 @@ async fn refresh_routes_for_app(
     });
     tracing::info!(subdomain = %subdomain, "refreshed subdomain route for app");
 
-    // also register custom domain if set
-    if let Some(ref custom_domain) = app.domain {
+    // also register custom domains if set
+    for custom_domain in app.custom_domains() {
         routes.add_route(znskr_proxy::routes::Route {
             domain: custom_domain.clone(),
-            upstreams,
+            upstreams: upstreams.clone(),
             ssl_enabled: true,
             algorithm,
         });

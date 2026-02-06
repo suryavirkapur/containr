@@ -1,7 +1,7 @@
 //! axum server setup
 
 use axum::{
-    routing::{delete, get, post, put},
+    routing::{any, delete, get, post, put},
     Router,
 };
 use axum::http::{
@@ -17,7 +17,7 @@ use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
 use crate::github::DeploymentJob;
-use crate::handlers::{apps, auth, certificates, containers, databases, deployments, github_app, github_repos, health, queues, settings, storage, system, webhooks, websocket};
+use crate::handlers::{apps, auth, certificates, containers, databases, deployments, git, github_app, github_repos, health, queues, settings, storage, system, webhooks, websocket};
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
 use znskr_common::{Config, Database, Result};
@@ -103,6 +103,10 @@ pub async fn run_server(
         .route("/api/apps/{id}", put(apps::update_app))
         .route("/api/apps/{id}", delete(apps::delete_app))
         .route("/api/apps/{id}/metrics", get(apps::get_app_metrics))
+        // git push
+        .route("/api/apps/{id}/git", get(git::get_git_info))
+        .route("/api/apps/{id}/git", post(git::enable_git))
+        .route("/api/apps/{id}/git/rotate", post(git::rotate_git_token))
         // deployments
         .route(
             "/api/apps/{id}/deployments",
@@ -180,6 +184,8 @@ pub async fn run_server(
         .route("/api/buckets/{id}", delete(storage::delete_bucket))
         // webhooks
         .route("/webhooks/github", post(webhooks::github_webhook))
+        // git smart http
+        .route("/git/*path", any(git::git_http))
         // static files fallback (spa)
         .fallback(crate::static_files::serve_static)
         // middleware

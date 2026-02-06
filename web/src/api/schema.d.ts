@@ -127,6 +127,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/apps/{id}/git": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** get git push info for an app */
+        get: operations["get_git_info"];
+        put?: never;
+        /** enable git push for an app */
+        post: operations["enable_git"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/apps/{id}/git/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** rotate git deploy token */
+        post: operations["rotate_git_token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/apps/{id}/metrics": {
         parameters: {
             query?: never;
@@ -789,6 +824,8 @@ export interface components {
             created_at: string;
             /** @description custom domain */
             domain?: string | null;
+            /** @description custom domains */
+            domains: string[];
             /** @description environment variables */
             env_vars: components["schemas"]["EnvVarResponse"][];
             /** @description github repository url */
@@ -876,6 +913,8 @@ export interface components {
             branch?: string | null;
             /** @description custom domain */
             domain?: string | null;
+            /** @description custom domains */
+            domains?: string[] | null;
             /** @description environment variables (shared across all services) */
             env_vars?: components["schemas"]["EnvVarRequest"][] | null;
             /** @description github repository url */
@@ -976,6 +1015,15 @@ export interface components {
             started_at?: string | null;
             status: string;
         };
+        /** @description deployment trigger request (optional) */
+        DeploymentTriggerRequest: {
+            /** @description branch to deploy */
+            branch?: string | null;
+            /** @description commit message to record */
+            commit_message?: string | null;
+            /** @description commit sha to record */
+            commit_sha?: string | null;
+        };
         /** @description env var in request */
         EnvVarRequest: {
             /** @description variable key */
@@ -1006,6 +1054,29 @@ export interface components {
         /** @description expose request */
         ExposeRequest: {
             enabled: boolean;
+        };
+        /** @description git enable response */
+        GitEnableResponse: {
+            enabled: boolean;
+            http_url?: string | null;
+            path: string;
+            repo: string;
+            /** @description deploy token (only returned on enable/rotate) */
+            token: string;
+            username: string;
+        };
+        /** @description git info response */
+        GitInfoResponse: {
+            /** @description whether git push is enabled */
+            enabled: boolean;
+            /** @description http url for git push (if base domain configured) */
+            http_url?: string | null;
+            /** @description http path for git push */
+            path: string;
+            /** @description repo name (e.g. <uuid>.git) */
+            repo: string;
+            /** @description http basic username */
+            username: string;
         };
         /** @description github app status response */
         GithubAppStatusResponse: {
@@ -1087,9 +1158,14 @@ export interface components {
             /** @description password (min 8 characters) */
             password: string;
         };
+        /** @description reissue request */
+        ReissueRequest: {
+            /** @description specific domain to reissue (optional) */
+            domain?: string | null;
+        };
         /** @description Reissue certificate response */
         ReissueResponse: {
-            domain: string;
+            domains: string[];
             message: string;
         };
         /** @description repo info */
@@ -1210,6 +1286,8 @@ export interface components {
             branch?: string | null;
             /** @description new domain */
             domain?: string | null;
+            /** @description new domains */
+            domains?: string[] | null;
             /** @description updated env vars */
             env_vars?: components["schemas"]["EnvVarRequest"][] | null;
             /** @description new github url */
@@ -1396,7 +1474,12 @@ export interface operations {
     };
     get_deployment_logs: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description lines limit */
+                limit?: number;
+                /** @description lines offset */
+                offset?: number;
+            };
             header?: never;
             path: {
                 /** @description app id */
@@ -1625,7 +1708,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CertificateResponse"];
+                    "application/json": components["schemas"]["CertificateResponse"][];
                 };
             };
             /** @description unauthorized */
@@ -1667,7 +1750,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReissueRequest"];
+            };
+        };
         responses: {
             /** @description certificate reissue initiated */
             200: {
@@ -1785,7 +1872,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeploymentTriggerRequest"];
+            };
+        };
         responses: {
             /** @description deployment triggered */
             201: {
@@ -1815,6 +1906,165 @@ export interface operations {
                 };
             };
             /** @description app not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_git_info: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description app id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description git info */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitInfoResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    enable_git: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description app id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description git enabled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitEnableResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description already enabled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotate_git_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description app id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description git token rotated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitEnableResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
             404: {
                 headers: {
                     [name: string]: unknown;

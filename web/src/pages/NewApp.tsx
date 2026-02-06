@@ -59,7 +59,7 @@ const NewApp: Component = () => {
   const [name, setName] = createSignal("");
   const [githubUrl, setGithubUrl] = createSignal("");
   const [branch, setBranch] = createSignal("main");
-  const [domain, setDomain] = createSignal("");
+  const [domainsText, setDomainsText] = createSignal("");
   const [useMultiService, setUseMultiService] = createSignal(false);
   const [port, setPort] = createSignal("8080");
   const [services, setServices] = createSignal<Service[]>([]);
@@ -68,6 +68,14 @@ const NewApp: Component = () => {
   const [useRepoPicker, setUseRepoPicker] = createSignal(true);
   const [repoFilter, setRepoFilter] = createSignal("");
   const navigate = useNavigate();
+
+  const parseDomains = (value: string) => {
+    const entries = value
+      .split(/[\n,]+/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    return Array.from(new Set(entries));
+  };
 
   // github resources
   const [githubApp] = createResource(fetchGithubApp);
@@ -117,12 +125,14 @@ const NewApp: Component = () => {
     setLoading(true);
 
     try {
+      const domains = parseDomains(domainsText());
       // build request body
       const body: any = {
         name: name(),
         github_url: githubUrl(),
         branch: branch() || "main",
-        domain: domain() || null,
+        domains,
+        domain: domains[0] || null,
       };
 
       if (useMultiService() && services().length > 0) {
@@ -293,21 +303,21 @@ const NewApp: Component = () => {
             />
           </div>
 
-          {/* domain */}
+          {/* domains */}
           <div>
             <label class="block text-neutral-600 text-sm mb-2">
-              custom domain <span class="text-neutral-400">(optional)</span>
+              custom domains <span class="text-neutral-400">(optional)</span>
             </label>
-            <input
-              type="text"
-              value={domain()}
-              onInput={(e) => setDomain(e.currentTarget.value)}
-              class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-              placeholder="app.example.com"
+            <textarea
+              rows={3}
+              value={domainsText()}
+              onInput={(e) => setDomainsText(e.currentTarget.value)}
+              class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm font-mono"
+              placeholder="app.example.com&#10;www.app.example.com"
             />
             <p class="mt-1.5 text-xs text-neutral-400">
-              tls is provisioned automatically and http will be refused until
-              ready
+              one per line or comma-separated. tls is provisioned automatically
+              and http will be refused until ready
             </p>
           </div>
 

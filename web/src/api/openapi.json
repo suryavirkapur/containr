@@ -217,6 +217,26 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "lines limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "lines offset",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         ],
         "responses": {
@@ -509,7 +529,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CertificateResponse"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CertificateResponse"
+                  }
                 }
               }
             }
@@ -571,6 +594,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReissueRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "certificate reissue initiated",
@@ -728,6 +761,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeploymentTriggerRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "201": {
             "description": "deployment triggered",
@@ -761,6 +804,218 @@
           },
           "404": {
             "description": "app not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/apps/{id}/git": {
+      "get": {
+        "tags": [
+          "git"
+        ],
+        "summary": "get git push info for an app",
+        "operationId": "get_git_info",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "git info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitInfoResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "git"
+        ],
+        "summary": "enable git push for an app",
+        "operationId": "enable_git",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "git enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitEnableResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "already enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/apps/{id}/git/rotate": {
+      "post": {
+        "tags": [
+          "git"
+        ],
+        "summary": "rotate git deploy token",
+        "operationId": "rotate_git_token",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "git token rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitEnableResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -3235,6 +3490,7 @@
           "name",
           "github_url",
           "branch",
+          "domains",
           "port",
           "env_vars",
           "services",
@@ -3255,6 +3511,13 @@
               "null"
             ],
             "description": "custom domain"
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "custom domains"
           },
           "env_vars": {
             "type": "array",
@@ -3530,6 +3793,16 @@
               "null"
             ],
             "description": "custom domain"
+          },
+          "domains": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "custom domains"
           },
           "env_vars": {
             "type": [
@@ -3816,6 +4089,33 @@
           }
         }
       },
+      "DeploymentTriggerRequest": {
+        "type": "object",
+        "description": "deployment trigger request (optional)",
+        "properties": {
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "branch to deploy"
+          },
+          "commit_message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "commit message to record"
+          },
+          "commit_sha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "commit sha to record"
+          }
+        }
+      },
       "EnvVarRequest": {
         "type": "object",
         "description": "env var in request",
@@ -3898,6 +4198,76 @@
         "properties": {
           "enabled": {
             "type": "boolean"
+          }
+        }
+      },
+      "GitEnableResponse": {
+        "type": "object",
+        "description": "git enable response",
+        "required": [
+          "enabled",
+          "repo",
+          "path",
+          "username",
+          "token"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "http_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "description": "deploy token (only returned on enable/rotate)"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "GitInfoResponse": {
+        "type": "object",
+        "description": "git info response",
+        "required": [
+          "enabled",
+          "repo",
+          "path",
+          "username"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "whether git push is enabled"
+          },
+          "http_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "http url for git push (if base domain configured)"
+          },
+          "path": {
+            "type": "string",
+            "description": "http path for git push"
+          },
+          "repo": {
+            "type": "string",
+            "description": "repo name (e.g. <uuid>.git)"
+          },
+          "username": {
+            "type": "string",
+            "description": "http basic username"
           }
         }
       },
@@ -4128,16 +4498,32 @@
           }
         }
       },
+      "ReissueRequest": {
+        "type": "object",
+        "description": "reissue request",
+        "properties": {
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "specific domain to reissue (optional)"
+          }
+        }
+      },
       "ReissueResponse": {
         "type": "object",
         "description": "Reissue certificate response",
         "required": [
           "message",
-          "domain"
+          "domains"
         ],
         "properties": {
-          "domain": {
-            "type": "string"
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "message": {
             "type": "string"
@@ -4441,6 +4827,16 @@
             ],
             "description": "new domain"
           },
+          "domains": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "new domains"
+          },
           "env_vars": {
             "type": [
               "array",
@@ -4602,6 +4998,10 @@
     {
       "name": "certificates",
       "description": "ssl certificate management"
+    },
+    {
+      "name": "git",
+      "description": "git push management"
     },
     {
       "name": "databases",

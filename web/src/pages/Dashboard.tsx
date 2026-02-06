@@ -125,10 +125,23 @@ const Dashboard: Component = () => {
                     </div>
 
                     <div class="flex items-center gap-6 text-sm text-neutral-500">
-                      {/* domain */}
-                      <Show when={app.domain}>
+                      {/* domains */}
+                      <Show
+                        when={
+                          (app.domains && app.domains.length > 0) || app.domain
+                        }
+                      >
                         <span class="text-neutral-900 font-medium">
-                          {app.domain}
+                          {(() => {
+                            const domains =
+                              app.domains && app.domains.length > 0
+                                ? app.domains
+                                : app.domain
+                                  ? [app.domain]
+                                  : [];
+                            if (domains.length <= 1) return domains[0];
+                            return `${domains[0]} +${domains.length - 1}`;
+                          })()}
                         </span>
                       </Show>
 

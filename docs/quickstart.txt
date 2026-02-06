@@ -7,6 +7,7 @@ prerequisites
 -------------
 - linux server (ubuntu 22.04+ recommended)
 - docker installed and running
+- git installed (for git push deployments)
 - domain name pointing to your server
 - ports 80 and 443 open
 
@@ -110,6 +111,7 @@ create an app:
         "github_url": "https://github.com/user/repo",
         "branch": "main",
         "domain": "app.your-domain.com",
+        "domains": ["app.your-domain.com"],
         "port": 3000
       }'
 
@@ -122,6 +124,18 @@ your app is now deploying. check status:
 
     curl http://localhost:3000/api/apps/APP_ID/deployments \
       -H "authorization: bearer YOUR_JWT_TOKEN"
+
+optional: enable git push
+-------------------------
+
+    # enable git push and get token
+    curl -X POST http://localhost:3000/api/apps/APP_ID/git \
+      -H "authorization: bearer YOUR_JWT_TOKEN"
+
+    # add remote and push
+    git remote add znskr https://your-domain.com/git/APP_ID.git
+    # username: znskr, password: token from enable response
+    git push znskr main
 
 step 7: access dashboard
 ------------------------

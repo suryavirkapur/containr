@@ -26,6 +26,7 @@ features
 --------
 
 - docker container deployment from github repos
+- git push deployments (smart http)
 - automatic containerfile/dockerfile detection
 - pingora reverse proxy with acme ssl
 - websocket passthrough support
@@ -39,6 +40,7 @@ features
 - managed queues (redis, rabbitmq)
 - storage buckets
 - certificate management and renewal
+- multiple custom domains per app
 
 system requirements
 -------------------
@@ -47,6 +49,7 @@ system requirements
 - docker (containerd runtime)
 - rust 1.75+
 - bun (for frontend development)
+- git (for git push deployments)
 
 ports:
 - 80 (http proxy)
@@ -167,6 +170,11 @@ deployments:
   POST /api/apps/{id}/deployments       trigger deployment
   GET  /api/apps/{id}/deployments/{id}  get deployment
   GET  /api/apps/{id}/logs/ws           websocket logs
+
+git push:
+  GET  /api/apps/{id}/git               get git push info
+  POST /api/apps/{id}/git               enable git push (returns token)
+  POST /api/apps/{id}/git/rotate        rotate git token
 
 certificates:
   GET  /api/apps/{id}/certificate         ssl status

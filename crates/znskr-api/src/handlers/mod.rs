@@ -6,6 +6,7 @@ pub mod certificates;
 pub mod containers;
 pub mod databases;
 pub mod deployments;
+pub mod git;
 pub mod github_app;
 pub mod github_repos;
 pub mod health;
