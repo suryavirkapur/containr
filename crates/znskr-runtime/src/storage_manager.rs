@@ -6,7 +6,7 @@ use aws_sdk_s3::{
     config::{Credentials, Region},
     Client, Config,
 };
-use tracing::{info, error};
+use tracing::{error, info};
 
 use crate::error::{ClientError, Result};
 use znskr_common::managed_services::StorageBucket;
@@ -60,7 +60,8 @@ impl StorageManager {
         info!("deleting bucket: {}", bucket_name);
 
         // first, list and delete all objects
-        let objects = self.client
+        let objects = self
+            .client
             .list_objects_v2()
             .bucket(bucket_name)
             .send()
@@ -100,7 +101,8 @@ impl StorageManager {
 
     /// lists all buckets
     pub async fn list_buckets(&self) -> Result<Vec<String>> {
-        let resp = self.client
+        let resp = self
+            .client
             .list_buckets()
             .send()
             .await
@@ -125,7 +127,10 @@ impl StorageManager {
                 if err_str.contains("404") || err_str.contains("NoSuchBucket") {
                     Ok(false)
                 } else {
-                    Err(ClientError::Operation(format!("failed to check bucket: {}", e)))
+                    Err(ClientError::Operation(format!(
+                        "failed to check bucket: {}",
+                        e
+                    )))
                 }
             }
         }
@@ -133,7 +138,8 @@ impl StorageManager {
 
     /// gets bucket size in bytes (approximate)
     pub async fn get_bucket_size(&self, bucket_name: &str) -> Result<u64> {
-        let objects = self.client
+        let objects = self
+            .client
             .list_objects_v2()
             .bucket(bucket_name)
             .send()

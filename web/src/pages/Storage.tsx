@@ -1,23 +1,16 @@
 import { Component, createResource, createSignal, For, Show } from "solid-js";
 import { A } from "@solidjs/router";
-// TODO: migrate to typed client when /api/buckets endpoints are added to openapi schema
-import { apiDelete, apiGet, apiPost } from "../api/client";
+import { api, components } from "../api";
 
-interface Bucket {
-  id: string;
-  name: string;
-  access_key: string;
-  secret_key: string;
-  endpoint: string;
-  size_bytes: number;
-  created_at: string;
-}
+type Bucket = components["schemas"]["BucketResponse"];
 
 /**
  * fetches user's storage buckets
  */
 const fetchBuckets = async (): Promise<Bucket[]> => {
-  return apiGet<Bucket[]>("/api/buckets");
+  const { data, error } = await api.GET("/api/buckets");
+  if (error) throw error;
+  return data;
 };
 
 /**
@@ -40,13 +33,19 @@ const Storage: Component = () => {
     setCreating(true);
 
     try {
-      const bucket = await apiPost<Bucket>("/api/buckets", { name: name() });
+      const { data: bucket, error: createError } = await api.POST(
+        "/api/buckets",
+        {
+          body: { name: name() },
+        },
+      );
+      if (createError) throw createError;
       setNewBucket(bucket); // show credentials
       setShowCreate(false);
       setName("");
       refetch();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setCreating(false);
     }
@@ -55,8 +54,15 @@ const Storage: Component = () => {
   const handleDelete = async (id: string) => {
     if (!confirm("delete this bucket? all files will be lost.")) return;
 
-    await apiDelete(`/api/buckets/${id}`);
-    refetch();
+    try {
+      const { error } = await api.DELETE("/api/buckets/{id}", {
+        params: { path: { id } },
+      });
+      if (error) throw error;
+      refetch();
+    } catch (err) {
+      setError((err as Error).message);
+    }
   };
 
   const copyToClipboard = (field: string, text: string) => {

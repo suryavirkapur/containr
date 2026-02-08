@@ -11,10 +11,10 @@ use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
+use crate::security::{decrypt_value, encrypt_value};
 use crate::state::AppState;
 use znskr_common::managed_services::StorageBucket;
 use znskr_runtime::StorageManager;
-use crate::security::{decrypt_value, encrypt_value};
 
 /// bucket creation request
 #[derive(Debug, Deserialize, ToSchema)]
@@ -165,21 +165,17 @@ pub async fn create_bucket(
     let bucket = StorageBucket::new(user_id, req.name.clone(), endpoint.clone());
 
     // create bucket in rustfs via s3 api
-    let storage_mgr = StorageManager::new(
-        &endpoint,
-        &bucket.access_key,
-        &bucket.secret_key,
-    )
-    .await
-    .map_err(|e| {
-        tracing::error!("failed to connect to rustfs: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("storage service unavailable: {}", e),
-            }),
-        )
-    })?;
+    let storage_mgr = StorageManager::new(&endpoint, &bucket.access_key, &bucket.secret_key)
+        .await
+        .map_err(|e| {
+            tracing::error!("failed to connect to rustfs: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("storage service unavailable: {}", e),
+                }),
+            )
+        })?;
 
     storage_mgr.create_bucket(&bucket).await.map_err(|e| {
         tracing::error!("failed to create bucket: {}", e);
@@ -192,19 +188,23 @@ pub async fn create_bucket(
     })?;
 
     // encrypt secret key before storing
-    let encrypted_secret = encrypt_value(&*state.config.read().await, &bucket.secret_key).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("encryption failed: {}", e),
-            }),
-        )
-    })?;
+    let encrypted_secret =
+        encrypt_value(&*state.config.read().await, &bucket.secret_key).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("encryption failed: {}", e),
+                }),
+            )
+        })?;
 
     // save bucket with encrypted secret
     let mut bucket_to_save = bucket.clone();
     bucket_to_save.secret_key = encrypted_secret;
-    state.db.save_storage_bucket(&bucket_to_save).map_err(internal_error)?;
+    state
+        .db
+        .save_storage_bucket(&bucket_to_save)
+        .map_err(internal_error)?;
 
     // return with unmasked secret key for first-time display
     Ok((

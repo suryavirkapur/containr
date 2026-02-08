@@ -3,7 +3,7 @@
 //! processes deployment jobs from the queue, cloning repos,
 //! building images, and starting containers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use git2::build::RepoBuilder;
@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::docker::{DockerContainerConfig, DockerContainerManager};
 use crate::image::ImageManager;
 use crate::route_updates::ProxyRouteUpdate;
-use znskr_common::models::{Deployment, DeploymentStatus};
+use znskr_common::models::{Deployment, DeploymentStatus, RolloutStrategy};
 use znskr_common::Database;
 
 // use shared type from common
@@ -96,6 +96,7 @@ impl DeploymentWorker {
         while let Some(job) = rx.recv().await {
             info!(
                 app_id = %job.app_id,
+                deployment_id = %job.deployment_id,
                 commit = %job.commit_sha,
                 "processing deployment job"
             );
@@ -108,9 +109,12 @@ impl DeploymentWorker {
                 );
 
                 // update deployment status to failed
-                if let Ok(Some(mut deployment)) = self.db.get_latest_deployment(job.app_id) {
+                if let Ok(Some(mut deployment)) = self.db.get_deployment(job.deployment_id) {
                     deployment.status = DeploymentStatus::Failed;
-                    let _ = self.db.append_deployment_log(deployment.id, &format!("error: {}", e));
+                    deployment.finished_at = Some(chrono::Utc::now());
+                    let _ = self
+                        .db
+                        .append_deployment_log(deployment.id, &format!("error: {}", e));
                     let _ = self.db.save_deployment(&deployment);
                 }
             }
@@ -121,36 +125,66 @@ impl DeploymentWorker {
 
     /// processes a single deployment job
     async fn process_job(&self, job: &DeploymentJob) -> anyhow::Result<()> {
-        // get the latest deployment for this app
+        // get the deployment referenced by this job
         let deployment = self
             .db
-            .get_latest_deployment(job.app_id)?
+            .get_deployment(job.deployment_id)?
             .ok_or_else(|| anyhow::anyhow!("deployment not found"))?;
 
-        let deployment_id = deployment.id;
+        if deployment.app_id != job.app_id {
+            return Err(anyhow::anyhow!("deployment app mismatch"));
+        }
 
-        // update status to cloning
-        self.update_status(&deployment, DeploymentStatus::Cloning)?;
+        let image_name = if let Some(source_deployment_id) = job.rollback_from_deployment_id {
+            let source = self
+                .db
+                .get_deployment(source_deployment_id)?
+                .ok_or_else(|| anyhow::anyhow!("rollback source deployment not found"))?;
 
-        // clone repository
-        let repo_path = self.clone_repo(job).await?;
+            if source.app_id != job.app_id {
+                return Err(anyhow::anyhow!("rollback source does not belong to app"));
+            }
 
-        // update status to building
-        self.update_status(&deployment, DeploymentStatus::Building)?;
-
-        // build docker image
-        let commit_prefix = if job.commit_sha.len() >= 8 {
-            &job.commit_sha[..8]
+            let image = source
+                .image_id
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("rollback source missing image artifact"))?;
+            let _ = self.db.append_deployment_log(
+                deployment.id,
+                &format!(
+                    "rollback: using image artifact from deployment {}",
+                    source.id
+                ),
+            );
+            image
         } else {
-            &job.commit_sha
-        };
-        let image_name = format!("znskr/{}:{}", job.app_id, commit_prefix);
+            // update status to cloning
+            self.update_status(&deployment, DeploymentStatus::Cloning)?;
 
-        self.image_manager
-            .build_image_with_logs(&image_name, repo_path.to_str().unwrap(), None, |line| {
-                let _ = self.db.append_deployment_log(deployment_id, line);
-            })
-            .await?;
+            // clone repository
+            let repo_path = self.clone_repo(job).await?;
+
+            // update status to building
+            self.update_status(&deployment, DeploymentStatus::Building)?;
+
+            // build docker image
+            let commit_prefix = if job.commit_sha.len() >= 8 {
+                &job.commit_sha[..8]
+            } else {
+                &job.commit_sha
+            };
+            let image_name = format!("znskr/{}:{}", job.app_id, commit_prefix);
+
+            self.image_manager
+                .build_image_with_logs(&image_name, repo_path.to_str().unwrap(), None, |line| {
+                    let _ = self.db.append_deployment_log(deployment.id, line);
+                })
+                .await?;
+
+            // cleanup repo directory
+            let _ = tokio::fs::remove_dir_all(&repo_path).await;
+            image_name
+        };
 
         // update status to starting
         self.update_status(&deployment, DeploymentStatus::Starting)?;
@@ -174,66 +208,32 @@ impl DeploymentWorker {
         // check if app uses new multi-service model
         if app.has_services() {
             // multi-container deployment
-            self.deploy_services(&app, &deployment, &network_name, &image_name, &env_vars).await?;
+            self.deploy_services(
+                &app,
+                &deployment,
+                &network_name,
+                &image_name,
+                &env_vars,
+                job.rollout_strategy,
+            )
+            .await?;
         } else {
-            // legacy single-container deployment (backward compat)
-            env_vars.insert("PORT".to_string(), app.port.to_string());
-
-            // generate unique container id for blue/green deployment
-            // format: znskr-{app_id}-{short_deployment_id}
-            let short_id = deployment.id.to_string().split('-').next().unwrap_or("0").to_string();
-            let container_id = format!("znskr-{}-{}", job.app_id, short_id);
-
-            // start new container using Docker
-            let config = DockerContainerConfig {
-                id: container_id.clone(),
-                image: image_name,
-                env_vars,
-                port: app.port,
-                memory_limit: Some(512 * 1024 * 1024), // 512mb
-                cpu_limit: Some(1.0),
-                network: Some(network_name),
-                health_check: None,
-                restart_policy: "unless-stopped".to_string(),
-            };
-
-            let container_info = self.docker_manager.create_container(config).await?;
-
-            // wait for container to be healthy (basic check for running state)
-            // in future, we should use the configured health check from app.services if available
-            // for legacy apps, we just wait a bit to ensure it doesn't crash immediately
-            info!(container_id = %container_info.id, "waiting for container to stabilize");
-            if !self.docker_manager.wait_for_healthy(&container_info.id, 10).await? {
-                 // if it failed to start/stabilize, cleanup and fail
-                 let _ = self.docker_manager.stop_container(&container_info.id).await;
-                 let _ = self.docker_manager.remove_container(&container_info.id).await;
-                 return Err(anyhow::anyhow!("container failed to stabilize"));
-            }
-
-            // update deployment with container info - THIS SWAPS TRAFFIC effectively
-            // once this is saved, the proxy will pick up this new container_id on next refresh
-            let mut updated_deployment = deployment.clone();
-            updated_deployment.status = DeploymentStatus::Running;
-            updated_deployment.container_id = Some(container_info.id.clone());
-            updated_deployment.started_at = Some(chrono::Utc::now());
-            self.db.save_deployment(&updated_deployment)?;
-
-            // notify proxy to update routes to point to new container
-            self.send_proxy_refresh(app.id).await;
-
-            // cleanup old containers (Blue/Green cleanup)
-            // we remove any container for this app that is NOT the new one
-            self.cleanup_old_containers(job.app_id, &container_info.id).await;
+            self.deploy_legacy(
+                &app,
+                &deployment,
+                &network_name,
+                &image_name,
+                &env_vars,
+                job.rollout_strategy,
+            )
+            .await?;
         }
 
         info!(
             app_id = %job.app_id,
-            deployment_id = %deployment_id,
+            deployment_id = %deployment.id,
             "deployment completed successfully"
         );
-
-        // cleanup repo directory
-        let _ = tokio::fs::remove_dir_all(&repo_path).await;
 
         Ok(())
     }
@@ -246,13 +246,31 @@ impl DeploymentWorker {
         network_name: &str,
         image_name: &str,
         shared_env_vars: &HashMap<String, String>,
+        rollout_strategy: RolloutStrategy,
     ) -> anyhow::Result<()> {
-        use znskr_common::models::{ServiceDeployment, RestartPolicy};
+        use znskr_common::models::{RestartPolicy, ServiceDeployment};
 
         // topological sort services by dependencies
         let sorted_services = self.topological_sort_services(&app.services)?;
+        let previous_running = self.get_previous_running_deployment(app.id, deployment.id)?;
+        let mut old_containers: HashMap<(uuid::Uuid, u32), String> = HashMap::new();
+        if let Some(prev) = previous_running {
+            for sd in prev.service_deployments {
+                if let Some(container_id) = sd.container_id {
+                    old_containers.insert((sd.service_id, sd.replica_index), container_id);
+                }
+            }
+        }
 
         let mut service_deployments = Vec::new();
+        let mut new_container_ids = HashSet::new();
+        let short_id = deployment
+            .id
+            .to_string()
+            .split('-')
+            .next()
+            .unwrap_or("0")
+            .to_string();
 
         for service in sorted_services {
             info!(
@@ -263,11 +281,17 @@ impl DeploymentWorker {
 
             // deploy each replica
             for replica_idx in 0..service.replicas {
-                let container_id = format!("znskr-{}-{}-{}", app.id, service.name, replica_idx);
-
-                // stop existing container if running
-                let _ = self.docker_manager.stop_container(&container_id).await;
-                let _ = self.docker_manager.remove_container(&container_id).await;
+                let container_id = format!(
+                    "znskr-{}-{}-{}-{}",
+                    app.id, service.name, replica_idx, short_id
+                );
+                let old_container = old_containers.get(&(service.id, replica_idx)).cloned();
+                if matches!(rollout_strategy, RolloutStrategy::StopFirst) {
+                    if let Some(old) = old_container.as_deref() {
+                        let _ = self.docker_manager.stop_container(old).await;
+                        let _ = self.docker_manager.remove_container(old).await;
+                    }
+                }
 
                 // merge shared env vars with service-specific PORT
                 let mut env_vars = shared_env_vars.clone();
@@ -276,18 +300,20 @@ impl DeploymentWorker {
                 env_vars.insert("REPLICA_INDEX".to_string(), replica_idx.to_string());
 
                 // convert health check if configured
-                let health_check = service.health_check.as_ref().map(|hc| {
-                    crate::docker::HealthCheckCommand {
-                        cmd: vec![
-                            "curl".to_string(),
-                            "-f".to_string(),
-                            format!("http://localhost:{}{}", service.port, hc.path),
-                        ],
-                        interval_secs: hc.interval_secs,
-                        timeout_secs: hc.timeout_secs,
-                        retries: hc.retries,
-                    }
-                });
+                let health_check =
+                    service
+                        .health_check
+                        .as_ref()
+                        .map(|hc| crate::docker::HealthCheckCommand {
+                            cmd: vec![
+                                "curl".to_string(),
+                                "-f".to_string(),
+                                format!("http://localhost:{}{}", service.port, hc.path),
+                            ],
+                            interval_secs: hc.interval_secs,
+                            timeout_secs: hc.timeout_secs,
+                            retries: hc.retries,
+                        });
 
                 // convert restart policy
                 let restart_policy = match service.restart_policy {
@@ -319,7 +345,19 @@ impl DeploymentWorker {
 
                 // wait for dependencies to be healthy before continuing
                 if service.health_check.is_some() {
-                    let _ = self.docker_manager.wait_for_healthy(&container_id, 60).await;
+                    if !self
+                        .docker_manager
+                        .wait_for_healthy(&container_id, 60)
+                        .await?
+                    {
+                        let _ = self.docker_manager.stop_container(&container_id).await;
+                        let _ = self.docker_manager.remove_container(&container_id).await;
+                        return Err(anyhow::anyhow!(
+                            "service {} replica {} failed health check",
+                            service.name,
+                            replica_idx
+                        ));
+                    }
                 }
 
                 // create service deployment record
@@ -330,8 +368,7 @@ impl DeploymentWorker {
 
                 self.db.save_service_deployment(&sd)?;
                 service_deployments.push(sd);
-
-                self.send_proxy_refresh(app.id).await;
+                new_container_ids.insert(container_id);
             }
         }
 
@@ -339,10 +376,110 @@ impl DeploymentWorker {
         let mut updated_deployment = deployment.clone();
         updated_deployment.status = znskr_common::models::DeploymentStatus::Running;
         updated_deployment.service_deployments = service_deployments;
+        updated_deployment.image_id = Some(image_name.to_string());
         updated_deployment.started_at = Some(chrono::Utc::now());
+        updated_deployment.finished_at = Some(chrono::Utc::now());
         self.db.save_deployment(&updated_deployment)?;
+        self.send_proxy_refresh(app.id).await;
+
+        if matches!(rollout_strategy, RolloutStrategy::StartFirst) {
+            for old in old_containers.values() {
+                if !new_container_ids.contains(old) {
+                    let _ = self.docker_manager.stop_container(old).await;
+                    let _ = self.docker_manager.remove_container(old).await;
+                }
+            }
+        }
 
         Ok(())
+    }
+
+    async fn deploy_legacy(
+        &self,
+        app: &znskr_common::models::App,
+        deployment: &Deployment,
+        network_name: &str,
+        image_name: &str,
+        shared_env_vars: &HashMap<String, String>,
+        rollout_strategy: RolloutStrategy,
+    ) -> anyhow::Result<()> {
+        let mut env_vars = shared_env_vars.clone();
+        env_vars.insert("PORT".to_string(), app.port.to_string());
+
+        let previous_running = self.get_previous_running_deployment(app.id, deployment.id)?;
+        let previous_container_id = previous_running.and_then(|d| d.container_id);
+        if matches!(rollout_strategy, RolloutStrategy::StopFirst) {
+            if let Some(old) = previous_container_id.as_deref() {
+                let _ = self.docker_manager.stop_container(old).await;
+                let _ = self.docker_manager.remove_container(old).await;
+            }
+        }
+
+        // generate unique container id for blue/green deployment
+        // format: znskr-{app_id}-{short_deployment_id}
+        let short_id = deployment
+            .id
+            .to_string()
+            .split('-')
+            .next()
+            .unwrap_or("0")
+            .to_string();
+        let container_id = format!("znskr-{}-{}", app.id, short_id);
+
+        // start new container using Docker
+        let config = DockerContainerConfig {
+            id: container_id.clone(),
+            image: image_name.to_string(),
+            env_vars,
+            port: app.port,
+            memory_limit: Some(512 * 1024 * 1024), // 512mb
+            cpu_limit: Some(1.0),
+            network: Some(network_name.to_string()),
+            health_check: None,
+            restart_policy: "unless-stopped".to_string(),
+        };
+
+        let container_info = self.docker_manager.create_container(config).await?;
+
+        info!(container_id = %container_info.id, "waiting for container to stabilize");
+        if !self
+            .docker_manager
+            .wait_for_healthy(&container_info.id, 10)
+            .await?
+        {
+            let _ = self.docker_manager.stop_container(&container_info.id).await;
+            let _ = self
+                .docker_manager
+                .remove_container(&container_info.id)
+                .await;
+            return Err(anyhow::anyhow!("container failed to stabilize"));
+        }
+
+        let mut updated_deployment = deployment.clone();
+        updated_deployment.status = DeploymentStatus::Running;
+        updated_deployment.container_id = Some(container_info.id.clone());
+        updated_deployment.image_id = Some(image_name.to_string());
+        updated_deployment.started_at = Some(chrono::Utc::now());
+        updated_deployment.finished_at = Some(chrono::Utc::now());
+        self.db.save_deployment(&updated_deployment)?;
+
+        self.send_proxy_refresh(app.id).await;
+        self.cleanup_old_containers(app.id, &container_info.id)
+            .await;
+
+        Ok(())
+    }
+
+    fn get_previous_running_deployment(
+        &self,
+        app_id: Uuid,
+        current_deployment_id: Uuid,
+    ) -> anyhow::Result<Option<Deployment>> {
+        let deployments = self.db.list_deployments_by_app(app_id)?;
+        Ok(deployments
+            .into_iter()
+            .filter(|d| d.id != current_deployment_id && d.status == DeploymentStatus::Running)
+            .next())
     }
 
     /// topological sort services by dependencies
@@ -478,40 +615,41 @@ impl DeploymentWorker {
     ) -> anyhow::Result<()> {
         let mut updated = deployment.clone();
         updated.status = status;
-        let _ = self.db.append_deployment_log(updated.id, &format!(
-            "[{}] status: {:?}",
-            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
-            status
-        ));
+        let _ = self.db.append_deployment_log(
+            updated.id,
+            &format!(
+                "[{}] status: {:?}",
+                chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                status
+            ),
+        );
         self.db.save_deployment(&updated)?;
         Ok(())
     }
 
     async fn send_proxy_refresh(&self, app_id: Uuid) {
         if let Some(sender) = &self.proxy_updates {
-            let _ = sender
-                .send(ProxyRouteUpdate::RefreshApp { app_id })
-                .await;
+            let _ = sender.send(ProxyRouteUpdate::RefreshApp { app_id }).await;
         }
     }
 
     /// cleans up old containers for an app (all except the current one)
     async fn cleanup_old_containers(&self, app_id: Uuid, current_container_id: &str) {
         info!("cleaning up old containers for app {}", app_id);
-        
+
         // list all containers
         match self.docker_manager.list_containers().await {
             Ok(containers) => {
                 let app_prefix = format!("znskr-{}-", app_id);
                 // also check for the legacy name format
                 let legacy_name = format!("znskr-{}", app_id);
-                
+
                 for container in containers {
                     // skip current container
                     if container.id == current_container_id {
                         continue;
                     }
-                    
+
                     // check if container belongs to this app
                     // either specific deployment ID or legacy name
                     if container.id.starts_with(&app_prefix) || container.id == legacy_name {
@@ -551,7 +689,9 @@ mod tests {
         let mut api = ContainerService::new(app_id, "api".to_string(), "".to_string(), 8081);
         api.depends_on = vec!["web".to_string()];
 
-        let sorted = worker.topological_sort_services(&[api.clone(), web.clone()]).unwrap();
+        let sorted = worker
+            .topological_sort_services(&[api.clone(), web.clone()])
+            .unwrap();
         let names: Vec<String> = sorted.into_iter().map(|s| s.name).collect();
 
         assert_eq!(names, vec!["web".to_string(), "api".to_string()]);

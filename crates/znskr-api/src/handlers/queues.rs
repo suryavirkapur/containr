@@ -188,12 +188,8 @@ pub async fn create_queue(
     };
 
     // create queue
-    let mut queue = ManagedQueue::new_with_path(
-        user_id,
-        req.name,
-        queue_type,
-        &config.storage.data_dir,
-    );
+    let mut queue =
+        ManagedQueue::new_with_path(user_id, req.name, queue_type, &config.storage.data_dir);
 
     if let Some(version) = req.version {
         queue.version = version;
@@ -205,7 +201,10 @@ pub async fn create_queue(
         queue.cpu_limit = cpu;
     }
 
-    state.db.save_managed_queue(&queue).map_err(internal_error)?;
+    state
+        .db
+        .save_managed_queue(&queue)
+        .map_err(internal_error)?;
 
     Ok((StatusCode::CREATED, Json(QueueResponse::from(&queue))))
 }
@@ -371,7 +370,10 @@ pub async fn start_queue(
         )
     })?;
 
-    state.db.save_managed_queue(&queue).map_err(internal_error)?;
+    state
+        .db
+        .save_managed_queue(&queue)
+        .map_err(internal_error)?;
     Ok(Json(QueueResponse::from(&queue)))
 }
 
@@ -431,6 +433,9 @@ pub async fn stop_queue(
         )
     })?;
 
-    state.db.save_managed_queue(&queue).map_err(internal_error)?;
+    state
+        .db
+        .save_managed_queue(&queue)
+        .map_err(internal_error)?;
     Ok(Json(QueueResponse::from(&queue)))
 }

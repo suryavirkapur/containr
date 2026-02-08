@@ -48,10 +48,10 @@ impl DatabaseType {
     /// returns default memory limit in bytes
     pub fn default_memory_limit(&self) -> u64 {
         match self {
-            DatabaseType::Postgresql => 512 * 1024 * 1024,  // 512mb
-            DatabaseType::Mariadb => 512 * 1024 * 1024,     // 512mb
-            DatabaseType::Valkey => 256 * 1024 * 1024,      // 256mb
-            DatabaseType::Qdrant => 1024 * 1024 * 1024,     // 1gb
+            DatabaseType::Postgresql => 512 * 1024 * 1024, // 512mb
+            DatabaseType::Mariadb => 512 * 1024 * 1024,    // 512mb
+            DatabaseType::Valkey => 256 * 1024 * 1024,     // 256mb
+            DatabaseType::Qdrant => 1024 * 1024 * 1024,    // 1gb
         }
     }
 
@@ -89,12 +89,10 @@ impl DatabaseType {
                 ("MARIADB_DATABASE".into(), creds.database_name.clone()),
                 ("MARIADB_ROOT_PASSWORD".into(), creds.password.clone()),
             ],
-            DatabaseType::Valkey => vec![
-                ("VALKEY_PASSWORD".into(), creds.password.clone()),
-            ],
-            DatabaseType::Qdrant => vec![
-                ("QDRANT__SERVICE__API_KEY".into(), creds.password.clone()),
-            ],
+            DatabaseType::Valkey => vec![("VALKEY_PASSWORD".into(), creds.password.clone())],
+            DatabaseType::Qdrant => {
+                vec![("QDRANT__SERVICE__API_KEY".into(), creds.password.clone())]
+            }
         }
     }
 }
@@ -281,7 +279,12 @@ impl ManagedDatabase {
     }
 
     /// creates a new managed database with custom data path from config
-    pub fn new_with_path(owner_id: Uuid, name: String, db_type: DatabaseType, data_dir: &std::path::Path) -> Self {
+    pub fn new_with_path(
+        owner_id: Uuid,
+        name: String,
+        db_type: DatabaseType,
+        data_dir: &std::path::Path,
+    ) -> Self {
         let mut db = Self::new(owner_id, name, db_type);
         db.host_data_path = data_dir
             .join("databases")
@@ -318,15 +321,9 @@ impl ManagedDatabase {
             ),
             DatabaseType::Valkey => format!(
                 "redis://:{}@{}:{}",
-                self.credentials.password,
-                self.internal_host,
-                self.port
+                self.credentials.password, self.internal_host, self.port
             ),
-            DatabaseType::Qdrant => format!(
-                "http://{}:{}",
-                self.internal_host,
-                self.port
-            ),
+            DatabaseType::Qdrant => format!("http://{}:{}", self.internal_host, self.port),
         }
     }
 
@@ -411,17 +408,11 @@ impl ManagedQueue {
         match self.queue_type {
             QueueType::Rabbitmq => format!(
                 "amqp://{}:{}@{}:{}",
-                self.credentials.username,
-                self.credentials.password,
-                self.internal_host,
-                self.port
+                self.credentials.username, self.credentials.password, self.internal_host, self.port
             ),
             QueueType::Nats => format!(
                 "nats://{}:{}@{}:{}",
-                self.credentials.username,
-                self.credentials.password,
-                self.internal_host,
-                self.port
+                self.credentials.username, self.credentials.password, self.internal_host, self.port
             ),
         }
     }

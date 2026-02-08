@@ -12,5 +12,3 @@ pub use db::Database;
 pub use encryption::{decrypt, derive_key, encrypt};
 pub use error::{Error, Result};
 pub use managed_services::{DatabaseType, ManagedDatabase, ServiceStatus, StorageBucket};
-
-

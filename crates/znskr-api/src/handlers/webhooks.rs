@@ -8,7 +8,9 @@ use axum::{
 };
 use serde::Serialize;
 
-use crate::github::{extract_branch, get_repo_installation_token, verify_webhook_signature, DeploymentJob, PushEvent};
+use crate::github::{
+    extract_branch, get_repo_installation_token, verify_webhook_signature, DeploymentJob, PushEvent,
+};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
 use znskr_common::models::Deployment;
@@ -41,8 +43,8 @@ pub async fn github_webhook(
 
     // verify signature
     let config = state.config.read().await;
-    let valid = verify_webhook_signature(&body, signature, &config.github.webhook_secret)
-        .map_err(|e| {
+    let valid =
+        verify_webhook_signature(&body, signature, &config.github.webhook_secret).map_err(|e| {
             (
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
@@ -110,6 +112,7 @@ pub async fn github_webhook(
             // queue deployment job
             let github_token = get_github_token_for_app(&state, app.owner_id, &app).await?;
             let job = DeploymentJob {
+                deployment_id: deployment.id,
                 app_id: app.id,
                 commit_sha: push_event.after,
                 commit_message: deployment.commit_message.clone(),
@@ -117,6 +120,8 @@ pub async fn github_webhook(
                 branch: app.branch,
                 github_token,
                 repo_path: None,
+                rollout_strategy: app.rollout_strategy,
+                rollback_from_deployment_id: None,
             };
 
             state

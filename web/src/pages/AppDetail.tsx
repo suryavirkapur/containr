@@ -10,71 +10,14 @@ import {
 import { useParams, useNavigate } from "@solidjs/router";
 import { parseAnsi } from "../utils/ansi";
 import ContainerMonitor from "../components/ContainerMonitor";
-import { api } from "../api";
-import { apiGet, apiPost } from "../api/client";
+import { api, components } from "../api";
 
-interface AppService {
-  id: string;
-  name: string;
-  image: string;
-  port: number;
-  replicas: number;
-  memory_limit_mb: number | null;
-  cpu_limit: number | null;
-  depends_on: string[];
-  restart_policy: string;
-}
-
-interface App {
-  id: string;
-  name: string;
-  github_url: string;
-  branch: string;
-  domain: string | null;
-  domains: string[] | null;
-  port: number;
-  created_at: string;
-  env_vars: { key: string; value: string; secret: boolean }[];
-  services: AppService[];
-}
-
-interface Deployment {
-  id: string;
-  app_id: string;
-  commit_sha: string;
-  commit_message: string | null;
-  status: string;
-  container_id: string | null;
-  created_at: string;
-  started_at: string | null;
-  finished_at: string | null;
-}
-
-interface CertificateStatus {
-  domain: string;
-  status: "none" | "pending" | "valid" | "expiringsoon" | "expired" | "failed";
-  expires_at: string | null;
-  issued_at: string | null;
-}
-
-interface GitInfo {
-  enabled: boolean;
-  repo: string;
-  path: string;
-  http_url: string | null;
-  username: string;
-}
-
-interface GitEnableResponse extends GitInfo {
-  token: string;
-}
-
-interface ContainerListItem {
-  id: string;
-  resource_type: string;
-  resource_id: string;
-  name: string;
-}
+type App = components["schemas"]["AppResponse"];
+type Deployment = components["schemas"]["DeploymentResponse"];
+type CertificateStatus = components["schemas"]["CertificateResponse"];
+type GitInfo = components["schemas"]["GitInfoResponse"];
+type GitEnableResponse = components["schemas"]["GitEnableResponse"];
+type ContainerListItem = components["schemas"]["ContainerListItem"];
 
 /**
  * fetches app details
@@ -84,14 +27,18 @@ const fetchApp = async (id: string): Promise<App> => {
     params: { path: { id } },
   });
   if (error) throw error;
-  return data as App;
+  return data;
 };
 
 /**
  * fetches deployments for an app
  */
 const fetchDeployments = async (appId: string): Promise<Deployment[]> => {
-  return apiGet<Deployment[]>(`/api/apps/${appId}/deployments`);
+  const { data, error } = await api.GET("/api/apps/{id}/deployments", {
+    params: { path: { id: appId } },
+  });
+  if (error) throw error;
+  return data;
 };
 
 /**
@@ -100,7 +47,11 @@ const fetchDeployments = async (appId: string): Promise<Deployment[]> => {
 const fetchCertificate = async (
   appId: string,
 ): Promise<CertificateStatus[]> => {
-  return apiGet<CertificateStatus[]>(`/api/apps/${appId}/certificate`);
+  const { data, error } = await api.GET("/api/apps/{id}/certificate", {
+    params: { path: { id: appId } },
+  });
+  if (error) throw error;
+  return data;
 };
 
 /**
@@ -109,14 +60,18 @@ const fetchCertificate = async (
 const fetchContainers = async (): Promise<ContainerListItem[]> => {
   const { data, error } = await api.GET("/api/containers");
   if (error) throw error;
-  return data as ContainerListItem[];
+  return data;
 };
 
 /**
  * fetches git info for an app
  */
 const fetchGitInfo = async (appId: string): Promise<GitInfo> => {
-  return apiGet<GitInfo>(`/api/apps/${appId}/git`);
+  const { data, error } = await api.GET("/api/apps/{id}/git", {
+    params: { path: { id: appId } },
+  });
+  if (error) throw error;
+  return data;
 };
 
 /**
@@ -183,10 +138,11 @@ const AppDetail: Component = () => {
   const reissueCertificate = async (domain?: string) => {
     setReissuing(true);
     try {
-      await apiPost(
-        `/api/apps/${params.id}/certificate/reissue`,
-        domain ? { domain } : undefined,
-      );
+      const { error } = await api.POST("/api/apps/{id}/certificate/reissue", {
+        params: { path: { id: params.id! } },
+        body: domain ? { domain } : {},
+      });
+      if (error) throw error;
 
       refetchCertificate();
     } catch (err) {
@@ -207,9 +163,10 @@ const AppDetail: Component = () => {
   const enableGit = async () => {
     setGitWorking(true);
     try {
-      const data = await apiPost<GitEnableResponse>(
-        `/api/apps/${params.id}/git`,
-      );
+      const { data, error } = await api.POST("/api/apps/{id}/git", {
+        params: { path: { id: params.id! } },
+      });
+      if (error) throw error;
       setGitToken(data.token);
       refetchGitInfo();
     } catch (err) {
@@ -222,9 +179,10 @@ const AppDetail: Component = () => {
   const rotateGit = async () => {
     setGitWorking(true);
     try {
-      const data = await apiPost<GitEnableResponse>(
-        `/api/apps/${params.id}/git/rotate`,
-      );
+      const { data, error } = await api.POST("/api/apps/{id}/git/rotate", {
+        params: { path: { id: params.id! } },
+      });
+      if (error) throw error;
       setGitToken(data.token);
       refetchGitInfo();
     } catch (err) {
@@ -244,8 +202,6 @@ const AppDetail: Component = () => {
   const [saving, setSaving] = createSignal(false);
   const [bulkEditEnv, setBulkEditEnv] = createSignal(false);
   const [bulkEnvText, setBulkEnvText] = createSignal("");
-  const [deployingImage, setDeployingImage] = createSignal(false);
-  const [imageNameInput, setImageNameInput] = createSignal("");
   const [editForm, setEditForm] = createSignal({
     domainsText: "",
     port: 8080,
@@ -375,24 +331,6 @@ const AppDetail: Component = () => {
     setBulkEditEnv(!bulkEditEnv());
   };
 
-  // deploy from docker image
-  const deployFromImage = async () => {
-    const imageName = imageNameInput().trim();
-    if (!imageName) return;
-
-    setDeployingImage(true);
-    try {
-      await apiPost(`/api/apps/${params.id}/deployments`, { image: imageName });
-
-      setImageNameInput("");
-      refetchDeployments();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setDeployingImage(false);
-    }
-  };
-
   const updateApp = async () => {
     setSaving(true);
     try {
@@ -507,9 +445,17 @@ const AppDetail: Component = () => {
       const limit = 100;
       const offset = reset ? 0 : deploymentLogOffset();
 
-      const logs = await apiGet<string[]>(
-        `/api/apps/${params.id}/deployments/${deploymentId}/logs?limit=${limit}&offset=${offset}`,
+      const { data, error } = await api.GET(
+        "/api/apps/{app_id}/deployments/{id}/logs",
+        {
+          params: {
+            path: { app_id: params.id!, id: deploymentId },
+            query: { limit, offset },
+          },
+        },
       );
+      if (error) throw error;
+      const logs = data;
 
       if (reset) {
         setDeploymentLogs(logs);
@@ -605,7 +551,11 @@ const AppDetail: Component = () => {
   const triggerDeploy = async () => {
     setDeploying(true);
     try {
-      await apiPost(`/api/apps/${params.id}/deployments`);
+      const { error } = await api.POST("/api/apps/{id}/deployments", {
+        params: { path: { id: params.id! } },
+        body: {},
+      });
+      if (error) throw error;
 
       refetchDeployments();
     } catch (err) {
@@ -923,34 +873,6 @@ const AppDetail: Component = () => {
                 no running containers for this app
               </div>
             </Show>
-          </div>
-        </div>
-
-        {/* deploy via image */}
-        <div class="border border-neutral-200 mb-8">
-          <div class="border-b border-neutral-200 px-5 py-3">
-            <h2 class="text-sm font-serif text-black">deploy via image name</h2>
-            <p class="text-xs text-neutral-500 mt-1">
-              deploy directly from a docker image
-            </p>
-          </div>
-          <div class="p-5">
-            <div class="flex gap-2">
-              <input
-                type="text"
-                value={imageNameInput()}
-                onInput={(e) => setImageNameInput(e.currentTarget.value)}
-                placeholder="nginxdemos/hello:latest"
-                class="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
-              />
-              <button
-                onClick={deployFromImage}
-                disabled={deployingImage() || !imageNameInput().trim()}
-                class="px-4 py-2 bg-neutral-700 text-white hover:bg-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-              >
-                {deployingImage() ? "deploying..." : "deploy now"}
-              </button>
-            </div>
           </div>
         </div>
 

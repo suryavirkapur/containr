@@ -2,8 +2,8 @@
 
 pub mod acme;
 pub mod pingora_proxy;
-mod static_files;
 pub mod routes;
+mod static_files;
 
 pub use acme::ChallengeStore;
 pub use routes::RouteManager;

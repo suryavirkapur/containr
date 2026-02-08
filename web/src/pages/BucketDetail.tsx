@@ -1,23 +1,18 @@
 import { Component, createResource, createSignal, Show } from "solid-js";
 import { useParams, A, useNavigate } from "@solidjs/router";
-// TODO: migrate to typed client when /api/buckets endpoints are added to openapi schema
-import { apiDelete, apiGet } from "../api/client";
+import { api, components } from "../api";
 
-interface Bucket {
-  id: string;
-  name: string;
-  access_key: string;
-  secret_key: string;
-  endpoint: string;
-  size_bytes: number;
-  created_at: string;
-}
+type Bucket = components["schemas"]["BucketResponse"];
 
 /**
  * fetches bucket details
  */
 const fetchBucket = async (id: string): Promise<Bucket> => {
-  return apiGet<Bucket>(`/api/buckets/${id}`);
+  const { data, error } = await api.GET("/api/buckets/{id}", {
+    params: { path: { id } },
+  });
+  if (error) throw error;
+  return data;
 };
 
 /**
@@ -26,7 +21,11 @@ const fetchBucket = async (id: string): Promise<Bucket> => {
 const BucketDetail: Component = () => {
   const params = useParams();
   const navigate = useNavigate();
-  const [bucket] = createResource(() => params.id, fetchBucket);
+  const bucketId = () => params.id;
+  const [bucket] = createResource(
+    () => bucketId() ?? null,
+    (id) => fetchBucket(id),
+  );
   const [deleting, setDeleting] = createSignal(false);
   const [copiedField, setCopiedField] = createSignal<string | null>(null);
 
@@ -45,10 +44,15 @@ const BucketDetail: Component = () => {
   };
 
   const handleDelete = async () => {
+    const id = bucketId();
+    if (!id) return;
     if (!confirm("delete this bucket? all files will be lost.")) return;
     setDeleting(true);
     try {
-      await apiDelete(`/api/buckets/${params.id}`);
+      const { error } = await api.DELETE("/api/buckets/{id}", {
+        params: { path: { id } },
+      });
+      if (error) throw error;
       navigate("/storage");
     } catch (err) {
       console.error(err);

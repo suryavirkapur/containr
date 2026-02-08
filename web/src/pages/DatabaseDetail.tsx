@@ -10,16 +10,10 @@ import {
 import { useParams, A } from "@solidjs/router";
 import ContainerMonitor from "../components/ContainerMonitor";
 import { api, components } from "../api";
-import { apiPost } from "../api/client";
 
 type DatabaseResponse = components["schemas"]["DatabaseResponse"];
 type ContainerListItem = components["schemas"]["ContainerListItem"];
-
-interface BackupInfo {
-  filename: string;
-  size_bytes: number;
-  created_at: string;
-}
+type BackupInfo = components["schemas"]["BackupInfo"];
 
 const fetchDatabase = async (id: string): Promise<DatabaseResponse> => {
   const { data, error } = await api.GET("/api/databases/{id}", {
@@ -35,32 +29,61 @@ const fetchContainers = async (): Promise<ContainerListItem[]> => {
   return data;
 };
 
-// TODO: /api/databases/{id}/expose not in schema - keep using old client
 const toggleExternalAccess = async (
   id: string,
   enabled: boolean,
 ): Promise<DatabaseResponse> => {
-  return apiPost<DatabaseResponse>(`/api/databases/${id}/expose`, { enabled });
+  const { data, error } = await api.POST("/api/databases/{id}/expose", {
+    params: { path: { id } },
+    body: { enabled },
+  });
+  if (error) throw error;
+  return data;
 };
 
-// TODO: /api/databases/{id}/backups not in schema - keep using old client
 const fetchBackups = async (id: string): Promise<BackupInfo[]> => {
-  try {
-    const response = await fetch(`/api/databases/${id}/backups`, {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("znskr_token")}`,
-      },
-    });
-    if (!response.ok) return [];
-    return await response.json();
-  } catch {
-    return [];
-  }
+  const { data, error } = await api.GET("/api/databases/{id}/backups", {
+    params: { path: { id } },
+  });
+  if (error) throw error;
+  return data;
 };
 
-// TODO: /api/databases/{id}/export not in schema - keep using old client
 const createBackup = async (id: string): Promise<void> => {
-  await apiPost(`/api/databases/${id}/export`);
+  const { error } = await api.POST("/api/databases/{id}/export", {
+    params: { path: { id } },
+  });
+  if (error) throw error;
+};
+
+const downloadBackup = async (id: string, filename: string) => {
+  const token = localStorage.getItem("znskr_token");
+  if (!token) {
+    throw new Error("missing auth token");
+  }
+
+  const response = await fetch(
+    `/api/databases/${id}/backups/download?filename=${encodeURIComponent(filename)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("failed to download backup");
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
 };
 
 const formatBytes = (bytes: number) => {
@@ -133,10 +156,9 @@ const DatabaseDetail: Component = () => {
   const handleDownloadBackup = (filename: string) => {
     const db = database();
     if (!db) return;
-    window.open(
-      `/api/databases/${db.id}/backups/download?filename=${encodeURIComponent(filename)}`,
-      "_blank",
-    );
+    void downloadBackup(db.id, filename).catch((err) => {
+      console.error(err);
+    });
   };
 
   return (

@@ -243,7 +243,7 @@ pub struct InstallationAccount {
 pub fn generate_app_jwt(app_id: i64, private_key_pem: &str) -> Result<String> {
     let now = chrono::Utc::now().timestamp();
     let claims = AppJwtClaims {
-        iat: now - 60, // allow 60s clock drift
+        iat: now - 60,  // allow 60s clock drift
         exp: now + 600, // 10 min expiry (max allowed)
         iss: app_id.to_string(),
     };
@@ -258,7 +258,10 @@ pub fn generate_app_jwt(app_id: i64, private_key_pem: &str) -> Result<String> {
 }
 
 /// exchanges a jwt for an installation access token
-pub async fn get_installation_token(jwt: &str, installation_id: i64) -> Result<InstallationTokenResponse> {
+pub async fn get_installation_token(
+    jwt: &str,
+    installation_id: i64,
+) -> Result<InstallationTokenResponse> {
     let client = reqwest::Client::new();
 
     let url = format!(
@@ -360,10 +363,7 @@ pub async fn get_installation_repos(installation_token: &str) -> Result<Vec<Gith
 pub async fn convert_manifest_code(code: &str) -> Result<AppManifestResponse> {
     let client = reqwest::Client::new();
 
-    let url = format!(
-        "https://api.github.com/app-manifests/{}/conversions",
-        code
-    );
+    let url = format!("https://api.github.com/app-manifests/{}/conversions", code);
 
     let response = client
         .post(&url)

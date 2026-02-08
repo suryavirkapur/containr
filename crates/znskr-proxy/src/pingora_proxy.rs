@@ -217,7 +217,10 @@ impl ProxyHttp for ZnskrProxy {
         }
 
         // enforce https for managed domains
-        let is_tls = session.digest().map(|d| d.ssl_digest.is_some()).unwrap_or(false);
+        let is_tls = session
+            .digest()
+            .map(|d| d.ssl_digest.is_some())
+            .unwrap_or(false);
         let https_required = if host.is_empty() {
             false
         } else if host == self.base_domain {
@@ -230,14 +233,20 @@ impl ProxyHttp for ZnskrProxy {
 
         if !is_tls && https_required {
             if self.has_certificate(host) {
-                let uri = req_header.uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
+                let uri = req_header
+                    .uri
+                    .path_and_query()
+                    .map(|pq| pq.as_str())
+                    .unwrap_or("/");
                 let redirect_url = format!("https://{}{}", host, uri);
                 info!(host = %host, "redirecting http to https");
 
                 let mut header = ResponseHeader::build(301, None)?;
                 header.insert_header("Location", &redirect_url)?;
                 header.insert_header("Content-Length", "0")?;
-                session.write_response_header(Box::new(header), true).await?;
+                session
+                    .write_response_header(Box::new(header), true)
+                    .await?;
             } else {
                 let body = "https required; certificate provisioning in progress";
                 let mut header = ResponseHeader::build(426, None)?;
@@ -292,9 +301,7 @@ impl ProxyHttp for ZnskrProxy {
                 session
                     .write_response_header(Box::new(header), false)
                     .await?;
-                session
-                    .write_response_body(Some(body.into()), true)
-                    .await?;
+                session.write_response_body(Some(body.into()), true).await?;
 
                 Ok(true) // Request handled
             }
@@ -338,14 +345,12 @@ impl ProxyHttp for ZnskrProxy {
             .as_ref()
             .ok_or_else(|| Error::explain(ErrorType::InternalError, "no upstream configured"))?;
 
-        let mut resolved = addr
-            .to_socket_addrs()
-            .map_err(|error| {
-                Error::explain(
-                    ErrorType::InternalError,
-                    format!("failed to resolve upstream address: {}", error),
-                )
-            })?;
+        let mut resolved = addr.to_socket_addrs().map_err(|error| {
+            Error::explain(
+                ErrorType::InternalError,
+                format!("failed to resolve upstream address: {}", error),
+            )
+        })?;
 
         let socket_addr = resolved.next().ok_or_else(|| {
             Error::explain(ErrorType::InternalError, "no upstream address resolved")
@@ -428,7 +433,13 @@ pub fn create_proxy_server(
     let mut server = Server::new(None).unwrap();
     server.bootstrap();
 
-    let proxy = ZnskrProxy::new(routes, challenges, base_domain, api_upstream, certs_dir.clone());
+    let proxy = ZnskrProxy::new(
+        routes,
+        challenges,
+        base_domain,
+        api_upstream,
+        certs_dir.clone(),
+    );
 
     let mut proxy_service = pingora_proxy::http_proxy_service(&server.configuration, proxy);
 

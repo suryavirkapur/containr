@@ -1,12 +1,12 @@
 //! axum server setup
 
-use axum::{
-    routing::{any, delete, get, post, put},
-    Router,
-};
 use axum::http::{
     header::{AUTHORIZATION, CONTENT_TYPE},
     HeaderValue, Method,
+};
+use axum::{
+    routing::{any, delete, get, post, put},
+    Router,
 };
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -17,7 +17,10 @@ use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
 use crate::github::DeploymentJob;
-use crate::handlers::{apps, auth, certificates, containers, databases, deployments, git, github_app, github_repos, health, queues, settings, storage, system, webhooks, websocket};
+use crate::handlers::{
+    apps, auth, certificates, containers, databases, deployments, git, github_app, github_repos,
+    health, queues, settings, storage, system, webhooks, websocket,
+};
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
 use znskr_common::{Config, Database, Result};
@@ -88,13 +91,25 @@ pub async fn run_server(
         // github oauth (legacy)
         .route("/api/github/status", get(github_repos::github_status))
         .route("/api/github/repos", get(github_repos::github_repos))
-        .route("/api/github/disconnect", post(github_repos::github_disconnect))
+        .route(
+            "/api/github/disconnect",
+            post(github_repos::github_disconnect),
+        )
         // github app integration
         .route("/api/github/app", get(github_app::get_github_app))
         .route("/api/github/app", delete(github_app::delete_github_app))
-        .route("/api/github/app/manifest", get(github_app::get_app_manifest))
-        .route("/api/github/app/callback", get(github_app::github_app_callback))
-        .route("/api/github/app/install/callback", get(github_app::github_install_callback))
+        .route(
+            "/api/github/app/manifest",
+            get(github_app::get_app_manifest),
+        )
+        .route(
+            "/api/github/app/callback",
+            get(github_app::github_app_callback),
+        )
+        .route(
+            "/api/github/app/install/callback",
+            get(github_app::github_install_callback),
+        )
         .route("/api/github/app/repos", get(github_app::get_app_repos))
         // apps
         .route("/api/apps", get(apps::list_apps))
@@ -121,6 +136,10 @@ pub async fn run_server(
             get(deployments::get_deployment),
         )
         .route(
+            "/api/apps/{app_id}/deployments/{id}/rollback",
+            post(deployments::rollback_deployment),
+        )
+        .route(
             "/api/apps/{app_id}/deployments/{id}/logs",
             get(deployments::get_deployment_logs),
         )
@@ -141,11 +160,26 @@ pub async fn run_server(
         )
         // containers
         .route("/api/containers", get(containers::list_containers))
-        .route("/api/containers/{id}/status", get(containers::get_container_status))
-        .route("/api/containers/{id}/logs", get(containers::get_container_logs))
-        .route("/api/containers/{id}/mounts", get(containers::list_container_mounts))
-        .route("/api/containers/{id}/files", get(containers::list_volume_entries))
-        .route("/api/containers/{id}/files", delete(containers::delete_volume_entry))
+        .route(
+            "/api/containers/{id}/status",
+            get(containers::get_container_status),
+        )
+        .route(
+            "/api/containers/{id}/logs",
+            get(containers::get_container_logs),
+        )
+        .route(
+            "/api/containers/{id}/mounts",
+            get(containers::list_container_mounts),
+        )
+        .route(
+            "/api/containers/{id}/files",
+            get(containers::list_volume_entries),
+        )
+        .route(
+            "/api/containers/{id}/files",
+            delete(containers::delete_volume_entry),
+        )
         .route(
             "/api/containers/{id}/files/download",
             get(containers::download_volume_entry),
@@ -165,11 +199,23 @@ pub async fn run_server(
         .route("/api/databases/{id}", delete(databases::delete_database))
         .route("/api/databases/{id}/start", post(databases::start_database))
         .route("/api/databases/{id}/stop", post(databases::stop_database))
-        .route("/api/databases/{id}/logs", get(databases::get_database_logs))
-        .route("/api/databases/{id}/expose", post(databases::expose_database))
-        .route("/api/databases/{id}/export", post(databases::export_database))
+        .route(
+            "/api/databases/{id}/logs",
+            get(databases::get_database_logs),
+        )
+        .route(
+            "/api/databases/{id}/expose",
+            post(databases::expose_database),
+        )
+        .route(
+            "/api/databases/{id}/export",
+            post(databases::export_database),
+        )
         .route("/api/databases/{id}/backups", get(databases::list_backups))
-        .route("/api/databases/{id}/backups/download", get(databases::download_backup))
+        .route(
+            "/api/databases/{id}/backups/download",
+            get(databases::download_backup),
+        )
         // managed queues
         .route("/api/queues", get(queues::list_queues))
         .route("/api/queues", post(queues::create_queue))

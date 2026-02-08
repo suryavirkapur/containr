@@ -3,8 +3,8 @@
 //! manages the mapping between domains and upstream containers.
 
 use dashmap::DashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use tracing::info;
 
 use znskr_common::config::LoadBalanceAlgorithm;
@@ -119,7 +119,9 @@ impl RouteManager {
 
     // gets a route by domain
     pub fn get_route(&self, domain: &str) -> Option<Route> {
-        self.routes.get(domain).map(|route| route.value().to_route())
+        self.routes
+            .get(domain)
+            .map(|route| route.value().to_route())
     }
 
     pub fn select_upstream(&self, domain: &str) -> Option<SelectedUpstream> {
@@ -187,10 +189,10 @@ impl SelectedUpstream {
 
     pub fn complete(&self) {
         let upstream = &self.route.upstreams[self.index];
-        let _ = upstream.inflight.fetch_update(
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-            |value| value.checked_sub(1),
-        );
+        let _ = upstream
+            .inflight
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value.checked_sub(1)
+            });
     }
 }

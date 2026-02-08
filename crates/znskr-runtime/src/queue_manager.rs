@@ -7,13 +7,13 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use bollard::query_parameters::{
-    CreateContainerOptions, RemoveContainerOptions, StopContainerOptions,
-    InspectNetworkOptions, StartContainerOptions,
-};
 use bollard::models::{
-    ContainerCreateBody, HostConfig, Mount, MountTypeEnum, RestartPolicy, RestartPolicyNameEnum,
-    NetworkCreateRequest,
+    ContainerCreateBody, HostConfig, Mount, MountTypeEnum, NetworkCreateRequest, RestartPolicy,
+    RestartPolicyNameEnum,
+};
+use bollard::query_parameters::{
+    CreateContainerOptions, InspectNetworkOptions, RemoveContainerOptions, StartContainerOptions,
+    StopContainerOptions,
 };
 use bollard::Docker;
 use tracing::{info, warn};
@@ -205,7 +205,12 @@ impl QueueManager {
     /// ensures the infrastructure network exists
     async fn ensure_network(&self, name: &str) -> Result<()> {
         // check if network exists
-        if self.docker.inspect_network(name, None::<InspectNetworkOptions>).await.is_ok() {
+        if self
+            .docker
+            .inspect_network(name, None::<InspectNetworkOptions>)
+            .await
+            .is_ok()
+        {
             return Ok(());
         }
 
@@ -236,14 +241,23 @@ impl QueueManager {
         if let Some(ref container_id) = queue.container_id {
             info!("stopping queue: {} ({})", queue.name, container_id);
 
-            let stop_options = StopContainerOptions { t: Some(10), ..Default::default() };
-            let _ = self.docker.stop_container(container_id, Some(stop_options)).await;
+            let stop_options = StopContainerOptions {
+                t: Some(10),
+                ..Default::default()
+            };
+            let _ = self
+                .docker
+                .stop_container(container_id, Some(stop_options))
+                .await;
 
             let rm_options = RemoveContainerOptions {
                 force: true,
                 ..Default::default()
             };
-            let _ = self.docker.remove_container(container_id, Some(rm_options)).await;
+            let _ = self
+                .docker
+                .remove_container(container_id, Some(rm_options))
+                .await;
 
             queue.container_id = None;
             queue.status = ServiceStatus::Stopped;

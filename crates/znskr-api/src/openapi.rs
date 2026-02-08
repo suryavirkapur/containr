@@ -63,6 +63,7 @@ use crate::handlers::{
         deployments::list_deployments,
         deployments::get_deployment,
         deployments::trigger_deployment,
+        deployments::rollback_deployment,
         deployments::get_deployment_logs,
         // git
         git::get_git_info,
@@ -138,6 +139,7 @@ use crate::handlers::{
             // deployments
             deployments::DeploymentResponse,
             deployments::DeploymentTriggerRequest,
+            deployments::RollbackRequest,
             // certificates
             certificates::CertificateResponse,
             certificates::ReissueRequest,

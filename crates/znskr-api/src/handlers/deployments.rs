@@ -13,7 +13,7 @@ use crate::auth::{extract_bearer_token, validate_token};
 use crate::github::{get_repo_installation_token, DeploymentJob};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
-use znskr_common::models::{Deployment, DeploymentStatus};
+use znskr_common::models::{Deployment, DeploymentStatus, RolloutStrategy};
 
 /// deployment response
 #[derive(Debug, Serialize, ToSchema)]
@@ -39,6 +39,15 @@ pub struct DeploymentTriggerRequest {
     pub commit_sha: Option<String>,
     /// commit message to record
     pub commit_message: Option<String>,
+    /// rollout strategy override (stop_first or start_first)
+    pub rollout_strategy: Option<String>,
+}
+
+/// rollback request
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct RollbackRequest {
+    /// rollout strategy override (stop_first or start_first)
+    pub rollout_strategy: Option<String>,
 }
 
 impl From<&Deployment> for DeploymentResponse {
@@ -269,12 +278,9 @@ pub async fn trigger_deployment(
 
     if let Some(token) = git_token {
         if let Some(stored) = app.git_deploy_token.clone() {
-            let decrypted = crate::security::decrypt_value(
-                &config,
-                &stored,
-                Some(&config.auth.jwt_secret),
-            )
-            .map_err(internal_error)?;
+            let decrypted =
+                crate::security::decrypt_value(&config, &stored, Some(&config.auth.jwt_secret))
+                    .map_err(internal_error)?;
             if decrypted == token {
                 using_git_token = true;
             }
@@ -315,6 +321,10 @@ pub async fn trigger_deployment(
                 Some("manual deployment".to_string())
             }
         });
+    let rollout_strategy = resolve_rollout_strategy(
+        trigger.as_ref().and_then(|t| t.rollout_strategy.as_deref()),
+        app.rollout_strategy,
+    )?;
 
     // create deployment record
     let mut deployment = Deployment::new(app_id, commit_sha.clone());
@@ -335,6 +345,7 @@ pub async fn trigger_deployment(
         .and_then(|t| t.branch.clone())
         .unwrap_or_else(|| app.branch.clone());
     let job = DeploymentJob {
+        deployment_id: deployment.id,
         app_id,
         commit_sha: commit_sha.clone(),
         commit_message: commit_message.clone(),
@@ -354,6 +365,8 @@ pub async fn trigger_deployment(
         } else {
             None
         },
+        rollout_strategy,
+        rollback_from_deployment_id: None,
     };
 
     state
@@ -361,6 +374,126 @@ pub async fn trigger_deployment(
         .send(job)
         .await
         .map_err(|e| internal_error(format!("failed to queue deployment: {}", e)))?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(DeploymentResponse::from(&deployment)),
+    ))
+}
+
+/// rollback to a previous deployment
+#[utoipa::path(
+    post,
+    path = "/api/apps/{app_id}/deployments/{id}/rollback",
+    tag = "deployments",
+    params(
+        ("app_id" = Uuid, Path, description = "app id"),
+        ("id" = Uuid, Path, description = "deployment id to rollback to")
+    ),
+    security(("bearer" = [])),
+    request_body = RollbackRequest,
+    responses(
+        (status = 201, description = "rollback deployment queued", body = DeploymentResponse),
+        (status = 400, description = "invalid request", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "not found", body = ErrorResponse)
+    )
+)]
+pub async fn rollback_deployment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((app_id, target_deployment_id)): Path<(Uuid, Uuid)>,
+    body: Option<Json<RollbackRequest>>,
+) -> Result<(StatusCode, Json<DeploymentResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+
+    let app = state
+        .db
+        .get_app(app_id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "app not found".to_string(),
+                }),
+            )
+        })?;
+
+    if app.owner_id != user_id {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "access denied".to_string(),
+            }),
+        ));
+    }
+
+    let target = state
+        .db
+        .get_deployment(target_deployment_id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "deployment not found".to_string(),
+                }),
+            )
+        })?;
+
+    if target.app_id != app_id {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "deployment not found".to_string(),
+            }),
+        ));
+    }
+
+    if target.image_id.is_none() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "target deployment cannot be rolled back (missing image artifact)"
+                    .to_string(),
+            }),
+        ));
+    }
+
+    let req = body.map(|value| value.0);
+    let rollout_strategy = resolve_rollout_strategy(
+        req.as_ref().and_then(|r| r.rollout_strategy.as_deref()),
+        app.rollout_strategy,
+    )?;
+
+    let mut deployment = Deployment::new(app_id, target.commit_sha.clone());
+    deployment.commit_message = Some(format!("rollback to deployment {}", target_deployment_id));
+    state
+        .db
+        .save_deployment(&deployment)
+        .map_err(internal_error)?;
+
+    let job = DeploymentJob {
+        deployment_id: deployment.id,
+        app_id,
+        commit_sha: target.commit_sha.clone(),
+        commit_message: deployment.commit_message.clone(),
+        github_url: app.github_url.clone(),
+        branch: app.branch.clone(),
+        github_token: None,
+        repo_path: None,
+        rollout_strategy,
+        rollback_from_deployment_id: Some(target_deployment_id),
+    };
+
+    state
+        .deployment_tx
+        .send(job)
+        .await
+        .map_err(|e| internal_error(format!("failed to queue rollback: {}", e)))?;
 
     Ok((
         StatusCode::CREATED,
@@ -497,13 +630,38 @@ pub async fn get_deployment_logs(
         .db
         .get_deployment_logs(deployment_id, limit, offset)
         .map_err(internal_error)?;
-    
+
     // if new storage empty and offset is 0, fallback to old storage for backward compatibility
     if logs.is_empty() && offset == 0 && !deployment.logs.is_empty() {
         logs = deployment.logs;
     }
 
     Ok(Json(logs))
+}
+
+fn resolve_rollout_strategy(
+    override_value: Option<&str>,
+    default_value: RolloutStrategy,
+) -> Result<RolloutStrategy, (StatusCode, Json<ErrorResponse>)> {
+    match override_value {
+        None => Ok(default_value),
+        Some(value) => parse_rollout_strategy(value).ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "invalid rollout strategy. use stop_first or start_first".to_string(),
+                }),
+            )
+        }),
+    }
+}
+
+fn parse_rollout_strategy(value: &str) -> Option<RolloutStrategy> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "stop_first" | "stop-first" | "stopfirst" => Some(RolloutStrategy::StopFirst),
+        "start_first" | "start-first" | "startfirst" => Some(RolloutStrategy::StartFirst),
+        _ => None,
+    }
 }
 
 /// helper for internal errors

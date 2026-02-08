@@ -190,19 +190,16 @@ pub async fn create_database(
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: "invalid db_type. supported: postgresql, mariadb, valkey, qdrant".to_string(),
+                    error: "invalid db_type. supported: postgresql, mariadb, valkey, qdrant"
+                        .to_string(),
                 }),
             ));
         }
     };
 
     // create database
-    let mut db = ManagedDatabase::new_with_path(
-        user_id,
-        req.name,
-        db_type,
-        &config.storage.data_dir,
-    );
+    let mut db =
+        ManagedDatabase::new_with_path(user_id, req.name, db_type, &config.storage.data_dir);
 
     if let Some(version) = req.version {
         db.version = version;
@@ -214,7 +211,10 @@ pub async fn create_database(
         db.cpu_limit = cpu;
     }
 
-    state.db.save_managed_database(&db).map_err(internal_error)?;
+    state
+        .db
+        .save_managed_database(&db)
+        .map_err(internal_error)?;
 
     Ok((StatusCode::CREATED, Json(DatabaseResponse::from(&db))))
 }
@@ -322,7 +322,10 @@ pub async fn delete_database(
         let _ = std::fs::remove_dir_all(data_dir);
     }
 
-    state.db.delete_managed_database(id).map_err(internal_error)?;
+    state
+        .db
+        .delete_managed_database(id)
+        .map_err(internal_error)?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -383,7 +386,10 @@ pub async fn start_database(
         )
     })?;
 
-    state.db.save_managed_database(&db).map_err(internal_error)?;
+    state
+        .db
+        .save_managed_database(&db)
+        .map_err(internal_error)?;
 
     Ok(Json(DatabaseResponse::from(&db)))
 }
@@ -444,7 +450,10 @@ pub async fn stop_database(
         )
     })?;
 
-    state.db.save_managed_database(&db).map_err(internal_error)?;
+    state
+        .db
+        .save_managed_database(&db)
+        .map_err(internal_error)?;
 
     Ok(Json(DatabaseResponse::from(&db)))
 }
@@ -612,7 +621,10 @@ pub async fn expose_database(
         )
     })?;
 
-    state.db.save_managed_database(&db).map_err(internal_error)?;
+    state
+        .db
+        .save_managed_database(&db)
+        .map_err(internal_error)?;
 
     Ok(Json(DatabaseResponse::from(&db)))
 }
@@ -671,15 +683,18 @@ pub async fn export_database(
     std::fs::create_dir_all(&backup_dir).map_err(internal_error)?;
 
     let db_manager = DatabaseManager::new();
-    let backup_path = db_manager.export_database(&db, &backup_dir).await.map_err(|e| {
-        tracing::error!("failed to export database: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("failed to export database: {}", e),
-            }),
-        )
-    })?;
+    let backup_path = db_manager
+        .export_database(&db, &backup_dir)
+        .await
+        .map_err(|e| {
+            tracing::error!("failed to export database: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("failed to export database: {}", e),
+                }),
+            )
+        })?;
 
     Ok(Json(ExportResponse { backup_path }))
 }
@@ -746,13 +761,13 @@ pub async fn list_backups(
                 let filename = entry.file_name().to_string_lossy().to_string();
                 if filename.starts_with(&prefix) {
                     if let Ok(meta) = entry.metadata() {
-                    let created_at = meta
-                        .modified()
-                        .ok()
-                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                        .and_then(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0))
-                        .map(|dt| dt.to_rfc3339())
-                        .unwrap_or_default();
+                        let created_at = meta
+                            .modified()
+                            .ok()
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .and_then(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0))
+                            .map(|dt| dt.to_rfc3339())
+                            .unwrap_or_default();
 
                         backups.push(BackupInfo {
                             filename,
@@ -850,14 +865,13 @@ pub async fn download_backup(
         ));
     }
 
-    let contents = tokio::fs::read(&backup_path).await.map_err(internal_error)?;
+    let contents = tokio::fs::read(&backup_path)
+        .await
+        .map_err(internal_error)?;
 
     let response = (
         [
-            (
-                axum::http::header::CONTENT_TYPE,
-                "application/octet-stream",
-            ),
+            (axum::http::header::CONTENT_TYPE, "application/octet-stream"),
             (
                 axum::http::header::CONTENT_DISPOSITION,
                 &format!("attachment; filename=\"{}\"", query.filename),

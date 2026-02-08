@@ -8,13 +8,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
-use bollard::query_parameters::{
-    CreateContainerOptions, InspectContainerOptions, LogsOptions,
-    RemoveContainerOptions, StopContainerOptions, InspectNetworkOptions, StartContainerOptions,
-};
 use bollard::models::{
-    ContainerCreateBody, HostConfig, Mount, MountTypeEnum, RestartPolicy, RestartPolicyNameEnum,
-    NetworkCreateRequest, HealthConfig,
+    ContainerCreateBody, HealthConfig, HostConfig, Mount, MountTypeEnum, NetworkCreateRequest,
+    RestartPolicy, RestartPolicyNameEnum,
+};
+use bollard::query_parameters::{
+    CreateContainerOptions, InspectContainerOptions, InspectNetworkOptions, LogsOptions,
+    RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
 };
 use bollard::Docker;
 use futures::StreamExt;
@@ -187,7 +187,12 @@ impl DatabaseManager {
     /// ensures the infrastructure network exists
     async fn ensure_network(&self, name: &str) -> Result<()> {
         // check if network exists
-        if self.docker.inspect_network(name, None::<InspectNetworkOptions>).await.is_ok() {
+        if self
+            .docker
+            .inspect_network(name, None::<InspectNetworkOptions>)
+            .await
+            .is_ok()
+        {
             return Ok(());
         }
 
@@ -234,14 +239,23 @@ impl DatabaseManager {
         if let Some(ref container_id) = db.container_id {
             info!("stopping database: {} ({})", db.name, container_id);
 
-            let stop_options = StopContainerOptions { t: Some(10), ..Default::default() };
-            let _ = self.docker.stop_container(container_id, Some(stop_options)).await;
+            let stop_options = StopContainerOptions {
+                t: Some(10),
+                ..Default::default()
+            };
+            let _ = self
+                .docker
+                .stop_container(container_id, Some(stop_options))
+                .await;
 
             let rm_options = RemoveContainerOptions {
                 force: true,
                 ..Default::default()
             };
-            let _ = self.docker.remove_container(container_id, Some(rm_options)).await;
+            let _ = self
+                .docker
+                .remove_container(container_id, Some(rm_options))
+                .await;
 
             db.container_id = None;
             db.status = ServiceStatus::Stopped;
@@ -366,10 +380,7 @@ impl DatabaseManager {
                 .inspect_container(container_id, None::<InspectContainerOptions>)
                 .await
             {
-                Ok(inspect) => inspect
-                    .state
-                    .and_then(|s| s.running)
-                    .unwrap_or(false),
+                Ok(inspect) => inspect.state.and_then(|s| s.running).unwrap_or(false),
                 Err(_) => false,
             }
         } else {

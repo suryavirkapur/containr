@@ -4,39 +4,17 @@ import ServiceForm, {
   Service,
   createEmptyService,
 } from "../components/ServiceForm";
-import { apiGet } from "../api/client";
-import { api } from "../api";
+import { api, components } from "../api";
 
-// github app types
-interface GithubAppStatus {
-  configured: boolean;
-  app: {
-    app_id: number;
-    app_name: string;
-    html_url: string;
-  } | null;
-  installations: {
-    id: number;
-    account_login: string;
-    account_type: string;
-  }[];
-}
-
-interface RepoInfo {
-  id: number;
-  name: string;
-  full_name: string;
-  html_url: string;
-  clone_url: string;
-  private: boolean;
-  default_branch: string;
-  description: string | null;
-}
+type GithubAppStatus = components["schemas"]["GithubAppStatusResponse"];
+type RepoInfo = components["schemas"]["RepoInfo"];
 
 // fetch github app status
 const fetchGithubApp = async (): Promise<GithubAppStatus> => {
   try {
-    return await apiGet<GithubAppStatus>("/api/github/app");
+    const { data, error } = await api.GET("/api/github/app");
+    if (error) throw error;
+    return data;
   } catch {
     return { configured: false, app: null, installations: [] };
   }
@@ -45,7 +23,8 @@ const fetchGithubApp = async (): Promise<GithubAppStatus> => {
 // fetch github app repos
 const fetchGithubRepos = async (): Promise<RepoInfo[]> => {
   try {
-    const data = await apiGet<{ repos?: RepoInfo[] }>("/api/github/app/repos");
+    const { data, error } = await api.GET("/api/github/app/repos");
+    if (error) throw error;
     return data.repos || [];
   } catch {
     return [];

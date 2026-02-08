@@ -1,12 +1,12 @@
 //! container metrics, logs, and volume file operations
 
+use axum::extract::Multipart;
 use axum::{
     extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::Response,
     Json,
 };
-use axum::extract::Multipart;
 use serde::{Deserialize, Serialize};
 use std::path::{Path as FsPath, PathBuf};
 use tokio::io::AsyncWriteExt;
@@ -16,7 +16,9 @@ use uuid::Uuid;
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
-use znskr_runtime::{DockerContainerManager, DockerContainerState, DockerContainerStats, DockerMountInfo};
+use znskr_runtime::{
+    DockerContainerManager, DockerContainerState, DockerContainerStats, DockerMountInfo,
+};
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ContainerListItem {
@@ -234,9 +236,16 @@ pub async fn list_containers(
         }
     }
 
-    let apps = state.db.list_apps_by_owner(user_id).map_err(internal_error)?;
+    let apps = state
+        .db
+        .list_apps_by_owner(user_id)
+        .map_err(internal_error)?;
     for app in apps {
-        if let Some(deployment) = state.db.get_latest_deployment(app.id).map_err(internal_error)? {
+        if let Some(deployment) = state
+            .db
+            .get_latest_deployment(app.id)
+            .map_err(internal_error)?
+        {
             let mut service_names = std::collections::HashMap::new();
             for service in &app.services {
                 service_names.insert(service.id, service.name.clone());
@@ -311,7 +320,10 @@ pub async fn get_container_status(
     get,
     path = "/api/containers/{id}/logs",
     tag = "containers",
-    params(("id" = String, Path, description = "container id")),
+    params(
+        ("id" = String, Path, description = "container id"),
+        ("tail" = Option<usize>, Query, description = "number of log lines")
+    ),
     security(("bearer" = [])),
     responses(
         (status = 200, description = "container logs", body = ContainerLogsResponse),
@@ -330,7 +342,10 @@ pub async fn get_container_logs(
     ensure_container_owned(&state, user_id, &id).await?;
 
     let docker = DockerContainerManager::new();
-    let logs = docker.get_logs(&id, params.tail.unwrap_or(200)).await.map_err(internal_error)?;
+    let logs = docker
+        .get_logs(&id, params.tail.unwrap_or(200))
+        .await
+        .map_err(internal_error)?;
     Ok(Json(ContainerLogsResponse { logs }))
 }
 
@@ -370,10 +385,7 @@ pub async fn list_container_mounts(
     Ok(Json(response))
 }
 
-fn find_mount<'a>(
-    mounts: &'a [DockerMountInfo],
-    destination: &str,
-) -> Option<&'a DockerMountInfo> {
+fn find_mount<'a>(mounts: &'a [DockerMountInfo], destination: &str) -> Option<&'a DockerMountInfo> {
     mounts.iter().find(|mount| mount.destination == destination)
 }
 
@@ -389,7 +401,10 @@ fn validate_rel_path(rel_path: &str) -> Result<PathBuf, (StatusCode, Json<ErrorR
     }
 
     for component in path.components() {
-        if matches!(component, std::path::Component::ParentDir | std::path::Component::RootDir) {
+        if matches!(
+            component,
+            std::path::Component::ParentDir | std::path::Component::RootDir
+        ) {
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
@@ -408,7 +423,10 @@ async fn resolve_mount_path(
     mount: &str,
     rel_path: Option<String>,
 ) -> Result<(PathBuf, PathBuf, bool), (StatusCode, Json<ErrorResponse>)> {
-    let mounts = docker.list_mounts(container_id).await.map_err(internal_error)?;
+    let mounts = docker
+        .list_mounts(container_id)
+        .await
+        .map_err(internal_error)?;
     let mount_info = find_mount(&mounts, mount).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
@@ -433,7 +451,11 @@ async fn resolve_mount_path(
     get,
     path = "/api/containers/{id}/files",
     tag = "containers",
-    params(("id" = String, Path, description = "container id")),
+    params(
+        ("id" = String, Path, description = "container id"),
+        ("mount" = String, Query, description = "mount point"),
+        ("path" = Option<String>, Query, description = "relative path within mount")
+    ),
     security(("bearer" = [])),
     responses(
         (status = 200, description = "volume entries", body = Vec<VolumeEntry>),
@@ -452,7 +474,8 @@ pub async fn list_volume_entries(
     ensure_container_owned(&state, user_id, &id).await?;
 
     let docker = DockerContainerManager::new();
-    let (base, rel, _read_only) = resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
+    let (base, rel, _read_only) =
+        resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
     let target = base.join(&rel);
 
     let metadata = std::fs::metadata(&target).map_err(internal_error)?;
@@ -499,7 +522,11 @@ pub async fn list_volume_entries(
     delete,
     path = "/api/containers/{id}/files",
     tag = "containers",
-    params(("id" = String, Path, description = "container id")),
+    params(
+        ("id" = String, Path, description = "container id"),
+        ("mount" = String, Query, description = "mount point"),
+        ("path" = Option<String>, Query, description = "relative path within mount")
+    ),
     security(("bearer" = [])),
     responses(
         (status = 204, description = "entry deleted"),
@@ -543,7 +570,11 @@ pub async fn delete_volume_entry(
     get,
     path = "/api/containers/{id}/files/download",
     tag = "containers",
-    params(("id" = String, Path, description = "container id")),
+    params(
+        ("id" = String, Path, description = "container id"),
+        ("mount" = String, Query, description = "mount point"),
+        ("path" = Option<String>, Query, description = "relative path within mount")
+    ),
     security(("bearer" = [])),
     responses(
         (status = 200, description = "file download"),
@@ -562,7 +593,8 @@ pub async fn download_volume_entry(
     ensure_container_owned(&state, user_id, &id).await?;
 
     let docker = DockerContainerManager::new();
-    let (base, rel, _read_only) = resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
+    let (base, rel, _read_only) =
+        resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
     let target = base.join(&rel);
 
     let metadata = std::fs::metadata(&target).map_err(internal_error)?;
@@ -599,7 +631,11 @@ pub async fn download_volume_entry(
     post,
     path = "/api/containers/{id}/files/upload",
     tag = "containers",
-    params(("id" = String, Path, description = "container id")),
+    params(
+        ("id" = String, Path, description = "container id"),
+        ("mount" = String, Query, description = "mount point"),
+        ("path" = Option<String>, Query, description = "relative path within mount")
+    ),
     security(("bearer" = [])),
     responses(
         (status = 200, description = "file uploaded"),
@@ -629,7 +665,9 @@ pub async fn upload_volume_entry(
         ));
     }
     let target_dir = base.join(&rel);
-    tokio::fs::create_dir_all(&target_dir).await.map_err(internal_error)?;
+    tokio::fs::create_dir_all(&target_dir)
+        .await
+        .map_err(internal_error)?;
 
     while let Some(field) = multipart.next_field().await.map_err(internal_error)? {
         let file_name = field
@@ -647,7 +685,9 @@ pub async fn upload_volume_entry(
         let file_name_path = validate_rel_path(&file_name)?;
         let file_path = target_dir.join(file_name_path);
 
-        let mut file = tokio::fs::File::create(&file_path).await.map_err(internal_error)?;
+        let mut file = tokio::fs::File::create(&file_path)
+            .await
+            .map_err(internal_error)?;
         let data = field.bytes().await.map_err(internal_error)?;
         file.write_all(&data).await.map_err(internal_error)?;
     }
@@ -693,7 +733,9 @@ pub async fn create_volume_directory(
     }
 
     let target_dir = base.join(&rel);
-    tokio::fs::create_dir_all(&target_dir).await.map_err(internal_error)?;
+    tokio::fs::create_dir_all(&target_dir)
+        .await
+        .map_err(internal_error)?;
 
     Ok(StatusCode::OK)
 }

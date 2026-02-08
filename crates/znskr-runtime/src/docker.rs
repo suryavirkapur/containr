@@ -5,13 +5,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use bollard::query_parameters::{
-    CreateContainerOptions, InspectContainerOptions, ListContainersOptions,
-    LogsOptions, RemoveContainerOptions, StartContainerOptions, StatsOptions, StopContainerOptions,
-};
 use bollard::models::{
-    ContainerCreateBody, ContainerStateStatusEnum, ContainerSummaryStateEnum, HealthStatusEnum, HostConfig,
-    RestartPolicy, RestartPolicyNameEnum, NetworkCreateRequest,
+    ContainerCreateBody, ContainerStateStatusEnum, ContainerSummaryStateEnum, HealthStatusEnum,
+    HostConfig, NetworkCreateRequest, RestartPolicy, RestartPolicyNameEnum,
+};
+use bollard::query_parameters::{
+    CreateContainerOptions, InspectContainerOptions, ListContainersOptions, LogsOptions,
+    RemoveContainerOptions, StartContainerOptions, StatsOptions, StopContainerOptions,
 };
 use bollard::Docker;
 use futures::StreamExt;
@@ -139,7 +139,9 @@ impl DockerContainerManager {
 
     /// gets the docker client (panics if in stub mode)
     fn client(&self) -> &Docker {
-        self.docker.as_ref().expect("docker client not available in stub mode")
+        self.docker
+            .as_ref()
+            .expect("docker client not available in stub mode")
     }
 
     /// creates and starts a new container
@@ -201,16 +203,17 @@ impl DockerContainerManager {
         };
 
         // add health check if configured
-        let healthcheck = config.health_check.as_ref().map(|hc| {
-            bollard::models::HealthConfig {
+        let healthcheck = config
+            .health_check
+            .as_ref()
+            .map(|hc| bollard::models::HealthConfig {
                 test: Some(vec!["CMD-SHELL".to_string(), hc.cmd.join(" ")]),
                 interval: Some((hc.interval_secs as i64) * 1_000_000_000),
                 timeout: Some((hc.timeout_secs as i64) * 1_000_000_000),
                 retries: Some(hc.retries as i64),
                 start_period: None,
                 start_interval: None,
-            }
-        });
+            });
 
         let container_config = ContainerCreateBody {
             image: Some(config.image.clone()),
@@ -262,7 +265,10 @@ impl DockerContainerManager {
             return Ok(());
         }
 
-        let options = StopContainerOptions { t: Some(10), ..Default::default() };
+        let options = StopContainerOptions {
+            t: Some(10),
+            ..Default::default()
+        };
 
         if let Err(e) = self.client().stop_container(id, Some(options)).await {
             warn!(id = %id, error = %e, "docker stop failed (container may not exist)");
@@ -347,24 +353,31 @@ impl DockerContainerManager {
                     // calculate cpu percent - need to unwrap the option types
                     let cpu_stats = match stats.cpu_stats {
                         Some(cs) => cs,
-                        None => return Ok(DockerContainerStats {
-                            cpu_percent: 0.0,
-                            mem_usage_bytes: 0,
-                            mem_limit_bytes: 0,
-                        }),
+                        None => {
+                            return Ok(DockerContainerStats {
+                                cpu_percent: 0.0,
+                                mem_usage_bytes: 0,
+                                mem_limit_bytes: 0,
+                            })
+                        }
                     };
 
                     let precpu_stats = stats.precpu_stats.unwrap_or_default();
 
-                    let cpu_usage = cpu_stats.cpu_usage.as_ref()
+                    let cpu_usage = cpu_stats
+                        .cpu_usage
+                        .as_ref()
                         .and_then(|u| u.total_usage)
                         .unwrap_or(0);
-                    let precpu_usage = precpu_stats.cpu_usage.as_ref()
+                    let precpu_usage = precpu_stats
+                        .cpu_usage
+                        .as_ref()
                         .and_then(|u| u.total_usage)
                         .unwrap_or(0);
                     let cpu_delta = cpu_usage.saturating_sub(precpu_usage);
 
-                    let system_delta = cpu_stats.system_cpu_usage
+                    let system_delta = cpu_stats
+                        .system_cpu_usage
                         .unwrap_or(0)
                         .saturating_sub(precpu_stats.system_cpu_usage.unwrap_or(0));
 
@@ -386,7 +399,10 @@ impl DockerContainerManager {
                     });
                 }
                 Err(e) => {
-                    return Err(ClientError::Operation(format!("docker stats failed: {}", e)));
+                    return Err(ClientError::Operation(format!(
+                        "docker stats failed: {}",
+                        e
+                    )));
                 }
             }
         }
@@ -406,10 +422,7 @@ impl DockerContainerManager {
             .await
         {
             Ok(inspect) => {
-                let running = inspect
-                    .state
-                    .and_then(|s| s.running)
-                    .unwrap_or(false);
+                let running = inspect.state.and_then(|s| s.running).unwrap_or(false);
                 Ok(running)
             }
             Err(_) => Ok(false),
@@ -450,7 +463,9 @@ impl DockerContainerManager {
         let infos: Vec<DockerContainerInfo> = containers
             .into_iter()
             .map(|c| {
-                let id = c.names.as_ref()
+                let id = c
+                    .names
+                    .as_ref()
                     .and_then(|names| names.first())
                     .map(|n| n.trim_start_matches('/').to_string())
                     .unwrap_or_default();
@@ -614,10 +629,7 @@ impl DockerContainerManager {
             .await
         {
             Ok(inspect) => {
-                let health_status = inspect
-                    .state
-                    .and_then(|s| s.health)
-                    .and_then(|h| h.status);
+                let health_status = inspect.state.and_then(|s| s.health).and_then(|h| h.status);
 
                 match health_status {
                     Some(HealthStatusEnum::HEALTHY) => Ok(true),
@@ -659,7 +671,11 @@ impl DockerContainerManager {
     }
 
     /// inspects a container and returns its ip address on a given network
-    pub async fn get_container_ip(&self, container_name: &str, network_name: &str) -> Option<String> {
+    pub async fn get_container_ip(
+        &self,
+        container_name: &str,
+        network_name: &str,
+    ) -> Option<String> {
         if self.stub_mode {
             return None;
         }
@@ -670,9 +686,7 @@ impl DockerContainerManager {
             .await
         {
             Ok(inspect) => {
-                let networks = inspect
-                    .network_settings
-                    .and_then(|ns| ns.networks)?;
+                let networks = inspect.network_settings.and_then(|ns| ns.networks)?;
 
                 // try specific network first
                 if let Some(network) = networks.get(network_name) {

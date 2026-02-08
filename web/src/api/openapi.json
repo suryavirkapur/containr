@@ -291,6 +291,104 @@
         ]
       }
     },
+    "/api/apps/{app_id}/deployments/{id}/rollback": {
+      "post": {
+        "tags": [
+          "deployments"
+        ],
+        "summary": "rollback to a previous deployment",
+        "operationId": "rollback_deployment",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "deployment id to rollback to",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "rollback deployment queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/apps/{id}": {
       "get": {
         "tags": [
@@ -1524,6 +1622,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "mount",
+            "in": "query",
+            "description": "mount point",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "relative path within mount",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1581,6 +1697,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "mount",
+            "in": "query",
+            "description": "mount point",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "relative path within mount",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1627,6 +1761,24 @@
             "in": "path",
             "description": "container id",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mount",
+            "in": "query",
+            "description": "mount point",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "relative path within mount",
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -1746,6 +1898,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "mount",
+            "in": "query",
+            "description": "mount point",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "relative path within mount",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1794,6 +1964,16 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "tail",
+            "in": "query",
+            "description": "number of log lines",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
             }
           }
         ],
@@ -2817,12 +2997,10 @@
         "operationId": "get_app_manifest",
         "responses": {
           "200": {
-            "description": "app manifest url",
+            "description": "app manifest payload",
             "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -3494,6 +3672,7 @@
           "port",
           "env_vars",
           "services",
+          "rollout_strategy",
           "created_at"
         ],
         "properties": {
@@ -3544,6 +3723,10 @@
             "format": "int32",
             "description": "app port (deprecated)",
             "minimum": 0
+          },
+          "rollout_strategy": {
+            "type": "string",
+            "description": "rollout strategy"
           },
           "services": {
             "type": "array",
@@ -3831,6 +4014,13 @@
             "description": "port for the app (deprecated, use services)",
             "minimum": 0
           },
+          "rollout_strategy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "rollout strategy (stop_first or start_first)"
+          },
           "services": {
             "type": [
               "array",
@@ -4113,6 +4303,13 @@
               "null"
             ],
             "description": "commit sha to record"
+          },
+          "rollout_strategy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "rollout strategy override (stop_first or start_first)"
           }
         }
       },
@@ -4573,6 +4770,19 @@
           }
         }
       },
+      "RollbackRequest": {
+        "type": "object",
+        "description": "rollback request",
+        "properties": {
+          "rollout_strategy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "rollout strategy override (stop_first or start_first)"
+          }
+        }
+      },
       "ServiceRequest": {
         "type": "object",
         "description": "service request for multi-container apps",
@@ -4869,6 +5079,13 @@
             "format": "int32",
             "description": "new port (deprecated, use services)",
             "minimum": 0
+          },
+          "rollout_strategy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "rollout strategy (stop_first or start_first)"
           },
           "services": {
             "type": [
