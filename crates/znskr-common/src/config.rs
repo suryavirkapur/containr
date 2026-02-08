@@ -229,7 +229,10 @@ staging = true
         .unwrap();
 
         assert!(config.security.encryption_key.is_empty());
-        assert!(config.security.cors_allowed_origins.contains(&"http://localhost:3001".to_string()));
+        assert!(config
+            .security
+            .cors_allowed_origins
+            .contains(&"http://localhost:3001".to_string()));
         assert_eq!(config.proxy.public_ip, None);
         assert_eq!(config.proxy.load_balance, LoadBalanceAlgorithm::RoundRobin);
         assert_eq!(config.storage.data_dir, PathBuf::from("/data/znskr"));

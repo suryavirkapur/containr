@@ -238,22 +238,20 @@ impl AcmeManager {
             match fs::read_to_string(&account_creds_path).await {
                 Ok(json_str) => {
                     match serde_json::from_str::<instant_acme::AccountCredentials>(&json_str) {
-                        Ok(credentials) => {
-                            match Account::builder() {
-                                Ok(builder) => match builder.from_credentials(credentials).await {
-                                    Ok(account) => {
-                                        info!("restored acme account from saved credentials");
-                                        return Ok(account);
-                                    }
-                                    Err(e) => {
-                                        warn!(error = %e, "failed to restore account - creating new");
-                                    }
-                                },
-                                Err(e) => {
-                                    warn!(error = %e, "failed to create account builder - creating new");
+                        Ok(credentials) => match Account::builder() {
+                            Ok(builder) => match builder.from_credentials(credentials).await {
+                                Ok(account) => {
+                                    info!("restored acme account from saved credentials");
+                                    return Ok(account);
                                 }
+                                Err(e) => {
+                                    warn!(error = %e, "failed to restore account - creating new");
+                                }
+                            },
+                            Err(e) => {
+                                warn!(error = %e, "failed to create account builder - creating new");
                             }
-                        }
+                        },
                         Err(e) => {
                             warn!(error = %e, "failed to parse account credentials - creating new");
                         }

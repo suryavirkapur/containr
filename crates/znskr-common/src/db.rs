@@ -6,7 +6,9 @@ use uuid::Uuid;
 
 use crate::error::Result;
 use crate::managed_services::{ManagedDatabase, ManagedQueue, StorageBucket};
-use crate::models::{App, Certificate, ContainerService, Deployment, GithubAppConfig, ServiceDeployment, User};
+use crate::models::{
+    App, Certificate, ContainerService, Deployment, GithubAppConfig, ServiceDeployment, User,
+};
 
 fn parse_log_counter(bytes: &[u8]) -> u64 {
     if bytes.len() != 8 {
@@ -254,13 +256,18 @@ impl Database {
         }
         // sort by service_id then replica_index
         deployments.sort_by(|a, b| {
-            a.service_id.cmp(&b.service_id).then(a.replica_index.cmp(&b.replica_index))
+            a.service_id
+                .cmp(&b.service_id)
+                .then(a.replica_index.cmp(&b.replica_index))
         });
         Ok(deployments)
     }
 
     /// lists service deployments for a specific service
-    pub fn list_service_deployments_by_service(&self, service_id: Uuid) -> Result<Vec<ServiceDeployment>> {
+    pub fn list_service_deployments_by_service(
+        &self,
+        service_id: Uuid,
+    ) -> Result<Vec<ServiceDeployment>> {
         let tree = self.get_tree("service_deployments")?;
         let mut deployments = Vec::new();
         for result in tree.iter() {
@@ -338,10 +345,10 @@ impl Database {
 
     /// gets deployment logs with pagination
     pub fn get_deployment_logs(
-        &self, 
-        deployment_id: Uuid, 
-        limit: usize, 
-        offset: usize // offset is number of items to skip from start (oldest)
+        &self,
+        deployment_id: Uuid,
+        limit: usize,
+        offset: usize, // offset is number of items to skip from start (oldest)
     ) -> Result<Vec<String>> {
         let v2_tree = self.get_tree("deployment_logs_v2")?;
         let prefix = deployment_id.as_bytes();

@@ -18,7 +18,9 @@ use uuid::Uuid;
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
-use znskr_common::models::{App, ContainerService, EnvVar, HealthCheck, RestartPolicy};
+use znskr_common::models::{
+    App, ContainerService, EnvVar, HealthCheck, RestartPolicy, RolloutStrategy,
+};
 use znskr_runtime::DockerContainerManager;
 
 /// create app request
@@ -40,6 +42,8 @@ pub struct CreateAppRequest {
     pub env_vars: Option<Vec<EnvVarRequest>>,
     /// container services for multi-container apps
     pub services: Option<Vec<ServiceRequest>>,
+    /// rollout strategy (stop_first or start_first)
+    pub rollout_strategy: Option<String>,
 }
 
 /// env var in request
@@ -151,6 +155,8 @@ pub struct UpdateAppRequest {
     pub env_vars: Option<Vec<EnvVarRequest>>,
     /// updated services
     pub services: Option<Vec<ServiceRequest>>,
+    /// rollout strategy (stop_first or start_first)
+    pub rollout_strategy: Option<String>,
 }
 
 /// app response
@@ -174,6 +180,8 @@ pub struct AppResponse {
     pub env_vars: Vec<EnvVarResponse>,
     /// container services
     pub services: Vec<ServiceResponse>,
+    /// rollout strategy
+    pub rollout_strategy: String,
     /// creation timestamp
     pub created_at: String,
 }
@@ -216,6 +224,10 @@ impl From<&App> for AppResponse {
                     restart_policy: format!("{:?}", s.restart_policy).to_lowercase(),
                 })
                 .collect(),
+            rollout_strategy: match app.rollout_strategy {
+                RolloutStrategy::StopFirst => "stop_first".to_string(),
+                RolloutStrategy::StartFirst => "start_first".to_string(),
+            },
             created_at: app.created_at.to_rfc3339(),
         }
     }
@@ -344,12 +356,7 @@ pub async fn create_app(
             config.proxy.public_ip.as_deref(),
         )
         .await
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse { error: e }),
-            )
-        })?;
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))?;
     }
 
     // create app
@@ -373,18 +380,24 @@ pub async fn create_app(
             })
             .collect();
     }
+    if let Some(strategy) = req.rollout_strategy.as_deref() {
+        app.rollout_strategy = parse_rollout_strategy(strategy).ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "invalid rollout strategy. use stop_first or start_first".to_string(),
+                }),
+            )
+        })?;
+    }
 
     // process services for multi-container apps
     if let Some(services) = req.services {
         app.services = services
             .into_iter()
             .map(|s| {
-                let mut service = ContainerService::new(
-                    app.id,
-                    s.name,
-                    s.image.unwrap_or_default(),
-                    s.port,
-                );
+                let mut service =
+                    ContainerService::new(app.id, s.name, s.image.unwrap_or_default(), s.port);
                 service.replicas = s.replicas.unwrap_or(1);
                 service.memory_limit = s.memory_limit_mb.map(|m| m * 1024 * 1024);
                 service.cpu_limit = s.cpu_limit;
@@ -519,7 +532,7 @@ pub async fn get_app_metrics(
 
     let manager = DockerContainerManager::new();
     let containers = manager.list_containers().await.map_err(internal_error)?;
-    
+
     let mut metrics = Vec::new();
     let prefix = format!("znskr-{}", app.id);
 
@@ -603,19 +616,12 @@ pub async fn update_app(
                 config.proxy.public_ip.as_deref(),
             )
             .await
-            .map_err(|e| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse { error: e }),
-                )
-            })?;
+            .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))?;
 
             // check domain uniqueness
             for domain in &domains {
-                if let Some(existing) = state
-                    .db
-                    .get_app_by_domain(domain)
-                    .map_err(internal_error)?
+                if let Some(existing) =
+                    state.db.get_app_by_domain(domain).map_err(internal_error)?
                 {
                     if existing.id != app.id {
                         return Err((
@@ -662,6 +668,16 @@ pub async fn update_app(
                 }
             })
             .collect();
+    }
+    if let Some(strategy) = req.rollout_strategy.as_deref() {
+        app.rollout_strategy = parse_rollout_strategy(strategy).ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "invalid rollout strategy. use stop_first or start_first".to_string(),
+                }),
+            )
+        })?;
     }
 
     app.updated_at = chrono::Utc::now();
@@ -749,6 +765,14 @@ fn normalize_domain(input: &str) -> Option<String> {
     Some(trimmed.to_lowercase())
 }
 
+fn parse_rollout_strategy(value: &str) -> Option<RolloutStrategy> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "stop_first" | "stop-first" | "stopfirst" => Some(RolloutStrategy::StopFirst),
+        "start_first" | "start-first" | "startfirst" => Some(RolloutStrategy::StartFirst),
+        _ => None,
+    }
+}
+
 fn normalize_domains(domains: Vec<String>) -> Vec<String> {
     let mut normalized = Vec::new();
     for domain in domains {
@@ -827,5 +851,8 @@ async fn validate_domain(
         }
     }
 
-    Err("domain must have an A record pointing to the public IP or CNAME to the base domain".to_string())
+    Err(
+        "domain must have an A record pointing to the public IP or CNAME to the base domain"
+            .to_string(),
+    )
 }

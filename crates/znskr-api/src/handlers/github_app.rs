@@ -96,7 +96,10 @@ pub struct InstallationCallbackQuery {
 }
 
 /// extracts user id from authorization header
-fn get_user_id(headers: &HeaderMap, jwt_secret: &str) -> Result<Uuid, (StatusCode, Json<ErrorResponse>)> {
+fn get_user_id(
+    headers: &HeaderMap,
+    jwt_secret: &str,
+) -> Result<Uuid, (StatusCode, Json<ErrorResponse>)> {
     let auth_header = headers
         .get("authorization")
         .and_then(|h| h.to_str().ok())
@@ -154,18 +157,21 @@ pub async fn get_github_app(
         Some(app) => {
             // refresh installations from github
             let mut installations = app.installations.clone();
-            
+
             // try to sync with github
-            if let Ok(pem) = decrypt_value(&config, &app.private_key, Some(&config.auth.jwt_secret)) {
+            if let Ok(pem) = decrypt_value(&config, &app.private_key, Some(&config.auth.jwt_secret))
+            {
                 if let Ok(jwt) = generate_app_jwt(app.app_id, &pem) {
                     if let Ok(github_installations) = list_app_installations(&jwt).await {
                         installations = github_installations
                             .into_iter()
-                            .map(|i| GithubInstallation::new(
-                                i.id,
-                                i.account.login,
-                                i.account.account_type,
-                            ))
+                            .map(|i| {
+                                GithubInstallation::new(
+                                    i.id,
+                                    i.account.login,
+                                    i.account.account_type,
+                                )
+                            })
                             .collect();
                     }
                 }
@@ -204,7 +210,7 @@ pub async fn get_github_app(
     tag = "github-app",
     security(("bearer" = [])),
     responses(
-        (status = 200, description = "app manifest url", body = String),
+        (status = 200, description = "app manifest payload", body = serde_json::Value),
         (status = 401, description = "unauthorized", body = ErrorResponse)
     )
 )]
@@ -222,7 +228,7 @@ pub async fn get_app_manifest(
         format!("https://{}", base_domain)
     };
     let redirect_url = format!("{}/github/callback", base_url);
-    
+
     let manifest = serde_json::json!({
         "name": "znskr",
         "url": base_url,
@@ -265,7 +271,7 @@ pub async fn github_app_callback(
     Query(query): Query<ManifestCallbackQuery>,
 ) -> Result<Redirect, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
-    
+
     // try to get user from cookie/session or use a default flow
     // for now we'll require auth header
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
@@ -281,30 +287,28 @@ pub async fn github_app_callback(
     })?;
 
     // encrypt sensitive data
-    let encrypted_secret = encrypt_value(&config, &app_response.client_secret)
-        .map_err(internal_error)?;
+    let encrypted_secret =
+        encrypt_value(&config, &app_response.client_secret).map_err(internal_error)?;
 
-    let encrypted_pem = encrypt_value(&config, &app_response.pem)
-        .map_err(internal_error)?;
+    let encrypted_pem = encrypt_value(&config, &app_response.pem).map_err(internal_error)?;
 
-    let encrypted_webhook = encrypt_value(&config, &app_response.webhook_secret)
-        .map_err(internal_error)?;
+    let encrypted_webhook =
+        encrypt_value(&config, &app_response.webhook_secret).map_err(internal_error)?;
 
     // create app config using builder pattern
-    let app_config = GithubAppConfig::builder(
-        app_response.id,
-        app_response.slug,
-        user_id,
-    )
-    .client_id(app_response.client_id)
-    .client_secret(encrypted_secret)
-    .private_key(encrypted_pem)
-    .webhook_secret(encrypted_webhook)
-    .html_url(app_response.html_url)
-    .build();
+    let app_config = GithubAppConfig::builder(app_response.id, app_response.slug, user_id)
+        .client_id(app_response.client_id)
+        .client_secret(encrypted_secret)
+        .private_key(encrypted_pem)
+        .webhook_secret(encrypted_webhook)
+        .html_url(app_response.html_url)
+        .build();
 
     // save to database
-    state.db.save_github_app(&app_config).map_err(internal_error)?;
+    state
+        .db
+        .save_github_app(&app_config)
+        .map_err(internal_error)?;
 
     // redirect to settings with success
     Ok(Redirect::to("/settings?github=created"))
@@ -335,8 +339,12 @@ pub async fn github_install_callback(
         // get app config
         if let Some(mut app_config) = state.db.get_github_app(user_id).map_err(internal_error)? {
             // decrypt private key
-            let pem = decrypt_value(&config, &app_config.private_key, Some(&config.auth.jwt_secret))
-                .map_err(internal_error)?;
+            let pem = decrypt_value(
+                &config,
+                &app_config.private_key,
+                Some(&config.auth.jwt_secret),
+            )
+            .map_err(internal_error)?;
 
             // generate jwt and get installation info
             let jwt = generate_app_jwt(app_config.app_id, &pem).map_err(|e| {
@@ -359,10 +367,17 @@ pub async fn github_install_callback(
                     );
 
                     // add if not already present
-                    if !app_config.installations.iter().any(|i| i.id == installation_id) {
+                    if !app_config
+                        .installations
+                        .iter()
+                        .any(|i| i.id == installation_id)
+                    {
                         app_config.installations.push(new_install);
                         app_config.updated_at = chrono::Utc::now();
-                        state.db.save_github_app(&app_config).map_err(internal_error)?;
+                        state
+                            .db
+                            .save_github_app(&app_config)
+                            .map_err(internal_error)?;
                     }
                 }
             }
@@ -409,8 +424,12 @@ pub async fn get_app_repos(
     }
 
     // decrypt private key
-    let pem = decrypt_value(&config, &app_config.private_key, Some(&config.auth.jwt_secret))
-        .map_err(internal_error)?;
+    let pem = decrypt_value(
+        &config,
+        &app_config.private_key,
+        Some(&config.auth.jwt_secret),
+    )
+    .map_err(internal_error)?;
 
     // generate jwt
     let jwt = generate_app_jwt(app_config.app_id, &pem).map_err(|e| {
@@ -426,23 +445,27 @@ pub async fn get_app_repos(
 
     // get repos from each installation
     for installation in &app_config.installations {
-        let token_response = get_installation_token(&jwt, installation.id).await.map_err(|e| {
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(ErrorResponse {
-                    error: format!("failed to get installation token: {}", e),
-                }),
-            )
-        })?;
+        let token_response = get_installation_token(&jwt, installation.id)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_GATEWAY,
+                    Json(ErrorResponse {
+                        error: format!("failed to get installation token: {}", e),
+                    }),
+                )
+            })?;
 
-        let repos = get_installation_repos(&token_response.token).await.map_err(|e| {
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(ErrorResponse {
-                    error: format!("failed to get repos: {}", e),
-                }),
-            )
-        })?;
+        let repos = get_installation_repos(&token_response.token)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_GATEWAY,
+                    Json(ErrorResponse {
+                        error: format!("failed to get repos: {}", e),
+                    }),
+                )
+            })?;
 
         all_repos.extend(repos);
     }
@@ -470,7 +493,10 @@ pub async fn delete_github_app(
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
-    state.db.delete_github_app(user_id).map_err(internal_error)?;
+    state
+        .db
+        .delete_github_app(user_id)
+        .map_err(internal_error)?;
 
     Ok(StatusCode::OK)
 }

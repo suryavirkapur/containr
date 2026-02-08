@@ -27,6 +27,9 @@ pub struct App {
     /// container services for multi-container apps
     #[serde(default)]
     pub services: Vec<ContainerService>,
+    /// rollout strategy used for deployments
+    #[serde(default)]
+    pub rollout_strategy: RolloutStrategy,
     pub owner_id: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -51,6 +54,7 @@ impl App {
             env_vars: Vec::new(),
             port: 8080,
             services: Vec::new(),
+            rollout_strategy: RolloutStrategy::default(),
             owner_id,
             created_at: now,
             updated_at: now,
@@ -100,6 +104,17 @@ pub enum RestartPolicy {
     Always,
     /// restart only on failure
     OnFailure,
+}
+
+/// rollout strategy for replacing running containers
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RolloutStrategy {
+    /// stop old containers before starting new containers
+    #[default]
+    StopFirst,
+    /// start new containers before stopping old containers
+    StartFirst,
 }
 
 /// health check configuration for a service
@@ -394,6 +409,7 @@ pub struct Route {
 /// deployment job sent between api and worker
 #[derive(Debug, Clone)]
 pub struct DeploymentJob {
+    pub deployment_id: Uuid,
     pub app_id: Uuid,
     pub commit_sha: String,
     pub commit_message: Option<String>,
@@ -401,6 +417,8 @@ pub struct DeploymentJob {
     pub branch: String,
     pub github_token: Option<String>,
     pub repo_path: Option<String>,
+    pub rollout_strategy: RolloutStrategy,
+    pub rollback_from_deployment_id: Option<Uuid>,
 }
 
 /// github app configuration for coolify-style integration
@@ -583,6 +601,7 @@ mod tests {
         assert_eq!(app.port, 8080);
         assert!(app.domain.is_none());
         assert!(app.domains.is_empty());
+        assert_eq!(app.rollout_strategy, RolloutStrategy::StopFirst);
         assert_eq!(app.created_at, app.updated_at);
     }
 
@@ -627,6 +646,7 @@ mod tests {
         assert!(app.services.is_empty());
         assert!(app.domain.is_none());
         assert!(app.domains.is_empty());
+        assert_eq!(app.rollout_strategy, RolloutStrategy::StopFirst);
     }
 
     #[test]
@@ -730,6 +750,19 @@ mod tests {
 
         for (status, expected) in cases {
             let encoded = serde_json::to_string(&status).unwrap();
+            assert_eq!(encoded, format!("\"{}\"", expected));
+        }
+    }
+
+    #[test]
+    fn test_rollout_strategy_serialization_strings() {
+        let cases = [
+            (RolloutStrategy::StopFirst, "stop_first"),
+            (RolloutStrategy::StartFirst, "start_first"),
+        ];
+
+        for (strategy, expected) in cases {
+            let encoded = serde_json::to_string(&strategy).unwrap();
             assert_eq!(encoded, format!("\"{}\"", expected));
         }
     }

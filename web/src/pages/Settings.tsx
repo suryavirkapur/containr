@@ -1,27 +1,8 @@
 import { Component, createResource, createSignal, Show } from "solid-js";
 import { api, components } from "../api";
-import { apiDelete, apiGet } from "../api/client";
 
 type SettingsResponse = components["schemas"]["SettingsResponse"];
-
-/**
- * github app status from api
- * TODO: add github app endpoints to schema and use typed client
- */
-interface GithubAppStatus {
-  configured: boolean;
-  app: {
-    app_id: number;
-    app_name: string;
-    html_url: string;
-  } | null;
-  installations: {
-    id: number;
-    account_login: string;
-    account_type: string;
-    repository_count: number | null;
-  }[];
-}
+type GithubAppStatus = components["schemas"]["GithubAppStatusResponse"];
 
 /**
  * fetches current settings from api
@@ -37,7 +18,9 @@ const fetchSettings = async (): Promise<SettingsResponse> => {
  */
 const fetchGithubApp = async (): Promise<GithubAppStatus> => {
   try {
-    return await apiGet<GithubAppStatus>("/api/github/app");
+    const { data, error } = await api.GET("/api/github/app");
+    if (error) throw error;
+    return data;
   } catch {
     return { configured: false, app: null, installations: [] };
   }
@@ -68,7 +51,8 @@ const Settings: Component = () => {
   const handleDeleteGithubApp = async () => {
     setDeletingApp(true);
     try {
-      await apiDelete("/api/github/app");
+      const { error } = await api.DELETE("/api/github/app");
+      if (error) throw new Error(error.error);
 
       refetchGithub();
       setMessage({ type: "success", text: "github app deleted" });
@@ -83,7 +67,10 @@ const Settings: Component = () => {
   const startAppCreation = async () => {
     setCreatingApp(true);
     try {
-      const manifest = await apiGet("/api/github/app/manifest");
+      const { data, error } = await api.GET("/api/github/app/manifest");
+      if (error) throw new Error(error.error);
+      const manifest =
+        typeof data === "string" ? JSON.parse(data) : (data as unknown);
 
       // create form and submit to github
       const form = document.createElement("form");

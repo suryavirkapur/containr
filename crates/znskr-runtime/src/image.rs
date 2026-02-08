@@ -77,7 +77,9 @@ impl ImageManager {
 
     /// gets the docker client
     fn client(&self) -> &Docker {
-        self.docker.as_ref().expect("docker client not available in stub mode")
+        self.docker
+            .as_ref()
+            .expect("docker client not available in stub mode")
     }
 
     /// pulls an image from a registry
@@ -134,7 +136,8 @@ impl ImageManager {
         context_path: &str,
         dockerfile: Option<&str>,
     ) -> Result<ImageInfo> {
-        self.build_image_with_logs(name, context_path, dockerfile, |_| {}).await
+        self.build_image_with_logs(name, context_path, dockerfile, |_| {})
+            .await
     }
 
     /// builds an image and streams log output to a callback
@@ -194,11 +197,9 @@ impl ImageManager {
             ..Default::default()
         };
 
-        let mut stream = self.client().build_image(
-            options,
-            None,
-            Some(body_full(bytes::Bytes::from(tar_data))),
-        );
+        let mut stream =
+            self.client()
+                .build_image(options, None, Some(body_full(bytes::Bytes::from(tar_data))));
 
         while let Some(result) = stream.next().await {
             match result {
@@ -266,7 +267,11 @@ impl ImageManager {
         let infos: Vec<ImageInfo> = images
             .into_iter()
             .map(|img| {
-                let name = img.repo_tags.first().cloned().unwrap_or_else(|| "<none>".to_string());
+                let name = img
+                    .repo_tags
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "<none>".to_string());
                 let digest = img.id.clone();
                 let size = img.size as u64;
 
@@ -294,7 +299,10 @@ impl ImageManager {
             Ok(_) => Ok(()),
             Err(e) => {
                 let err_str = e.to_string();
-                Err(ClientError::Operation(format!("remove failed: {}", err_str)))
+                Err(ClientError::Operation(format!(
+                    "remove failed: {}",
+                    err_str
+                )))
             }
         }
     }
@@ -302,8 +310,6 @@ impl ImageManager {
 
 /// creates a tar archive of the given directory
 fn create_tar_archive(path: &str) -> std::io::Result<Vec<u8>> {
-
-
     let mut archive = tar::Builder::new(Vec::new());
     archive.append_dir_all(".", path)?;
     archive.into_inner()

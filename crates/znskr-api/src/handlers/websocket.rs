@@ -172,7 +172,7 @@ async fn handle_deployment_logs(
                 return;
             }
         }
-        // if legacy logs exist, we assume no new logs in DB for simplicity, 
+        // if legacy logs exist, we assume no new logs in DB for simplicity,
         // or we could check DB too, but usually it's one or the other.
         // Assuming migration happened or new deployment.
         // If it's a new deployment, deployment.logs is empty.
@@ -182,15 +182,14 @@ async fn handle_deployment_logs(
     loop {
         // get new logs from DB starting at current_offset
         // fetch in batches
-        match state.db.get_deployment_logs(deployment_id, 100, current_offset) {
+        match state
+            .db
+            .get_deployment_logs(deployment_id, 100, current_offset)
+        {
             Ok(logs) => {
                 if !logs.is_empty() {
                     for log in logs {
-                        if socket
-                            .send(Message::Text(log.into()))
-                            .await
-                            .is_err()
-                        {
+                        if socket.send(Message::Text(log.into())).await.is_err() {
                             return;
                         }
                         current_offset += 1;
@@ -222,19 +221,23 @@ async fn handle_deployment_logs(
         // actually, we should only break if finished AND we are caught up.
         // but get_deployment_logs returning empty means we are caught up for now.
         if is_finished {
-             // double check if there are more logs just in case race condition
-             if let Ok(logs) = state.db.get_deployment_logs(deployment_id, 1, current_offset) {
-                 if logs.is_empty() {
+            // double check if there are more logs just in case race condition
+            if let Ok(logs) = state
+                .db
+                .get_deployment_logs(deployment_id, 1, current_offset)
+            {
+                if logs.is_empty() {
                     let _ = socket
                         .send(Message::Text(
-                            format!("[deployment {}]", format!("{:?}", status).to_lowercase()).into(),
+                            format!("[deployment {}]", format!("{:?}", status).to_lowercase())
+                                .into(),
                         ))
                         .await;
                     break;
-                 }
-             } else {
-                 break;
-             }
+                }
+            } else {
+                break;
+            }
         }
 
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;

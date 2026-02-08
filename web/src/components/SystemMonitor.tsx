@@ -5,20 +5,14 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
-import { apiGet } from "../api/client";
+import { api, components } from "../api";
 
-interface SystemStats {
-  cpu_percent: number;
-  memory_used_bytes: number;
-  memory_total_bytes: number;
-  network_rx_bytes: number;
-  network_tx_bytes: number;
-  load_avg: [number, number, number];
-  uptime_seconds: number;
-}
+type SystemStats = components["schemas"]["SystemStats"];
 
 const fetchStats = async (): Promise<SystemStats> => {
-  return apiGet<SystemStats>("/api/system/stats");
+  const { data, error } = await api.GET("/api/system/stats");
+  if (error) throw error;
+  return data;
 };
 
 const formatBytes = (bytes: number) => {

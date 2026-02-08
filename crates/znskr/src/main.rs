@@ -95,8 +95,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // create certificate request channel (shared between api and proxy)
-    let (cert_request_tx, mut cert_request_rx) =
-        tokio::sync::mpsc::channel::<String>(64);
+    let (cert_request_tx, mut cert_request_rx) = tokio::sync::mpsc::channel::<String>(64);
 
     // start api server and get deployment queue receiver
     let deployment_rx = znskr_api::run_server(
@@ -104,7 +103,8 @@ async fn main() -> anyhow::Result<()> {
         args.config.clone(),
         db.clone(),
         Some(cert_request_tx.clone()),
-    ).await?;
+    )
+    .await?;
     info!(port = %config.server.port, "api server started");
     let acme_email = config.acme.email.clone();
     let acme_staging = config.acme.staging;
@@ -257,7 +257,7 @@ async fn main() -> anyhow::Result<()> {
                     let routes = proxy_routes_for_updates.clone();
                     let db = proxy_db_for_updates.clone();
                     let base_domain = base_domain.clone();
-                    
+
                     // connect to docker for route refresh
                     let docker = match bollard::Docker::connect_with_socket_defaults() {
                         Ok(d) => d,
@@ -266,7 +266,7 @@ async fn main() -> anyhow::Result<()> {
                             continue;
                         }
                     };
-                    
+
                     refresh_routes_for_app(
                         &db,
                         &routes,
@@ -346,7 +346,8 @@ async fn load_routes_from_db(
         }
     };
 
-    let mut filters: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut filters: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
     filters.insert("name".to_string(), vec!["znskr-".to_string()]);
 
     let options = bollard::query_parameters::ListContainersOptions {
@@ -397,7 +398,8 @@ async fn refresh_routes_for_app(
     let network_name = format!("znskr-{}", app.id);
 
     // list containers for this app
-    let mut filters: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut filters: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
     filters.insert("name".to_string(), vec![format!("znskr-{}", app.id)]);
 
     let options = bollard::query_parameters::ListContainersOptions {
@@ -426,13 +428,31 @@ async fn refresh_routes_for_app(
             }
         };
 
+        let active_service_container_ids = db
+            .get_latest_deployment(app.id)
+            .ok()
+            .flatten()
+            .filter(|d| d.status == znskr_common::models::DeploymentStatus::Running)
+            .map(|d| {
+                d.service_deployments
+                    .into_iter()
+                    .filter(|sd| sd.service_id == service.id)
+                    .filter_map(|sd| sd.container_id)
+                    .collect::<HashSet<_>>()
+            })
+            .filter(|set| !set.is_empty());
+
         let prefix = format!("znskr-{}-{}-", app.id, service.name);
 
         for container in &containers {
             if let Some(names) = &container.names {
                 for name in names {
                     let name = name.trim_start_matches('/');
-                    if !name.starts_with(&prefix) || name.is_empty() {
+                    if let Some(active_ids) = &active_service_container_ids {
+                        if !active_ids.contains(name) {
+                            continue;
+                        }
+                    } else if !name.starts_with(&prefix) || name.is_empty() {
                         continue;
                     }
 
@@ -448,32 +468,35 @@ async fn refresh_routes_for_app(
     } else {
         let expected_name = format!("znskr-{}", app.id);
 
-                for container in &containers {
+        for container in &containers {
             if let Some(names) = &container.names {
                 for name in names {
                     let name = name.trim_start_matches('/');
-                    
+
                     // if route is being refreshed due to a deployment, we might have a specific container ID
                     // from the running deployment. we should prioritize that.
                     // however, `list_containers` here is generic.
                     // instead, we should check if the container name matches what we expect from the deployment
-                    
+
                     // check against specific container id if we have one
                     // we don't have the deployment object here readily available in this loop context
                     // but we can trust the logic that if a container exists and matches the prefix, it's a candidate
-                    
+
                     // Logic update:
                     // 1. If the app has a specific 'running' deployment with a container_id, we should try to match that.
                     // 2. Otherwise, fallback to any container with correctly matching name.
-                    
+
                     // To do this properly, we need to know the active container ID.
                     // We can fetch the latest running deployment.
-                    
+
                     // Refined Logic:
                     // We only want to add the upstream if it is THE active container.
                     // If we have a running deployment, we should strictly match its container_id if possible.
-                    
-                    let active_container_id = db.get_latest_deployment(app.id).ok().flatten()
+
+                    let active_container_id = db
+                        .get_latest_deployment(app.id)
+                        .ok()
+                        .flatten()
                         .filter(|d| d.status == znskr_common::models::DeploymentStatus::Running)
                         .and_then(|d| d.container_id);
 
@@ -483,7 +506,8 @@ async fn refresh_routes_for_app(
                         }
                     } else {
                         // No active deployment record? Fallback to legacy name check
-                         if name != expected_name && !name.starts_with(&format!("znskr-{}-", app.id)) {
+                        if name != expected_name && !name.starts_with(&format!("znskr-{}-", app.id))
+                        {
                             continue;
                         }
                     }

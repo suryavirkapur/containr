@@ -1,8 +1,8 @@
 //! shared application state
 
+use dashmap::DashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use dashmap::DashMap;
 use tokio::sync::{mpsc, RwLock};
 use znskr_common::{Config, Database};
 

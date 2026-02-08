@@ -56,6 +56,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/apps/{app_id}/deployments/{id}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** rollback to a previous deployment */
+        post: operations["rollback_deployment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/apps/{id}": {
         parameters: {
             query?: never;
@@ -842,6 +859,8 @@ export interface components {
              * @description app port (deprecated)
              */
             port: number;
+            /** @description rollout strategy */
+            rollout_strategy: string;
             /** @description container services */
             services: components["schemas"]["ServiceResponse"][];
         };
@@ -926,6 +945,8 @@ export interface components {
              * @description port for the app (deprecated, use services)
              */
             port?: number | null;
+            /** @description rollout strategy (stop_first or start_first) */
+            rollout_strategy?: string | null;
             /** @description container services for multi-container apps */
             services?: components["schemas"]["ServiceRequest"][] | null;
         };
@@ -1023,6 +1044,8 @@ export interface components {
             commit_message?: string | null;
             /** @description commit sha to record */
             commit_sha?: string | null;
+            /** @description rollout strategy override (stop_first or start_first) */
+            rollout_strategy?: string | null;
         };
         /** @description env var in request */
         EnvVarRequest: {
@@ -1180,6 +1203,11 @@ export interface components {
             name: string;
             private: boolean;
         };
+        /** @description rollback request */
+        RollbackRequest: {
+            /** @description rollout strategy override (stop_first or start_first) */
+            rollout_strategy?: string | null;
+        };
         /** @description service request for multi-container apps */
         ServiceRequest: {
             /**
@@ -1299,6 +1327,8 @@ export interface components {
              * @description new port (deprecated, use services)
              */
             port?: number | null;
+            /** @description rollout strategy (stop_first or start_first) */
+            rollout_strategy?: string | null;
             /** @description updated services */
             services?: components["schemas"]["ServiceRequest"][] | null;
         };
@@ -1498,6 +1528,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": string[];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rollback_deployment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description app id */
+                app_id: string;
+                /** @description deployment id to rollback to */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RollbackRequest"];
+            };
+        };
+        responses: {
+            /** @description rollback deployment queued */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description unauthorized */
@@ -2450,7 +2545,12 @@ export interface operations {
     };
     list_volume_entries: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description mount point */
+                mount: string;
+                /** @description relative path within mount */
+                path?: string;
+            };
             header?: never;
             path: {
                 /** @description container id */
@@ -2491,7 +2591,12 @@ export interface operations {
     };
     delete_volume_entry: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description mount point */
+                mount: string;
+                /** @description relative path within mount */
+                path?: string;
+            };
             header?: never;
             path: {
                 /** @description container id */
@@ -2530,7 +2635,12 @@ export interface operations {
     };
     download_volume_entry: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description mount point */
+                mount: string;
+                /** @description relative path within mount */
+                path?: string;
+            };
             header?: never;
             path: {
                 /** @description container id */
@@ -2613,7 +2723,12 @@ export interface operations {
     };
     upload_volume_entry: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description mount point */
+                mount: string;
+                /** @description relative path within mount */
+                path?: string;
+            };
             header?: never;
             path: {
                 /** @description container id */
@@ -2652,7 +2767,10 @@ export interface operations {
     };
     get_container_logs: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description number of log lines */
+                tail?: number;
+            };
             header?: never;
             path: {
                 /** @description container id */
@@ -3420,13 +3538,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description app manifest url */
+            /** @description app manifest payload */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": string;
+                    "application/json": unknown;
                 };
             };
             /** @description unauthorized */

@@ -181,7 +181,8 @@ pub async fn issue_dashboard_certificate(
     tracing::info!(domain = %domain, "dashboard certificate issuance requested");
 
     Ok(Json(DashboardCertResponse {
-        message: "certificate issuance initiated. the new certificate will be issued shortly.".to_string(),
+        message: "certificate issuance initiated. the new certificate will be issued shortly."
+            .to_string(),
         domain,
     }))
 }

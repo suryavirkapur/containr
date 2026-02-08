@@ -9,7 +9,6 @@ import {
   Show,
 } from "solid-js";
 import { api, components } from "../api";
-import { apiDelete, apiGet, apiPost } from "../api/client";
 
 type ContainerStatus = components["schemas"]["ContainerStatusResponse"];
 type ContainerMount = components["schemas"]["ContainerMountResponse"];
@@ -110,11 +109,17 @@ const fetchEntries = async (
   mount: string,
   path: string,
 ): Promise<VolumeEntry[]> => {
-  const params = new URLSearchParams({ mount });
-  if (path) params.set("path", path);
-  return apiGet<VolumeEntry[]>(
-    `/api/containers/${id}/files?${params.toString()}`,
-  );
+  const { data, error } = await api.GET("/api/containers/{id}/files", {
+    params: {
+      path: { id },
+      query: {
+        mount,
+        path: path || undefined,
+      },
+    },
+  });
+  if (error) throw error;
+  return data;
 };
 
 const ContainerMonitor: Component<{
@@ -193,55 +198,102 @@ const ContainerMonitor: Component<{
     const name = newFolderName().trim();
     if (!name || !selectedMount()) return;
     const folderPath = currentPath() ? `${currentPath()}/${name}` : name;
-    const params = new URLSearchParams({
-      mount: selectedMount(),
-      path: folderPath,
+    const { error } = await api.POST("/api/containers/{id}/files/mkdir", {
+      params: {
+        path: { id: props.containerId },
+        query: {
+          mount: selectedMount(),
+          path: folderPath,
+        },
+      },
     });
-    await apiPost(
-      `/api/containers/${props.containerId}/files/mkdir?${params.toString()}`,
-    );
+    if (error) throw error;
     setNewFolderName("");
     refetchEntries();
   };
 
   const handleUpload = async (files: FileList | null) => {
     if (!files || !selectedMount()) return;
-    const params = new URLSearchParams({ mount: selectedMount() });
-    if (currentPath()) params.set("path", currentPath());
+    const token = localStorage.getItem("znskr_token");
+    if (!token) {
+      throw new Error("missing auth token");
+    }
+
+    const query = new URLSearchParams({ mount: selectedMount() });
+    if (currentPath()) query.set("path", currentPath());
+
     const form = new FormData();
     Array.from(files).forEach((file) => {
       form.append("file", file, file.name);
     });
-    await apiPost(
-      `/api/containers/${props.containerId}/files/upload?${params.toString()}`,
-      form,
+
+    const response = await fetch(
+      `/api/containers/${props.containerId}/files/upload?${query.toString()}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: form,
+      },
     );
+    if (!response.ok) {
+      throw new Error("failed to upload files");
+    }
+
     refetchEntries();
   };
 
   const handleDelete = async (entry: VolumeEntry) => {
     if (!selectedMount()) return;
     if (!confirm(`delete ${entry.name}?`)) return;
-    const params = new URLSearchParams({
-      mount: selectedMount(),
-      path: entry.path,
+    const { error } = await api.DELETE("/api/containers/{id}/files", {
+      params: {
+        path: { id: props.containerId },
+        query: {
+          mount: selectedMount(),
+          path: entry.path,
+        },
+      },
     });
-    await apiDelete(
-      `/api/containers/${props.containerId}/files?${params.toString()}`,
-    );
+    if (error) throw error;
     refetchEntries();
   };
 
-  const handleDownload = (entry: VolumeEntry) => {
+  const handleDownload = async (entry: VolumeEntry) => {
     if (entry.is_dir || !selectedMount()) return;
-    const params = new URLSearchParams({
+    const token = localStorage.getItem("znskr_token");
+    if (!token) {
+      throw new Error("missing auth token");
+    }
+
+    const query = new URLSearchParams({
       mount: selectedMount(),
       path: entry.path,
     });
-    window.open(
-      `/api/containers/${props.containerId}/files/download?${params.toString()}`,
-      "_blank",
+
+    const response = await fetch(
+      `/api/containers/${props.containerId}/files/download?${query.toString()}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
     );
+
+    if (!response.ok) {
+      throw new Error("failed to download file");
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = entry.name;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
   };
 
   const pathSegments = createMemo(() => {
@@ -426,7 +478,11 @@ const ContainerMonitor: Component<{
                           : formatBytes(entry.size_bytes)}
                       </span>
                       <button
-                        onClick={() => handleDownload(entry)}
+                        onClick={() =>
+                          void handleDownload(entry).catch((err) => {
+                            console.error(err);
+                          })
+                        }
                         class={`border border-neutral-300 px-2 py-0.5 ${entry.is_dir ? "text-neutral-300 cursor-not-allowed" : "text-neutral-700 hover:border-neutral-400"}`}
                         disabled={entry.is_dir}
                       >
