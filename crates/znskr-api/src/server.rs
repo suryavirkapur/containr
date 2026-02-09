@@ -231,7 +231,7 @@ pub async fn run_server(
         // webhooks
         .route("/webhooks/github", post(webhooks::github_webhook))
         // git smart http
-        .route("/git/*path", any(git::git_http))
+        .route("/git/{*path}", any(git::git_http))
         // static files fallback (spa)
         .fallback(crate::static_files::serve_static)
         // middleware
