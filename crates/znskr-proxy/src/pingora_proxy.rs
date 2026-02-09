@@ -74,7 +74,7 @@ impl ZnskrProxy {
 
 pub struct DynamicCertResolver {
     certs_dir: PathBuf,
-    cache: Arc<DashMap<String, (X509, PKey<Private>)>>,
+    cache: Arc<DashMap<String, (X509, Vec<X509>, PKey<Private>)>>,
 }
 
 impl DynamicCertResolver {
@@ -85,7 +85,7 @@ impl DynamicCertResolver {
         }
     }
 
-    async fn load_cert(&self, domain: &str) -> Option<(X509, PKey<Private>)> {
+    async fn load_cert(&self, domain: &str) -> Option<(X509, Vec<X509>, PKey<Private>)> {
         if let Some(cached) = self.cache.get(domain) {
             return Some(cached.value().clone());
         }
@@ -96,13 +96,20 @@ impl DynamicCertResolver {
         let cert_bytes = tokio::fs::read(cert_path).await.ok()?;
         let key_bytes = tokio::fs::read(key_path).await.ok()?;
 
-        let cert = X509::from_pem(&cert_bytes).ok()?;
+        // Support fullchain PEM files: first cert is leaf, remainder is the chain.
+        let mut certs = X509::stack_from_pem(&cert_bytes).ok()?;
+        if certs.is_empty() {
+            return None;
+        }
+        let leaf = certs.remove(0);
+        let chain = certs;
+
         let key = PKey::private_key_from_pem(&key_bytes).ok()?;
 
-        let pair = (cert, key);
-        self.cache.insert(domain.to_string(), pair.clone());
+        let triple = (leaf, chain, key);
+        self.cache.insert(domain.to_string(), triple.clone());
 
-        Some(pair)
+        Some(triple)
     }
 }
 
@@ -118,11 +125,20 @@ impl TlsAccept for DynamicCertResolver {
         };
 
         match self.load_cert(&domain).await {
-            Some((cert, key)) => {
+            Some((cert, chain, key)) => {
                 if let Err(error) = ext::ssl_use_certificate(ssl, &cert) {
                     warn!(error = %error, domain = %domain, "failed to set tls certificate");
                     return;
                 }
+
+                // Attach intermediate chain certs so clients can validate the leaf.
+                for c in chain {
+                    if let Err(error) = ssl.add_chain_cert(c) {
+                        warn!(error = %error, domain = %domain, "failed to add extra chain cert");
+                        return;
+                    }
+                }
+
                 if let Err(error) = ext::ssl_use_private_key(ssl, &key) {
                     warn!(error = %error, domain = %domain, "failed to set tls private key");
                     return;
