@@ -46,10 +46,13 @@ system requirements
 -------------------
 
 - linux x86_64
+- macos is not a supported backend runtime or development target
 - docker (containerd runtime)
 - rust 1.75+
 - bun (for frontend development)
 - git (for git push deployments)
+
+use a linux machine or vm for backend development and runtime testing.
 
 ports:
 - 80 (http proxy)
@@ -101,6 +104,8 @@ building from source
   cd web
   bun install
   bun build
+
+backend development and runtime testing are only supported on linux.
 
 configuration
 -------------

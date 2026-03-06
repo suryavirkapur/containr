@@ -6,6 +6,7 @@ get znskr running in 5 minutes.
 prerequisites
 -------------
 - linux server (ubuntu 22.04+ recommended)
+- macos is not supported for backend development or runtime testing
 - docker installed and running
 - git installed (for git push deployments)
 - domain name pointing to your server
