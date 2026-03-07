@@ -1110,6 +1110,147 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
+name = "containr"
+version = "0.1.9-alpha"
+dependencies = [
+ "anyhow",
+ "bollard",
+ "clap 4.5.54",
+ "containr-api",
+ "containr-common",
+ "containr-proxy",
+ "containr-runtime",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "containr-api"
+version = "0.1.9-alpha"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "async-trait",
+ "axum",
+ "base64",
+ "bollard",
+ "chrono",
+ "containr-common",
+ "containr-runtime",
+ "dashmap",
+ "futures",
+ "git2",
+ "hex",
+ "hmac",
+ "jsonwebtoken",
+ "mime_guess",
+ "rand 0.9.2",
+ "rand_core 0.6.4",
+ "reqwest",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sled",
+ "tar",
+ "thiserror 2.0.17",
+ "tokio",
+ "toml",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "trust-dns-resolver",
+ "url",
+ "utoipa",
+ "utoipa-scalar",
+ "uuid",
+]
+
+[[package]]
+name = "containr-common"
+version = "0.1.9-alpha"
+dependencies = [
+ "aes-gcm",
+ "base64",
+ "chrono",
+ "parking_lot 0.12.5",
+ "rand 0.9.2",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sled",
+ "thiserror 2.0.17",
+ "toml",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "containr-proxy"
+version = "0.1.9-alpha"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "containr-common",
+ "dashmap",
+ "futures",
+ "instant-acme",
+ "mime_guess",
+ "once_cell",
+ "parking_lot 0.12.5",
+ "pingora",
+ "pingora-core",
+ "pingora-http",
+ "pingora-proxy",
+ "rcgen",
+ "rust-embed",
+ "rustls 0.23.36",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-rustls 0.26.4",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "containr-runtime"
+version = "0.1.9-alpha"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "aws-config",
+ "aws-sdk-s3",
+ "bollard",
+ "bytes",
+ "chrono",
+ "containr-common",
+ "dashmap",
+ "futures",
+ "git2",
+ "serde",
+ "serde_json",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1497,6 +1638,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fallible-iterator"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
+
+[[package]]
+name = "fallible-streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
+
+[[package]]
 name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1858,6 +2011,15 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.2.0",
+]
+
+[[package]]
+name = "hashlink"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea0b22561a9c04a7cb1a302c013e0259cd3b4bb619f145b32f72b8b4bcbed230"
+dependencies = [
+ "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -2447,6 +2609,17 @@ dependencies = [
  "bitflags 2.10.0",
  "libc",
  "redox_syscall 0.7.0",
+]
+
+[[package]]
+name = "libsqlite3-sys"
+version = "0.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95b4103cffefa72eb8428cb6b47d6627161e51c2739fc5e3b734584157bc642a"
+dependencies = [
+ "cc",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
@@ -3621,6 +3794,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsqlite-vfs"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8a1f2315036ef6b1fbacd1972e8ee7688030b0a2121edfc2a6550febd41574d"
+dependencies = [
+ "hashbrown 0.16.1",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "rusqlite"
+version = "0.38.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1c93dd1c9683b438c392c492109cb702b8090b2bfc8fed6f6e4eb4523f17af3"
+dependencies = [
+ "bitflags 2.10.0",
+ "fallible-iterator",
+ "fallible-streaming-iterator",
+ "hashlink",
+ "libsqlite3-sys",
+ "smallvec",
+ "sqlite-wasm-rs",
+]
+
+[[package]]
 name = "rust-embed"
 version = "8.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4200,6 +4398,18 @@ checksum = "67cf02bbac7a337dc36e4f5a693db6c21e7863f45070f7064577eb4367a3212b"
 dependencies = [
  "base64ct",
  "der",
+]
+
+[[package]]
+name = "sqlite-wasm-rs"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f4206ed3a67690b9c29b77d728f6acc3ce78f16bf846d83c94f76400320181b"
+dependencies = [
+ "cc",
+ "js-sys",
+ "rsqlite-vfs",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -5610,144 +5820,6 @@ name = "zmij"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fc5a66a20078bf1251bde995aa2fdcc4b800c70b5d92dd2c62abc5c60f679f8"
-
-[[package]]
-name = "znskr"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bollard",
- "clap 4.5.54",
- "serde",
- "serde_json",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "utoipa",
- "uuid",
- "znskr-api",
- "znskr-common",
- "znskr-proxy",
- "znskr-runtime",
-]
-
-[[package]]
-name = "znskr-api"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "argon2",
- "async-trait",
- "axum",
- "base64",
- "bollard",
- "chrono",
- "dashmap",
- "futures",
- "git2",
- "hex",
- "hmac",
- "jsonwebtoken",
- "mime_guess",
- "rand 0.9.2",
- "rand_core 0.6.4",
- "reqwest",
- "rust-embed",
- "serde",
- "serde_json",
- "sha2",
- "sled",
- "thiserror 2.0.17",
- "tokio",
- "toml",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "trust-dns-resolver",
- "url",
- "utoipa",
- "utoipa-scalar",
- "uuid",
- "znskr-common",
- "znskr-runtime",
-]
-
-[[package]]
-name = "znskr-common"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "base64",
- "chrono",
- "rand 0.9.2",
- "serde",
- "serde_json",
- "sha2",
- "sled",
- "thiserror 2.0.17",
- "toml",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "znskr-proxy"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "bytes",
- "chrono",
- "dashmap",
- "futures",
- "instant-acme",
- "mime_guess",
- "once_cell",
- "parking_lot 0.12.5",
- "pingora",
- "pingora-core",
- "pingora-http",
- "pingora-proxy",
- "rcgen",
- "rust-embed",
- "rustls 0.23.36",
- "rustls-pemfile",
- "serde",
- "serde_json",
- "thiserror 2.0.17",
- "tokio",
- "tokio-rustls 0.26.4",
- "tracing",
- "uuid",
- "znskr-common",
-]
-
-[[package]]
-name = "znskr-runtime"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "aws-config",
- "aws-sdk-s3",
- "bollard",
- "bytes",
- "chrono",
- "dashmap",
- "futures",
- "git2",
- "serde",
- "serde_json",
- "tar",
- "tempfile",
- "thiserror 2.0.17",
- "tokio",
- "tracing",
- "uuid",
- "znskr-common",
-]
 
 [[package]]
 name = "zstd"

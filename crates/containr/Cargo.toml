@@ -1,0 +1,41 @@
+[package]
+name = "containr"
+version.workspace = true
+edition.workspace = true
+default-run = "containr"
+
+[[bin]]
+name = "containr"
+path = "src/main.rs"
+
+[[bin]]
+name = "openapi"
+path = "src/openapi.rs"
+required-features = ["openapi-only"]
+
+[features]
+default = []
+openapi-only = ["containr-api/skip-web-build", "containr-proxy/skip-web-build"]
+
+[dependencies]
+containr-common = { path = "../containr-common" }
+containr-api = { path = "../containr-api" }
+containr-runtime = { path = "../containr-runtime" }
+containr-proxy = { path = "../containr-proxy" }
+
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+uuid = { workspace = true }
+
+clap = { version = "4", features = ["derive"] }
+
+# docker api
+bollard = { workspace = true }
+
+# openapi
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }

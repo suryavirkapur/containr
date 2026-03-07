@@ -1,6 +1,55 @@
 changelog
 =========
 
+0.1.9-alpha - 2026-03-07
+- add service-level persistent app mounts with sqlite persistence, docker bind mounts, mount validation, and ui/api support for multi-service apps
+- add per-service private registry credentials with encrypted persistence, authenticated image pulls during deployment, and ui/api support for image-based services
+- add browser terminal access for running containers with a docker exec websocket bridge and an xterm-based frontend tab in the container monitor
+- add per-service command, entrypoint, and working-directory overrides with sqlite persistence, deployment-time docker wiring, api validation, and advanced ui inputs for multi-service apps
+- add explicit per-service additional container ports with sqlite persistence, docker exposed-port wiring, api validation, and ui support
+- add service-mount backup and restore flows with tar archive endpoints, archive path validation, and app detail controls that work even when a service container is stopped
+- rename the project from znskr to containr across crate names, binary/config names, example files, docs, ui copy, and internal docker naming
+- split rustfs storage configuration into management, internal docker, and optional public proxy endpoints with bucket connection details exposed through the api and ui
+- allow `containr.toml` deployments to override encryption through `CONTAINR_ENCRYPTION_KEY` while still accepting the legacy `ZNSKR_ENCRYPTION_KEY` during rollout
+- route the base dashboard hostname through the api upstream for both ui and `/api` traffic so the renamed proxy deployment serves the dashboard correctly
+- connect app containers to the shared `containr-internal` docker network before start so short-lived or restarting processes do not fail deployment during post-start network attachment
+- replace bun-based frontend tooling with mise-managed node 24.14.0 and pnpm 10.30.3 across the repo build scripts and docs
+- remove the local git push management and smart-http git endpoints from the api, proxy, ui, docs, and generated client schema
+- add a database backend trait with config-selectable sled and sqlite implementations behind the shared database api
+- enable sqlite metadata storage in wal mode with schema-managed tables and ordered deployment log persistence
+- redesign the sqlite backend into typed relational tables for apps, env vars, domains, services, deployments, managed services, and github app installations instead of json blob rows
+- hydrate nested app, service deployment, and github app installation relations from sqlite while keeping the public database api unchanged
+- reject legacy sqlite `key/value(json)` tables at startup instead of auto-migrating them into the relational schema
+- switch runtime database startup and examples to read the backend selection from the toml config
+- fix github app and github oauth token decryption in deployment source resolution so stored secrets use the shared derived-key helper instead of raw config bytes
+- preload saved deployment logs before opening the live build stream, and resume websocket log streaming from a supplied offset
+- stop creating orphan pending deployments when source resolution or deployment queueing fails, and surface deploy trigger errors in the app detail ui
+- fix github webhook deployments so failed source resolution or failed queue sends also clean up the pending deployment row
+- stop swallowing github app config database read failures during deployment source resolution, so broken metadata reads fail fast instead of falling back silently
+- paginate github app installation and repository listings so the repo picker and deploy token lookup see all accessible repos
+- add periodic in-binary acme renewal passes for the dashboard domain and all managed custom domains
+- persist stored certificates back to disk on startup and refresh pingora's tls cache when cert files change
+- record certificate expiry from the issued leaf certificate instead of assuming a fixed 90 day lifetime
+- fix managed service networking so apps, databases, and queues share a stable internal docker network
+- add docker network aliases for app services and normalize managed service internal hostnames
+- remove fixed host port binding for managed queues to avoid port collisions across instances
+- pull missing managed database and queue images automatically before first container start
+- add configurable public exposure for managed queues and optional custom external ports for both queues and databases
+- let database and queue exposure settings persist without forcing stopped services to start
+- add optional rustfs-backed database backup uploads that verify the uploaded object before reporting success
+- switch storage buckets to server-managed rustfs credentials instead of misleading per-bucket client credentials
+- add postgres-only point in time recovery for managed databases with wal archiving, local base backups, restore points, and recovery to a target time or restore point
+- add optional pgdog frontends for managed postgres databases with api and ui controls for internal and public exposure
+- persist managed database pitr/proxy metadata in sqlite and expose the new fields through the generated openapi client
+- unify deployment job source resolution across github app, github oauth fallback, manual deploys, webhooks, and git push
+- fix local-path deployment sources so validation and git-backed local repos clone without shallow-fetch errors
+- fix manual deployments for filesystem-backed repositories so they resolve as local sources instead of remote git
+- wait for managed queue and database health checks before reporting them as running
+- make git post-receive hooks fail when deployment triggering fails instead of silently succeeding
+- update dashboard copy from github-only wording to generic repository/source wording
+- expose queue passwords in queue api responses and sync checked-in openapi artifacts
+- add rustfs access/secret config fields, refresh the storage ui for server-managed buckets, and expose the new backup/exposure options in the ui
+
 0.1.8-alpha - 2026-01-20
 - add github app integration (coolify-style) with app manifest flow
 - support jwt authentication and installation tokens for github api

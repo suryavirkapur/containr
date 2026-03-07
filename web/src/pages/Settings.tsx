@@ -44,6 +44,11 @@ const Settings: Component = () => {
 
   // form values
   const [baseDomain, setBaseDomain] = createSignal("");
+  const [storagePublicHostname, setStoragePublicHostname] = createSignal("");
+  const [storageManagementEndpoint, setStorageManagementEndpoint] =
+    createSignal("");
+  const [storageInternalHost, setStorageInternalHost] = createSignal("");
+  const [storagePort, setStoragePort] = createSignal(9000);
   const [acmeEmail, setAcmeEmail] = createSignal("");
   const [acmeStaging, setAcmeStaging] = createSignal(true);
 
@@ -99,6 +104,10 @@ const Settings: Component = () => {
     const s = settings();
     if (s) {
       setBaseDomain(s.base_domain);
+      setStoragePublicHostname(s.storage_public_hostname || "");
+      setStorageManagementEndpoint(s.storage_management_endpoint);
+      setStorageInternalHost(s.storage_internal_host);
+      setStoragePort(s.storage_port);
       setAcmeEmail(s.acme_email);
       setAcmeStaging(s.acme_staging);
     }
@@ -116,6 +125,10 @@ const Settings: Component = () => {
       const { error } = await api.PUT("/api/settings", {
         body: {
           base_domain: baseDomain(),
+          storage_public_hostname: storagePublicHostname(),
+          storage_management_endpoint: storageManagementEndpoint(),
+          storage_internal_host: storageInternalHost(),
+          storage_port: storagePort(),
           acme_email: acmeEmail(),
           acme_staging: acmeStaging(),
         },
@@ -137,7 +150,7 @@ const Settings: Component = () => {
       <div class="mb-10">
         <h1 class="text-2xl font-serif text-black">server settings</h1>
         <p class="text-neutral-500 mt-1 text-sm">
-          configure your znskr instance
+          configure your containr instance
         </p>
       </div>
 
@@ -194,6 +207,83 @@ const Settings: Component = () => {
                   saving triggers automatic tls provisioning and http will be
                   refused until ready
                 </p>
+              </div>
+
+              <div class="pt-4 border-t border-neutral-100 space-y-4">
+                <div>
+                  <label class="block text-sm text-neutral-600 mb-2">
+                    public s3 hostname
+                  </label>
+                  <input
+                    type="text"
+                    value={storagePublicHostname()}
+                    onInput={(e) =>
+                      setStoragePublicHostname(e.currentTarget.value)
+                    }
+                    placeholder="s3.example.com"
+                    class="w-full px-4 py-2 border border-neutral-300 focus:border-black focus:outline-none text-sm"
+                  />
+                  <p class="text-xs text-neutral-400 mt-1">
+                    optional. when set, containr proxies raw s3 traffic for
+                    rustfs on this hostname.
+                  </p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm text-neutral-600 mb-2">
+                      rustfs management endpoint
+                    </label>
+                    <input
+                      type="text"
+                      value={storageManagementEndpoint()}
+                      onInput={(e) =>
+                        setStorageManagementEndpoint(e.currentTarget.value)
+                      }
+                      placeholder="http://127.0.0.1:9000"
+                      class="w-full px-4 py-2 border border-neutral-300 focus:border-black focus:outline-none text-sm font-mono"
+                    />
+                    <p class="text-xs text-neutral-400 mt-1">
+                      the endpoint containr uses to manage rustfs from the host
+                      or proxy runtime.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label class="block text-sm text-neutral-600 mb-2">
+                      internal docker hostname
+                    </label>
+                    <input
+                      type="text"
+                      value={storageInternalHost()}
+                      onInput={(e) =>
+                        setStorageInternalHost(e.currentTarget.value)
+                      }
+                      placeholder="containr-storage"
+                      class="w-full px-4 py-2 border border-neutral-300 focus:border-black focus:outline-none text-sm font-mono"
+                    />
+                    <p class="text-xs text-neutral-400 mt-1">
+                      used by containers on the shared docker network for
+                      internal s3 traffic.
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-sm text-neutral-600 mb-2">
+                    rustfs port
+                  </label>
+                  <input
+                    type="number"
+                    value={storagePort()}
+                    onInput={(e) =>
+                      setStoragePort(Number.parseInt(e.currentTarget.value, 10) || 0)
+                    }
+                    min="1"
+                    max="65535"
+                    class="w-full px-4 py-2 border border-neutral-300 focus:border-black focus:outline-none text-sm font-mono"
+                  />
+                </div>
               </div>
 
               <div class="flex items-center gap-2 text-sm text-neutral-500">
@@ -365,8 +455,8 @@ const Settings: Component = () => {
 
               <div class="pt-4 border-t border-neutral-100 flex items-center justify-between">
                 <p class="text-xs text-neutral-400">
-                  certificates are issued automatically when you update the base
-                  domain
+                  certificates are issued automatically when you update the
+                  dashboard domain or public s3 hostname
                 </p>
                 <button
                   type="button"
@@ -388,10 +478,13 @@ const Settings: Component = () => {
                       setIssuingCert(false);
                     }
                   }}
-                  disabled={issuingCert() || !settings()?.base_domain}
+                  disabled={
+                    issuingCert() ||
+                    (!settings()?.base_domain && !settings()?.storage_public_hostname)
+                  }
                   class="px-4 py-2 text-xs border border-neutral-300 text-neutral-700 hover:text-black hover:border-black disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {issuingCert() ? "issuing..." : "reissue certificate"}
+                  {issuingCert() ? "issuing..." : "reissue certificates"}
                 </button>
               </div>
             </div>

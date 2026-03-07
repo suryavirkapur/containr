@@ -1,7 +1,7 @@
-znskr configuration reference
+containr configuration reference
 ==============================
 
-znskr uses toml for configuration. default location: znskr.toml
+containr uses toml for configuration. default location: containr.toml
 
 --------------------------------------------------------------------------------
 server section
@@ -27,14 +27,22 @@ database section
 --------------------------------------------------------------------------------
 
 [database]
-path = "./data/znskr.db"
+backend = "sled"
+path = "./data/containr.db"
 
 options:
+    backend (string)
+        metadata database backend.
+        default: "sled"
+        options:
+            - sled: embedded key-value store
+            - sqlite: sqlite database with wal journal mode
+
     path (string)
-        path to sled database directory.
-        default: "./data/znskr.db"
+        path to the selected metadata database.
+        default: "./data/containr.db"
         can be absolute or relative to working directory.
-        directory is created automatically if it doesn't exist.
+        parent directory is created automatically if it doesn't exist.
 
 --------------------------------------------------------------------------------
 proxy section
@@ -187,15 +195,17 @@ storage section
 --------------------------------------------------------------------------------
 
 [storage]
-data_dir = "/data/znskr"
+data_dir = "/data/containr"
 max_volume_size_gb = 10
 backup_enabled = false
 rustfs_endpoint = "http://localhost:9000"
+rustfs_access_key = ""
+rustfs_secret_key = ""
 
 options:
     data_dir (string)
         base directory for managed service data.
-        default: "/data/znskr"
+        default: "/data/containr"
         structure:
             {data_dir}/databases/{uuid}/data/
             {data_dir}/queues/{uuid}/data/
@@ -206,27 +216,36 @@ options:
         set to 0 for unlimited.
 
     backup_enabled (bool)
-        enable automatic backups for managed services.
+        enable managed backup features.
         default: false
-        not yet implemented in alpha.
+        bucket-backed database exports are available when rustfs credentials are configured.
 
     rustfs_endpoint (string)
         s3-compatible endpoint for object storage.
         default: "http://localhost:9000"
-        used for storage buckets feature.
+        used for storage buckets and backup uploads.
+
+    rustfs_access_key (string)
+        access key used by containr to manage buckets and upload backups.
+        default: ""
+
+    rustfs_secret_key (string)
+        secret key used by containr to manage buckets and upload backups.
+        default: ""
 
 --------------------------------------------------------------------------------
 complete example
 --------------------------------------------------------------------------------
 
-# znskr.toml - production configuration
+# containr.toml - production configuration
 
 [server]
 host = "0.0.0.0"
 port = 3000
 
 [database]
-path = "/var/lib/znskr/znskr.db"
+backend = "sled"
+path = "/var/lib/containr/containr.db"
 
 [proxy]
 http_port = 80
@@ -249,24 +268,26 @@ encryption_key = "your_32_byte_hex_encryption_key_64_chars"
 
 [acme]
 email = "admin@example.com"
-certs_dir = "/var/lib/znskr/certs"
+certs_dir = "/var/lib/containr/certs"
 staging = false
 
 [storage]
-data_dir = "/var/lib/znskr/data"
+data_dir = "/var/lib/containr/data"
 max_volume_size_gb = 20
 backup_enabled = false
 rustfs_endpoint = "http://localhost:9000"
+rustfs_access_key = ""
+rustfs_secret_key = ""
 
 --------------------------------------------------------------------------------
 environment variables
 --------------------------------------------------------------------------------
 
-znskr does not currently read environment variables for configuration.
+containr does not currently read environment variables for configuration.
 all settings must be in the toml file.
 
 for containerized deployments, mount the config file:
-    docker run -v /path/to/znskr.toml:/etc/znskr/znskr.toml znskr
+    docker run -v /path/to/containr.toml:/etc/containr/containr.toml containr
 
 --------------------------------------------------------------------------------
 hot reload

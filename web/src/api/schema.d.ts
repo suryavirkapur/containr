@@ -144,41 +144,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/apps/{id}/git": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** get git push info for an app */
-        get: operations["get_git_info"];
-        put?: never;
-        /** enable git push for an app */
-        post: operations["enable_git"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/apps/{id}/git/rotate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** rotate git deploy token */
-        post: operations["rotate_git_token"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/apps/{id}/metrics": {
         parameters: {
             query?: never;
@@ -190,6 +155,40 @@ export interface paths {
         get: operations["get_app_metrics"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/apps/{id}/services/{service_name}/mounts/backup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** download a tar archive of all persistent mounts for a service */
+        get: operations["backup_service_mounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/apps/{id}/services/{service_name}/mounts/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** restore all persistent mounts for a service from a tar archive */
+        post: operations["restore_service_mounts"];
         delete?: never;
         options?: never;
         head?: never;
@@ -295,6 +294,23 @@ export interface paths {
         post?: never;
         /** delete a storage bucket */
         delete: operations["delete_bucket"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/buckets/{id}/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** get s3 connection details for a bucket */
+        get: operations["get_bucket_connection"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -549,6 +565,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/databases/{id}/pitr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** configure postgres point in time recovery */
+        post: operations["configure_pitr"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/databases/{id}/pitr/base-backup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** create a postgres base backup for pitr */
+        post: operations["create_pitr_base_backup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/databases/{id}/pitr/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** recover a postgres database from local pitr backups and wal */
+        post: operations["recover_database"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/databases/{id}/pitr/restore-point": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** create a postgres restore point */
+        post: operations["create_restore_point"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/databases/{id}/proxy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** configure postgres proxy frontend */
+        post: operations["configure_proxy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/databases/{id}/start": {
         parameters: {
             query?: never;
@@ -705,6 +806,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/queues/{id}/expose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** toggle external exposure for a queue */
+        post: operations["expose_queue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/queues/{id}/start": {
         parameters: {
             query?: never;
@@ -845,7 +963,7 @@ export interface components {
             domains: string[];
             /** @description environment variables */
             env_vars: components["schemas"]["EnvVarResponse"][];
-            /** @description github repository url */
+            /** @description repository url */
             github_url: string;
             /**
              * Format: uuid
@@ -878,15 +996,39 @@ export interface components {
             /** Format: int64 */
             size_bytes: number;
         };
+        /** @description base backup response */
+        BaseBackupResponse: {
+            backup_path: string;
+            created_at: string;
+            label: string;
+        };
+        /** @description per-bucket s3 connection details */
+        BucketConnectionResponse: {
+            access_key: string;
+            bucket_name: string;
+            endpoint: string;
+            internal_endpoint: string;
+            internal_host: string;
+            note: string;
+            /** Format: int32 */
+            port: number;
+            public_endpoint?: string | null;
+            secret_key: string;
+            uses_shared_credentials: boolean;
+        };
         /** @description bucket response */
         BucketResponse: {
-            access_key: string;
             created_at: string;
             endpoint: string;
             id: string;
+            internal_endpoint: string;
+            internal_host: string;
+            managed_by_server: boolean;
             name: string;
-            /** @description masked secret key */
-            secret_key: string;
+            /** Format: int32 */
+            port: number;
+            public_endpoint?: string | null;
+            publicly_exposed: boolean;
             /** Format: int64 */
             size_bytes: number;
         };
@@ -896,6 +1038,16 @@ export interface components {
             expires_at?: string | null;
             issued_at?: string | null;
             status: string;
+        };
+        /** @description pitr configuration request */
+        ConfigurePitrRequest: {
+            enabled: boolean;
+        };
+        /** @description proxy configuration request */
+        ConfigureProxyRequest: {
+            enabled: boolean;
+            /** Format: int32 */
+            external_port?: number | null;
         };
         ContainerListItem: {
             id: string;
@@ -936,7 +1088,7 @@ export interface components {
             domains?: string[] | null;
             /** @description environment variables (shared across all services) */
             env_vars?: components["schemas"]["EnvVarRequest"][] | null;
-            /** @description github repository url */
+            /** @description repository url */
             github_url: string;
             /** @description app name */
             name: string;
@@ -949,6 +1101,10 @@ export interface components {
             rollout_strategy?: string | null;
             /** @description container services for multi-container apps */
             services?: components["schemas"]["ServiceRequest"][] | null;
+        };
+        /** @description base backup request */
+        CreateBaseBackupRequest: {
+            label?: string | null;
         };
         /** @description bucket creation request */
         CreateBucketRequest: {
@@ -993,10 +1149,14 @@ export interface components {
             /** @description version (optional, uses default) */
             version?: string | null;
         };
+        /** @description restore point request */
+        CreateRestorePointRequest: {
+            restore_point?: string | null;
+        };
         /** @description certificate issuance response */
         DashboardCertResponse: {
-            /** @description domain for certificate */
-            domain: string;
+            /** @description domains queued for issuance */
+            domains: string[];
             /** @description status message */
             message: string;
         };
@@ -1016,8 +1176,17 @@ export interface components {
             memory_limit_mb: number;
             name: string;
             password: string;
+            pitr_enabled: boolean;
+            pitr_last_base_backup_at?: string | null;
+            pitr_last_base_backup_label?: string | null;
             /** Format: int32 */
             port: number;
+            proxy_connection_string?: string | null;
+            proxy_enabled: boolean;
+            /** Format: int32 */
+            proxy_external_port?: number | null;
+            /** Format: int32 */
+            proxy_port?: number | null;
             status: string;
             username: string;
             version: string;
@@ -1070,36 +1239,29 @@ export interface components {
             /** @description error message */
             error: string;
         };
+        /** @description export request */
+        ExportRequest: {
+            /** Format: uuid */
+            bucket_id?: string | null;
+            object_key_prefix?: string | null;
+        };
         /** @description export response */
         ExportResponse: {
             backup_path: string;
+            bucket_name?: string | null;
+            object_key?: string | null;
+        };
+        /** @description queue expose request */
+        ExposeQueueRequest: {
+            enabled: boolean;
+            /** Format: int32 */
+            external_port?: number | null;
         };
         /** @description expose request */
         ExposeRequest: {
             enabled: boolean;
-        };
-        /** @description git enable response */
-        GitEnableResponse: {
-            enabled: boolean;
-            http_url?: string | null;
-            path: string;
-            repo: string;
-            /** @description deploy token (only returned on enable/rotate) */
-            token: string;
-            username: string;
-        };
-        /** @description git info response */
-        GitInfoResponse: {
-            /** @description whether git push is enabled */
-            enabled: boolean;
-            /** @description http url for git push (if base domain configured) */
-            http_url?: string | null;
-            /** @description http path for git push */
-            path: string;
-            /** @description repo name (e.g. <uuid>.git) */
-            repo: string;
-            /** @description http basic username */
-            username: string;
+            /** Format: int32 */
+            external_port?: number | null;
         };
         /** @description github app status response */
         GithubAppStatusResponse: {
@@ -1128,6 +1290,26 @@ export interface components {
              * @description timeout in seconds
              */
             timeout_secs?: number | null;
+        };
+        /** @description health check configuration response */
+        HealthCheckResponse: {
+            /**
+             * Format: int32
+             * @description interval in seconds
+             */
+            interval_secs: number;
+            /** @description http path to check */
+            path: string;
+            /**
+             * Format: int32
+             * @description retries before unhealthy
+             */
+            retries: number;
+            /**
+             * Format: int32
+             * @description timeout in seconds
+             */
+            timeout_secs: number;
         };
         /** @description health check response */
         HealthResponse: {
@@ -1162,17 +1344,31 @@ export interface components {
             /** Format: double */
             cpu_limit: number;
             created_at: string;
+            /** Format: int32 */
+            external_port?: number | null;
             id: string;
             internal_host: string;
             /** Format: int64 */
             memory_limit_mb: number;
             name: string;
+            password: string;
             /** Format: int32 */
             port: number;
             queue_type: string;
             status: string;
             username: string;
             version: string;
+        };
+        /** @description recover request */
+        RecoverDatabaseRequest: {
+            restore_point?: string | null;
+            target_time?: string | null;
+        };
+        /** @description recover response */
+        RecoverDatabaseResponse: {
+            base_backup_label: string;
+            recovered: boolean;
+            recovery_target: string;
         };
         /** @description register request body */
         RegisterRequest: {
@@ -1203,13 +1399,66 @@ export interface components {
             name: string;
             private: boolean;
         };
+        /** @description restore point response */
+        RestorePointResponse: {
+            created_at: string;
+            restore_point: string;
+            wal_lsn: string;
+        };
         /** @description rollback request */
         RollbackRequest: {
             /** @description rollout strategy override (stop_first or start_first) */
             rollout_strategy?: string | null;
         };
+        /** @description persistent mount configuration request */
+        ServiceMountRequest: {
+            /** @description unique mount name within the service */
+            name: string;
+            /** @description whether the mount is read-only */
+            read_only?: boolean | null;
+            /** @description absolute container path where the mount is attached */
+            target: string;
+        };
+        /** @description persistent mount configuration response */
+        ServiceMountResponse: {
+            /** @description unique mount name within the service */
+            name: string;
+            /** @description whether the mount is read-only */
+            read_only: boolean;
+            /** @description absolute container path where the mount is attached */
+            target: string;
+        };
+        /** @description service mount restore response */
+        ServiceMountRestoreResponse: {
+            /** @description restored mount names */
+            mounts: string[];
+            /** @description restore timestamp */
+            restored_at: string;
+            /** @description service name */
+            service: string;
+        };
+        /** @description private registry credentials request */
+        ServiceRegistryAuthRequest: {
+            /** @description registry password */
+            password?: string | null;
+            /** @description optional registry server override */
+            server?: string | null;
+            /** @description registry username */
+            username?: string | null;
+        };
+        /** @description private registry credentials response */
+        ServiceRegistryAuthResponse: {
+            /** @description optional registry server override */
+            server?: string | null;
+            /** @description registry username */
+            username: string;
+        };
         /** @description service request for multi-container apps */
         ServiceRequest: {
+            /** @description additional container ports */
+            additional_ports?: number[] | null;
+            /** @description command arguments override */
+            command?: string[] | null;
             /**
              * Format: double
              * @description cpu limit (1.0 = 1 core)
@@ -1217,6 +1466,8 @@ export interface components {
             cpu_limit?: number | null;
             /** @description service names this depends on */
             depends_on?: string[] | null;
+            /** @description entrypoint override */
+            entrypoint?: string[] | null;
             health_check?: null | components["schemas"]["HealthCheckRequest"];
             /** @description docker image (empty = use built image) */
             image?: string | null;
@@ -1225,6 +1476,8 @@ export interface components {
              * @description memory limit in mb
              */
             memory_limit_mb?: number | null;
+            /** @description persistent mounts attached to the service */
+            mounts?: components["schemas"]["ServiceMountRequest"][] | null;
             /** @description service name (e.g. "web", "api", "db") */
             name: string;
             /**
@@ -1232,6 +1485,7 @@ export interface components {
              * @description container port
              */
             port: number;
+            registry_auth?: null | components["schemas"]["ServiceRegistryAuthRequest"];
             /**
              * Format: int32
              * @description number of replicas
@@ -1239,9 +1493,15 @@ export interface components {
             replicas?: number | null;
             /** @description restart policy */
             restart_policy?: string | null;
+            /** @description working directory override */
+            working_dir?: string | null;
         };
         /** @description service response for multi-container apps */
         ServiceResponse: {
+            /** @description additional container ports */
+            additional_ports: number[];
+            /** @description command arguments override */
+            command: string[];
             /**
              * Format: double
              * @description cpu limit
@@ -1249,6 +1509,9 @@ export interface components {
             cpu_limit?: number | null;
             /** @description dependencies */
             depends_on: string[];
+            /** @description entrypoint override */
+            entrypoint: string[];
+            health_check?: null | components["schemas"]["HealthCheckResponse"];
             /** @description service id */
             id: string;
             /** @description docker image */
@@ -1258,6 +1521,8 @@ export interface components {
              * @description memory limit in mb
              */
             memory_limit_mb?: number | null;
+            /** @description persistent mounts */
+            mounts: components["schemas"]["ServiceMountResponse"][];
             /** @description service name */
             name: string;
             /**
@@ -1265,6 +1530,7 @@ export interface components {
              * @description container port
              */
             port: number;
+            registry_auth?: null | components["schemas"]["ServiceRegistryAuthResponse"];
             /**
              * Format: int32
              * @description number of replicas
@@ -1272,6 +1538,8 @@ export interface components {
             replicas: number;
             /** @description restart policy */
             restart_policy: string;
+            /** @description working directory override */
+            working_dir?: string | null;
         };
         /** @description settings response - only exposes safe fields */
         SettingsResponse: {
@@ -1291,6 +1559,17 @@ export interface components {
              * @description https port for proxy
              */
             https_port: number;
+            /** @description rustfs hostname exposed on the shared docker network */
+            storage_internal_host: string;
+            /** @description rustfs endpoint used by containr for management operations */
+            storage_management_endpoint: string;
+            /**
+             * Format: int32
+             * @description rustfs service port
+             */
+            storage_port: number;
+            /** @description optional public s3 hostname routed to rustfs */
+            storage_public_hostname?: string | null;
         };
         /** @description system statistics response */
         SystemStats: {
@@ -1318,7 +1597,7 @@ export interface components {
             domains?: string[] | null;
             /** @description updated env vars */
             env_vars?: components["schemas"]["EnvVarRequest"][] | null;
-            /** @description new github url */
+            /** @description new repository url */
             github_url?: string | null;
             /** @description new app name */
             name?: string | null;
@@ -1340,6 +1619,17 @@ export interface components {
             acme_staging?: boolean | null;
             /** @description new base domain (optional) */
             base_domain?: string | null;
+            /** @description rustfs hostname exposed on the shared docker network */
+            storage_internal_host?: string | null;
+            /** @description rustfs endpoint used by containr for management operations */
+            storage_management_endpoint?: string | null;
+            /**
+             * Format: int32
+             * @description rustfs service port
+             */
+            storage_port?: number | null;
+            /** @description optional public s3 hostname */
+            storage_public_hostname?: string | null;
         };
         /** @description user info in responses */
         UserResponse: {
@@ -2011,165 +2301,6 @@ export interface operations {
             };
         };
     };
-    get_git_info: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description app id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description git info */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GitInfoResponse"];
-                };
-            };
-            /** @description unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    enable_git: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description app id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description git enabled */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GitEnableResponse"];
-                };
-            };
-            /** @description unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description already enabled */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    rotate_git_token: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description app id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description git token rotated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GitEnableResponse"];
-                };
-            };
-            /** @description unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     get_app_metrics: {
         parameters: {
             query?: never;
@@ -2189,6 +2320,117 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AppMetricsResponse"][];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    backup_service_mounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description app id */
+                id: string;
+                /** @description service name */
+                service_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description service mount backup archive */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    restore_service_mounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description app id */
+                id: string;
+                /** @description service name */
+                service_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description service mount archive restored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceMountRestoreResponse"];
+                };
+            };
+            /** @description invalid archive */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description unauthorized */
@@ -2484,6 +2726,56 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_bucket_connection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description bucket id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description bucket connection details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BucketConnectionResponse"];
+                };
             };
             /** @description unauthorized */
             401: {
@@ -3173,7 +3465,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportRequest"];
+            };
+        };
         responses: {
             /** @description backup created */
             200: {
@@ -3289,6 +3585,321 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LogsResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    configure_pitr: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description database id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigurePitrRequest"];
+            };
+        };
+        responses: {
+            /** @description pitr updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_pitr_base_backup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description database id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBaseBackupRequest"];
+            };
+        };
+        responses: {
+            /** @description base backup created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BaseBackupResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    recover_database: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description database id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecoverDatabaseRequest"];
+            };
+        };
+        responses: {
+            /** @description database recovered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoverDatabaseResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_restore_point: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description database id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRestorePointRequest"];
+            };
+        };
+        responses: {
+            /** @description restore point created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestorePointResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    configure_proxy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description database id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigureProxyRequest"];
+            };
+        };
+        responses: {
+            /** @description proxy updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description unauthorized */
@@ -3735,6 +4346,60 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description queue not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    expose_queue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description queue id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExposeQueueRequest"];
+            };
+        };
+        responses: {
+            /** @description exposure toggled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueResponse"];
+                };
             };
             /** @description unauthorized */
             401: {

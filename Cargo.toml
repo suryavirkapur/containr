@@ -1,18 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/znskr",
-    "crates/znskr-common",
-    "crates/znskr-api",
-    "crates/znskr-runtime",
-    "crates/znskr-proxy",
+    "crates/containr",
+    "crates/containr-common",
+    "crates/containr-api",
+    "crates/containr-runtime",
+    "crates/containr-proxy",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.9-alpha"
 edition = "2021"
 license = "MIT"
-authors = ["znskr"]
+authors = ["containr"]
 
 [workspace.dependencies]
 # async runtime
@@ -30,6 +30,7 @@ toml = "0.9"
 
 # database
 sled = "0.34"
+rusqlite = { version = "0.38", features = ["bundled"] }
 
 # logging
 tracing = "0.1"

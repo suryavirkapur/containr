@@ -1,7 +1,7 @@
 import createClient from "openapi-fetch";
 import type { paths } from "./schema";
 
-const getToken = () => localStorage.getItem("znskr_token");
+const getToken = () => localStorage.getItem("containr_token");
 
 export const api = createClient<paths>({
   baseUrl: "",
@@ -20,7 +20,7 @@ api.use({
   },
   onResponse({ response }) {
     if (response.status === 401) {
-      localStorage.removeItem("znskr_token");
+      localStorage.removeItem("containr_token");
       window.location.href = "/login";
     }
     return response;

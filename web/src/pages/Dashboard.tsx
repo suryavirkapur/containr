@@ -90,7 +90,7 @@ const Dashboard: Component = () => {
           </div>
           <h3 class="text-lg font-serif text-black mb-2">no apps yet</h3>
           <p class="text-neutral-500 mb-6 text-sm font-light">
-            deploy your first app from a github repository
+            deploy your first app from a git repository
           </p>
           <A href="/apps/new">
             <Button>deploy new app</Button>

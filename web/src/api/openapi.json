@@ -1,8 +1,8 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "znskr api",
-    "description": "znskr paas api for managing apps and deployments",
+    "title": "containr api",
+    "description": "containr paas api for managing apps and deployments",
     "license": {
       "name": ""
     },
@@ -918,218 +918,6 @@
         ]
       }
     },
-    "/api/apps/{id}/git": {
-      "get": {
-        "tags": [
-          "git"
-        ],
-        "summary": "get git push info for an app",
-        "operationId": "get_git_info",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "app id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "git info",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GitInfoResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "git"
-        ],
-        "summary": "enable git push for an app",
-        "operationId": "enable_git",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "app id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "git enabled",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GitEnableResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "already enabled",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ]
-      }
-    },
-    "/api/apps/{id}/git/rotate": {
-      "post": {
-        "tags": [
-          "git"
-        ],
-        "summary": "rotate git deploy token",
-        "operationId": "rotate_git_token",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "app id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "git token rotated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GitEnableResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "forbidden",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ]
-      }
-    },
     "/api/apps/{id}/metrics": {
       "get": {
         "tags": [
@@ -1159,6 +947,163 @@
                   "items": {
                     "$ref": "#/components/schemas/AppMetricsResponse"
                   }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/apps/{id}/services/{service_name}/mounts/backup": {
+      "get": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "download a tar archive of all persistent mounts for a service",
+        "operationId": "backup_service_mounts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "service_name",
+            "in": "path",
+            "description": "service name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "service mount backup archive"
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/apps/{id}/services/{service_name}/mounts/restore": {
+      "post": {
+        "tags": [
+          "apps"
+        ],
+        "summary": "restore all persistent mounts for a service from a tar archive",
+        "operationId": "restore_service_mounts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "app id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "service_name",
+            "in": "path",
+            "description": "service name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "service mount archive restored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceMountRestoreResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1530,6 +1475,74 @@
         "responses": {
           "204": {
             "description": "bucket deleted"
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/buckets/{id}/connection": {
+      "get": {
+        "tags": [
+          "storage"
+        ],
+        "summary": "get s3 connection details for a bucket",
+        "operationId": "get_bucket_connection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "bucket id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "bucket connection details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BucketConnectionResponse"
+                }
+              }
+            }
           },
           "401": {
             "description": "unauthorized",
@@ -2514,6 +2527,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "backup created",
@@ -2677,6 +2700,446 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LogsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/pitr": {
+      "post": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "configure postgres point in time recovery",
+        "operationId": "configure_pitr",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurePitrRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "pitr updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/pitr/base-backup": {
+      "post": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "create a postgres base backup for pitr",
+        "operationId": "create_pitr_base_backup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBaseBackupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "base backup created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BaseBackupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/pitr/recover": {
+      "post": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "recover a postgres database from local pitr backups and wal",
+        "operationId": "recover_database",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoverDatabaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "database recovered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoverDatabaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/pitr/restore-point": {
+      "post": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "create a postgres restore point",
+        "operationId": "create_restore_point",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRestorePointRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "restore point created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestorePointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/databases/{id}/proxy": {
+      "post": {
+        "tags": [
+          "databases"
+        ],
+        "summary": "configure postgres proxy frontend",
+        "operationId": "configure_proxy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigureProxyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "proxy updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -3288,6 +3751,84 @@
         ]
       }
     },
+    "/api/queues/{id}/expose": {
+      "post": {
+        "tags": [
+          "queues"
+        ],
+        "summary": "toggle external exposure for a queue",
+        "operationId": "expose_queue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "queue id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExposeQueueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "exposure toggled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "queue not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/queues/{id}/start": {
       "post": {
         "tags": [
@@ -3707,7 +4248,7 @@
           },
           "github_url": {
             "type": "string",
-            "description": "github repository url"
+            "description": "repository url"
           },
           "id": {
             "type": "string",
@@ -3777,22 +4318,94 @@
           }
         }
       },
+      "BaseBackupResponse": {
+        "type": "object",
+        "description": "base backup response",
+        "required": [
+          "label",
+          "backup_path",
+          "created_at"
+        ],
+        "properties": {
+          "backup_path": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "BucketConnectionResponse": {
+        "type": "object",
+        "description": "per-bucket s3 connection details",
+        "required": [
+          "bucket_name",
+          "endpoint",
+          "internal_endpoint",
+          "internal_host",
+          "port",
+          "access_key",
+          "secret_key",
+          "uses_shared_credentials",
+          "note"
+        ],
+        "properties": {
+          "access_key": {
+            "type": "string"
+          },
+          "bucket_name": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "internal_endpoint": {
+            "type": "string"
+          },
+          "internal_host": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "public_endpoint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secret_key": {
+            "type": "string"
+          },
+          "uses_shared_credentials": {
+            "type": "boolean"
+          }
+        }
+      },
       "BucketResponse": {
         "type": "object",
         "description": "bucket response",
         "required": [
           "id",
           "name",
-          "access_key",
-          "secret_key",
           "endpoint",
+          "internal_endpoint",
+          "internal_host",
+          "port",
+          "publicly_exposed",
           "size_bytes",
+          "managed_by_server",
           "created_at"
         ],
         "properties": {
-          "access_key": {
-            "type": "string"
-          },
           "created_at": {
             "type": "string"
           },
@@ -3802,12 +4415,31 @@
           "id": {
             "type": "string"
           },
+          "internal_endpoint": {
+            "type": "string"
+          },
+          "internal_host": {
+            "type": "string"
+          },
+          "managed_by_server": {
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
           },
-          "secret_key": {
-            "type": "string",
-            "description": "masked secret key"
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "public_endpoint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publicly_exposed": {
+            "type": "boolean"
           },
           "size_bytes": {
             "type": "integer",
@@ -3841,6 +4473,38 @@
           },
           "status": {
             "type": "string"
+          }
+        }
+      },
+      "ConfigurePitrRequest": {
+        "type": "object",
+        "description": "pitr configuration request",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ConfigureProxyRequest": {
+        "type": "object",
+        "description": "proxy configuration request",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "external_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -3999,7 +4663,7 @@
           },
           "github_url": {
             "type": "string",
-            "description": "github repository url"
+            "description": "repository url"
           },
           "name": {
             "type": "string",
@@ -4030,6 +4694,18 @@
               "$ref": "#/components/schemas/ServiceRequest"
             },
             "description": "container services for multi-container apps"
+          }
+        }
+      },
+      "CreateBaseBackupRequest": {
+        "type": "object",
+        "description": "base backup request",
+        "properties": {
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -4130,17 +4806,32 @@
           }
         }
       },
+      "CreateRestorePointRequest": {
+        "type": "object",
+        "description": "restore point request",
+        "properties": {
+          "restore_point": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "DashboardCertResponse": {
         "type": "object",
         "description": "certificate issuance response",
         "required": [
           "message",
-          "domain"
+          "domains"
         ],
         "properties": {
-          "domain": {
-            "type": "string",
-            "description": "domain for certificate"
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "domains queued for issuance"
           },
           "message": {
             "type": "string",
@@ -4159,6 +4850,8 @@
           "status",
           "internal_host",
           "port",
+          "pitr_enabled",
+          "proxy_enabled",
           "connection_string",
           "username",
           "password",
@@ -4209,8 +4902,48 @@
           "password": {
             "type": "string"
           },
+          "pitr_enabled": {
+            "type": "boolean"
+          },
+          "pitr_last_base_backup_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pitr_last_base_backup_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "port": {
             "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "proxy_connection_string": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proxy_enabled": {
+            "type": "boolean"
+          },
+          "proxy_external_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "proxy_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
             "minimum": 0
           },
@@ -4374,6 +5107,25 @@
           }
         }
       },
+      "ExportRequest": {
+        "type": "object",
+        "description": "export request",
+        "properties": {
+          "bucket_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "object_key_prefix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "ExportResponse": {
         "type": "object",
         "description": "export response",
@@ -4383,6 +5135,38 @@
         "properties": {
           "backup_path": {
             "type": "string"
+          },
+          "bucket_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "object_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ExposeQueueRequest": {
+        "type": "object",
+        "description": "queue expose request",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "external_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -4395,76 +5179,14 @@
         "properties": {
           "enabled": {
             "type": "boolean"
-          }
-        }
-      },
-      "GitEnableResponse": {
-        "type": "object",
-        "description": "git enable response",
-        "required": [
-          "enabled",
-          "repo",
-          "path",
-          "username",
-          "token"
-        ],
-        "properties": {
-          "enabled": {
-            "type": "boolean"
           },
-          "http_url": {
+          "external_port": {
             "type": [
-              "string",
-              "null"
-            ]
-          },
-          "path": {
-            "type": "string"
-          },
-          "repo": {
-            "type": "string"
-          },
-          "token": {
-            "type": "string",
-            "description": "deploy token (only returned on enable/rotate)"
-          },
-          "username": {
-            "type": "string"
-          }
-        }
-      },
-      "GitInfoResponse": {
-        "type": "object",
-        "description": "git info response",
-        "required": [
-          "enabled",
-          "repo",
-          "path",
-          "username"
-        ],
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "description": "whether git push is enabled"
-          },
-          "http_url": {
-            "type": [
-              "string",
+              "integer",
               "null"
             ],
-            "description": "http url for git push (if base domain configured)"
-          },
-          "path": {
-            "type": "string",
-            "description": "http path for git push"
-          },
-          "repo": {
-            "type": "string",
-            "description": "repo name (e.g. <uuid>.git)"
-          },
-          "username": {
-            "type": "string",
-            "description": "http basic username"
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -4534,6 +5256,40 @@
               "integer",
               "null"
             ],
+            "format": "int32",
+            "description": "timeout in seconds",
+            "minimum": 0
+          }
+        }
+      },
+      "HealthCheckResponse": {
+        "type": "object",
+        "description": "health check configuration response",
+        "required": [
+          "path",
+          "interval_secs",
+          "timeout_secs",
+          "retries"
+        ],
+        "properties": {
+          "interval_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "interval in seconds",
+            "minimum": 0
+          },
+          "path": {
+            "type": "string",
+            "description": "http path to check"
+          },
+          "retries": {
+            "type": "integer",
+            "format": "int32",
+            "description": "retries before unhealthy",
+            "minimum": 0
+          },
+          "timeout_secs": {
+            "type": "integer",
             "format": "int32",
             "description": "timeout in seconds",
             "minimum": 0
@@ -4629,6 +5385,7 @@
           "port",
           "connection_string",
           "username",
+          "password",
           "memory_limit_mb",
           "cpu_limit",
           "created_at"
@@ -4644,6 +5401,14 @@
           "created_at": {
             "type": "string"
           },
+          "external_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
           "id": {
             "type": "string"
           },
@@ -4656,6 +5421,9 @@
             "minimum": 0
           },
           "name": {
+            "type": "string"
+          },
+          "password": {
             "type": "string"
           },
           "port": {
@@ -4673,6 +5441,44 @@
             "type": "string"
           },
           "version": {
+            "type": "string"
+          }
+        }
+      },
+      "RecoverDatabaseRequest": {
+        "type": "object",
+        "description": "recover request",
+        "properties": {
+          "restore_point": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_time": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "RecoverDatabaseResponse": {
+        "type": "object",
+        "description": "recover response",
+        "required": [
+          "recovered",
+          "recovery_target",
+          "base_backup_label"
+        ],
+        "properties": {
+          "base_backup_label": {
+            "type": "string"
+          },
+          "recovered": {
+            "type": "boolean"
+          },
+          "recovery_target": {
             "type": "string"
           }
         }
@@ -4770,6 +5576,26 @@
           }
         }
       },
+      "RestorePointResponse": {
+        "type": "object",
+        "description": "restore point response",
+        "required": [
+          "restore_point",
+          "wal_lsn",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "restore_point": {
+            "type": "string"
+          },
+          "wal_lsn": {
+            "type": "string"
+          }
+        }
+      },
       "RollbackRequest": {
         "type": "object",
         "description": "rollback request",
@@ -4783,6 +5609,127 @@
           }
         }
       },
+      "ServiceMountRequest": {
+        "type": "object",
+        "description": "persistent mount configuration request",
+        "required": [
+          "name",
+          "target"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "unique mount name within the service"
+          },
+          "read_only": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "whether the mount is read-only"
+          },
+          "target": {
+            "type": "string",
+            "description": "absolute container path where the mount is attached"
+          }
+        }
+      },
+      "ServiceMountResponse": {
+        "type": "object",
+        "description": "persistent mount configuration response",
+        "required": [
+          "name",
+          "target",
+          "read_only"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "unique mount name within the service"
+          },
+          "read_only": {
+            "type": "boolean",
+            "description": "whether the mount is read-only"
+          },
+          "target": {
+            "type": "string",
+            "description": "absolute container path where the mount is attached"
+          }
+        }
+      },
+      "ServiceMountRestoreResponse": {
+        "type": "object",
+        "description": "service mount restore response",
+        "required": [
+          "service",
+          "mounts",
+          "restored_at"
+        ],
+        "properties": {
+          "mounts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "restored mount names"
+          },
+          "restored_at": {
+            "type": "string",
+            "description": "restore timestamp"
+          },
+          "service": {
+            "type": "string",
+            "description": "service name"
+          }
+        }
+      },
+      "ServiceRegistryAuthRequest": {
+        "type": "object",
+        "description": "private registry credentials request",
+        "properties": {
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "registry password"
+          },
+          "server": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "optional registry server override"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "registry username"
+          }
+        }
+      },
+      "ServiceRegistryAuthResponse": {
+        "type": "object",
+        "description": "private registry credentials response",
+        "required": [
+          "username"
+        ],
+        "properties": {
+          "server": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "optional registry server override"
+          },
+          "username": {
+            "type": "string",
+            "description": "registry username"
+          }
+        }
+      },
       "ServiceRequest": {
         "type": "object",
         "description": "service request for multi-container apps",
@@ -4791,6 +5738,28 @@
           "port"
         ],
         "properties": {
+          "additional_ports": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            "description": "additional container ports"
+          },
+          "command": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "command arguments override"
+          },
           "cpu_limit": {
             "type": [
               "number",
@@ -4808,6 +5777,16 @@
               "type": "string"
             },
             "description": "service names this depends on"
+          },
+          "entrypoint": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "entrypoint override"
           },
           "health_check": {
             "oneOf": [
@@ -4836,6 +5815,16 @@
             "description": "memory limit in mb",
             "minimum": 0
           },
+          "mounts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ServiceMountRequest"
+            },
+            "description": "persistent mounts attached to the service"
+          },
           "name": {
             "type": "string",
             "description": "service name (e.g. \"web\", \"api\", \"db\")"
@@ -4845,6 +5834,17 @@
             "format": "int32",
             "description": "container port",
             "minimum": 0
+          },
+          "registry_auth": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ServiceRegistryAuthRequest",
+                "description": "private registry credentials for pulling the service image"
+              }
+            ]
           },
           "replicas": {
             "type": [
@@ -4861,6 +5861,13 @@
               "null"
             ],
             "description": "restart policy"
+          },
+          "working_dir": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "working directory override"
           }
         }
       },
@@ -4872,11 +5879,31 @@
           "name",
           "image",
           "port",
+          "additional_ports",
           "replicas",
           "depends_on",
-          "restart_policy"
+          "restart_policy",
+          "command",
+          "entrypoint",
+          "mounts"
         ],
         "properties": {
+          "additional_ports": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            "description": "additional container ports"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "command arguments override"
+          },
           "cpu_limit": {
             "type": [
               "number",
@@ -4891,6 +5918,24 @@
               "type": "string"
             },
             "description": "dependencies"
+          },
+          "entrypoint": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "entrypoint override"
+          },
+          "health_check": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HealthCheckResponse",
+                "description": "health check config"
+              }
+            ]
           },
           "id": {
             "type": "string",
@@ -4909,6 +5954,13 @@
             "description": "memory limit in mb",
             "minimum": 0
           },
+          "mounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceMountResponse"
+            },
+            "description": "persistent mounts"
+          },
           "name": {
             "type": "string",
             "description": "service name"
@@ -4919,6 +5971,17 @@
             "description": "container port",
             "minimum": 0
           },
+          "registry_auth": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ServiceRegistryAuthResponse",
+                "description": "private registry credentials metadata"
+              }
+            ]
+          },
           "replicas": {
             "type": "integer",
             "format": "int32",
@@ -4928,6 +5991,13 @@
           "restart_policy": {
             "type": "string",
             "description": "restart policy"
+          },
+          "working_dir": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "working directory override"
           }
         }
       },
@@ -4936,6 +6006,9 @@
         "description": "settings response - only exposes safe fields",
         "required": [
           "base_domain",
+          "storage_management_endpoint",
+          "storage_internal_host",
+          "storage_port",
           "http_port",
           "https_port",
           "acme_email",
@@ -4965,6 +6038,27 @@
             "format": "int32",
             "description": "https port for proxy",
             "minimum": 0
+          },
+          "storage_internal_host": {
+            "type": "string",
+            "description": "rustfs hostname exposed on the shared docker network"
+          },
+          "storage_management_endpoint": {
+            "type": "string",
+            "description": "rustfs endpoint used by containr for management operations"
+          },
+          "storage_port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "rustfs service port",
+            "minimum": 0
+          },
+          "storage_public_hostname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "optional public s3 hostname routed to rustfs"
           }
         }
       },
@@ -5062,7 +6156,7 @@
               "string",
               "null"
             ],
-            "description": "new github url"
+            "description": "new repository url"
           },
           "name": {
             "type": [
@@ -5123,6 +6217,36 @@
               "null"
             ],
             "description": "new base domain (optional)"
+          },
+          "storage_internal_host": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "rustfs hostname exposed on the shared docker network"
+          },
+          "storage_management_endpoint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "rustfs endpoint used by containr for management operations"
+          },
+          "storage_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "rustfs service port",
+            "minimum": 0
+          },
+          "storage_public_hostname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "optional public s3 hostname"
           }
         }
       },
@@ -5215,10 +6339,6 @@
     {
       "name": "certificates",
       "description": "ssl certificate management"
-    },
-    {
-      "name": "git",
-      "description": "git push management"
     },
     {
       "name": "databases",

@@ -1,7 +1,7 @@
-znskr production deployment guide
+containr production deployment guide
 ===================================
 
-this guide covers deploying znskr to a production environment.
+this guide covers deploying containr to a production environment.
 
 --------------------------------------------------------------------------------
 system requirements
@@ -22,7 +22,6 @@ recommended:
 required software:
     - docker 24.0+
     - docker compose v2 (optional)
-    - git (for git push deployments)
 
 --------------------------------------------------------------------------------
 vps deployment
@@ -41,26 +40,27 @@ step 1: prepare the server
     # add user to docker group (logout/login after)
     usermod -aG docker $USER
 
-step 2: install znskr
+step 2: install containr
 
     # download latest release
-    curl -fsSL https://github.com/suryavirkapur/znskr-paas/releases/latest/download/znskr-linux-amd64.tar.gz | tar xz
-    mv znskr /usr/local/bin/
+    curl -fsSL https://github.com/suryavirkapur/containr-paas/releases/latest/download/containr-linux-amd64.tar.gz | tar xz
+    mv containr /usr/local/bin/
 
     # create directories
-    mkdir -p /etc/znskr
-    mkdir -p /var/lib/znskr/{data,certs}
+    mkdir -p /etc/containr
+    mkdir -p /var/lib/containr/{data,certs}
 
-step 3: configure znskr
+step 3: configure containr
 
     # create config file
-    cat > /etc/znskr/znskr.toml << 'EOF'
+    cat > /etc/containr/containr.toml << 'EOF'
     [server]
     host = "0.0.0.0"
     port = 3000
 
     [database]
-    path = "/var/lib/znskr/znskr.db"
+    backend = "sled"
+    path = "/var/lib/containr/containr.db"
 
     [proxy]
     http_port = 80
@@ -83,21 +83,23 @@ step 3: configure znskr
 
     [acme]
     email = "admin@your-domain.com"
-    certs_dir = "/var/lib/znskr/certs"
+    certs_dir = "/var/lib/containr/certs"
     staging = false
 
     [storage]
-    data_dir = "/var/lib/znskr/data"
+    data_dir = "/var/lib/containr/data"
     max_volume_size_gb = 20
     backup_enabled = false
     rustfs_endpoint = "http://localhost:9000"
+    rustfs_access_key = ""
+    rustfs_secret_key = ""
     EOF
 
     # generate secrets
-    sed -i "s/YOUR_JWT_SECRET/$(openssl rand -hex 32)/" /etc/znskr/znskr.toml
-    sed -i "s/YOUR_ENCRYPTION_KEY/$(openssl rand -hex 32)/" /etc/znskr/znskr.toml
-    sed -i "s/YOUR_WEBHOOK_SECRET/$(openssl rand -hex 32)/" /etc/znskr/znskr.toml
-    sed -i "s/YOUR_SERVER_IP/$(curl -s ifconfig.me)/" /etc/znskr/znskr.toml
+    sed -i "s/YOUR_JWT_SECRET/$(openssl rand -hex 32)/" /etc/containr/containr.toml
+    sed -i "s/YOUR_ENCRYPTION_KEY/$(openssl rand -hex 32)/" /etc/containr/containr.toml
+    sed -i "s/YOUR_WEBHOOK_SECRET/$(openssl rand -hex 32)/" /etc/containr/containr.toml
+    sed -i "s/YOUR_SERVER_IP/$(curl -s ifconfig.me)/" /etc/containr/containr.toml
 
 step 4: configure dns
 
@@ -127,17 +129,17 @@ step 5: configure firewall
 systemd service
 --------------------------------------------------------------------------------
 
-create /etc/systemd/system/znskr.service:
+create /etc/systemd/system/containr.service:
 
     [Unit]
-    Description=znskr paas
+    Description=containr paas
     After=network.target docker.service
     Requires=docker.service
 
     [Service]
     Type=simple
     User=root
-    ExecStart=/usr/local/bin/znskr --config /etc/znskr/znskr.toml
+    ExecStart=/usr/local/bin/containr --config /etc/containr/containr.toml
     Restart=always
     RestartSec=5
     StandardOutput=journal
@@ -147,7 +149,7 @@ create /etc/systemd/system/znskr.service:
     NoNewPrivileges=true
     ProtectSystem=strict
     ProtectHome=true
-    ReadWritePaths=/var/lib/znskr
+    ReadWritePaths=/var/lib/containr
 
     [Install]
     WantedBy=multi-user.target
@@ -155,13 +157,13 @@ create /etc/systemd/system/znskr.service:
 enable and start:
 
     systemctl daemon-reload
-    systemctl enable znskr
-    systemctl start znskr
+    systemctl enable containr
+    systemctl start containr
 
 check status:
 
-    systemctl status znskr
-    journalctl -u znskr -f
+    systemctl status containr
+    journalctl -u containr -f
 
 --------------------------------------------------------------------------------
 docker deployment
@@ -172,22 +174,22 @@ create docker-compose.yml:
     version: "3.8"
 
     services:
-      znskr:
-        image: ghcr.io/suryavirkapur/znskr:latest
-        container_name: znskr
+      containr:
+        image: ghcr.io/suryavirkapur/containr:latest
+        container_name: containr
         restart: always
         network_mode: host
         volumes:
-          - /etc/znskr/znskr.toml:/etc/znskr/znskr.toml:ro
-          - /var/lib/znskr:/var/lib/znskr
+          - /etc/containr/containr.toml:/etc/containr/containr.toml:ro
+          - /var/lib/containr:/var/lib/containr
           - /var/run/docker.sock:/var/run/docker.sock
-        command: --config /etc/znskr/znskr.toml
+        command: --config /etc/containr/containr.toml
 
 start:
 
     docker compose up -d
 
-note: network_mode: host is required for znskr to communicate with
+note: network_mode: host is required for containr to communicate with
 containers on the docker bridge network and bind to ports 80/443.
 
 --------------------------------------------------------------------------------
@@ -198,7 +200,7 @@ if running behind another reverse proxy (nginx, caddy, traefik):
 
 nginx example:
 
-    # /etc/nginx/sites-available/znskr
+    # /etc/nginx/sites-available/containr
     server {
         listen 80;
         server_name your-domain.com *.your-domain.com;
@@ -215,7 +217,7 @@ nginx example:
         }
     }
 
-in this setup, configure znskr proxy ports to non-standard values:
+in this setup, configure containr proxy ports to non-standard values:
 
     [proxy]
     http_port = 8080
@@ -227,17 +229,17 @@ and let nginx handle ssl termination.
 ssl certificates
 --------------------------------------------------------------------------------
 
-znskr handles ssl automatically via let's encrypt.
+containr handles ssl automatically via let's encrypt.
 
 first-time setup:
     1. ensure dns is configured correctly
     2. set acme.staging = true first
-    3. start znskr and verify http works
+    3. start containr and verify http works
     4. access https to trigger certificate issuance
     5. check logs for acme errors
     6. once working, set acme.staging = false
-    7. delete staging certificates: rm -rf /var/lib/znskr/certs/*
-    8. restart znskr to get production certificates
+    7. delete staging certificates: rm -rf /var/lib/containr/certs/*
+    8. restart containr to get production certificates
 
 certificate renewal:
     - certificates auto-renew when expiring within 30 days
@@ -261,13 +263,13 @@ prometheus metrics (planned for future release)
 log analysis:
 
     # view recent logs
-    journalctl -u znskr --since "1 hour ago"
+    journalctl -u containr --since "1 hour ago"
 
     # follow logs
-    journalctl -u znskr -f
+    journalctl -u containr -f
 
     # filter errors
-    journalctl -u znskr | grep -i error
+    journalctl -u containr | grep -i error
 
 --------------------------------------------------------------------------------
 backup and restore
@@ -275,36 +277,36 @@ backup and restore
 
 backup:
 
-    # stop znskr
-    systemctl stop znskr
+    # stop containr
+    systemctl stop containr
 
     # backup database
-    tar czf znskr-backup-$(date +%Y%m%d).tar.gz /var/lib/znskr
+    tar czf containr-backup-$(date +%Y%m%d).tar.gz /var/lib/containr
 
-    # start znskr
-    systemctl start znskr
+    # start containr
+    systemctl start containr
 
 restore:
 
-    systemctl stop znskr
-    tar xzf znskr-backup-20240115.tar.gz -C /
-    systemctl start znskr
+    systemctl stop containr
+    tar xzf containr-backup-20240115.tar.gz -C /
+    systemctl start containr
 
 automate with cron:
 
-    # /etc/cron.d/znskr-backup
-    0 3 * * * root tar czf /backups/znskr-$(date +\%Y\%m\%d).tar.gz /var/lib/znskr
+    # /etc/cron.d/containr-backup
+    0 3 * * * root tar czf /backups/containr-$(date +\%Y\%m\%d).tar.gz /var/lib/containr
 
 --------------------------------------------------------------------------------
-updating znskr
+updating containr
 --------------------------------------------------------------------------------
 
 binary update:
 
-    systemctl stop znskr
-    curl -fsSL https://github.com/suryavirkapur/znskr-paas/releases/latest/download/znskr-linux-amd64.tar.gz | tar xz
-    mv znskr /usr/local/bin/
-    systemctl start znskr
+    systemctl stop containr
+    curl -fsSL https://github.com/suryavirkapur/containr-paas/releases/latest/download/containr-linux-amd64.tar.gz | tar xz
+    mv containr /usr/local/bin/
+    systemctl start containr
 
 docker update:
 
@@ -327,7 +329,7 @@ security hardening
     - use firewall to limit access
 
 3. regular updates:
-    - keep znskr updated
+    - keep containr updated
     - update docker regularly
     - update os packages
 

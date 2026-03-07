@@ -16,7 +16,7 @@ const GithubCallback: Component = () => {
             return;
         }
 
-        const token = localStorage.getItem('znskr_token');
+        const token = localStorage.getItem('containr_token');
         if (!token) {
             setError('missing auth token');
             return;

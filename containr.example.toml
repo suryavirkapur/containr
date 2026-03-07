@@ -1,0 +1,81 @@
+# containr example configuration
+# copy this file to containr.toml and update with your values
+# or run ./install.sh to generate config with random secrets
+
+[server]
+# api server bind address
+host = "0.0.0.0"
+# api server port
+port = 3000
+
+[database]
+# metadata database backend: sled or sqlite
+backend = "sled"
+# path to the configured metadata database
+path = "./data/containr.db"
+
+[proxy]
+# http proxy port (requires root for port 80)
+http_port = 80
+# https proxy port (requires root for port 443)
+https_port = 443
+# base domain for apps (apps accessible at appname.base_domain)
+base_domain = "example.com"
+# server public ip for dns validation (optional, required for custom domains)
+public_ip = ""
+# load balancing strategy: round_robin, least_connections, random
+load_balance = "round_robin"
+
+[github]
+# github oauth app client id (optional, for github login)
+client_id = ""
+# github oauth app client secret
+client_secret = ""
+# github webhook secret for automatic deployments
+webhook_secret = ""
+
+[auth]
+# jwt signing secret - generate with: openssl rand -hex 32
+jwt_secret = "change-me-generate-with-openssl-rand-hex-32"
+# jwt token expiry in hours
+jwt_expiry_hours = 24
+
+[security]
+# encryption key for secrets - generate with: openssl rand -hex 32
+encryption_key = "change-me-generate-with-openssl-rand-hex-32"
+# allowed cors origins for the api (empty array = deny cross-origin)
+cors_allowed_origins = [
+  "http://localhost:3001",
+  "http://127.0.0.1:3001",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+]
+
+[acme]
+# email for let's encrypt notifications
+email = "admin@example.com"
+# directory for storing certificates
+certs_dir = "./data/certs"
+# use staging for testing (rate limit friendly, untrusted certs)
+# set to false for production (trusted certs)
+staging = true
+
+[storage]
+# base directory for app data volumes
+data_dir = "/data/containr"
+# maximum volume size per app in gb
+max_volume_size_gb = 10
+# enable automatic backups
+backup_enabled = false
+# rustfs endpoint used by containr for bucket management
+rustfs_management_endpoint = "http://127.0.0.1:9000"
+# rustfs hostname exposed to containers on the shared docker network
+rustfs_internal_host = "containr-storage"
+# rustfs service port for internal and public s3 access
+rustfs_port = 9000
+# optional public s3 hostname routed through the containr proxy
+rustfs_public_hostname = ""
+# rustfs access key for managed buckets and backup uploads
+rustfs_access_key = ""
+# rustfs secret key for managed buckets and backup uploads
+rustfs_secret_key = ""

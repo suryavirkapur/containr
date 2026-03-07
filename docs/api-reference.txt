@@ -1,4 +1,4 @@
-znskr api reference
+containr api reference
 ===================
 
 base url: https://your-domain.com/api
@@ -230,7 +230,7 @@ get /api/apps/{id}/metrics
     response (200):
         [
             {
-                "container": "znskr-abc123-web",
+                "container": "containr-abc123-web",
                 "cpu_percent": 5.2,
                 "mem_usage_bytes": 134217728,
                 "mem_limit_bytes": 536870912
@@ -335,13 +335,13 @@ get /api/containers
     response (200):
         [
             {
-                "id": "znskr-abc123",
+                "id": "containr-abc123",
                 "resource_type": "app",
                 "resource_id": "uuid",
                 "name": "my-app"
             },
             {
-                "id": "znskr-db-xyz789",
+                "id": "containr-db-xyz789",
                 "resource_type": "database",
                 "resource_id": "uuid",
                 "name": "my-postgres"
@@ -452,10 +452,10 @@ get /api/databases
                 "db_type": "postgresql",
                 "version": "16",
                 "status": "running",
-                "internal_host": "znskr-db-abc123",
+                "internal_host": "containr-db-abc123",
                 "port": 5432,
-                "connection_string": "postgresql://user:pass@znskr-db-abc123:5432/db",
-                "username": "znskr",
+                "connection_string": "postgresql://user:pass@containr-db-abc123:5432/db",
+                "username": "containr",
                 "memory_limit_mb": 512,
                 "cpu_limit": 1.0,
                 "created_at": "2024-01-15t10:30:00z"
@@ -499,6 +499,37 @@ post /api/databases/{id}/stop
 
     response (200): database object with status "stopped"
 
+post /api/databases/{id}/expose
+    enable or disable public exposure for a database.
+
+    request:
+        {
+            "enabled": true,
+            "external_port": 35432
+        }
+
+    external_port is optional. when omitted, containr assigns a free port.
+
+    response (200): database object with external_port set or cleared
+
+post /api/databases/{id}/export
+    create a local database backup. optionally upload the exported backup to a managed bucket.
+
+    request:
+        {
+            "bucket_id": "uuid",
+            "object_key_prefix": "databases/my-postgres"
+        }
+
+    both fields are optional. omit the request body for a local-only backup.
+
+    response (200):
+        {
+            "backup_path": "/var/lib/containr/data/backups/my-postgres_20260307_120000.sql",
+            "bucket_name": "backups",
+            "object_key": "databases/my-postgres/my-postgres_20260307_120000.sql"
+        }
+
 --------------------------------------------------------------------------------
 managed queues
 --------------------------------------------------------------------------------
@@ -514,10 +545,10 @@ get /api/queues
                 "queue_type": "rabbitmq",
                 "version": "4",
                 "status": "running",
-                "internal_host": "znskr-queue-abc123",
+                "internal_host": "containr-queue-abc123",
                 "port": 5672,
-                "connection_string": "amqp://user:pass@znskr-queue-abc123:5672",
-                "username": "znskr",
+                "connection_string": "amqp://user:pass@containr-queue-abc123:5672",
+                "username": "containr",
                 "memory_limit_mb": 256,
                 "cpu_limit": 0.5,
                 "created_at": "2024-01-15t10:30:00z"
@@ -561,6 +592,19 @@ post /api/queues/{id}/stop
 
     response (200): queue object with status "stopped"
 
+post /api/queues/{id}/expose
+    enable or disable public exposure for a queue.
+
+    request:
+        {
+            "enabled": true,
+            "external_port": 32222
+        }
+
+    external_port is optional. when omitted, containr assigns a free port.
+
+    response (200): queue object with external_port set or cleared
+
 --------------------------------------------------------------------------------
 storage buckets
 --------------------------------------------------------------------------------
@@ -573,10 +617,9 @@ get /api/buckets
             {
                 "id": "uuid",
                 "name": "my-bucket",
-                "access_key": "access_key_here",
-                "secret_key": "abcd****",
                 "endpoint": "http://localhost:9000",
                 "size_bytes": 1048576,
+                "managed_by_server": true,
                 "created_at": "2024-01-15t10:30:00z"
             }
         ]
@@ -589,7 +632,7 @@ post /api/buckets
             "name": "my-bucket"
         }
 
-    response (201): bucket object (secret_key shown unmasked only on creation)
+    response (201): bucket object
 
 get /api/buckets/{id}
     get a single bucket.
@@ -621,47 +664,6 @@ post /webhooks/github
         content type: application/json
         secret: your webhook_secret from config
 
---------------------------------------------------------------------------------
-git push
---------------------------------------------------------------------------------
-
-get /api/apps/{id}/git
-    get git push info for an app.
-
-    response (200):
-        {
-            "enabled": true,
-            "repo": "{app-id}.git",
-            "path": "/git/{app-id}.git",
-            "http_url": "https://your-domain.com/git/{app-id}.git",
-            "username": "znskr"
-        }
-
-post /api/apps/{id}/git
-    enable git push and return a deploy token.
-
-    response (200):
-        {
-            "enabled": true,
-            "repo": "{app-id}.git",
-            "path": "/git/{app-id}.git",
-            "http_url": "https://your-domain.com/git/{app-id}.git",
-            "username": "znskr",
-            "token": "your-deploy-token"
-        }
-
-post /api/apps/{id}/git/rotate
-    rotate git deploy token.
-
-    response (200): same as enable.
-
-git remote url:
-    https://your-domain.com/git/{app-id}.git
-
-auth:
-    use http basic auth with username "znskr" and the token returned by enable/rotate.
-
---------------------------------------------------------------------------------
 health
 --------------------------------------------------------------------------------
 
