@@ -1,18 +1,18 @@
-# znskr agent guidelines
+# containr agent guidelines
 
 ## project structure
 
 rust monorepo with solidjs frontend.
 
-- `crates/znskr` - main binary
-- `crates/znskr-api` - axum api server
-- `crates/znskr-runtime` - docker container management
-- `crates/znskr-proxy` - pingora reverse proxy
-- `crates/znskr-common` - shared types and database
+- `crates/containr` - main binary
+- `crates/containr-api` - axum api server
+- `crates/containr-runtime` - docker container management
+- `crates/containr-proxy` - pingora reverse proxy
+- `crates/containr-common` - shared types and database
 - `web/` - solidjs frontend
 - `data/` - runtime storage (database, certs); don't commit
-- `znskr.toml` - main config file
-- `znskr.example.json` - app payload examples
+- `containr.toml` - main config file
+- `containr.example.json` - app payload examples
 
 ## build commands
 
@@ -22,9 +22,10 @@ cargo build --release            # release build
 cargo run                        # run binary
 cargo check                      # type check only
 
-cd web && bun install            # install deps (use bun, not npm)
-cd web && bun dev                # dev server port 3001
-cd web && bun build              # production build
+mise install                     # install node 24 and pnpm from mise.toml
+cd web && pnpm install           # install deps
+cd web && pnpm dev               # dev server port 3001
+cd web && pnpm build             # production build
 ```
 
 ## test commands
@@ -32,7 +33,7 @@ cd web && bun build              # production build
 ```bash
 cargo test                       # all tests
 cargo test <name>                # tests matching name
-cargo test --package znskr-api   # specific crate
+cargo test --package containr-api   # specific crate
 cargo test <name> -- --nocapture # single test with output
 ```
 
@@ -42,8 +43,8 @@ cargo test <name> -- --nocapture # single test with output
 cargo fmt                        # format rust
 cargo fmt -- --check             # check formatting
 cargo clippy                     # lint rust
-bunx prettier --write .          # format typescript
-bunx tsc --noEmit                # type check frontend
+cd web && pnpm exec biome format --write . # format typescript
+cd web && pnpm exec tsc --noEmit # type check frontend
 ```
 
 ## running locally
@@ -53,7 +54,7 @@ bunx tsc --noEmit                # type check frontend
 cargo run
 
 # terminal 2
-cd web && bun dev
+cd web && pnpm dev
 ```
 
 ports: api 3000, http 80, https 443, frontend dev 3001
@@ -68,7 +69,7 @@ use tokio::sync::mpsc;
 use tracing::{error, info};
 
 use crate::docker::DockerContainerManager;
-use znskr_common::models::App;
+use containr_common::models::App;
 ```
 
 naming:
@@ -140,12 +141,12 @@ patterns:
 ## configuration
 
 - use toml only (not json, not yaml)
-- config file: znskr.toml
+- config file: containr.toml
 - always install latest versions from crates.io and npm
 
 key dependencies:
 - rust: tokio, axum, serde, sled, thiserror, anyhow, tracing, pingora
-- frontend: solid-js, @solidjs/router, tailwindcss, bun
+- frontend: solid-js, @solidjs/router, tailwindcss, pnpm
 
 ## file conventions
 
@@ -157,9 +158,9 @@ key dependencies:
 ## common tasks
 
 add api endpoint:
-1. handler in `crates/znskr-api/src/handlers/`
-2. route in `crates/znskr-api/src/server.rs`
-3. types in `crates/znskr-common/src/models.rs`
+1. handler in `crates/containr-api/src/handlers/`
+2. route in `crates/containr-api/src/server.rs`
+3. types in `crates/containr-common/src/models.rs`
 
 add frontend page:
 1. component in `web/src/pages/`
@@ -172,5 +173,5 @@ add frontend page:
 
 ## security
 
-- do not commit secrets; set real values in znskr.toml locally
+- do not commit secrets; set real values in containr.toml locally
 - keep jwt_secret, github oauth secrets, and acme email out of version control

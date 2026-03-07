@@ -1,12 +1,12 @@
-# znskr build artifacts
+# containr build artifacts
 /target/
 
 # data directory (runtime storage)
 /data/
 
-# config with secrets (znskr.toml may contain secrets, commit znskr.example.toml instead)
-znskr.json
-znskr.toml
+# config with secrets (containr.toml may contain secrets, commit containr.example.toml instead)
+containr.json
+containr.toml
 
 # ide
 .idea/

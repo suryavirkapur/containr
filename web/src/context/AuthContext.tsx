@@ -26,7 +26,7 @@ const AuthContext = createContext<AuthContextType>();
 export function AuthProvider(props: { children: JSX.Element }) {
   const [user, setUser] = createSignal<User | null>(null);
   const [token, setToken] = createSignal<string | null>(
-    localStorage.getItem("znskr_token"),
+    localStorage.getItem("containr_token"),
   );
 
   const isAuthenticated = () => !!token();
@@ -38,7 +38,7 @@ export function AuthProvider(props: { children: JSX.Element }) {
     if (error) throw error;
     setToken(data.token);
     setUser(data.user);
-    localStorage.setItem("znskr_token", data.token);
+    localStorage.setItem("containr_token", data.token);
   };
 
   const register = async (email: string, password: string) => {
@@ -48,13 +48,13 @@ export function AuthProvider(props: { children: JSX.Element }) {
     if (error) throw error;
     setToken(data.token);
     setUser(data.user);
-    localStorage.setItem("znskr_token", data.token);
+    localStorage.setItem("containr_token", data.token);
   };
 
   const logout = () => {
     setToken(null);
     setUser(null);
-    localStorage.removeItem("znskr_token");
+    localStorage.removeItem("containr_token");
   };
 
   return (

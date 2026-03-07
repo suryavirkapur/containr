@@ -1,13 +1,13 @@
-znskr architecture overview
+containr architecture overview
 ===========================
 
-znskr is a rust-native platform-as-a-service designed for simplicity and performance.
+containr is a rust-native platform-as-a-service designed for simplicity and performance.
 
 system components
 -----------------
 
     ┌─────────────────────────────────────────────────────────────────┐
-    │                         znskr binary                            │
+    │                         containr binary                            │
     │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
     │  │  api server │  │ proxy layer │  │    deployment worker    │  │
     │  │   (axum)    │  │  (pingora)  │  │   (docker + buildkit)   │  │
@@ -33,17 +33,17 @@ system components
 crate structure
 ---------------
 
-crates/znskr
+crates/containr
     main binary entry point. orchestrates all components.
 
-crates/znskr-api
+crates/containr-api
     axum-based rest api server.
     - authentication (jwt, github oauth)
     - app/deployment management
     - managed services (databases, queues, storage)
     - websocket endpoints for real-time logs
 
-crates/znskr-proxy
+crates/containr-proxy
     pingora-based reverse proxy.
     - http/https termination
     - automatic ssl via acme/let's encrypt
@@ -52,7 +52,7 @@ crates/znskr-proxy
     - sse (server-sent events) passthrough
     - load balancing (round robin, least connections)
 
-crates/znskr-runtime
+crates/containr-runtime
     docker container management.
     - container lifecycle (create, start, stop, remove)
     - image building via buildkit
@@ -60,7 +60,7 @@ crates/znskr-runtime
     - managed database containers (postgresql, mariadb, valkey, qdrant)
     - managed queue containers (rabbitmq, nats)
 
-crates/znskr-common
+crates/containr-common
     shared types and utilities.
     - data models (app, deployment, user, etc.)
     - configuration structs
@@ -118,7 +118,7 @@ deployment flow
 database layer
 --------------
 
-znskr uses sled, an embedded key-value database:
+containr uses sled, an embedded key-value database:
 
     - zero configuration required
     - acid transactions
@@ -187,7 +187,7 @@ built-in managed queue containers:
 
 s3-compatible object storage:
     - integrates with rustfs or any s3-compatible endpoint
-    - per-user access keys and buckets
+    - server-managed buckets using configured rustfs credentials
 
 security model
 --------------
@@ -209,8 +209,8 @@ secrets
 data directory structure
 ------------------------
 
-    /var/lib/znskr/
-    ├── znskr.db/           # sled database
+    /var/lib/containr/
+    ├── containr.db/           # sled database
     ├── certs/              # acme certificates
     └── data/
         ├── databases/      # managed database volumes

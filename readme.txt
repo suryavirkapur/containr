@@ -1,4 +1,4 @@
-znskr
+containr
 =====
 
 rust-native platform as a service for deploying docker containers with automatic ssl.
@@ -9,16 +9,16 @@ quick start
 -----------
 
   # install
-  cargo install --git https://github.com/suryavirkapur/znskr-paas znskr
+  cargo install --git https://github.com/suryavirkapur/containr-paas containr
 
   # configure
   ./install.sh
 
   # run (requires root for ports 80/443)
-  sudo znskr
+  sudo containr
 
   # or with custom ports
-  znskr --http-port 8080 --https-port 8443 --api-port 3000
+  containr --http-port 8080 --https-port 8443 --api-port 3000
 
 dashboard available at http://localhost:3000
 
@@ -26,7 +26,6 @@ features
 --------
 
 - docker container deployment from github repos
-- git push deployments (smart http)
 - automatic containerfile/dockerfile detection
 - pingora reverse proxy with acme ssl
 - websocket passthrough support
@@ -49,8 +48,9 @@ system requirements
 - macos is not a supported backend runtime or development target
 - docker (containerd runtime)
 - rust 1.75+
-- bun (for frontend development)
-- git (for git push deployments)
+- mise
+- node 24 (via mise)
+- pnpm (via mise)
 
 use a linux machine or vm for backend development and runtime testing.
 
@@ -83,11 +83,11 @@ project structure
 -----------------
 
   crates/
-    znskr/              main binary
-    znskr-api/          axum api server
-    znskr-runtime/      docker container management
-    znskr-proxy/        pingora reverse proxy
-    znskr-common/       shared types and database
+    containr/              main binary
+    containr-api/          axum api server
+    containr-runtime/      docker container management
+    containr-proxy/        pingora reverse proxy
+    containr-common/       shared types and database
 
   web/                  solidjs frontend
   docs/                 documentation
@@ -101,23 +101,25 @@ building from source
   cargo build --release
 
   # frontend
+  mise install
   cd web
-  bun install
-  bun build
+  pnpm install
+  pnpm build
 
 backend development and runtime testing are only supported on linux.
 
 configuration
 -------------
 
-create znskr.toml:
+create containr.toml:
 
   [server]
   host = "0.0.0.0"
   port = 3000
 
   [database]
-  path = "./data/znskr.db"
+  backend = "sled"
+  path = "./data/containr.db"
 
   [proxy]
   http_port = 80
@@ -175,11 +177,6 @@ deployments:
   POST /api/apps/{id}/deployments       trigger deployment
   GET  /api/apps/{id}/deployments/{id}  get deployment
   GET  /api/apps/{id}/logs/ws           websocket logs
-
-git push:
-  GET  /api/apps/{id}/git               get git push info
-  POST /api/apps/{id}/git               enable git push (returns token)
-  POST /api/apps/{id}/git/rotate        rotate git token
 
 certificates:
   GET  /api/apps/{id}/certificate         ssl status

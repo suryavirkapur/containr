@@ -1,8 +1,8 @@
-# znskr - Security & Architecture Improvements
+# containr - Security & Architecture Improvements
 
 ## 📋 Overview
 
-This document outlines critical security vulnerabilities, architectural issues, and improvement opportunities identified in the znskr codebase. znskr is a Rust-native Platform-as-a-Service (PaaS) for Docker containers with a Solid.js frontend.
+This document outlines critical security vulnerabilities, architectural issues, and improvement opportunities identified in the containr codebase. containr is a Rust-native Platform-as-a-Service (PaaS) for Docker containers with a Solid.js frontend.
 
 ## 🎯 Preventing Frontend-Backend Integration Issues
 
@@ -35,23 +35,23 @@ When renaming a field:
 ## 🚨 CRITICAL SECURITY ISSUES - IMMEDIATE ACTION REQUIRED
 
 ### 1. **Exposed Secrets in Version Control**
-- **File**: `znskr.toml`
+- **File**: `containr.toml`
 - **Issue**: JWT secret, encryption key, and GitHub webhook secret committed to git
 - **Impact**: Full system compromise possible - attackers can forge tokens, decrypt data, forge webhooks
 - **Fix**:
   - [ ] **IMMEDIATE**: Rotate ALL secrets immediately in production
-  - [ ] Add `znskr.toml` to `.gitignore` (already done)
-  - [ ] Remove `znskr.toml` from git history using:
+  - [ ] Add `containr.toml` to `.gitignore` (already done)
+  - [ ] Remove `containr.toml` from git history using:
     ```bash
     # Option 1: Using git filter-repo (recommended)
-    git filter-repo --path znskr.toml --invert-paths
+    git filter-repo --path containr.toml --invert-paths
 
     # Option 2: Using BFG Repo-Cleaner
-    bfg --delete-files znskr.toml
+    bfg --delete-files containr.toml
 
     # Option 3: Using git filter-branch (legacy)
     git filter-branch --force --index-filter \
-      "git rm --cached --ignore-unmatch znskr.toml" \
+      "git rm --cached --ignore-unmatch containr.toml" \
       --prune-empty --tag-name-filter cat -- --all
     ```
   - [ ] Force push after cleaning: `git push origin --force --all`
@@ -59,7 +59,7 @@ When renaming a field:
   - [ ] Ensure all team members clone fresh repository after cleanup
 
 ### 2. **Overly Permissive CORS Configuration**
-- **File**: `crates/znskr-api/src/server.rs:35-38`
+- **File**: `crates/containr-api/src/server.rs:35-38`
 - **Issue**: `allow_origin(Any).allow_methods(Any).allow_headers(Any)`
 - **Impact**: CSRF attacks, data leakage from malicious sites
 - **Fix**:
@@ -100,7 +100,7 @@ When renaming a field:
 ## ⚠️ MEDIUM SEVERITY ISSUES
 
 ### 5. **Command Injection Risk in Health Checks**
-- **File**: `crates/znskr-runtime/src/docker.rs:206`
+- **File**: `crates/containr-runtime/src/docker.rs:206`
 - **Issue**: `hc.cmd.join(" ")` without sanitization
 - **Impact**: Potential Docker container escape if user controls health check commands
 - **Fix**:
@@ -148,7 +148,7 @@ When renaming a field:
 - **Issue**: Each handler validates tokens separately (duplicate code)
 - **Files**: All handler files with `validate_token()` calls
 - **Fix**:
-  - [ ] Create `crates/znskr-api/src/middleware/auth.rs`
+  - [ ] Create `crates/containr-api/src/middleware/auth.rs`
   - [ ] Extract token validation to reusable middleware
   - [ ] Add user claims to request extensions for easy access
 
@@ -212,7 +212,7 @@ When renaming a field:
 ### 18. **Docker Socket Security**
 - **Issue**: Requires Docker socket access (security risk)
 - **Mitigation**:
-  - [ ] Run znskr in Docker with socket mounted read-only if possible
+  - [ ] Run containr in Docker with socket mounted read-only if possible
   - [ ] Consider Docker API over TCP with TLS
   - [ ] Implement Docker resource limits
 
@@ -291,11 +291,11 @@ When renaming a field:
 ## 🔍 SPECIFIC FILE CHANGES REQUIRED
 
 ### Backend (Rust)
-- `crates/znskr-api/src/server.rs` - CORS configuration
-- `crates/znskr-api/src/middleware/` - New auth middleware
-- `crates/znskr-api/src/handlers/` - Add input validation
-- `crates/znskr-runtime/src/docker.rs` - Health check sanitization
-- `znskr.toml` - Secret rotation, add to `.gitignore`
+- `crates/containr-api/src/server.rs` - CORS configuration
+- `crates/containr-api/src/middleware/` - New auth middleware
+- `crates/containr-api/src/handlers/` - Add input validation
+- `crates/containr-runtime/src/docker.rs` - Health check sanitization
+- `containr.toml` - Secret rotation, add to `.gitignore`
 
 ### Frontend (TypeScript/Solid.js)
 - `web/src/api/client.ts` - New centralized API client
@@ -334,7 +334,7 @@ When renaming a field:
 | Phase 4: Production Readiness | 🔴 Not Started | 0/4 | Ongoing |
 
 ### Completed Items
-- [x] Added `znskr.toml` to `.gitignore`
+- [x] Added `containr.toml` to `.gitignore`
 - [x] Created comprehensive TODO.md
 
 ### Next Actions

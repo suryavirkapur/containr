@@ -1,45 +1,45 @@
-znskr quickstart guide
+containr quickstart guide
 ======================
 
-get znskr running in 5 minutes.
+get containr running in 5 minutes.
 
 prerequisites
 -------------
 - linux server (ubuntu 22.04+ recommended)
 - macos is not supported for backend development or runtime testing
 - docker installed and running
-- git installed (for git push deployments)
 - domain name pointing to your server
 - ports 80 and 443 open
 
-step 1: install znskr
+step 1: install containr
 ---------------------
 
 download and extract:
 
-    curl -fsSL https://github.com/suryavirkapur/znskr-paas/releases/latest/download/znskr-linux-amd64.tar.gz | tar xz
-    sudo mv znskr /usr/local/bin/
+    curl -fsSL https://github.com/suryavirkapur/containr-paas/releases/latest/download/containr-linux-amd64.tar.gz | tar xz
+    sudo mv containr /usr/local/bin/
 
 or build from source:
 
-    git clone https://github.com/suryavirkapur/znskr-paas.git
-    cd znskr-paas
+    git clone https://github.com/suryavirkapur/containr-paas.git
+    cd containr-paas
     cargo build --release
-    sudo cp target/release/znskr /usr/local/bin/
+    sudo cp target/release/containr /usr/local/bin/
 
 step 2: configure
 -----------------
 
 create configuration file:
 
-    mkdir -p /etc/znskr
-    cat > /etc/znskr/znskr.toml << 'EOF'
+    mkdir -p /etc/containr
+    cat > /etc/containr/containr.toml << 'EOF'
     [server]
     host = "0.0.0.0"
     port = 3000
 
     [database]
-    path = "/var/lib/znskr/znskr.db"
+    backend = "sled"
+    path = "/var/lib/containr/containr.db"
 
     [proxy]
     http_port = 80
@@ -58,14 +58,16 @@ create configuration file:
 
     [acme]
     email = "admin@your-domain.com"
-    certs_dir = "/var/lib/znskr/certs"
+    certs_dir = "/var/lib/containr/certs"
     staging = false
 
     [storage]
-    data_dir = "/var/lib/znskr/data"
+    data_dir = "/var/lib/containr/data"
     max_volume_size_gb = 10
     backup_enabled = false
     rustfs_endpoint = "http://localhost:9000"
+    rustfs_access_key = ""
+    rustfs_secret_key = ""
     EOF
 
 replace:
@@ -76,14 +78,14 @@ replace:
 step 3: create data directories
 -------------------------------
 
-    sudo mkdir -p /var/lib/znskr/{data,certs}
+    sudo mkdir -p /var/lib/containr/{data,certs}
 
-step 4: start znskr
+step 4: start containr
 -------------------
 
-    znskr --config /etc/znskr/znskr.toml
+    containr --config /etc/containr/containr.toml
 
-znskr starts three components:
+containr starts three components:
 - api server on port 3000
 - http proxy on port 80
 - https proxy on port 443
@@ -126,18 +128,6 @@ your app is now deploying. check status:
     curl http://localhost:3000/api/apps/APP_ID/deployments \
       -H "authorization: bearer YOUR_JWT_TOKEN"
 
-optional: enable git push
--------------------------
-
-    # enable git push and get token
-    curl -X POST http://localhost:3000/api/apps/APP_ID/git \
-      -H "authorization: bearer YOUR_JWT_TOKEN"
-
-    # add remote and push
-    git remote add znskr https://your-domain.com/git/APP_ID.git
-    # username: znskr, password: token from enable response
-    git push znskr main
-
 step 7: access dashboard
 ------------------------
 
@@ -167,7 +157,7 @@ your repository needs a dockerfile. example for a node.js app:
     EXPOSE 3000
     CMD ["npm", "start"]
 
-znskr builds and runs this container automatically.
+containr builds and runs this container automatically.
 
 environment variables
 ---------------------

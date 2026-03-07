@@ -22,6 +22,19 @@ const fetchQueue = async (id: string): Promise<Queue> => {
   return data;
 };
 
+const toggleExternalAccess = async (
+  id: string,
+  enabled: boolean,
+  externalPort?: number,
+): Promise<Queue> => {
+  const { data, error } = await api.POST("/api/queues/{id}/expose", {
+    params: { path: { id } },
+    body: { enabled, external_port: externalPort },
+  });
+  if (error) throw error;
+  return data;
+};
+
 const fetchContainers = async (): Promise<ContainerListItem[]> => {
   const { data, error } = await api.GET("/api/containers");
   if (error) throw error;
@@ -30,10 +43,12 @@ const fetchContainers = async (): Promise<ContainerListItem[]> => {
 
 const QueueDetail: Component = () => {
   const params = useParams();
-  const [queue] = createResource(() => params.id, fetchQueue);
+  const [queue, { refetch }] = createResource(() => params.id, fetchQueue);
   const [containers] = createResource(fetchContainers);
   const [selectedContainer, setSelectedContainer] = createSignal("");
   const [showPassword, setShowPassword] = createSignal(false);
+  const [exposing, setExposing] = createSignal(false);
+  const [externalPort, setExternalPort] = createSignal("");
 
   const queueContainers = createMemo(() =>
     (containers() || []).filter(
@@ -48,8 +63,31 @@ const QueueDetail: Component = () => {
     }
   });
 
+  createEffect(() => {
+    const port = queue()?.external_port;
+    setExternalPort(port ? String(port) : "");
+  });
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+  };
+
+  const handleToggleExpose = async () => {
+    const currentQueue = queue();
+    if (!currentQueue) return;
+    setExposing(true);
+    try {
+      const shouldEnable = currentQueue.external_port == null;
+      const requestedPort = externalPort().trim();
+      await toggleExternalAccess(
+        currentQueue.id,
+        shouldEnable,
+        shouldEnable && requestedPort ? Number(requestedPort) : undefined,
+      );
+      await refetch();
+    } finally {
+      setExposing(false);
+    }
   };
 
   return (
@@ -176,6 +214,71 @@ const QueueDetail: Component = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+
+        <div class="mb-6">
+          <h2 class="text-lg font-serif text-black mb-3">external access</h2>
+          <div class="border border-neutral-200 p-5 text-sm text-neutral-600 space-y-4">
+            <div class="flex items-end justify-between gap-4">
+              <div>
+                <p class="text-neutral-800">expose queue externally</p>
+                <p class="text-xs text-neutral-400 mt-1">
+                  allow clients outside the internal network to connect
+                </p>
+              </div>
+              <div class="w-40">
+                <label class="block text-xs text-neutral-400 mb-1">
+                  external port
+                </label>
+                <input
+                  type="number"
+                  min="1024"
+                  max="65535"
+                  value={externalPort()}
+                  onInput={(e) => setExternalPort(e.currentTarget.value)}
+                  placeholder="auto"
+                  class="w-full px-3 py-2 border border-neutral-300 text-neutral-800"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleExpose}
+                disabled={exposing()}
+                class={`px-4 py-2 text-xs ${
+                  queue()!.external_port != null
+                    ? "bg-neutral-200 text-neutral-800 hover:bg-neutral-300"
+                    : "bg-black text-white hover:bg-neutral-800"
+                } disabled:opacity-50`}
+              >
+                {exposing()
+                  ? "..."
+                  : queue()!.external_port != null
+                    ? "disable"
+                    : "enable"}
+              </button>
+            </div>
+            <Show when={queue()!.external_port != null}>
+              <div class="pt-4 border-t border-neutral-200">
+                <p class="text-xs text-neutral-400">external endpoint</p>
+                <div class="flex items-center gap-2 mt-1">
+                  <p class="font-mono text-neutral-800">
+                    {window.location.hostname}:{queue()!.external_port}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      copyToClipboard(
+                        `${window.location.hostname}:${queue()!.external_port}`,
+                      )
+                    }
+                    class="text-xs text-neutral-400 hover:text-black"
+                  >
+                    copy
+                  </button>
+                </div>
+              </div>
+            </Show>
           </div>
         </div>
       </Show>

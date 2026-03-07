@@ -1,7 +1,7 @@
 installation
 ============
 
-znskr is a rust-native paas for deploying docker containers with automatic ssl.
+containr is a rust-native paas for deploying docker containers with automatic ssl.
 
 requirements
 ------------
@@ -9,39 +9,41 @@ requirements
 - linux x86_64
 - rust 1.75+ (install via https://rustup.rs)
 - docker (containerd runtime)
-- bun (for frontend, optional for binary-only install)
+- mise
+- node 24 (via mise, for frontend)
+- pnpm (via mise, for frontend)
 - openssl (for generating secrets)
 
 quick install
 -------------
 
-  cargo install --git https://github.com/suryavirkapur/znskr-paas znskr
+  cargo install --git https://github.com/suryavirkapur/containr-paas containr
   ./install.sh
-  sudo znskr
+  sudo containr
 
 detailed installation
 ---------------------
 
 option 1: install from cargo (recommended)
 
-  cargo install --git https://github.com/suryavirkapur/znskr-paas znskr
+  cargo install --git https://github.com/suryavirkapur/containr-paas containr
 
 with specific version/tag:
 
-  cargo install --git https://github.com/suryavirkapur/znskr-paas --tag v0.1.0 znskr
+  cargo install --git https://github.com/suryavirkapur/containr-paas --tag v0.1.0 containr
 
 option 2: build from source
 
-  git clone https://github.com/suryavirkapur/znskr-paas.git
-  cd znskr-paas
+  git clone https://github.com/suryavirkapur/containr-paas.git
+  cd containr-paas
   cargo build --release
-  sudo cp target/release/znskr /usr/local/bin/
+  sudo cp target/release/containr /usr/local/bin/
 
 option 3: install to cargo bin
 
-  git clone https://github.com/suryavirkapur/znskr-paas.git
-  cd znskr-paas
-  cargo install --path crates/znskr
+  git clone https://github.com/suryavirkapur/containr-paas.git
+  cd containr-paas
+  cargo install --path crates/containr
 
 post-install configuration
 --------------------------
@@ -50,17 +52,18 @@ option 1: use install script (recommended)
 
   ./install.sh
 
-this creates znskr.toml with randomized secrets and creates ./data/certs directory.
+this creates containr.toml with randomized secrets and creates ./data/certs directory.
 
 option 2: create config manually
 
-  cat > znskr.toml << 'EOF'
+  cat > containr.toml << 'EOF'
   [server]
   host = "0.0.0.0"
   port = 3000
 
   [database]
-  path = "./data/znskr.db"
+  backend = "sled"
+  path = "./data/containr.db"
 
   [proxy]
   http_port = 80
@@ -85,10 +88,12 @@ option 2: create config manually
   staging = true
 
   [storage]
-  data_dir = "/data/znskr"
+  data_dir = "/data/containr"
   max_volume_size_gb = 10
   backup_enabled = false
   rustfs_endpoint = "http://localhost:9000"
+  rustfs_access_key = ""
+  rustfs_secret_key = ""
   EOF
 
   mkdir -p ./data/certs
@@ -98,15 +103,15 @@ running
 
 with default ports (requires root for 80/443):
 
-  sudo znskr
+  sudo containr
 
 with custom ports (no root required):
 
-  znskr --http-port 8080 --https-port 8443 --api-port 3000
+  containr --http-port 8080 --https-port 8443 --api-port 3000
 
 command line options:
 
-  --config <path>      config file path (default: znskr.toml)
+  --config <path>      config file path (default: containr.toml)
   --http-port <port>   http proxy port (default: 80)
   --https-port <port>  https proxy port (default: 443)
   --api-port <port>    api server port (default: 3000)
@@ -118,30 +123,32 @@ frontend development
 
 the frontend is optional for deployment but required for development:
 
+  mise install
   cd web
-  bun install
-  bun dev
+  pnpm install
+  pnpm dev
 
 for production build:
 
+  mise install
   cd web
-  bun build
+  pnpm build
 
 systemd service
 ---------------
 
-create /etc/systemd/system/znskr.service:
+create /etc/systemd/system/containr.service:
 
   [unit]
-  description=znskr paas
+  description=containr paas
   after=network.target docker.service
   requires=docker.service
 
   [service]
   type=simple
   user=root
-  workingdirectory=/opt/znskr
-  execstart=/usr/local/bin/znskr
+  workingdirectory=/opt/containr
+  execstart=/usr/local/bin/containr
   restart=always
   restartsec=5
   environment=rust_log=info
@@ -152,38 +159,38 @@ create /etc/systemd/system/znskr.service:
 enable and start:
 
   sudo systemctl daemon-reload
-  sudo systemctl enable znskr
-  sudo systemctl start znskr
+  sudo systemctl enable containr
+  sudo systemctl start containr
 
 view logs:
 
-  sudo journalctl -u znskr -f
+  sudo journalctl -u containr -f
 
 docker install (alternative)
 ----------------------------
 
 build docker image:
 
-  docker build -t znskr .
+  docker build -t containr .
 
 run with docker:
 
   docker run -d \
-    --name znskr \
+    --name containr \
     --restart unless-stopped \
     -p 80:80 \
     -p 443:443 \
     -p 3000:3000 \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v $(pwd)/data:/app/data \
-    -v $(pwd)/znskr.toml:/app/znskr.toml:ro \
-    znskr
+    -v $(pwd)/containr.toml:/app/containr.toml:ro \
+    containr
 
 docker compose:
 
   version: '3.8'
   services:
-    znskr:
+    containr:
       build: .
       restart: unless-stopped
       ports:
@@ -193,14 +200,14 @@ docker compose:
       volumes:
         - /var/run/docker.sock:/var/run/docker.sock
         - ./data:/app/data
-        - ./znskr.toml:/app/znskr.toml:ro
+        - ./containr.toml:/app/containr.toml:ro
 
 verify installation
 -------------------
 
 check version:
 
-  znskr --version
+  containr --version
 
 check health:
 
@@ -233,10 +240,10 @@ github oauth setup
 
 1. go to github settings > developer settings > oauth apps
 2. create new oauth app:
-   - application name: znskr
+   - application name: containr
    - homepage url: https://your-domain.com
    - callback url: https://your-domain.com/api/auth/github/callback
-3. copy client id and client secret to znskr.toml
+3. copy client id and client secret to containr.toml
 
 github webhooks setup
 ---------------------
@@ -247,7 +254,7 @@ for automatic deployments on push:
 2. add webhook:
    - payload url: https://your-domain.com/webhooks/github
    - content type: application/json
-   - secret: same as webhook_secret in znskr.toml
+   - secret: same as webhook_secret in containr.toml
    - events: just the push event
 3. test with a push to your repo
 
@@ -256,14 +263,14 @@ troubleshooting
 
 permission denied on port 80/443:
   run with sudo or use custom ports:
-    znskr --http-port 8080 --https-port 8443
+    containr --http-port 8080 --https-port 8443
 
 docker not found:
   install docker and add user to docker group:
     sudo usermod -aG docker $USER
 
 config file not found:
-  run install.sh or create znskr.toml manually
+  run install.sh or create containr.toml manually
 
 ssl certificate errors:
   set staging = true for testing

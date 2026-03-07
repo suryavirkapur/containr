@@ -1,27 +1,139 @@
 current context:
-- implemented coolify-style github app integration
-- added backend handlers for app manifest flow and installation token management
-- enhanced settings page with github app setup and management
-- enhanced new app page with repo picker supporting installations
-- added acme request worker triggered by tls certificate misses
-- proxy now queues certificate issuance when no cert is found
-- proxy resolves upstream socket addresses to avoid pingora panics
-- base domain /api requests now route to the api server
+- the project has been renamed from znskr to containr across crate/package names, the main binary,
+  config/example file names, docs, ui copy, and internal docker resource naming
+- local git push deployment management has been removed from the api, proxy routing, ui, docs, and generated frontend client
+- metadata storage now goes through a backend trait with config-selectable sled and sqlite implementations
+- sqlite metadata storage now uses typed relational tables for apps, env vars, domains, services, deployments, managed services, and github app installations
+- sqlite still runs in wal mode and keeps ordered deployment log tables separate from deployment rows
+- sqlite startup now rejects any earlier `key/value(json)` sqlite tables instead of auto-importing them
+- managed services now use a shared internal docker network with stable aliases for app-to-service traffic
+- app containers join both the per-app network and the shared internal network
+- deployment jobs now use a unified source resolver instead of separate github/git path fields
+- local-path deployment sources now clone without shallow-fetch failures
+- manual deployments detect filesystem-backed repositories and resolve them as local sources
+- managed databases and queues now wait for health readiness before being marked running
+- queue api responses now include passwords and normalized internal hosts
+- managed database and queue startup now pulls missing container images automatically
+- managed queues now support optional public host port exposure, and database exposure can use a requested port
+- database backup exports can now upload into rustfs buckets using configured server credentials and verify the uploaded object
+- storage buckets are now managed with server-side rustfs credentials instead of generated per-bucket client credentials
+- storage config now separates the rustfs management endpoint from the internal docker hostname/port
+  and optional public s3 hostname routed through the containr proxy
+- bucket api responses now include preferred, internal, and optional public endpoints plus a
+  connection detail endpoint for frontend copy/paste flows
+- managed postgres databases now support local point in time recovery using archived wal segments, local base backups, named restore points, and recovery targets
+- managed postgres databases can now run an optional pgdog frontend with its own internal connection string and optional public host port
+- dashboard source copy now uses generic repository wording instead of github-only wording
+- the pingora proxy now forwards the base dashboard hostname to the api upstream for both ui and
+  api paths instead of serving a second embedded frontend path inside the proxy
+- app deployments now attach the shared `containr-internal` network before container start to
+  avoid docker's `network sandbox not found` race when short-lived containers restart immediately
+- acme certificate management now restores stored certs onto disk, tracks real leaf expiry, and runs periodic in-binary renewal passes
+- pingora's tls certificate cache now reloads renewed certs without requiring a process restart
+- github app repo discovery now paginates installation and repository listings, and deploy token lookup refreshes installation ids before scanning repos
+- deployment log modal now preloads persisted logs before attaching the live stream, and the websocket can resume from a requested log offset
+- deployment trigger failures no longer leave orphan pending rows behind, and the app detail page now shows deploy trigger errors inline
+- deployment source resolution now decrypts github app private keys and stored github oauth tokens through the shared helper, avoiding invalid raw key length failures
+- github webhook deployments now clean up their pending deployment row if source resolution or queue submission fails
+- deployment source resolution now surfaces github app config database read failures instead of silently skipping the stored app credentials
+- frontend tooling now runs through mise-managed node 24.14.0 and pnpm 10.30.3 instead of bun
+- service-based apps can now define persistent named mounts that are stored in sqlite, exposed through the api, and materialized as host bind mounts during deployment
+- image-based app services can now store optional private registry credentials with encrypted
+  passwords, and deployments use those credentials for authenticated image pulls before container startup
+- the container monitor now includes an xterm-powered terminal tab backed by a docker exec tty
+  websocket route for owned running containers
+- service-based apps can now override container command args, entrypoint args, and working
+  directory, with sqlite persistence and docker create-time wiring
+- service-based apps can now declare additional container ports beyond the primary routed port,
+  and those extra ports are persisted and declared to docker for internal network use
+- service cards in the app detail page can now back up and restore all persistent mounts for a
+  service through tar archive endpoints rooted at the host-side mount path
 
 pending tasks:
-- implement automatic webhooks for auto-deployment on push
-- manual trigger for deployment from image or branch in ui
+- decide whether to rename the git remote/repository slug from `znskr-paas` to `containr`
+- add true per-bucket rustfs credentials and policies instead of exposing the current shared
+  storage principal through the bucket connection endpoint
+- migrate app api field names from github_url to a generic source_url/source model without breaking clients
+- add queue logs and health visibility in the ui
+- add pitr backup listing, retention, and remote archive shipping instead of only keeping the latest local base backup metadata
+- extend managed database proxying and recovery beyond the current postgres-only single-node implementation
+- consider adding server-side repo search or incremental loading for very large github installations
+- add automated coverage for deployment log websocket resume behavior and historical-log preload in the ui
+- make deployment jobs durable across restarts instead of relying on the in-memory queue
+- add regression coverage for github app deployment source resolution with derived encryption keys and legacy-secret fallback
+- add migration/import tooling if existing sled installs need a one-step move into sqlite metadata storage
+- add a rustfs bucket verification/read-path in the api so the ui can inspect objects directly instead of only showing stored size metadata
 
 important decisions:
-- switched from oauth tokens to github app installation tokens for better security
-- app credentials (private key, secrets) are stored encrypted in sled
-- acme issuance is triggered on first https request and deduped per domain
-- acme requires config.acme.email to be set, otherwise it is disabled
+- keep the runtime compatible during rename by accepting `CONTAINR_ENCRYPTION_KEY` first and
+  falling back to the legacy `ZNSKR_ENCRYPTION_KEY` until deployments are updated
+- remove the local git push deployment path entirely instead of keeping a hidden token-based deploy bypass
+- keep the public `Database` api stable while selecting the concrete metadata backend from `config.database.backend`
+- implement sqlite as a fully relational backend with typed columns and child tables instead of json blob rows
+- keep runtime callers on the existing typed `Database` api and reconstruct nested aggregates during sqlite reads
+- keep the per-app docker network for proxy routing, and add a shared internal network for service discovery
+- use docker aliases on app networks for service names and on the shared network for managed services
+- unify deployment preparation around an explicit deployment source enum before work reaches the runtime
+- keep existing github_url api fields for compatibility while shifting ui language to generic repository terms
+- keep cert renewal inside the binary and reload certificates by watching on-disk cert file mtimes instead of requiring proxy restarts
+- fetch github app installations from github on demand for repo discovery and token lookup instead of trusting only the callback-cached installation list
+- treat deployment build logs as historical-first data and only keep a live websocket open while the deployment is still in an active pre-running phase
+- only persist a deployment record after source resolution succeeds, and remove it again if enqueueing the job fails
+- implement point in time recovery only for postgresql in this pass instead of pretending mariadb, valkey, and qdrant have equivalent recovery support
+- keep the pgdog frontend as an optional sidecar proxy for a single managed postgres backend, not as fake ha or replica routing
+- use the same decrypt helper for deployment-time secret access that the rest of the github app handlers already use
+- treat webhook-triggered deployments the same as manual and rollback deployments: only keep the database row if the job is actually queueable
+- manage rustfs buckets with the server's configured access key and secret key until rustfs exposes a provisionable per-bucket credential model
+- expose rustfs over a dedicated hostname through the containr proxy instead of path-rewriting s3
+  traffic through the dashboard host, because sigv4 depends on the request host and canonical path
+- use the api server as the single source for dashboard frontend assets on the base hostname instead
+  of duplicating dashboard asset serving logic inside the proxy
+- preserve service ids by name when app service definitions are updated so persistent mount host paths
+  stay stable across service edits
+- treat explicit service image references as pull-time artifacts and authenticate those pulls with
+  optional per-service registry credentials instead of waiting for `docker create` to fail
+- implement container terminal access with a real tty websocket bridge and xterm on the frontend
+  instead of a line-oriented command runner
+- keep manual public exposure changes as persisted service metadata even when the service is stopped, and only restart if a container is already active
+- standardize frontend builds on mise-managed node and pnpm instead of bun, nvm, or standalone pnpm path setup
 
 architectural notes:
-- github app auth uses jwt for app level and installation tokens for repo level
-- used sled for storing github app configuration and installations
-- acme manager runs on tokio runtime and serves http-01 via shared challenge store
-- pingora tls callback only queues issuance to avoid blocking handshake path
-- upstream resolution errors return a proxy error instead of panicking
-- api upstream uses loopback when config host is 0.0.0.0 or ::
+- the metadata layer now dispatches through a backend trait, with sled preserving legacy behavior and sqlite using typed relational tables plus child tables for nested collections
+- sqlite app reads hydrate domains, env vars, and current services from related tables instead of embedding them in one blob row
+- sqlite deployment history keeps deployment logs in `(deployment_id, idx, line)` rows and service deployment logs in their own child table
+- sqlite github app state stores installations in a separate child table keyed by owner id
+- legacy sqlite blob tables are no longer auto-migrated; sqlite startup fails fast if `key/value(json)` tables are still present
+- managed databases and queues publish stable aliases on the shared internal docker network
+- app service containers publish service-name aliases on the per-app docker network
+- the runtime still builds proxy upstreams from the per-app network to keep routing behavior unchanged
+- github app tokens, github oauth tokens, and git-push local repos now converge through one deployment source resolver
+- postgres pitr state is stored under each managed database root with a data directory, a wal archive directory, a basebackup directory, and optional recovery-time config written into postgresql.auto.conf plus recovery.signal
+- the postgres frontend proxy is implemented as a separate pgdog container joined to the shared internal network and configured from generated pgdog.toml and users.toml files under the managed database root
+- the acme manager is responsible for both cert issuance and periodic renewal, while pingora reloads renewed certs from disk on the next tls handshake
+- deployment log history remains stored in sled, while the websocket now resumes from a client-provided offset instead of assuming it must replay from the beginning
+- deployment rows are still database-backed, but the actual job queue remains process-local and can still drop in-flight work on service restart
+- github app private keys and github oauth tokens are stored with the generic encrypted-value format and should never be decrypted from raw config bytes directly
+- webhook-triggered deployments now resolve their source before persisting, and they delete the row again if enqueueing fails after persistence
+- rustfs bucket operations and backup uploads now use the shared storage credentials from config, while bucket records remain metadata-only
+- storage clients now have three endpoint views: a loopback management endpoint for the api, an
+  internal docker-network endpoint for workloads, and an optional public s3 hostname terminated by
+  the containr proxy
+- app service mounts live under `<work_dir>/app-mounts/<app_id>/<service_id>/<mount_name>` and
+  are bound into containers as docker bind mounts, with mount names validated as safe path segments
+- service registry auth is stored alongside the service metadata, with the password encrypted using
+  the shared `enc:` value format and decrypted only inside the deployment worker before image pulls
+- container terminal sessions are docker exec tty sessions bridged over websocket, with terminal
+  resize events sent over the same websocket, shell selection constrained to a small allowlist,
+  and output sent as binary frames to xterm
+- app service command and entrypoint overrides are stored as ordered child rows in sqlite, and
+  blank values clear the override while omitted api fields preserve the existing value
+- app service additional ports are stored separately from the primary routed port so the proxy can
+  keep using one canonical upstream port while workloads still declare extra internal listeners
+- service mount backup and restore works against the host-side mount root under the api's data
+  directory, validates tar entry paths against the declared mount names, and replaces the entire
+  service mount set on restore so stopped services can be recovered without a running container
+- the terminal websocket currently authenticates with the existing bearer jwt passed in the query
+  string from the same-origin dashboard; a short-lived dedicated exec token would be a cleaner
+  hardening follow-up
+- the vps at 100.109.217.118 is still on the sled metadata backend, but it now runs a local rustfs container on 127.0.0.1:9000 and passed an end-to-end bucket/db/queue smoke test on 2026-03-07
+- frontend dependency installation and vite builds now assume `mise exec -- pnpm ...` with the repo-pinned node/pnpm toolchain

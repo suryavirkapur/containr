@@ -1,0 +1,45 @@
+[package]
+name = "containr-proxy"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+skip-web-build = []
+
+[dependencies]
+containr-common = { path = "../containr-common" }
+
+tokio = { workspace = true }
+bytes = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+tracing = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+instant-acme = { workspace = true }
+rcgen = { workspace = true }
+rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
+tokio-rustls = { workspace = true }
+
+uuid = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+once_cell = { workspace = true }
+
+# Pingora - Cloudflare's reverse proxy framework
+pingora = "0.6"
+pingora-proxy = { version = "0.6", features = ["openssl"] }
+pingora-http = "0.6"
+pingora-core = { version = "0.6", features = ["openssl"] }
+
+# embedded static files
+rust-embed = "8.9"
+mime_guess = "2"

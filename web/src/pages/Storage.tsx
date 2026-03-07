@@ -1,21 +1,17 @@
-import { Component, createResource, createSignal, For, Show } from "solid-js";
 import { A } from "@solidjs/router";
+import { Component, createResource, createSignal, For, Show } from "solid-js";
 import { api, components } from "../api";
 
 type Bucket = components["schemas"]["BucketResponse"];
 
-/**
- * fetches user's storage buckets
- */
+/** fetches user's storage buckets */
 const fetchBuckets = async (): Promise<Bucket[]> => {
   const { data, error } = await api.GET("/api/buckets");
   if (error) throw error;
   return data;
 };
 
-/**
- * storage buckets management page
- */
+/** storage buckets management page */
 const Storage: Component = () => {
   const [buckets, { refetch }] = createResource(fetchBuckets);
   const [showCreate, setShowCreate] = createSignal(false);
@@ -23,8 +19,6 @@ const Storage: Component = () => {
   const [error, setError] = createSignal("");
   const [newBucket, setNewBucket] = createSignal<Bucket | null>(null);
   const [copiedField, setCopiedField] = createSignal<string | null>(null);
-
-  // create form
   const [name, setName] = createSignal("");
 
   const handleCreate = async (e: Event) => {
@@ -33,14 +27,11 @@ const Storage: Component = () => {
     setCreating(true);
 
     try {
-      const { data: bucket, error: createError } = await api.POST(
-        "/api/buckets",
-        {
-          body: { name: name() },
-        },
-      );
+      const { data: bucket, error: createError } = await api.POST("/api/buckets", {
+        body: { name: name() },
+      });
       if (createError) throw createError;
-      setNewBucket(bucket); // show credentials
+      setNewBucket(bucket);
       setShowCreate(false);
       setName("");
       refetch();
@@ -81,7 +72,6 @@ const Storage: Component = () => {
 
   return (
     <div>
-      {/* header */}
       <div class="flex justify-between items-start mb-10">
         <div>
           <h1 class="text-2xl font-serif text-black">storage</h1>
@@ -97,19 +87,18 @@ const Storage: Component = () => {
         </button>
       </div>
 
-      {/* new bucket credentials modal */}
       <Show when={newBucket()}>
         <div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">
-          <div class="bg-white border border-neutral-300 p-6 w-full max-w-md">
+          <div class="bg-white border border-neutral-300 p-6 w-full max-w-lg">
             <h2 class="text-lg font-serif text-black mb-2">bucket created</h2>
             <p class="text-xs text-neutral-500 mb-6">
-              save these credentials now. the secret key won't be shown again.
+              the bucket is ready for containr services and optional public s3 access.
             </p>
 
             <div class="space-y-4">
               <div>
                 <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-1">
-                  endpoint
+                  preferred endpoint
                 </label>
                 <div class="flex gap-2">
                   <input
@@ -119,9 +108,7 @@ const Storage: Component = () => {
                     class="flex-1 px-3 py-2 bg-neutral-50 border border-neutral-200 text-black text-sm font-mono"
                   />
                   <button
-                    onClick={() =>
-                      copyToClipboard("endpoint", newBucket()!.endpoint)
-                    }
+                    onClick={() => copyToClipboard("endpoint", newBucket()!.endpoint)}
                     class="px-3 py-2 border border-neutral-300 text-xs"
                   >
                     {copiedField() === "endpoint" ? "copied" : "copy"}
@@ -131,67 +118,49 @@ const Storage: Component = () => {
 
               <div>
                 <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-1">
-                  bucket name
+                  internal docker endpoint
                 </label>
                 <div class="flex gap-2">
                   <input
                     type="text"
                     readonly
-                    value={newBucket()!.name}
-                    class="flex-1 px-3 py-2 bg-neutral-50 border border-neutral-200 text-black text-sm font-mono"
-                  />
-                  <button
-                    onClick={() => copyToClipboard("name", newBucket()!.name)}
-                    class="px-3 py-2 border border-neutral-300 text-xs"
-                  >
-                    {copiedField() === "name" ? "copied" : "copy"}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-1">
-                  access key
-                </label>
-                <div class="flex gap-2">
-                  <input
-                    type="text"
-                    readonly
-                    value={newBucket()!.access_key}
+                    value={newBucket()!.internal_endpoint}
                     class="flex-1 px-3 py-2 bg-neutral-50 border border-neutral-200 text-black text-sm font-mono"
                   />
                   <button
                     onClick={() =>
-                      copyToClipboard("access", newBucket()!.access_key)
+                      copyToClipboard("internal_endpoint", newBucket()!.internal_endpoint)
                     }
                     class="px-3 py-2 border border-neutral-300 text-xs"
                   >
-                    {copiedField() === "access" ? "copied" : "copy"}
+                    {copiedField() === "internal_endpoint" ? "copied" : "copy"}
                   </button>
                 </div>
               </div>
 
-              <div>
-                <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-1">
-                  secret key
-                </label>
-                <div class="flex gap-2">
-                  <input
-                    type="text"
-                    readonly
-                    value={newBucket()!.secret_key}
-                    class="flex-1 px-3 py-2 bg-neutral-50 border border-neutral-200 text-black text-sm font-mono"
-                  />
-                  <button
-                    onClick={() =>
-                      copyToClipboard("secret", newBucket()!.secret_key)
-                    }
-                    class="px-3 py-2 border border-neutral-300 text-xs"
-                  >
-                    {copiedField() === "secret" ? "copied" : "copy"}
-                  </button>
+              <Show when={newBucket()!.public_endpoint}>
+                <div>
+                  <label class="block text-xs text-neutral-500 uppercase tracking-wider mb-1">
+                    public s3 endpoint
+                  </label>
+                  <div class="flex gap-2">
+                    <input
+                      type="text"
+                      readonly
+                      value={newBucket()!.public_endpoint || ""}
+                      class="flex-1 px-3 py-2 bg-neutral-50 border border-neutral-200 text-black text-sm font-mono"
+                    />
+                    <button
+                      onClick={() =>
+                        copyToClipboard("public_endpoint", newBucket()!.public_endpoint!)
+                      }
+                      class="px-3 py-2 border border-neutral-300 text-xs"
+                    >
+                      {copiedField() === "public_endpoint" ? "copied" : "copy"}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              </Show>
             </div>
 
             <button
@@ -204,7 +173,6 @@ const Storage: Component = () => {
         </div>
       </Show>
 
-      {/* loading */}
       <Show when={buckets.loading}>
         <div class="animate-pulse space-y-4">
           <div class="h-20 bg-neutral-50 border border-neutral-200"></div>
@@ -212,7 +180,6 @@ const Storage: Component = () => {
         </div>
       </Show>
 
-      {/* empty */}
       <Show when={!buckets.loading && buckets()?.length === 0}>
         <div class="border border-dashed border-neutral-200 p-12 text-center">
           <p class="text-neutral-400 text-sm">no buckets yet</p>
@@ -225,14 +192,13 @@ const Storage: Component = () => {
         </div>
       </Show>
 
-      {/* list */}
       <Show when={!buckets.loading && buckets() && buckets()!.length > 0}>
         <div class="space-y-4">
           <For each={buckets()}>
             {(bucket) => (
               <div class="border border-neutral-200 p-5">
-                <div class="flex justify-between items-start">
-                  <div>
+                <div class="flex justify-between items-start gap-4">
+                  <div class="min-w-0">
                     <div class="flex items-center gap-3">
                       <span class="w-2 h-2 bg-black"></span>
                       <A
@@ -242,11 +208,14 @@ const Storage: Component = () => {
                         {bucket.name}
                       </A>
                     </div>
-                    <p class="text-xs text-neutral-500 mt-2 font-mono">
-                      {bucket.endpoint}/{bucket.name}
+                    <p class="text-xs text-neutral-500 mt-2 font-mono break-all">
+                      {bucket.endpoint}
+                    </p>
+                    <p class="text-xs text-neutral-400 mt-1 font-mono break-all">
+                      internal: {bucket.internal_endpoint}
                     </p>
                   </div>
-                  <div class="flex gap-2">
+                  <div class="flex gap-2 shrink-0">
                     <button
                       onClick={() => handleDelete(bucket.id)}
                       class="px-3 py-1 text-xs border border-neutral-300 text-neutral-500 hover:text-black hover:border-neutral-400"
@@ -256,7 +225,8 @@ const Storage: Component = () => {
                   </div>
                 </div>
                 <div class="mt-3 pt-3 border-t border-neutral-100 flex gap-6 text-xs text-neutral-500">
-                  <span>access key: {bucket.access_key}</span>
+                  <span>{bucket.publicly_exposed ? "public s3" : "internal only"}</span>
+                  <span>host: {bucket.internal_host}</span>
                   <span>size: {formatBytes(bucket.size_bytes)}</span>
                 </div>
               </div>
@@ -265,7 +235,6 @@ const Storage: Component = () => {
         </div>
       </Show>
 
-      {/* create modal */}
       <Show when={showCreate()}>
         <div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">
           <div class="bg-white border border-neutral-300 p-6 w-full max-w-md">

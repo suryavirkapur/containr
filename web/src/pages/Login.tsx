@@ -24,7 +24,7 @@ const Login: Component = () => {
         body: { email: email(), password: password() },
       });
       if (error) throw error;
-      localStorage.setItem("znskr_token", data.token);
+      localStorage.setItem("containr_token", data.token);
       navigate("/");
     } catch (err: any) {
       setError(err.message);
@@ -39,7 +39,7 @@ const Login: Component = () => {
         {/* logo */}
         <div class="text-center mb-10">
           <h1 class="text-4xl font-serif font-bold text-black tracking-tight">
-            znskr
+            containr
           </h1>
           <p class="text-neutral-500 mt-2 text-sm font-light">
             deploy containers with ease

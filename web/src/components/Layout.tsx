@@ -32,7 +32,7 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
             {/* logo */}
             <A href="/" class="flex items-center gap-2">
               <span class="text-xl font-serif font-semibold text-black tracking-tight">
-                znskr
+                containr
               </span>
             </A>
 
@@ -106,7 +106,7 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
       <footer class="border-t border-neutral-200 py-6">
         <div class="max-w-6xl mx-auto px-6">
           <p class="text-center text-neutral-400 text-sm font-serif italic">
-            znskr - deploy containers with ease
+            containr - deploy containers with ease
           </p>
         </div>
       </footer>

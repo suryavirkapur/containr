@@ -13,7 +13,7 @@ const GithubInstallCallback: Component = () => {
         const installationId = params.get('installation_id');
         const setupAction = params.get('setup_action');
 
-        const token = localStorage.getItem('znskr_token');
+        const token = localStorage.getItem('containr_token');
         if (!token) {
             setError('missing auth token');
             return;
