@@ -21,6 +21,9 @@ current context:
   failed startup attempts as failed queue resources
 - containr startup now marks any interrupted pending/cloning/building/pushing/
   starting deployments as failed with a recovery log entry
+- the committed workspace manifest now enables the `uuid` v5 feature so clean
+  release worktrees build the checked-in code without relying on dirty local
+  dependency feature changes
 - the app detail container monitor now refetches `/api/containers` while a deployment is live, so
   newly started or replaced app replicas show up without requiring a hard page reload
 - app container list entries now include replica ordinals when a service has more than one replica,
