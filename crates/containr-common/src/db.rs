@@ -70,6 +70,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn flush(&self) -> Result<()>;
     fn save_user(&self, user: &User) -> Result<()>;
     fn get_user(&self, id: Uuid) -> Result<Option<User>>;
+    fn list_users(&self) -> Result<Vec<User>>;
     fn get_user_by_email(&self, email: &str) -> Result<Option<User>>;
     fn get_user_by_github_id(&self, github_id: i64) -> Result<Option<User>>;
     fn save_app(&self, app: &App) -> Result<()>;
@@ -150,6 +151,18 @@ impl Database {
         self.backend.get_user(id)
     }
 
+    pub fn list_users(&self) -> Result<Vec<User>> {
+        self.backend.list_users()
+    }
+
+    pub fn has_admin_user(&self) -> Result<bool> {
+        Ok(self
+            .backend
+            .list_users()?
+            .into_iter()
+            .any(|user| user.is_admin))
+    }
+
     pub fn get_user_by_email(&self, email: &str) -> Result<Option<User>> {
         self.backend.get_user_by_email(email)
     }
@@ -159,23 +172,39 @@ impl Database {
     }
 
     pub fn save_app(&self, app: &App) -> Result<()> {
-        self.backend.save_app(app)
+        self.backend.save_app(&app.normalized_for_service_model())
     }
 
     pub fn get_app(&self, id: Uuid) -> Result<Option<App>> {
-        self.backend.get_app(id)
+        Ok(self
+            .backend
+            .get_app(id)?
+            .map(|app| app.normalized_for_service_model()))
     }
 
     pub fn list_apps(&self) -> Result<Vec<App>> {
-        self.backend.list_apps()
+        Ok(self
+            .backend
+            .list_apps()?
+            .into_iter()
+            .map(|app| app.normalized_for_service_model())
+            .collect())
     }
 
     pub fn list_apps_by_owner(&self, owner_id: Uuid) -> Result<Vec<App>> {
-        self.backend.list_apps_by_owner(owner_id)
+        Ok(self
+            .backend
+            .list_apps_by_owner(owner_id)?
+            .into_iter()
+            .map(|app| app.normalized_for_service_model())
+            .collect())
     }
 
     pub fn get_app_by_domain(&self, domain: &str) -> Result<Option<App>> {
-        self.backend.get_app_by_domain(domain)
+        Ok(self
+            .backend
+            .get_app_by_domain(domain)?
+            .map(|app| app.normalized_for_service_model()))
     }
 
     pub fn delete_app(&self, id: Uuid) -> Result<bool> {
@@ -183,7 +212,10 @@ impl Database {
     }
 
     pub fn get_app_by_github_url(&self, github_url: &str, branch: &str) -> Result<Option<App>> {
-        self.backend.get_app_by_github_url(github_url, branch)
+        Ok(self
+            .backend
+            .get_app_by_github_url(github_url, branch)?
+            .map(|app| app.normalized_for_service_model()))
     }
 
     pub fn save_service(&self, service: &ContainerService) -> Result<()> {
@@ -402,6 +434,11 @@ impl DatabaseBackend for SledDatabase {
     fn get_user(&self, id: Uuid) -> Result<Option<User>> {
         let tree = self.get_tree(USERS_TABLE)?;
         self.get(&tree, &id.to_string())
+    }
+
+    fn list_users(&self) -> Result<Vec<User>> {
+        let tree = self.get_tree(USERS_TABLE)?;
+        self.list(&tree)
     }
 
     fn get_user_by_email(&self, email: &str) -> Result<Option<User>> {
@@ -927,6 +964,10 @@ impl DatabaseBackend for LegacySqliteDatabase {
         self.get_json(USERS_TABLE, &id.to_string())
     }
 
+    fn list_users(&self) -> Result<Vec<User>> {
+        self.list_json(USERS_TABLE)
+    }
+
     fn get_user_by_email(&self, email: &str) -> Result<Option<User>> {
         for user in self.list_json::<User>(USERS_TABLE)? {
             if user.email == email {
@@ -1264,7 +1305,18 @@ mod tests {
     fn roundtrip_backend(backend: DatabaseBackendKind) {
         let db = Database::open(&temp_config(backend, "roundtrip")).unwrap();
 
-        let owner_id = Uuid::new_v4();
+        let mut owner = User::new_with_password(
+            "owner@example.com".to_string(),
+            "argon2:test-hash".to_string(),
+        );
+        owner.is_admin = true;
+        db.save_user(&owner).unwrap();
+        let loaded_owner = db.get_user(owner.id).unwrap().unwrap();
+        assert!(loaded_owner.is_admin);
+        assert_eq!(db.list_users().unwrap().len(), 1);
+        assert!(db.has_admin_user().unwrap());
+        let owner_id = owner.id;
+
         let mut app = App::new(
             "demo".to_string(),
             "https://example.com/repo".to_string(),
@@ -1289,6 +1341,7 @@ mod tests {
         ];
 
         let mut web = ContainerService::new(app.id, "web".to_string(), "".to_string(), 8080);
+        web.expose_http = true;
         web.additional_ports = vec![8081, 9000];
         web.replicas = 2;
         web.registry_auth = Some(ServiceRegistryAuth {
@@ -1332,6 +1385,7 @@ mod tests {
             .iter()
             .find(|service| service.name == "web")
             .unwrap();
+        assert!(loaded_web.expose_http);
         assert_eq!(loaded_web.replicas, 2);
         assert_eq!(loaded_web.additional_ports, vec![8081, 9000]);
         assert!(loaded_web.registry_auth.is_some());
@@ -1363,6 +1417,7 @@ mod tests {
             .iter()
             .find(|service| service.name == "worker")
             .unwrap();
+        assert!(!loaded_worker.expose_http);
         assert_eq!(loaded_worker.depends_on, vec!["web".to_string()]);
 
         let mut deployment = Deployment::new(app.id, "abc123".to_string());
@@ -1463,6 +1518,30 @@ mod tests {
     #[test]
     fn sqlite_backend_roundtrips() {
         roundtrip_backend(DatabaseBackendKind::Sqlite);
+    }
+
+    #[test]
+    fn legacy_apps_are_promoted_to_default_service_model() {
+        let db =
+            Database::open(&temp_config(DatabaseBackendKind::Sqlite, "legacy-service")).unwrap();
+
+        let owner_id = Uuid::new_v4();
+        let mut app = App::new(
+            "legacy-app".to_string(),
+            "https://example.com/repo".to_string(),
+            owner_id,
+        );
+        app.port = 4567;
+
+        db.save_app(&app).unwrap();
+
+        let loaded = db.get_app(app.id).unwrap().unwrap();
+        assert_eq!(loaded.services.len(), 1);
+        assert_eq!(loaded.services[0].id, loaded.default_service_id());
+        assert_eq!(loaded.services[0].name, "web");
+        assert_eq!(loaded.services[0].port, 4567);
+        assert!(loaded.services[0].expose_http);
+        assert_eq!(loaded.services[0].replicas, 1);
     }
 
     #[test]

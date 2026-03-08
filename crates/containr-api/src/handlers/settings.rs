@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
+use containr_common::models::User;
 
 /// settings response - only exposes safe fields
 #[derive(Debug, Serialize, ToSchema)]
@@ -72,16 +73,16 @@ pub struct DashboardCertResponse {
     security(("bearer" = [])),
     responses(
         (status = 200, description = "current settings", body = SettingsResponse),
-        (status = 401, description = "unauthorized", body = ErrorResponse)
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse)
     )
 )]
 pub async fn get_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // verify auth
+    let _ = require_admin_user(&state, &headers).await?;
     let config = state.config.read().await;
-    let _ = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     Ok(Json(SettingsResponse {
         base_domain: config.proxy.base_domain.clone(),
@@ -105,7 +106,8 @@ pub async fn get_settings(
     request_body = UpdateSettingsRequest,
     responses(
         (status = 200, description = "updated settings", body = SettingsResponse),
-        (status = 401, description = "unauthorized", body = ErrorResponse)
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse)
     )
 )]
 pub async fn update_settings(
@@ -113,8 +115,7 @@ pub async fn update_settings(
     headers: HeaderMap,
     Json(req): Json<UpdateSettingsRequest>,
 ) -> Result<Json<SettingsResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // verify auth
-    let _ = get_user_id(&headers, &state.config.read().await.auth.jwt_secret)?;
+    let _ = require_admin_user(&state, &headers).await?;
 
     let mut requested_certificate_domains = Vec::new();
 
@@ -211,15 +212,15 @@ pub async fn update_settings(
     responses(
         (status = 200, description = "certificate issuance initiated", body = DashboardCertResponse),
         (status = 400, description = "bad request", body = ErrorResponse),
-        (status = 401, description = "unauthorized", body = ErrorResponse)
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse)
     )
 )]
 pub async fn issue_dashboard_certificate(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<DashboardCertResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // verify auth
-    let _ = get_user_id(&headers, &state.config.read().await.auth.jwt_secret)?;
+    let _ = require_admin_user(&state, &headers).await?;
 
     let config = state.config.read().await;
     let mut domains = Vec::new();
@@ -277,6 +278,39 @@ async fn save_config(state: &AppState) -> Result<(), String> {
         .map_err(|e| format!("failed to write config file: {}", e))?;
 
     Ok(())
+}
+
+async fn require_admin_user(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<User, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+    let user_id = get_user_id(headers, &config.auth.jwt_secret)?;
+    drop(config);
+
+    let user = state
+        .db
+        .get_user(user_id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "user not found".to_string(),
+                }),
+            )
+        })?;
+
+    if !user.is_admin {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "admin access required".to_string(),
+            }),
+        ));
+    }
+
+    Ok(user)
 }
 
 /// helper to extract user id from auth header

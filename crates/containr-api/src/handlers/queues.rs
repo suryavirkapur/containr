@@ -256,6 +256,32 @@ pub async fn create_queue(
         .save_managed_queue(&queue)
         .map_err(internal_error)?;
 
+    let queue_manager = QueueManager::new();
+    if let Err(error) = queue_manager.start_queue(&mut queue).await {
+        queue.status = ServiceStatus::Failed;
+        queue.updated_at = chrono::Utc::now();
+
+        if let Err(save_error) = state.db.save_managed_queue(&queue) {
+            return Err(internal_error(format!(
+                "failed to persist queue failure: {}",
+                save_error
+            )));
+        }
+
+        tracing::error!("failed to start queue: {}", error);
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("failed to start queue: {}", error),
+            }),
+        ));
+    }
+
+    state
+        .db
+        .save_managed_queue(&queue)
+        .map_err(internal_error)?;
+
     Ok((StatusCode::CREATED, Json(QueueResponse::from(&queue))))
 }
 

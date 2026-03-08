@@ -12,6 +12,15 @@ current context:
 - `mise` now exposes `deploy-prod` and `release-prod` tasks that build a clean
   detached worktree for a chosen commit, deploy the release binary to the vps,
   restart `containr.service`, and verify the dashboard and favicon urls
+- the oldest existing user is now promoted to admin on startup if the database
+  has no admin users, the first newly created account becomes admin, and the
+  global settings plus host system stats endpoints now require admin access
+- local managed database backups now live under per-database directories keyed
+  by database id instead of a shared backup folder filtered by database name
+- managed queue creation now starts the queue container immediately and persists
+  failed startup attempts as failed queue resources
+- containr startup now marks any interrupted pending/cloning/building/pushing/
+  starting deployments as failed with a recovery log entry
 - the app detail container monitor now refetches `/api/containers` while a deployment is live, so
   newly started or replaced app replicas show up without requiring a hard page reload
 - app container list entries now include replica ordinals when a service has more than one replica,
@@ -92,6 +101,8 @@ pending tasks:
 - add a rustfs bucket verification/read-path in the api so the ui can inspect objects directly instead of only showing stored size metadata
 - add a rollback-friendly prod release task that can redeploy or revert to a
   chosen binary backup without manual ssh steps
+- replace the container exec websocket's long-lived query-string bearer token
+  with a short-lived dedicated exec token
 
 important decisions:
 - keep the runtime compatible during rename by accepting `CONTAINR_ENCRYPTION_KEY` first and
@@ -128,6 +139,13 @@ important decisions:
 - keep prod release automation in repo-local `mise` tasks and shell scripts so
   deploys always build from a committed clean worktree instead of the dirty
   local tree
+- bootstrap the oldest existing user to admin on upgrade instead of leaving the
+  global settings surface writable by any authenticated account
+- isolate local database backup browsing and downloads by database id and
+  directory, even if that means legacy shared-folder backups are no longer
+  automatically visible through the api
+- fail interrupted in-progress deployments on startup recovery instead of
+  pretending the in-memory queue can resume them after a process restart
 
 architectural notes:
 - the metadata layer now dispatches through a backend trait, with sled preserving legacy behavior and sqlite using typed relational tables plus child tables for nested collections
@@ -179,3 +197,12 @@ architectural notes:
   `/usr/local/bin/containr`, restarts `containr.service`, and verifies
   `https://adm.svk77.com/` plus `/favicon.svg`, with env vars available to
   override each target
+- startup admin bootstrap scans persisted users, promotes the oldest one if no
+  admin exists, and then relies on the stored `is_admin` flag for privileged
+  settings and system endpoints
+- local database exports now write into
+  `<data_dir>/databases/<db_id>/backups/`, and backup downloads only read from
+  that database-specific directory instead of the old shared backup folder
+- startup deployment recovery only marks interrupted deployments failed in
+  metadata; it still does not make the actual deployment queue durable or clean
+  up any partially created containers automatically

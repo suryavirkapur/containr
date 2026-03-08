@@ -62,6 +62,49 @@ impl App {
         !self.services.is_empty()
     }
 
+    /// returns the deterministic service id used when promoting a legacy app
+    pub fn default_service_id(&self) -> Uuid {
+        let seed = format!("containr-default-service:{}", self.id);
+        Uuid::new_v5(&Uuid::NAMESPACE_OID, seed.as_bytes())
+    }
+
+    /// ensures the app is represented with at least one service
+    pub fn ensure_service_model(&mut self) {
+        if !self.services.is_empty() {
+            return;
+        }
+
+        self.services.push(ContainerService {
+            id: self.default_service_id(),
+            app_id: self.id,
+            name: "web".to_string(),
+            image: String::new(),
+            port: self.port,
+            expose_http: true,
+            additional_ports: Vec::new(),
+            replicas: 1,
+            memory_limit: None,
+            cpu_limit: None,
+            depends_on: Vec::new(),
+            health_check: None,
+            restart_policy: RestartPolicy::default(),
+            registry_auth: None,
+            command: None,
+            entrypoint: None,
+            working_dir: None,
+            mounts: Vec::new(),
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        });
+    }
+
+    /// returns a copy of the app using the service deployment model
+    pub fn normalized_for_service_model(&self) -> Self {
+        let mut app = self.clone();
+        app.ensure_service_model();
+        app
+    }
+
     /// returns all custom domains for this app
     pub fn custom_domains(&self) -> Vec<String> {
         let mut domains = self.domains.clone();
@@ -172,6 +215,8 @@ pub struct ContainerService {
     pub image: String,
     pub port: u16,
     #[serde(default)]
+    pub expose_http: bool,
+    #[serde(default)]
     pub additional_ports: Vec<u16>,
     #[serde(default = "default_replicas")]
     pub replicas: u32,
@@ -213,6 +258,7 @@ impl ContainerService {
             name,
             image,
             port,
+            expose_http: false,
             additional_ports: Vec::new(),
             replicas: 1,
             memory_limit: None,
@@ -343,6 +389,8 @@ pub struct User {
     pub github_id: Option<i64>,
     pub github_username: Option<String>,
     pub github_access_token: Option<String>,
+    #[serde(default)]
+    pub is_admin: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -358,6 +406,7 @@ impl User {
             github_id: None,
             github_username: None,
             github_access_token: None,
+            is_admin: false,
             created_at: now,
             updated_at: now,
         }
@@ -373,6 +422,7 @@ impl User {
             github_id: Some(github_id),
             github_username: Some(github_username),
             github_access_token: None,
+            is_admin: false,
             created_at: now,
             updated_at: now,
         }
@@ -668,6 +718,26 @@ mod tests {
     }
 
     #[test]
+    fn test_app_ensure_service_model_promotes_legacy_app() {
+        let owner_id = Uuid::new_v4();
+        let mut app = App::new(
+            "test-app".to_string(),
+            "https://github.com/user/repo".to_string(),
+            owner_id,
+        );
+        app.port = 9090;
+
+        app.ensure_service_model();
+
+        assert_eq!(app.services.len(), 1);
+        assert_eq!(app.services[0].id, app.default_service_id());
+        assert_eq!(app.services[0].name, "web");
+        assert_eq!(app.services[0].port, 9090);
+        assert!(app.services[0].expose_http);
+        assert_eq!(app.services[0].replicas, 1);
+    }
+
+    #[test]
     fn test_app_deserialize_defaults() {
         let now = Utc::now();
         let value = json!({
@@ -712,6 +782,7 @@ mod tests {
         assert_eq!(service.name, "api");
         assert_eq!(service.image, "node:18");
         assert_eq!(service.port, 3000);
+        assert!(!service.expose_http);
         assert!(service.additional_ports.is_empty());
         assert_eq!(service.replicas, 1);
         assert!(service.memory_limit.is_none());
@@ -741,6 +812,7 @@ mod tests {
 
         let service: ContainerService = serde_json::from_value(value).unwrap();
 
+        assert!(!service.expose_http);
         assert_eq!(service.replicas, 1);
         assert!(service.additional_ports.is_empty());
         assert!(service.memory_limit.is_none());

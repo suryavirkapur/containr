@@ -247,14 +247,14 @@ fn database_manager_error(
     )
 }
 
-fn build_backup_object_key(db_name: &str, filename: &str, prefix: Option<&str>) -> String {
+fn build_backup_object_key(db_id: Uuid, filename: &str, prefix: Option<&str>) -> String {
     let normalized = prefix
         .map(|value| value.trim_matches('/'))
         .filter(|value| !value.is_empty());
 
     match normalized {
         Some(prefix) => format!("{prefix}/{filename}"),
-        None => format!("databases/{db_name}/{filename}"),
+        None => format!("databases/{db_id}/{filename}"),
     }
 }
 
@@ -1292,7 +1292,7 @@ pub async fn export_database(
         ));
     }
 
-    let backup_dir = std::path::Path::new(&config.storage.data_dir).join("backups");
+    let backup_dir = config.storage.database_backup_path(&db.id.to_string());
     let rustfs_endpoint = config.storage.management_endpoint().to_string();
     let rustfs_access_key = config.storage.rustfs_access_key.clone();
     let rustfs_secret_key = config.storage.rustfs_secret_key.clone();
@@ -1393,7 +1393,7 @@ pub async fn export_database(
             })?;
 
         let upload_key =
-            build_backup_object_key(&db.name, filename, request.object_key_prefix.as_deref());
+            build_backup_object_key(db.id, filename, request.object_key_prefix.as_deref());
 
         storage_mgr
             .upload_file(
@@ -1515,30 +1515,30 @@ pub async fn list_backups(
         ));
     }
 
-    let backup_dir = std::path::Path::new(&config.storage.data_dir).join("backups");
+    let backup_dir = config.storage.database_backup_path(&db.id.to_string());
     let mut backups = Vec::new();
 
     if backup_dir.exists() {
-        let prefix = format!("{}_", db.name);
         if let Ok(entries) = std::fs::read_dir(&backup_dir) {
             for entry in entries.flatten() {
-                let filename = entry.file_name().to_string_lossy().to_string();
-                if filename.starts_with(&prefix) {
-                    if let Ok(meta) = entry.metadata() {
-                        let created_at = meta
-                            .modified()
-                            .ok()
-                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                            .and_then(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0))
-                            .map(|dt| dt.to_rfc3339())
-                            .unwrap_or_default();
-
-                        backups.push(BackupInfo {
-                            filename,
-                            size_bytes: meta.len(),
-                            created_at,
-                        });
+                if let Ok(meta) = entry.metadata() {
+                    if !meta.is_file() {
+                        continue;
                     }
+
+                    let created_at = meta
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .and_then(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0))
+                        .map(|dt| dt.to_rfc3339())
+                        .unwrap_or_default();
+
+                    backups.push(BackupInfo {
+                        filename: entry.file_name().to_string_lossy().to_string(),
+                        size_bytes: meta.len(),
+                        created_at,
+                    });
                 }
             }
         }
@@ -1605,9 +1605,11 @@ pub async fn download_backup(
         ));
     }
 
-    // validate filename belongs to this database
-    let prefix = format!("{}_", db.name);
-    if !query.filename.starts_with(&prefix) || query.filename.contains("..") {
+    let filename = std::path::Path::new(&query.filename)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| bad_request("invalid filename"))?;
+    if filename != query.filename {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -1616,9 +1618,10 @@ pub async fn download_backup(
         ));
     }
 
-    let backup_path = std::path::Path::new(&config.storage.data_dir)
-        .join("backups")
-        .join(&query.filename);
+    let backup_path = config
+        .storage
+        .database_backup_path(&db.id.to_string())
+        .join(filename);
 
     if !backup_path.exists() {
         return Err((

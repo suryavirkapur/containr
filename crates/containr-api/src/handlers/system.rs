@@ -1,11 +1,20 @@
 //! system stats handler
 
-use axum::Json;
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    Json,
+};
 use serde::Serialize;
 use std::time::Duration;
 use tokio::fs;
 use tokio::time::sleep;
 use utoipa::ToSchema;
+use uuid::Uuid;
+
+use crate::auth::{extract_bearer_token, validate_token};
+use crate::handlers::auth::ErrorResponse;
+use crate::state::AppState;
 
 /// system statistics response
 #[derive(Serialize, ToSchema)]
@@ -179,18 +188,50 @@ async fn get_uptime() -> u64 {
     get,
     path = "/api/system/stats",
     tag = "system",
+    security(("bearer" = [])),
     responses(
-        (status = 200, description = "system statistics", body = SystemStats)
+        (status = 200, description = "system statistics", body = SystemStats),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse)
     )
 )]
-pub async fn get_system_stats() -> Json<SystemStats> {
+pub async fn get_system_stats(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<SystemStats>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+    drop(config);
+
+    let user = state
+        .db
+        .get_user(user_id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "user not found".to_string(),
+                }),
+            )
+        })?;
+
+    if !user.is_admin {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "admin access required".to_string(),
+            }),
+        ));
+    }
+
     let cpu_percent = get_cpu_percent().await;
     let (memory_used_bytes, memory_total_bytes) = get_memory_info().await;
     let (network_rx_bytes, network_tx_bytes) = get_network_bytes().await;
     let load_avg = get_load_avg().await;
     let uptime_seconds = get_uptime().await;
 
-    Json(SystemStats {
+    Ok(Json(SystemStats {
         cpu_percent,
         memory_used_bytes,
         memory_total_bytes,
@@ -198,5 +239,52 @@ pub async fn get_system_stats() -> Json<SystemStats> {
         network_tx_bytes,
         load_avg,
         uptime_seconds,
-    })
+    }))
+}
+
+fn get_user_id(
+    headers: &HeaderMap,
+    jwt_secret: &str,
+) -> Result<Uuid, (StatusCode, Json<ErrorResponse>)> {
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|h| h.to_str().ok())
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "missing authorization header".to_string(),
+                }),
+            )
+        })?;
+
+    let token = extract_bearer_token(auth_header).ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "invalid authorization header".to_string(),
+            }),
+        )
+    })?;
+
+    let claims = validate_token(token, jwt_secret).map_err(|e| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
+
+    Ok(claims.sub)
+}
+
+fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+    tracing::error!("internal error: {}", e);
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(ErrorResponse {
+            error: "internal server error".to_string(),
+        }),
+    )
 }

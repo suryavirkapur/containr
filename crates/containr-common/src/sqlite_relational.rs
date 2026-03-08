@@ -33,6 +33,7 @@ impl SqliteDatabase {
                 github_id integer unique,
                 github_username text,
                 github_access_token text,
+                is_admin integer not null default 0,
                 created_at text not null,
                 updated_at text not null
             );
@@ -79,6 +80,7 @@ impl SqliteDatabase {
                 name text not null,
                 image text not null,
                 port integer not null,
+                expose_http integer not null default 0,
                 replicas integer not null,
                 memory_limit integer,
                 cpu_limit real,
@@ -318,6 +320,12 @@ impl SqliteDatabase {
         )?;
         ensure_column(
             &connection,
+            USERS_TABLE,
+            "is_admin",
+            "integer not null default 0",
+        )?;
+        ensure_column(
+            &connection,
             MANAGED_DATABASES_TABLE,
             "pitr_last_base_backup_label",
             "text",
@@ -339,6 +347,12 @@ impl SqliteDatabase {
             MANAGED_QUEUES_TABLE,
             "external_port",
             "integer",
+        )?;
+        ensure_column(
+            &connection,
+            SERVICES_TABLE,
+            "expose_http",
+            "integer not null default 0",
         )?;
         ensure_column(&connection, SERVICES_TABLE, "working_dir", "text")?;
 
@@ -365,7 +379,7 @@ impl SqliteDatabase {
             .query_row(
                 &format!(
                     "select id, email, password_hash, github_id, github_username,
-                        github_access_token, created_at, updated_at
+                        github_access_token, is_admin, created_at, updated_at
                      from {USERS_TABLE}
                      where id = ?1"
                 ),
@@ -378,8 +392,9 @@ impl SqliteDatabase {
                         row.get::<_, Option<i64>>(3)?,
                         row.get::<_, Option<String>>(4)?,
                         row.get::<_, Option<String>>(5)?,
-                        row.get::<_, String>(6)?,
+                        row.get::<_, i64>(6)?,
                         row.get::<_, String>(7)?,
+                        row.get::<_, String>(8)?,
                     ))
                 },
             )
@@ -396,8 +411,9 @@ impl SqliteDatabase {
             github_id: record.3,
             github_username: record.4,
             github_access_token: record.5,
-            created_at: parse_datetime(record.6)?,
-            updated_at: parse_datetime(record.7)?,
+            is_admin: int_to_bool(record.6),
+            created_at: parse_datetime(record.7)?,
+            updated_at: parse_datetime(record.8)?,
         }))
     }
 
@@ -557,7 +573,8 @@ impl SqliteDatabase {
         let record = conn
             .query_row(
                 &format!(
-                    "select id, app_id, name, image, port, replicas, memory_limit, cpu_limit,
+                    "select id, app_id, name, image, port, expose_http, replicas,
+                        memory_limit, cpu_limit,
                         health_check_path, health_check_interval_secs,
                         health_check_timeout_secs, health_check_retries, restart_policy,
                         working_dir, created_at, updated_at
@@ -573,16 +590,17 @@ impl SqliteDatabase {
                         row.get::<_, String>(3)?,
                         row.get::<_, i64>(4)?,
                         row.get::<_, i64>(5)?,
-                        row.get::<_, Option<i64>>(6)?,
-                        row.get::<_, Option<f64>>(7)?,
-                        row.get::<_, Option<String>>(8)?,
-                        row.get::<_, Option<i64>>(9)?,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, Option<i64>>(7)?,
+                        row.get::<_, Option<f64>>(8)?,
+                        row.get::<_, Option<String>>(9)?,
                         row.get::<_, Option<i64>>(10)?,
                         row.get::<_, Option<i64>>(11)?,
-                        row.get::<_, String>(12)?,
-                        row.get::<_, Option<String>>(13)?,
-                        row.get::<_, String>(14)?,
+                        row.get::<_, Option<i64>>(12)?,
+                        row.get::<_, String>(13)?,
+                        row.get::<_, Option<String>>(14)?,
                         row.get::<_, String>(15)?,
+                        row.get::<_, String>(16)?,
                     ))
                 },
             )
@@ -592,7 +610,7 @@ impl SqliteDatabase {
             return Ok(None);
         };
 
-        let health_check = match (record.8, record.9, record.10, record.11) {
+        let health_check = match (record.9, record.10, record.11, record.12) {
             (Some(path), Some(interval), Some(timeout), Some(retries)) => Some(HealthCheck {
                 path,
                 interval_secs: parse_u32(interval, "health_check_interval_secs")?,
@@ -608,20 +626,21 @@ impl SqliteDatabase {
             name: record.2,
             image: record.3,
             port: parse_u16(record.4, "service port")?,
+            expose_http: int_to_bool(record.5),
             additional_ports: self.load_service_additional_ports(conn, service_id)?,
-            replicas: parse_u32(record.5, "service replicas")?,
-            memory_limit: transpose_i64_to_u64(record.6, "service memory_limit")?,
-            cpu_limit: record.7,
+            replicas: parse_u32(record.6, "service replicas")?,
+            memory_limit: transpose_i64_to_u64(record.7, "service memory_limit")?,
+            cpu_limit: record.8,
             depends_on: self.load_service_dependencies(conn, service_id)?,
             command: self.load_service_args(conn, SERVICE_COMMAND_ARGS_TABLE, service_id)?,
             entrypoint: self.load_service_args(conn, SERVICE_ENTRYPOINT_ARGS_TABLE, service_id)?,
-            working_dir: record.13,
+            working_dir: record.14,
             registry_auth: self.load_service_registry_auth(conn, service_id)?,
             mounts: self.load_service_mounts(conn, service_id)?,
             health_check,
-            restart_policy: decode_enum(record.12)?,
-            created_at: parse_datetime(record.14)?,
-            updated_at: parse_datetime(record.15)?,
+            restart_policy: decode_enum(record.13)?,
+            created_at: parse_datetime(record.15)?,
+            updated_at: parse_datetime(record.16)?,
         }))
     }
 
@@ -1208,15 +1227,19 @@ impl SqliteDatabase {
         tx.execute(
             &format!(
                 "insert into {SERVICES_TABLE} (
-                    id, app_id, name, image, port, replicas, memory_limit, cpu_limit,
-                    health_check_path, health_check_interval_secs, health_check_timeout_secs,
-                    health_check_retries, restart_policy, working_dir, created_at, updated_at
-                ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                    id, app_id, name, image, port, expose_http, replicas, memory_limit,
+                    cpu_limit, health_check_path, health_check_interval_secs,
+                    health_check_timeout_secs, health_check_retries, restart_policy,
+                    working_dir, created_at, updated_at
+                ) values (
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17
+                )
                 on conflict(id) do update set
                     app_id = excluded.app_id,
                     name = excluded.name,
                     image = excluded.image,
                     port = excluded.port,
+                    expose_http = excluded.expose_http,
                     replicas = excluded.replicas,
                     memory_limit = excluded.memory_limit,
                     cpu_limit = excluded.cpu_limit,
@@ -1235,6 +1258,7 @@ impl SqliteDatabase {
                 &service.name,
                 &service.image,
                 i64::from(service.port),
+                bool_to_int(service.expose_http),
                 i64::from(service.replicas),
                 transpose_u64_to_i64(service.memory_limit, "service memory_limit")?,
                 service.cpu_limit,
@@ -1515,14 +1539,15 @@ impl DatabaseBackend for SqliteDatabase {
                 &format!(
                     "insert into {USERS_TABLE} (
                         id, email, password_hash, github_id, github_username,
-                        github_access_token, created_at, updated_at
-                    ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                        github_access_token, is_admin, created_at, updated_at
+                    ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                     on conflict(id) do update set
                         email = excluded.email,
                         password_hash = excluded.password_hash,
                         github_id = excluded.github_id,
                         github_username = excluded.github_username,
                         github_access_token = excluded.github_access_token,
+                        is_admin = excluded.is_admin,
                         created_at = excluded.created_at,
                         updated_at = excluded.updated_at"
                 ),
@@ -1533,6 +1558,7 @@ impl DatabaseBackend for SqliteDatabase {
                     user.github_id,
                     &user.github_username,
                     &user.github_access_token,
+                    bool_to_int(user.is_admin),
                     user.created_at.to_rfc3339(),
                     user.updated_at.to_rfc3339(),
                 ],
@@ -1543,6 +1569,29 @@ impl DatabaseBackend for SqliteDatabase {
 
     fn get_user(&self, id: Uuid) -> Result<Option<User>> {
         self.with_conn(|conn| self.load_user_by_id_text(conn, &id.to_string()))
+    }
+
+    fn list_users(&self) -> Result<Vec<User>> {
+        self.with_conn(|conn| {
+            let mut statement = conn.prepare(&format!(
+                "select id from {USERS_TABLE} order by created_at asc"
+            ))?;
+            let mut rows = statement.query([])?;
+            let mut user_ids = Vec::new();
+
+            while let Some(row) = rows.next()? {
+                user_ids.push(row.get::<_, String>(0)?);
+            }
+
+            let mut users = Vec::new();
+            for user_id in user_ids {
+                if let Some(user) = self.load_user_by_id_text(conn, &user_id)? {
+                    users.push(user);
+                }
+            }
+
+            Ok(users)
+        })
     }
 
     fn get_user_by_email(&self, email: &str) -> Result<Option<User>> {
