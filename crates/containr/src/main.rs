@@ -15,6 +15,7 @@ use tokio::time::MissedTickBehavior;
 use tracing::{info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
+use containr_common::models::DeploymentStatus;
 use containr_common::{Config, Database};
 
 const CERT_RENEWAL_CHECK_INTERVAL_SECS: u64 = 12 * 60 * 60;
@@ -82,6 +83,8 @@ async fn main() -> anyhow::Result<()> {
 
     // open database
     let db = Database::open(&config.database)?;
+    bootstrap_admin_user(&db)?;
+    recover_interrupted_deployments(&db)?;
     info!(path = %config.database.path, backend = ?config.database.backend, "database opened");
     let shared_config = Arc::new(RwLock::new(config.clone()));
 
@@ -366,6 +369,66 @@ async fn load_or_create_config(args: &Args) -> anyhow::Result<Config> {
     }
 }
 
+fn bootstrap_admin_user(db: &Database) -> anyhow::Result<()> {
+    let mut users = db.list_users()?;
+    if users.is_empty() || users.iter().any(|user| user.is_admin) {
+        return Ok(());
+    }
+
+    users.sort_by_key(|user| user.created_at);
+    let mut admin = users.remove(0);
+    admin.is_admin = true;
+    admin.updated_at = chrono::Utc::now();
+    db.save_user(&admin)?;
+    warn!(
+        user_id = %admin.id,
+        email = %admin.email,
+        "promoted existing user to admin during startup bootstrap"
+    );
+    Ok(())
+}
+
+fn recover_interrupted_deployments(db: &Database) -> anyhow::Result<()> {
+    let mut recovered = 0usize;
+
+    for app in db.list_apps()? {
+        for mut deployment in db.list_deployments_by_app(app.id)? {
+            if !is_interrupted_deployment_status(deployment.status) {
+                continue;
+            }
+
+            deployment.status = DeploymentStatus::Failed;
+            deployment.finished_at = Some(chrono::Utc::now());
+            db.append_deployment_log(
+                deployment.id,
+                "deployment marked failed after containr restarted",
+            )?;
+            db.save_deployment(&deployment)?;
+            recovered += 1;
+        }
+    }
+
+    if recovered > 0 {
+        warn!(
+            count = recovered,
+            "marked interrupted deployments as failed during startup recovery"
+        );
+    }
+
+    Ok(())
+}
+
+fn is_interrupted_deployment_status(status: DeploymentStatus) -> bool {
+    matches!(
+        status,
+        DeploymentStatus::Pending
+            | DeploymentStatus::Cloning
+            | DeploymentStatus::Building
+            | DeploymentStatus::Pushing
+            | DeploymentStatus::Starting
+    )
+}
+
 /// loads routes from database for all apps with domains
 async fn load_routes_from_db(
     db: &containr_common::Database,
@@ -451,109 +514,54 @@ async fn refresh_routes_for_app(
         }
     };
 
-    if app.has_services() {
-        let service = match select_exposed_service(&app) {
-            Some(service) => service,
-            None => {
-                tracing::warn!(
-                    app_id = %app.id,
-                    "no exposed service selected for multi-service app"
-                );
-                return;
-            }
-        };
+    let service = match select_exposed_service(&app) {
+        Some(service) => service,
+        None => {
+            tracing::warn!(app_id = %app.id, "no exposed http service selected for app");
+            return;
+        }
+    };
 
-        let active_service_container_ids = db
-            .get_latest_deployment(app.id)
-            .ok()
-            .flatten()
-            .filter(|d| d.status == containr_common::models::DeploymentStatus::Running)
-            .map(|d| {
-                d.service_deployments
-                    .into_iter()
-                    .filter(|sd| sd.service_id == service.id)
-                    .filter_map(|sd| sd.container_id)
-                    .collect::<HashSet<_>>()
-            })
-            .filter(|set| !set.is_empty());
+    let active_container_ids = db
+        .get_latest_deployment(app.id)
+        .ok()
+        .flatten()
+        .filter(|deployment| {
+            deployment.status == containr_common::models::DeploymentStatus::Running
+        })
+        .and_then(|deployment| active_http_container_ids(&deployment, service.id));
+    let service_prefix = format!("containr-{}-{}-", app.id, service.name);
+    let legacy_prefix = legacy_service_container_prefix(&app, &service);
 
-        let prefix = format!("containr-{}-{}-", app.id, service.name);
+    for container in &containers {
+        if let Some(names) = &container.names {
+            for name in names {
+                let name = name.trim_start_matches('/');
+                if name.is_empty() {
+                    continue;
+                }
 
-        for container in &containers {
-            if let Some(names) = &container.names {
-                for name in names {
-                    let name = name.trim_start_matches('/');
-                    if let Some(active_ids) = &active_service_container_ids {
-                        if !active_ids.contains(name) {
-                            continue;
-                        }
-                    } else if !name.starts_with(&prefix) || name.is_empty() {
+                if let Some(active_ids) = &active_container_ids {
+                    if !active_ids.contains(name) {
                         continue;
                     }
+                } else {
+                    let matches_service_prefix = name.starts_with(&service_prefix);
+                    let matches_legacy_prefix = legacy_prefix
+                        .as_deref()
+                        .map(|prefix| name.starts_with(prefix))
+                        .unwrap_or(false);
 
-                    if let Some(ip) = get_container_ip(docker, name, &network_name).await {
-                        upstreams.push(containr_proxy::routes::Upstream {
-                            host: ip,
-                            port: service.port,
-                        });
+                    if !matches_service_prefix && !matches_legacy_prefix {
+                        continue;
                     }
                 }
-            }
-        }
-    } else {
-        let expected_name = format!("containr-{}", app.id);
 
-        for container in &containers {
-            if let Some(names) = &container.names {
-                for name in names {
-                    let name = name.trim_start_matches('/');
-
-                    // if route is being refreshed due to a deployment, we might have a specific container ID
-                    // from the running deployment. we should prioritize that.
-                    // however, `list_containers` here is generic.
-                    // instead, we should check if the container name matches what we expect from the deployment
-
-                    // check against specific container id if we have one
-                    // we don't have the deployment object here readily available in this loop context
-                    // but we can trust the logic that if a container exists and matches the prefix, it's a candidate
-
-                    // Logic update:
-                    // 1. If the app has a specific 'running' deployment with a container_id, we should try to match that.
-                    // 2. Otherwise, fallback to any container with correctly matching name.
-
-                    // To do this properly, we need to know the active container ID.
-                    // We can fetch the latest running deployment.
-
-                    // Refined Logic:
-                    // We only want to add the upstream if it is THE active container.
-                    // If we have a running deployment, we should strictly match its container_id if possible.
-
-                    let active_container_id = db
-                        .get_latest_deployment(app.id)
-                        .ok()
-                        .flatten()
-                        .filter(|d| d.status == containr_common::models::DeploymentStatus::Running)
-                        .and_then(|d| d.container_id);
-
-                    if let Some(target_id) = active_container_id {
-                        if name != target_id {
-                            continue; // Valid container exists but this isn't it (e.g. it's the old one being drained)
-                        }
-                    } else {
-                        // No active deployment record? Fallback to legacy name check
-                        if name != expected_name
-                            && !name.starts_with(&format!("containr-{}-", app.id))
-                        {
-                            continue;
-                        }
-                    }
-
-                    if let Some(ip) = get_container_ip(docker, name, &network_name).await {
-                        upstreams.push(containr_proxy::routes::Upstream {
-                            host: ip,
-                            port: app.port,
-                        });
-                    }
+                if let Some(ip) = get_container_ip(docker, name, &network_name).await {
+                    upstreams.push(containr_proxy::routes::Upstream {
+                        host: ip,
+                        port: service.port,
+                    });
                 }
             }
         }
@@ -684,12 +692,45 @@ fn select_exposed_service(
         return None;
     }
 
+    if let Some(service) = app.services.iter().find(|service| service.expose_http) {
+        return Some(service.clone());
+    }
+
     if let Some(service) = app.services.iter().find(|service| service.name == "web") {
         return Some(service.clone());
     }
 
-    if app.services.len() == 1 {
-        return app.services.first().cloned();
+    app.services.first().cloned()
+}
+
+fn active_http_container_ids(
+    deployment: &containr_common::models::Deployment,
+    service_id: uuid::Uuid,
+) -> Option<HashSet<String>> {
+    let container_ids = deployment
+        .service_deployments
+        .iter()
+        .filter(|deployment| deployment.service_id == service_id)
+        .filter_map(|deployment| deployment.container_id.clone())
+        .collect::<HashSet<_>>();
+
+    if !container_ids.is_empty() {
+        return Some(container_ids);
+    }
+
+    deployment.container_id.clone().map(|container_id| {
+        let mut ids = HashSet::new();
+        ids.insert(container_id);
+        ids
+    })
+}
+
+fn legacy_service_container_prefix(
+    app: &containr_common::models::App,
+    service: &containr_common::models::ContainerService,
+) -> Option<String> {
+    if app.services.len() == 1 && service.name == "web" {
+        return Some(format!("containr-{}-", app.id));
     }
 
     None
@@ -747,4 +788,160 @@ fn resolve_api_host(host: &str) -> String {
         return "::1".to_string();
     }
     host.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        active_http_container_ids, is_interrupted_deployment_status,
+        legacy_service_container_prefix, select_exposed_service,
+    };
+    use containr_common::models::{
+        App, ContainerService, Deployment, DeploymentStatus, ServiceDeployment,
+    };
+    use uuid::Uuid;
+
+    #[test]
+    fn select_exposed_service_prefers_explicit_service() {
+        let owner_id = Uuid::new_v4();
+        let mut app = App::new(
+            "demo".to_string(),
+            "https://example.com/repo".to_string(),
+            owner_id,
+        );
+
+        let mut web =
+            ContainerService::new(app.id, "web".to_string(), "nginx:latest".to_string(), 8080);
+        let mut api =
+            ContainerService::new(app.id, "api".to_string(), "nginx:latest".to_string(), 3000);
+        api.expose_http = true;
+        web.expose_http = false;
+        app.services = vec![web, api.clone()];
+
+        let selected = select_exposed_service(&app);
+        assert_eq!(
+            selected.map(|service| service.name),
+            Some("api".to_string())
+        );
+    }
+
+    #[test]
+    fn select_exposed_service_falls_back_to_web_name() {
+        let owner_id = Uuid::new_v4();
+        let mut app = App::new(
+            "demo".to_string(),
+            "https://example.com/repo".to_string(),
+            owner_id,
+        );
+
+        let worker = ContainerService::new(
+            app.id,
+            "worker".to_string(),
+            "busybox:latest".to_string(),
+            9000,
+        );
+        let web =
+            ContainerService::new(app.id, "web".to_string(), "nginx:latest".to_string(), 8080);
+        app.services = vec![worker, web];
+
+        let selected = select_exposed_service(&app);
+        assert_eq!(
+            selected.map(|service| service.name),
+            Some("web".to_string())
+        );
+    }
+
+    #[test]
+    fn select_exposed_service_falls_back_to_first_service() {
+        let owner_id = Uuid::new_v4();
+        let mut app = App::new(
+            "demo".to_string(),
+            "https://example.com/repo".to_string(),
+            owner_id,
+        );
+
+        let api =
+            ContainerService::new(app.id, "api".to_string(), "nginx:latest".to_string(), 3000);
+        let worker = ContainerService::new(
+            app.id,
+            "worker".to_string(),
+            "busybox:latest".to_string(),
+            9000,
+        );
+        app.services = vec![api, worker];
+
+        let selected = select_exposed_service(&app);
+        assert_eq!(
+            selected.map(|service| service.name),
+            Some("api".to_string())
+        );
+    }
+
+    #[test]
+    fn active_http_container_ids_prefers_service_deployments() {
+        let service_id = Uuid::new_v4();
+        let mut deployment = Deployment::new(Uuid::new_v4(), "abc123".to_string());
+        deployment.container_id = Some("containr-legacy".to_string());
+
+        let mut first = ServiceDeployment::new(service_id, deployment.id, 0);
+        first.container_id = Some("containr-service-0".to_string());
+        let mut second = ServiceDeployment::new(service_id, deployment.id, 1);
+        second.container_id = Some("containr-service-1".to_string());
+        deployment.service_deployments = vec![first, second];
+
+        let container_ids = active_http_container_ids(&deployment, service_id).unwrap();
+        assert_eq!(container_ids.len(), 2);
+        assert!(container_ids.contains("containr-service-0"));
+        assert!(container_ids.contains("containr-service-1"));
+        assert!(!container_ids.contains("containr-legacy"));
+    }
+
+    #[test]
+    fn active_http_container_ids_falls_back_to_legacy_container() {
+        let service_id = Uuid::new_v4();
+        let mut deployment = Deployment::new(Uuid::new_v4(), "abc123".to_string());
+        deployment.container_id = Some("containr-legacy".to_string());
+
+        let container_ids = active_http_container_ids(&deployment, service_id).unwrap();
+        assert_eq!(container_ids.len(), 1);
+        assert!(container_ids.contains("containr-legacy"));
+    }
+
+    #[test]
+    fn interrupted_deployment_status_only_matches_in_progress_states() {
+        assert!(is_interrupted_deployment_status(DeploymentStatus::Pending));
+        assert!(is_interrupted_deployment_status(DeploymentStatus::Cloning));
+        assert!(is_interrupted_deployment_status(DeploymentStatus::Building));
+        assert!(is_interrupted_deployment_status(DeploymentStatus::Pushing));
+        assert!(is_interrupted_deployment_status(DeploymentStatus::Starting));
+        assert!(!is_interrupted_deployment_status(DeploymentStatus::Running));
+        assert!(!is_interrupted_deployment_status(DeploymentStatus::Failed));
+        assert!(!is_interrupted_deployment_status(DeploymentStatus::Stopped));
+    }
+
+    #[test]
+    fn legacy_service_container_prefix_is_only_used_for_single_web_service() {
+        let owner_id = Uuid::new_v4();
+        let mut app = App::new(
+            "demo".to_string(),
+            "https://example.com/repo".to_string(),
+            owner_id,
+        );
+        app.ensure_service_model();
+
+        let prefix = legacy_service_container_prefix(&app, &app.services[0]);
+        assert_eq!(prefix, Some(format!("containr-{}-", app.id)));
+
+        let mut multi_service_app = app.clone();
+        multi_service_app.services.push(ContainerService::new(
+            multi_service_app.id,
+            "worker".to_string(),
+            "busybox:latest".to_string(),
+            9000,
+        ));
+
+        let prefix =
+            legacy_service_container_prefix(&multi_service_app, &multi_service_app.services[0]);
+        assert!(prefix.is_none());
+    }
 }

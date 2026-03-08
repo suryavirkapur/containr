@@ -11,6 +11,18 @@ changelog
 - add `mise`-driven `deploy-prod` and `release-prod` tasks that build from a
   clean worktree commit, upload the release binary, restart prod, and verify
   the dashboard endpoints
+- bootstrap the oldest existing user to admin on startup if no admin exists,
+  make the first new account admin, and restrict global settings plus system
+  stats to admin users
+- scope local database backups under per-database directories keyed by database
+  id instead of a shared name-prefixed folder, so same-name databases cannot
+  collide
+- start managed queues during queue creation and persist failed queue startup
+  attempts as failed resources instead of leaving pending metadata behind
+- mark interrupted in-progress deployments as failed during startup recovery so
+  restarts do not leave stale pending/building/starting rows behind
+- hide the dashboard system monitor for non-admin users once host stats require
+  admin access
 
 0.1.9-alpha - 2026-03-07
 - fix the app detail container monitor for multi-replica apps by refreshing the container list while deployments are live and labeling replicas distinctly in the api as `service #n`

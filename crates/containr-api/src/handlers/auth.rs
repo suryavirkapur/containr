@@ -137,7 +137,10 @@ pub async fn register(
 
     // hash password and create user
     let password_hash = hash_password(&req.password).map_err(internal_error)?;
-    let user = User::new_with_password(req.email.clone(), password_hash);
+    let mut user = User::new_with_password(req.email.clone(), password_hash);
+    if !state.db.has_admin_user().map_err(internal_error)? {
+        user.is_admin = true;
+    }
 
     state.db.save_user(&user).map_err(internal_error)?;
 
@@ -303,6 +306,10 @@ pub async fn github_callback(
         .get_user_by_github_id(github_user.id)
         .map_err(internal_error)?
     {
+        if !user.is_admin && !state.db.has_admin_user().map_err(internal_error)? {
+            user.is_admin = true;
+        }
+
         // update access token
         user.github_access_token = Some(token_to_store);
         state.db.save_user(&user).map_err(internal_error)?;
@@ -313,6 +320,9 @@ pub async fn github_callback(
             .email
             .unwrap_or_else(|| format!("{}@github.local", github_user.login));
         let mut user = User::new_with_github(email, github_user.id, github_user.login);
+        if !state.db.has_admin_user().map_err(internal_error)? {
+            user.is_admin = true;
+        }
         user.github_access_token = Some(token_to_store);
         state.db.save_user(&user).map_err(internal_error)?;
         user
