@@ -205,6 +205,50 @@ async fn ensure_container_owned(
         }
     }
 
+    for db in state
+        .db
+        .list_managed_databases_by_owner(user_id)
+        .map_err(internal_error)?
+    {
+        if db.container_id.as_deref() == Some(container_id) {
+            return Ok(());
+        }
+    }
+
+    for queue in state
+        .db
+        .list_managed_queues_by_owner(user_id)
+        .map_err(internal_error)?
+    {
+        if queue.container_id.as_deref() == Some(container_id) {
+            return Ok(());
+        }
+    }
+
+    for app in state
+        .db
+        .list_apps_by_owner(user_id)
+        .map_err(internal_error)?
+    {
+        if let Some(deployment) = state
+            .db
+            .get_latest_deployment(app.id)
+            .map_err(internal_error)?
+        {
+            if deployment.container_id.as_deref() == Some(container_id) {
+                return Ok(());
+            }
+
+            if deployment
+                .service_deployments
+                .iter()
+                .any(|service| service.container_id.as_deref() == Some(container_id))
+            {
+                return Ok(());
+            }
+        }
+    }
+
     Err((
         StatusCode::FORBIDDEN,
         Json(ErrorResponse {
