@@ -23,6 +23,9 @@ changelog
   restarts do not leave stale pending/building/starting rows behind
 - hide the dashboard system monitor for non-admin users once host stats require
   admin access
+- enable the workspace `uuid` v5 feature in the committed manifest so the clean
+  release build matches the checked-in code and `mise run release-prod` does
+  not depend on unstaged local manifest changes
 
 0.1.9-alpha - 2026-03-07
 - fix the app detail container monitor for multi-replica apps by refreshing the container list while deployments are live and labeling replicas distinctly in the api as `service #n`
