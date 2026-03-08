@@ -1,4 +1,21 @@
 current context:
+- managed database creation now provisions and starts the container during
+  `POST /api/databases`, and failed startup attempts are persisted as failed
+  resources instead of returning a successful create without a real database
+- the database detail page is now organized into overview, connect, access,
+  recovery, backups, and container tabs with masked secrets by default and
+  explicit show/copy controls for passwords and connection strings
+- the frontend now ships a dedicated svg favicon so the dashboard has a stable
+  branded tab icon in production builds
+- the app detail container monitor now refetches `/api/containers` while a deployment is live, so
+  newly started or replaced app replicas show up without requiring a hard page reload
+- app container list entries now include replica ordinals when a service has more than one replica,
+  which makes the container selector distinguish `web #1`, `web #2`, and so on
+- app persistence and runtime now treat the service model as canonical: any app read or save is
+  normalized to at least one deterministic `web` service, and the old dedicated single-container
+  deployment branch has been removed from the worker
+- proxy route refresh now resolves the public service through the service model only, but still
+  honors a legacy deployment `container_id` as a temporary fallback until an old app is redeployed
 - the project has been renamed from znskr to containr across crate/package names, the main binary,
   config/example file names, docs, ui copy, and internal docker resource naming
 - local git push deployment management has been removed from the api, proxy routing, ui, docs, and generated frontend client
@@ -37,6 +54,11 @@ current context:
 - github webhook deployments now clean up their pending deployment row if source resolution or queue submission fails
 - deployment source resolution now surfaces github app config database read failures instead of silently skipping the stored app credentials
 - frontend tooling now runs through mise-managed node 24.14.0 and pnpm 10.30.3 instead of bun
+- multi-service apps can now mark one service as the public http target, with sqlite persistence,
+  api/schema support, ui controls, and a backward-compatible fallback to `web` or the first
+  service for older app records
+- legacy single-container apps now migrate to a replicated `web` service from the dashboard when
+  the requested instance count is greater than one, so scaling no longer becomes a silent no-op
 - service-based apps can now define persistent named mounts that are stored in sqlite, exposed through the api, and materialized as host bind mounts during deployment
 - image-based app services can now store optional private registry credentials with encrypted
   passwords, and deployments use those credentials for authenticated image pulls before container startup
@@ -129,6 +151,12 @@ architectural notes:
   blank values clear the override while omitted api fields preserve the existing value
 - app service additional ports are stored separately from the primary routed port so the proxy can
   keep using one canonical upstream port while workloads still declare extra internal listeners
+- public app routing for multi-service apps now resolves in this order: explicit `expose_http`,
+  then a service named `web`, then the first declared service
+- explicit empty `services` payloads are now rejected by the api so updates cannot silently erase
+  a service graph and fall back into the removed legacy shape
+- the dashboard still sends legacy app edits without a service list when instance count is 1, but
+  synthesizes a `web` service on update/create once the requested instance count exceeds 1
 - service mount backup and restore works against the host-side mount root under the api's data
   directory, validates tar entry paths against the declared mount names, and replaces the entire
   service mount set on restore so stopped services can be recovered without a running container

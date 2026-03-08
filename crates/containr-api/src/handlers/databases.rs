@@ -352,6 +352,26 @@ pub async fn create_database(
         .save_managed_database(&db)
         .map_err(internal_error)?;
 
+    let db_manager = DatabaseManager::new();
+    if let Err(error) = db_manager.start_database(&mut db).await {
+        db.status = ServiceStatus::Failed;
+        db.updated_at = Utc::now();
+
+        if let Err(save_error) = state.db.save_managed_database(&db) {
+            tracing::error!(
+                "failed to persist managed database after provisioning failure: {}",
+                save_error
+            );
+        }
+
+        return Err(database_manager_error("create database", error));
+    }
+
+    state
+        .db
+        .save_managed_database(&db)
+        .map_err(internal_error)?;
+
     Ok((StatusCode::CREATED, Json(DatabaseResponse::from(&db))))
 }
 

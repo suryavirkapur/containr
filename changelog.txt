@@ -1,7 +1,18 @@
 changelog
 =========
 
+0.1.10-alpha - 2026-03-08
+- start managed database containers during database creation and persist failed provisioning attempts as failed database resources
+- redesign the database detail page into overview/connect/access/recovery/backups/container tabs with a denser service summary and quick-connect panel
+- mask database passwords and connection strings by default until explicitly shown, while keeping dedicated copy actions for each secret and endpoint
+- navigate to the new database detail page after a successful create and refresh the databases list when provisioning fails
+- add a bundled svg favicon for the dashboard frontend
+
 0.1.9-alpha - 2026-03-07
+- fix the app detail container monitor for multi-replica apps by refreshing the container list while deployments are live and labeling replicas distinctly in the api as `service #n`
+- remove the legacy single-container deployment branch by normalizing apps into a default `web` service, routing legacy running deployments through the new service model until redeploy, and rejecting empty explicit service lists
+- add explicit per-service public http selection for multi-service apps, persist it in sqlite, expose it in the api/ui, and fall back to `web` or the first service so older apps still route correctly
+- make the dashboard's single-app instance count actually work by converting legacy single-container apps into a replicated `web` service when more than one instance is requested
 - add service-level persistent app mounts with sqlite persistence, docker bind mounts, mount validation, and ui/api support for multi-service apps
 - add per-service private registry credentials with encrypted persistence, authenticated image pulls during deployment, and ui/api support for image-based services
 - add browser terminal access for running containers with a docker exec websocket bridge and an xterm-based frontend tab in the container monitor
