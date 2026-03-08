@@ -30,6 +30,9 @@ current context:
 - the dashboard now exposes the existing multi-service app model as projects
   through `/projects` routes and project-centric navigation while keeping the
   legacy `/apps` routes working
+- container ownership checks now accept the persisted docker ids for managed
+  services and latest deployments, so exec/log endpoints keep working even when
+  the caller passes a raw docker id instead of a containr-style name
 - the app detail container monitor now refetches `/api/containers` while a deployment is live, so
   newly started or replaced app replicas show up without requiring a hard page reload
 - app container list entries now include replica ordinals when a service has more than one replica,
