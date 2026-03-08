@@ -154,6 +154,8 @@ pub struct ServiceRequest {
     pub image: Option<String>,
     /// container port
     pub port: u16,
+    /// whether this service receives public http traffic
+    pub expose_http: Option<bool>,
     /// additional container ports
     pub additional_ports: Option<Vec<u16>>,
     /// number of replicas
@@ -191,6 +193,8 @@ pub struct ServiceResponse {
     pub image: String,
     /// container port
     pub port: u16,
+    /// whether this service receives public http traffic
+    pub expose_http: bool,
     /// additional container ports
     pub additional_ports: Vec<u16>,
     /// number of replicas
@@ -318,6 +322,7 @@ impl From<&App> for AppResponse {
                     name: s.name.clone(),
                     image: s.image.clone(),
                     port: s.port,
+                    expose_http: s.expose_http,
                     additional_ports: s.additional_ports.clone(),
                     replicas: s.replicas,
                     memory_limit_mb: s.memory_limit.map(|m| m / (1024 * 1024)),
@@ -589,6 +594,15 @@ fn build_services(
     existing_services: &[ContainerService],
     requests: Vec<ServiceRequest>,
 ) -> Result<Vec<ContainerService>, (StatusCode, Json<ErrorResponse>)> {
+    if requests.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "apps must define at least one service".to_string(),
+            }),
+        ));
+    }
+
     let existing_by_name = existing_services
         .iter()
         .map(|service| (service.name.clone(), service.clone()))
@@ -631,6 +645,7 @@ fn build_services(
         service.name = service_name;
         service.image = request.image.unwrap_or_default();
         service.port = request.port;
+        service.expose_http = request.expose_http.unwrap_or(service.expose_http);
         service.additional_ports = normalize_additional_ports(
             request.additional_ports,
             &service.additional_ports,
@@ -660,6 +675,19 @@ fn build_services(
         service.restart_policy = parse_restart_policy(request.restart_policy.as_deref());
         service.updated_at = chrono::Utc::now();
         services.push(service);
+    }
+
+    let exposed_service_count = services
+        .iter()
+        .filter(|service| service.expose_http)
+        .count();
+    if exposed_service_count > 1 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "only one service can receive public http traffic".to_string(),
+            }),
+        ));
     }
 
     Ok(services)
@@ -1015,6 +1043,7 @@ pub async fn create_app(
     if let Some(services) = req.services {
         app.services = build_services(&config, app.id, &[], services)?;
     }
+    app.ensure_service_model();
 
     state.db.save_app(&app).map_err(internal_error)?;
 
@@ -1444,6 +1473,7 @@ pub async fn update_app(
         app.services = build_services(&config, app.id, &app.services, services)?;
     }
 
+    app.ensure_service_model();
     app.updated_at = chrono::Utc::now();
     state.db.save_app(&app).map_err(internal_error)?;
 
@@ -1687,6 +1717,7 @@ mod tests {
                 name: "web".to_string(),
                 image: Some("ghcr.io/example/web:2".to_string()),
                 port: 9090,
+                expose_http: Some(true),
                 additional_ports: Some(vec![9091, 9092]),
                 replicas: Some(3),
                 memory_limit_mb: Some(256),
@@ -1723,6 +1754,7 @@ mod tests {
                 assert_eq!(service.name, "web");
                 assert_eq!(service.image, "ghcr.io/example/web:2");
                 assert_eq!(service.port, 9090);
+                assert!(service.expose_http);
                 assert_eq!(service.additional_ports, vec![9091, 9092]);
                 assert_eq!(service.replicas, 3);
                 assert_eq!(service.depends_on, vec!["redis".to_string()]);
@@ -1804,6 +1836,82 @@ mod tests {
                     body.0.error,
                     "additional port 8080 duplicates the primary port"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_multiple_public_http_services() {
+        let app_id = Uuid::new_v4();
+        let config = Config::default();
+
+        let result = build_services(
+            &config,
+            app_id,
+            &[],
+            vec![
+                ServiceRequest {
+                    name: "api".to_string(),
+                    image: Some("ghcr.io/example/api:1".to_string()),
+                    port: 8080,
+                    expose_http: Some(true),
+                    additional_ports: None,
+                    replicas: None,
+                    memory_limit_mb: None,
+                    cpu_limit: None,
+                    depends_on: None,
+                    health_check: None,
+                    restart_policy: None,
+                    registry_auth: None,
+                    command: None,
+                    entrypoint: None,
+                    working_dir: None,
+                    mounts: None,
+                },
+                ServiceRequest {
+                    name: "worker".to_string(),
+                    image: Some("ghcr.io/example/worker:1".to_string()),
+                    port: 9000,
+                    expose_http: Some(true),
+                    additional_ports: None,
+                    replicas: None,
+                    memory_limit_mb: None,
+                    cpu_limit: None,
+                    depends_on: None,
+                    health_check: None,
+                    restart_policy: None,
+                    registry_auth: None,
+                    command: None,
+                    entrypoint: None,
+                    working_dir: None,
+                    mounts: None,
+                },
+            ],
+        );
+
+        match result {
+            Ok(_) => panic!("expected multiple public services to be rejected"),
+            Err((status, body)) => {
+                assert_eq!(status, StatusCode::BAD_REQUEST);
+                assert_eq!(
+                    body.0.error,
+                    "only one service can receive public http traffic"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_empty_services_list() {
+        let config = Config::default();
+
+        let result = build_services(&config, Uuid::new_v4(), &[], Vec::new());
+
+        match result {
+            Ok(_) => panic!("expected empty service list to be rejected"),
+            Err((status, body)) => {
+                assert_eq!(status, StatusCode::BAD_REQUEST);
+                assert_eq!(body.0.error, "apps must define at least one service");
             }
         }
     }

@@ -7,6 +7,7 @@ export interface Service {
 	name: string;
 	image: string;
 	port: number;
+	expose_http: boolean;
 	additional_ports: number[];
 	replicas: number;
 	memory_limit_mb: number | null;
@@ -41,6 +42,7 @@ export function createEmptyService(): Service {
 		name: "",
 		image: "",
 		port: 8080,
+		expose_http: false,
 		additional_ports: [],
 		replicas: 1,
 		memory_limit_mb: null,
@@ -204,6 +206,23 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 						class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
 						placeholder="8080"
 					/>
+				</div>
+
+				<div class="col-span-2">
+					<label class="flex items-center gap-2 text-xs text-neutral-600">
+						<input
+							type="checkbox"
+							checked={props.service.expose_http}
+							onChange={(e) =>
+								updateField("expose_http", e.currentTarget.checked)
+							}
+							class="border border-neutral-300"
+						/>
+						public http service
+					</label>
+					<p class="mt-1 text-xs text-neutral-400">
+						this service receives routed dashboard and custom-domain traffic.
+					</p>
 				</div>
 
 				<div>

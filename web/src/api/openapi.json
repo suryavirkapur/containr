@@ -1620,6 +1620,62 @@
         ]
       }
     },
+    "/api/containers/{id}/exec/token": {
+      "post": {
+        "tags": [
+          "containers"
+        ],
+        "operationId": "issue_exec_token",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "container id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "short-lived exec token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecTokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/containers/{id}/files": {
       "get": {
         "tags": [
@@ -3992,6 +4048,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4029,6 +4095,16 @@
           },
           "401": {
             "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -4082,6 +4158,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4108,8 +4194,33 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
       }
     },
     "/health": {
@@ -5107,6 +5218,21 @@
           }
         }
       },
+      "ExecTokenResponse": {
+        "type": "object",
+        "required": [
+          "token",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
       "ExportRequest": {
         "type": "object",
         "description": "export request",
@@ -5788,6 +5914,13 @@
             },
             "description": "entrypoint override"
           },
+          "expose_http": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "whether this service receives public http traffic"
+          },
           "health_check": {
             "oneOf": [
               {
@@ -5879,6 +6012,7 @@
           "name",
           "image",
           "port",
+          "expose_http",
           "additional_ports",
           "replicas",
           "depends_on",
@@ -5925,6 +6059,10 @@
               "type": "string"
             },
             "description": "entrypoint override"
+          },
+          "expose_http": {
+            "type": "boolean",
+            "description": "whether this service receives public http traffic"
           },
           "health_check": {
             "oneOf": [

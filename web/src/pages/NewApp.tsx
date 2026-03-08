@@ -32,7 +32,7 @@ const fetchGithubRepos = async (): Promise<RepoInfo[]> => {
 };
 
 /**
- * new app creation page with multi-container support
+ * new project creation page with multi-service support
  */
 const NewApp: Component = () => {
 	const [name, setName] = createSignal("");
@@ -41,6 +41,8 @@ const NewApp: Component = () => {
 	const [domainsText, setDomainsText] = createSignal("");
 	const [useMultiService, setUseMultiService] = createSignal(false);
 	const [port, setPort] = createSignal("8080");
+	const [singleContainerReplicas, setSingleContainerReplicas] =
+		createSignal("1");
 	const [services, setServices] = createSignal<Service[]>([]);
 	const [error, setError] = createSignal("");
 	const [loading, setLoading] = createSignal(false);
@@ -85,17 +87,36 @@ const NewApp: Component = () => {
 	};
 
 	const addService = () => {
-		setServices([...services(), createEmptyService()]);
+		const currentServices = services();
+		const service = createEmptyService();
+		if (!currentServices.some((entry) => entry.expose_http)) {
+			service.expose_http = true;
+		}
+		setServices([...currentServices, service]);
 	};
 
 	const updateService = (index: number, service: Service) => {
 		const updated = [...services()];
 		updated[index] = service;
+		if (service.expose_http) {
+			for (let i = 0; i < updated.length; i += 1) {
+				if (i !== index) {
+					updated[i] = { ...updated[i], expose_http: false };
+				}
+			}
+		}
+		if (!updated.some((entry) => entry.expose_http) && updated.length > 0) {
+			updated[0] = { ...updated[0], expose_http: true };
+		}
 		setServices(updated);
 	};
 
 	const removeService = (index: number) => {
-		setServices(services().filter((_, i) => i !== index));
+		const updated = services().filter((_, i) => i !== index);
+		if (!updated.some((entry) => entry.expose_http) && updated.length > 0) {
+			updated[0] = { ...updated[0], expose_http: true };
+		}
+		setServices(updated);
 	};
 
 	const handleSubmit = async (e: Event) => {
@@ -105,6 +126,11 @@ const NewApp: Component = () => {
 
 		try {
 			const domains = parseDomains(domainsText());
+			const parsedPort = parseInt(port()) || 8080;
+			const parsedReplicas = Math.max(
+				1,
+				parseInt(singleContainerReplicas()) || 1,
+			);
 			// build request body
 			const body: any = {
 				name: name(),
@@ -120,6 +146,7 @@ const NewApp: Component = () => {
 					name: s.name,
 					image: s.image || null,
 					port: s.port,
+					expose_http: s.expose_http,
 					additional_ports:
 						s.additional_ports.length > 0 ? s.additional_ports : null,
 					replicas: s.replicas,
@@ -154,13 +181,36 @@ const NewApp: Component = () => {
 							: null,
 				}));
 			} else {
-				// single-container mode (backward compat)
-				body.port = parseInt(port()) || 8080;
+				if (parsedReplicas > 1) {
+					body.services = [
+						{
+							name: "web",
+							image: null,
+							port: parsedPort,
+							expose_http: true,
+							additional_ports: null,
+							replicas: parsedReplicas,
+							memory_limit_mb: null,
+							cpu_limit: null,
+							depends_on: null,
+							health_check: null,
+							restart_policy: "always",
+							registry_auth: null,
+							command: null,
+							entrypoint: null,
+							working_dir: null,
+							mounts: null,
+						},
+					];
+				} else {
+					// single-container mode (backward compat)
+					body.port = parsedPort;
+				}
 			}
 
 			const { data, error: apiError } = await api.POST("/api/apps", { body });
-			if (apiError) throw new Error("failed to create app");
-			navigate(`/apps/${data.id}`);
+			if (apiError) throw new Error("failed to create project");
+			navigate(`/projects/${data.id}`);
 		} catch (err: any) {
 			setError(err.message);
 		} finally {
@@ -172,9 +222,10 @@ const NewApp: Component = () => {
 		<div class="max-w-2xl mx-auto">
 			{/* header */}
 			<div class="mb-10">
-				<h1 class="text-2xl font-serif text-black">deploy new app</h1>
+				<h1 class="text-2xl font-serif text-black">create new project</h1>
 				<p class="text-neutral-500 mt-1 text-sm">
-					connect a git repository to deploy automatically
+					connect a repository and define the services that belong to this
+					project
 				</p>
 			</div>
 
@@ -187,15 +238,17 @@ const NewApp: Component = () => {
 				)}
 
 				<form onSubmit={handleSubmit} class="space-y-6">
-					{/* app name */}
+					{/* project name */}
 					<div>
-						<label class="block text-neutral-600 text-sm mb-2">app name</label>
+						<label class="block text-neutral-600 text-sm mb-2">
+							project name
+						</label>
 						<input
 							type="text"
 							value={name()}
 							onInput={(e) => setName(e.currentTarget.value)}
 							class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-							placeholder="my-awesome-app"
+							placeholder="my-awesome-project"
 							required
 						/>
 						<p class="mt-1.5 text-xs text-neutral-400">
@@ -339,9 +392,9 @@ const NewApp: Component = () => {
 								class="w-4 h-4"
 							/>
 							<div>
-								<span class="text-sm text-black">multi-container app</span>
+								<span class="text-sm text-black">multi-service project</span>
 								<p class="text-xs text-neutral-400">
-									deploy multiple services with dependencies
+									group multiple services with shared deploy settings
 								</p>
 							</div>
 						</label>
@@ -350,19 +403,42 @@ const NewApp: Component = () => {
 					{/* single container mode */}
 					<Show when={!useMultiService()}>
 						<div>
-							<label class="block text-neutral-600 text-sm mb-2">
-								application port
-							</label>
-							<input
-								type="number"
-								value={port()}
-								onInput={(e) => setPort(e.currentTarget.value)}
-								class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-								placeholder="8080"
-							/>
-							<p class="mt-1.5 text-xs text-neutral-400">
-								the port your app listens on inside the container
-							</p>
+							<div class="grid grid-cols-2 gap-4">
+								<div>
+									<label class="block text-neutral-600 text-sm mb-2">
+										application port
+									</label>
+									<input
+										type="number"
+										value={port()}
+										onInput={(e) => setPort(e.currentTarget.value)}
+										class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+										placeholder="8080"
+									/>
+									<p class="mt-1.5 text-xs text-neutral-400">
+										the port your main service listens on inside the container
+									</p>
+								</div>
+								<div>
+									<label class="block text-neutral-600 text-sm mb-2">
+										instance count
+									</label>
+									<input
+										type="number"
+										min="1"
+										max="10"
+										value={singleContainerReplicas()}
+										onInput={(e) =>
+											setSingleContainerReplicas(e.currentTarget.value)
+										}
+										class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+										placeholder="1"
+									/>
+									<p class="mt-1.5 text-xs text-neutral-400">
+										values above 1 are deployed as a replicated `web` service.
+									</p>
+								</div>
+							</div>
 						</div>
 					</Show>
 
@@ -407,11 +483,11 @@ const NewApp: Component = () => {
 							disabled={loading()}
 							class="flex-1 px-4 py-2.5 bg-black text-white hover:bg-neutral-800 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
 						>
-							{loading() ? "creating..." : "create app"}
+							{loading() ? "creating..." : "create project"}
 						</button>
 						<button
 							type="button"
-							onClick={() => navigate("/")}
+							onClick={() => navigate("/projects")}
 							class="px-4 py-2.5 border border-neutral-300 text-neutral-700 hover:text-black hover:border-neutral-400 transition-colors text-sm"
 						>
 							cancel

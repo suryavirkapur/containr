@@ -11,6 +11,7 @@ use axum::{
     response::Response,
     Json,
 };
+use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::path::{Path as FsPath, PathBuf};
@@ -18,7 +19,7 @@ use tokio::io::AsyncWriteExt;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::auth::{extract_bearer_token, validate_token};
+use crate::auth::{create_exec_token, extract_bearer_token, validate_exec_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
 use containr_runtime::{
@@ -86,6 +87,12 @@ pub struct ExecSocketQuery {
     pub rows: Option<u16>,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ExecTokenResponse {
+    pub token: String,
+    pub expires_at: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ExecControlMessage {
@@ -118,22 +125,6 @@ fn get_user_id(
         )
     })?;
 
-    let claims = validate_token(token, jwt_secret).map_err(|e| {
-        (
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: e.to_string(),
-            }),
-        )
-    })?;
-
-    Ok(claims.sub)
-}
-
-fn get_user_id_from_token(
-    token: &str,
-    jwt_secret: &str,
-) -> Result<Uuid, (StatusCode, Json<ErrorResponse>)> {
     let claims = validate_token(token, jwt_secret).map_err(|e| {
         (
             StatusCode::UNAUTHORIZED,
@@ -243,6 +234,24 @@ fn resolve_exec_command(
     Ok(command)
 }
 
+fn format_app_container_label(
+    app_name: &str,
+    service_name: &str,
+    replica_index: u32,
+    replica_count: usize,
+) -> String {
+    if replica_count > 1 {
+        return format!(
+            "{} ({} #{})",
+            app_name,
+            service_name,
+            replica_index.saturating_add(1)
+        );
+    }
+
+    format!("{} ({})", app_name, service_name)
+}
+
 #[utoipa::path(
     get,
     path = "/api/containers",
@@ -302,6 +311,11 @@ pub async fn list_containers(
             .get_latest_deployment(app.id)
             .map_err(internal_error)?
         {
+            let mut replica_counts = std::collections::HashMap::new();
+            for sd in &deployment.service_deployments {
+                *replica_counts.entry(sd.service_id).or_insert(0usize) += 1;
+            }
+
             let mut service_names = std::collections::HashMap::new();
             for service in &app.services {
                 service_names.insert(service.id, service.name.clone());
@@ -317,7 +331,7 @@ pub async fn list_containers(
             }
             for sd in deployment.service_deployments {
                 if let Some(container_id) = sd.container_id.clone() {
-                    let label = service_names
+                    let service_name = service_names
                         .get(&sd.service_id)
                         .cloned()
                         .unwrap_or_else(|| "service".to_string());
@@ -325,7 +339,12 @@ pub async fn list_containers(
                         id: container_id.clone(),
                         resource_type: "app".to_string(),
                         resource_id: app.id.to_string(),
-                        name: format!("{} ({})", app.name, label),
+                        name: format_app_container_label(
+                            &app.name,
+                            &service_name,
+                            sd.replica_index,
+                            *replica_counts.get(&sd.service_id).unwrap_or(&1),
+                        ),
                     });
                 }
             }
@@ -335,6 +354,40 @@ pub async fn list_containers(
     Ok(Json(containers))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/containers/{id}/exec/token",
+    tag = "containers",
+    params(("id" = String, Path, description = "container id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "short-lived exec token", body = ExecTokenResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse)
+    )
+)]
+pub async fn issue_exec_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<ExecTokenResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+
+    ensure_container_owned(&state, user_id, &id).await?;
+
+    let (token, expires_at) =
+        create_exec_token(user_id, &id, &config.auth.jwt_secret, 90).map_err(internal_error)?;
+
+    let expires_at = DateTime::<Utc>::from_timestamp(expires_at, 0)
+        .ok_or_else(|| internal_error("failed to build exec token expiry timestamp"))?;
+
+    Ok(Json(ExecTokenResponse {
+        token,
+        expires_at: expires_at.to_rfc3339(),
+    }))
+}
+
 pub async fn container_exec_ws(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
@@ -342,11 +395,18 @@ pub async fn container_exec_ws(
     Query(query): Query<ExecSocketQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
-    let user_id = get_user_id_from_token(&query.token, &config.auth.jwt_secret)?;
+    let claims = validate_exec_token(&query.token, &id, &config.auth.jwt_secret).map_err(|e| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
     let command = resolve_exec_command(query.shell.as_deref())?;
     drop(config);
 
-    ensure_container_owned(&state, user_id, &id).await?;
+    ensure_container_owned(&state, claims.sub, &id).await?;
 
     let cols = query.cols.unwrap_or(120);
     let rows = query.rows.unwrap_or(32);
@@ -896,7 +956,7 @@ pub async fn create_volume_directory(
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_exec_command;
+    use super::{format_app_container_label, resolve_exec_command};
     use axum::http::StatusCode;
 
     #[test]
@@ -924,5 +984,17 @@ mod tests {
                 assert_eq!(body.0.error, "unsupported shell");
             }
         }
+    }
+
+    #[test]
+    fn format_app_container_label_includes_replica_when_needed() {
+        assert_eq!(
+            format_app_container_label("demo", "web", 0, 1),
+            "demo (web)".to_string()
+        );
+        assert_eq!(
+            format_app_container_label("demo", "web", 1, 2),
+            "demo (web #2)".to_string()
+        );
     }
 }

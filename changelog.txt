@@ -26,6 +26,11 @@ changelog
 - enable the workspace `uuid` v5 feature in the committed manifest so the clean
   release build matches the checked-in code and `mise run release-prod` does
   not depend on unstaged local manifest changes
+- replace the container terminal websocket's query-string bearer token with a
+  short-lived dedicated exec token issued over an authenticated post request
+- add project-oriented routes and navigation on top of the existing
+  multi-service app model, including `/projects` urls and project list cards
+  that surface service counts
 
 0.1.9-alpha - 2026-03-07
 - fix the app detail container monitor for multi-replica apps by refreshing the container list while deployments are live and labeling replicas distinctly in the api as `service #n`
