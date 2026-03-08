@@ -7,6 +7,7 @@ changelog
 - mask database passwords and connection strings by default until explicitly shown, while keeping dedicated copy actions for each secret and endpoint
 - navigate to the new database detail page after a successful create and refresh the databases list when provisioning fails
 - add a bundled svg favicon for the dashboard frontend
+- sync the frontend pnpm lockfile with the checked-in package dependencies so release builds succeed with frozen lockfiles
 
 0.1.9-alpha - 2026-03-07
 - fix the app detail container monitor for multi-replica apps by refreshing the container list while deployments are live and labeling replicas distinctly in the api as `service #n`
