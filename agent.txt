@@ -24,6 +24,12 @@ current context:
 - the committed workspace manifest now enables the `uuid` v5 feature so clean
   release worktrees build the checked-in code without relying on dirty local
   dependency feature changes
+- container terminal sessions now request a short-lived dedicated exec token
+  over an authenticated http call before opening the websocket, so the main
+  bearer jwt no longer rides in the query string
+- the dashboard now exposes the existing multi-service app model as projects
+  through `/projects` routes and project-centric navigation while keeping the
+  legacy `/apps` routes working
 - the app detail container monitor now refetches `/api/containers` while a deployment is live, so
   newly started or replaced app replicas show up without requiring a hard page reload
 - app container list entries now include replica ordinals when a service has more than one replica,

@@ -60,7 +60,30 @@ const ContainerTerminal: Component<{ containerId: string }> = (props) => {
 		);
 	};
 
-	const connect = () => {
+	const requestExecToken = async (token: string) => {
+		const response = await fetch(
+			`/api/containers/${props.containerId}/exec/token`,
+			{
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${token}`,
+				},
+			},
+		);
+
+		if (!response.ok) {
+			throw new Error("failed to create exec token");
+		}
+
+		const body = await response.json();
+		if (!body?.token || typeof body.token !== "string") {
+			throw new Error("invalid exec token response");
+		}
+
+		return body.token;
+	};
+
+	const connect = async () => {
 		if (!terminal) return;
 
 		closeSocket();
@@ -74,8 +97,19 @@ const ContainerTerminal: Component<{ containerId: string }> = (props) => {
 			return;
 		}
 
+		let execToken = "";
+		try {
+			execToken = await requestExecToken(token);
+		} catch (error) {
+			setConnectionState("error");
+			terminal.write(
+				`${error instanceof Error ? error.message : "failed to create exec token"}\r\n`,
+			);
+			return;
+		}
+
 		const params = new URLSearchParams({
-			token,
+			token: execToken,
 			shell: shell(),
 			cols: String(Math.max(terminal.cols || 0, 80)),
 			rows: String(Math.max(terminal.rows || 0, 24)),
@@ -164,7 +198,7 @@ const ContainerTerminal: Component<{ containerId: string }> = (props) => {
 		shell();
 
 		if (terminal) {
-			connect();
+			void connect();
 		}
 	});
 
@@ -193,7 +227,9 @@ const ContainerTerminal: Component<{ containerId: string }> = (props) => {
 						))}
 					</select>
 					<button
-						onClick={() => connect()}
+						onClick={() => {
+							void connect();
+						}}
 						class="px-3 py-1 text-xs border border-neutral-300 text-neutral-700 hover:border-neutral-400"
 					>
 						reconnect

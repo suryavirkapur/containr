@@ -218,29 +218,15 @@ impl DeploymentWorker {
             .create_network(INTERNAL_NETWORK_NAME)
             .await?;
 
-        // check if app uses new multi-service model
-        if app.has_services() {
-            // multi-container deployment
-            self.deploy_services(
-                &app,
-                &deployment,
-                &network_name,
-                &image_name,
-                &env_vars,
-                job.rollout_strategy,
-            )
-            .await?;
-        } else {
-            self.deploy_legacy(
-                &app,
-                &deployment,
-                &network_name,
-                &image_name,
-                &env_vars,
-                job.rollout_strategy,
-            )
-            .await?;
-        }
+        self.deploy_services(
+            &app,
+            &deployment,
+            &network_name,
+            &image_name,
+            &env_vars,
+            job.rollout_strategy,
+        )
+        .await?;
 
         info!(
             app_id = %job.app_id,
@@ -266,12 +252,22 @@ impl DeploymentWorker {
         // topological sort services by dependencies
         let sorted_services = self.topological_sort_services(&app.services)?;
         let previous_running = self.get_previous_running_deployment(app.id, deployment.id)?;
+        let legacy_previous_container = previous_running
+            .as_ref()
+            .and_then(|previous| previous.container_id.clone());
         let mut old_containers: HashMap<(uuid::Uuid, u32), String> = HashMap::new();
         if let Some(prev) = previous_running {
             for sd in prev.service_deployments {
                 if let Some(container_id) = sd.container_id {
                     old_containers.insert((sd.service_id, sd.replica_index), container_id);
                 }
+            }
+        }
+
+        if matches!(rollout_strategy, RolloutStrategy::StopFirst) {
+            if let Some(old) = legacy_previous_container.as_deref() {
+                let _ = self.docker_manager.stop_container(old).await;
+                let _ = self.docker_manager.remove_container(old).await;
             }
         }
 
@@ -425,95 +421,13 @@ impl DeploymentWorker {
                     let _ = self.docker_manager.remove_container(old).await;
                 }
             }
-        }
-
-        Ok(())
-    }
-
-    async fn deploy_legacy(
-        &self,
-        app: &containr_common::models::App,
-        deployment: &Deployment,
-        network_name: &str,
-        image_name: &str,
-        shared_env_vars: &HashMap<String, String>,
-        rollout_strategy: RolloutStrategy,
-    ) -> anyhow::Result<()> {
-        let mut env_vars = shared_env_vars.clone();
-        env_vars.insert("PORT".to_string(), app.port.to_string());
-
-        let previous_running = self.get_previous_running_deployment(app.id, deployment.id)?;
-        let previous_container_id = previous_running.and_then(|d| d.container_id);
-        if matches!(rollout_strategy, RolloutStrategy::StopFirst) {
-            if let Some(old) = previous_container_id.as_deref() {
-                let _ = self.docker_manager.stop_container(old).await;
-                let _ = self.docker_manager.remove_container(old).await;
+            if let Some(old) = legacy_previous_container.as_deref() {
+                if !new_container_ids.contains(old) {
+                    let _ = self.docker_manager.stop_container(old).await;
+                    let _ = self.docker_manager.remove_container(old).await;
+                }
             }
         }
-
-        // generate unique container id for blue/green deployment
-        // format: containr-{app_id}-{short_deployment_id}
-        let short_id = deployment
-            .id
-            .to_string()
-            .split('-')
-            .next()
-            .unwrap_or("0")
-            .to_string();
-        let container_id = format!("containr-{}-{}", app.id, short_id);
-
-        // start new container using Docker
-        let config = DockerContainerConfig {
-            id: container_id.clone(),
-            image: image_name.to_string(),
-            env_vars,
-            port: app.port,
-            additional_ports: Vec::new(),
-            command: None,
-            entrypoint: None,
-            working_dir: None,
-            memory_limit: Some(512 * 1024 * 1024), // 512mb
-            cpu_limit: Some(1.0),
-            network: Some(DockerNetworkAttachment {
-                name: network_name.to_string(),
-                aliases: vec!["app".to_string()],
-            }),
-            mounts: Vec::new(),
-            additional_networks: vec![DockerNetworkAttachment {
-                name: INTERNAL_NETWORK_NAME.to_string(),
-                aliases: Vec::new(),
-            }],
-            health_check: None,
-            restart_policy: "unless-stopped".to_string(),
-        };
-
-        let container_info = self.docker_manager.create_container(config).await?;
-
-        info!(container_id = %container_info.id, "waiting for container to stabilize");
-        if !self
-            .docker_manager
-            .wait_for_healthy(&container_info.id, 10)
-            .await?
-        {
-            let _ = self.docker_manager.stop_container(&container_info.id).await;
-            let _ = self
-                .docker_manager
-                .remove_container(&container_info.id)
-                .await;
-            return Err(anyhow::anyhow!("container failed to stabilize"));
-        }
-
-        let mut updated_deployment = deployment.clone();
-        updated_deployment.status = DeploymentStatus::Running;
-        updated_deployment.container_id = Some(container_info.id.clone());
-        updated_deployment.image_id = Some(image_name.to_string());
-        updated_deployment.started_at = Some(chrono::Utc::now());
-        updated_deployment.finished_at = Some(chrono::Utc::now());
-        self.db.save_deployment(&updated_deployment)?;
-
-        self.send_proxy_refresh(app.id).await;
-        self.cleanup_old_containers(app.id, &container_info.id)
-            .await;
 
         Ok(())
     }
@@ -748,38 +662,6 @@ impl DeploymentWorker {
     async fn send_proxy_refresh(&self, app_id: Uuid) {
         if let Some(sender) = &self.proxy_updates {
             let _ = sender.send(ProxyRouteUpdate::RefreshApp { app_id }).await;
-        }
-    }
-
-    /// cleans up old containers for an app (all except the current one)
-    async fn cleanup_old_containers(&self, app_id: Uuid, current_container_id: &str) {
-        info!("cleaning up old containers for app {}", app_id);
-
-        // list all containers
-        match self.docker_manager.list_containers().await {
-            Ok(containers) => {
-                let app_prefix = format!("containr-{}-", app_id);
-                // also check for the legacy name format
-                let legacy_name = format!("containr-{}", app_id);
-
-                for container in containers {
-                    // skip current container
-                    if container.id == current_container_id {
-                        continue;
-                    }
-
-                    // check if container belongs to this app
-                    // either specific deployment ID or legacy name
-                    if container.id.starts_with(&app_prefix) || container.id == legacy_name {
-                        info!(container_id = %container.id, "removing old container");
-                        let _ = self.docker_manager.stop_container(&container.id).await;
-                        let _ = self.docker_manager.remove_container(&container.id).await;
-                    }
-                }
-            }
-            Err(e) => {
-                warn!("failed to list containers for cleanup: {}", e);
-            }
         }
     }
 

@@ -5,6 +5,7 @@ import {
 	createResource,
 	createSignal,
 	For,
+	onCleanup,
 	Show,
 } from "solid-js";
 import { useParams, useNavigate } from "@solidjs/router";
@@ -62,7 +63,7 @@ const fetchContainers = async (): Promise<ContainerListItem[]> => {
 };
 
 /**
- * app detail page
+ * project detail page
  */
 const AppDetail: Component = () => {
 	const params = useParams();
@@ -98,7 +99,8 @@ const AppDetail: Component = () => {
 		fetchCertificate,
 	);
 
-	const [containers] = createResource(fetchContainers);
+	const [containers, { refetch: refetchContainers }] =
+		createResource(fetchContainers);
 	const [selectedContainer, setSelectedContainer] = createSignal("");
 
 	const appContainers = createMemo(() =>
@@ -108,9 +110,33 @@ const AppDetail: Component = () => {
 	);
 
 	createEffect(() => {
+		if (
+			selectedContainer() &&
+			!appContainers().some((container) => container.id === selectedContainer())
+		) {
+			setSelectedContainer("");
+		}
+
 		if (!selectedContainer() && appContainers().length > 0) {
 			setSelectedContainer(appContainers()[0].id);
 		}
+	});
+
+	createEffect(() => {
+		const items = deployments();
+		if (
+			!items ||
+			!items.some((deployment) => isLiveDeployment(deployment.status))
+		) {
+			return;
+		}
+
+		const interval = setInterval(() => {
+			refetchDeployments();
+			refetchContainers();
+		}, 3000);
+
+		onCleanup(() => clearInterval(interval));
 	});
 
 	const [reissuing, setReissuing] = createSignal(false);
@@ -288,6 +314,37 @@ const AppDetail: Component = () => {
 
 	const domainsToText = (domains: string[]) => domains.join("\n");
 
+	const selectPrimaryServiceIndex = (currentApp: App) => {
+		if (!currentApp.services || currentApp.services.length === 0) {
+			return -1;
+		}
+
+		const explicitIndex = currentApp.services.findIndex(
+			(service) => service.expose_http,
+		);
+		if (explicitIndex >= 0) {
+			return explicitIndex;
+		}
+
+		const webIndex = currentApp.services.findIndex(
+			(service) => service.name === "web",
+		);
+		if (webIndex >= 0) {
+			return webIndex;
+		}
+
+		return 0;
+	};
+
+	const isPrimaryService = (currentApp: App, serviceId: string) => {
+		const primaryServiceIndex = selectPrimaryServiceIndex(currentApp);
+		if (primaryServiceIndex < 0) {
+			return false;
+		}
+
+		return currentApp.services[primaryServiceIndex]?.id === serviceId;
+	};
+
 	const appDomains = createMemo(() => {
 		const current = app();
 		if (!current) return [];
@@ -342,7 +399,11 @@ const AppDetail: Component = () => {
 	const openEditModal = () => {
 		const currentApp = app();
 		if (currentApp) {
-			const primaryService = currentApp.services?.[0];
+			const primaryServiceIndex = selectPrimaryServiceIndex(currentApp);
+			const primaryService =
+				primaryServiceIndex >= 0
+					? currentApp.services?.[primaryServiceIndex]
+					: undefined;
 			const domains =
 				currentApp.domains && currentApp.domains.length > 0
 					? currentApp.domains
@@ -402,19 +463,42 @@ const AppDetail: Component = () => {
 	};
 
 	const buildServiceUpdateBody = (currentApp: App) => {
+		const form = editForm();
+
 		if (!currentApp.services || currentApp.services.length === 0) {
-			return undefined;
+			if (form.replicas <= 1) {
+				return undefined;
+			}
+
+			return [
+				{
+					name: "web",
+					image: null,
+					port: form.port,
+					expose_http: true,
+					additional_ports: null,
+					replicas: form.replicas,
+					memory_limit_mb: null,
+					cpu_limit: null,
+					depends_on: null,
+					health_check: null,
+					restart_policy: "always",
+					mounts: null,
+				},
+			];
 		}
 
-		const form = editForm();
+		const primaryServiceIndex = selectPrimaryServiceIndex(currentApp);
 
 		return currentApp.services.map((service, index) => ({
 			name: service.name,
 			image: service.image || null,
-			port: index === 0 ? form.port : service.port,
+			port: index === primaryServiceIndex ? form.port : service.port,
+			expose_http: service.expose_http,
 			additional_ports:
 				service.additional_ports.length > 0 ? service.additional_ports : null,
-			replicas: index === 0 ? form.replicas : service.replicas,
+			replicas:
+				index === primaryServiceIndex ? form.replicas : service.replicas,
 			memory_limit_mb: service.memory_limit_mb,
 			cpu_limit: service.cpu_limit,
 			depends_on: service.depends_on.length > 0 ? service.depends_on : null,
@@ -465,6 +549,7 @@ const AppDetail: Component = () => {
 			setEditing(false);
 			refetchApp();
 			refetchCertificate();
+			refetchContainers();
 		} catch (err) {
 			console.error(err);
 		} finally {
@@ -663,6 +748,7 @@ const AppDetail: Component = () => {
 			if (error) throw error;
 
 			refetchDeployments();
+			refetchContainers();
 		} catch (err) {
 			console.error(err);
 			if (typeof err === "object" && err && "error" in err) {
@@ -683,7 +769,7 @@ const AppDetail: Component = () => {
 	};
 
 	const deleteApp = async () => {
-		if (!confirm("are you sure you want to delete this app?")) {
+		if (!confirm("are you sure you want to delete this project?")) {
 			return;
 		}
 
@@ -694,7 +780,7 @@ const AppDetail: Component = () => {
 			});
 			if (error) throw error;
 
-			navigate("/");
+			navigate("/projects");
 		} catch (err) {
 			console.error(err);
 			setDeleting(false);
@@ -889,6 +975,11 @@ const AppDetail: Component = () => {
 													<span class="text-black text-sm font-medium">
 														{service.name}
 													</span>
+													<Show when={isPrimaryService(app()!, service.id)}>
+														<span class="text-xs text-neutral-500">
+															public http
+														</span>
+													</Show>
 													<span class="text-xs text-neutral-400">
 														:{service.port}
 														<Show when={service.additional_ports.length > 0}>
@@ -1084,7 +1175,7 @@ const AppDetail: Component = () => {
 						</Show>
 						<Show when={appContainers().length === 0}>
 							<div class="border border-dashed border-neutral-200 p-8 text-center text-neutral-400 text-sm">
-								no running containers for this app
+								no running containers for this project
 							</div>
 						</Show>
 					</div>
@@ -1156,7 +1247,7 @@ const AppDetail: Component = () => {
 				<div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">
 					<div class="bg-white border border-neutral-300 w-full max-w-2xl max-h-[90vh] flex flex-col">
 						<div class="border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
-							<h2 class="text-lg font-serif text-black">app settings</h2>
+							<h2 class="text-lg font-serif text-black">project settings</h2>
 							<button
 								onClick={() => setEditing(false)}
 								class="text-neutral-400 hover:text-black"
@@ -1187,7 +1278,7 @@ const AppDetail: Component = () => {
 								<Show when={editDomains().length > 0}>
 									<div class="mb-4">
 										<p class="text-xs text-neutral-500 mb-2">
-											your app is publicly available at:
+											your project is publicly available at:
 										</p>
 										<div class="space-y-2">
 											<For each={editDomains()}>
@@ -1416,10 +1507,10 @@ const AppDetail: Component = () => {
 								</Show>
 							</section>
 
-							{/* app config */}
+							{/* project config */}
 							<section class="border border-neutral-200 p-4">
 								<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-4">
-									app config
+									project config
 								</h3>
 
 								<div class="grid grid-cols-2 gap-4">

@@ -104,6 +104,7 @@ use crate::handlers::{
         containers::list_containers,
         containers::get_container_status,
         containers::get_container_logs,
+        containers::issue_exec_token,
         containers::list_container_mounts,
         containers::list_volume_entries,
         containers::delete_volume_entry,
@@ -177,6 +178,7 @@ use crate::handlers::{
             containers::ContainerListItem,
             containers::ContainerStatusResponse,
             containers::ContainerLogsResponse,
+            containers::ExecTokenResponse,
             containers::ContainerMountResponse,
             containers::VolumeEntry,
         )

@@ -173,6 +173,57 @@ pub async fn run_server(
             "/api/apps/{app_id}/deployments/{id}/logs/ws",
             get(websocket::deployment_logs_ws),
         )
+        // project aliases
+        .route("/api/projects", get(apps::list_apps))
+        .route("/api/projects", post(apps::create_app))
+        .route("/api/projects/{id}", get(apps::get_app))
+        .route("/api/projects/{id}", put(apps::update_app))
+        .route("/api/projects/{id}", delete(apps::delete_app))
+        .route("/api/projects/{id}/metrics", get(apps::get_app_metrics))
+        .route(
+            "/api/projects/{id}/services/{service_name}/mounts/backup",
+            get(apps::backup_service_mounts),
+        )
+        .route(
+            "/api/projects/{id}/services/{service_name}/mounts/restore",
+            post(apps::restore_service_mounts),
+        )
+        .route(
+            "/api/projects/{id}/deployments",
+            get(deployments::list_deployments),
+        )
+        .route(
+            "/api/projects/{id}/deployments",
+            post(deployments::trigger_deployment),
+        )
+        .route(
+            "/api/projects/{app_id}/deployments/{id}",
+            get(deployments::get_deployment),
+        )
+        .route(
+            "/api/projects/{app_id}/deployments/{id}/rollback",
+            post(deployments::rollback_deployment),
+        )
+        .route(
+            "/api/projects/{app_id}/deployments/{id}/logs",
+            get(deployments::get_deployment_logs),
+        )
+        .route(
+            "/api/projects/{id}/certificate",
+            get(certificates::get_certificate),
+        )
+        .route(
+            "/api/projects/{id}/certificate/reissue",
+            post(certificates::reissue_certificate),
+        )
+        .route(
+            "/api/projects/{id}/logs/ws",
+            get(websocket::container_logs_ws),
+        )
+        .route(
+            "/api/projects/{app_id}/deployments/{id}/logs/ws",
+            get(websocket::deployment_logs_ws),
+        )
         // containers
         .route("/api/containers", get(containers::list_containers))
         .route(
@@ -182,6 +233,10 @@ pub async fn run_server(
         .route(
             "/api/containers/{id}/logs",
             get(containers::get_container_logs),
+        )
+        .route(
+            "/api/containers/{id}/exec/token",
+            post(containers::issue_exec_token),
         )
         .route(
             "/api/containers/{id}/exec/ws",

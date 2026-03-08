@@ -332,6 +332,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/containers/{id}/exec/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["issue_exec_token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/containers/{id}/files": {
         parameters: {
             query?: never;
@@ -1239,6 +1255,10 @@ export interface components {
             /** @description error message */
             error: string;
         };
+        ExecTokenResponse: {
+            expires_at: string;
+            token: string;
+        };
         /** @description export request */
         ExportRequest: {
             /** Format: uuid */
@@ -1468,6 +1488,8 @@ export interface components {
             depends_on?: string[] | null;
             /** @description entrypoint override */
             entrypoint?: string[] | null;
+            /** @description whether this service receives public http traffic */
+            expose_http?: boolean | null;
             health_check?: null | components["schemas"]["HealthCheckRequest"];
             /** @description docker image (empty = use built image) */
             image?: string | null;
@@ -1511,6 +1533,8 @@ export interface components {
             depends_on: string[];
             /** @description entrypoint override */
             entrypoint: string[];
+            /** @description whether this service receives public http traffic */
+            expose_http: boolean;
             health_check?: null | components["schemas"]["HealthCheckResponse"];
             /** @description service id */
             id: string;
@@ -2826,6 +2850,47 @@ export interface operations {
             };
             /** @description unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    issue_exec_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description container id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description short-lived exec token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecTokenResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4557,6 +4622,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     update_settings: {
@@ -4583,6 +4657,15 @@ export interface operations {
             };
             /** @description unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4628,6 +4711,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     get_system_stats: {
@@ -4646,6 +4738,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemStats"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
