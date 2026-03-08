@@ -9,6 +9,9 @@ current context:
   branded tab icon in production builds
 - the checked-in web pnpm lockfile is now synced with the declared frontend
   dependencies again so release builds pass the repo's frozen-lockfile step
+- `mise` now exposes `deploy-prod` and `release-prod` tasks that build a clean
+  detached worktree for a chosen commit, deploy the release binary to the vps,
+  restart `containr.service`, and verify the dashboard and favicon urls
 - the app detail container monitor now refetches `/api/containers` while a deployment is live, so
   newly started or replaced app replicas show up without requiring a hard page reload
 - app container list entries now include replica ordinals when a service has more than one replica,
@@ -87,6 +90,8 @@ pending tasks:
 - add regression coverage for github app deployment source resolution with derived encryption keys and legacy-secret fallback
 - add migration/import tooling if existing sled installs need a one-step move into sqlite metadata storage
 - add a rustfs bucket verification/read-path in the api so the ui can inspect objects directly instead of only showing stored size metadata
+- add a rollback-friendly prod release task that can redeploy or revert to a
+  chosen binary backup without manual ssh steps
 
 important decisions:
 - keep the runtime compatible during rename by accepting `CONTAINR_ENCRYPTION_KEY` first and
@@ -120,6 +125,9 @@ important decisions:
   instead of a line-oriented command runner
 - keep manual public exposure changes as persisted service metadata even when the service is stopped, and only restart if a container is already active
 - standardize frontend builds on mise-managed node and pnpm instead of bun, nvm, or standalone pnpm path setup
+- keep prod release automation in repo-local `mise` tasks and shell scripts so
+  deploys always build from a committed clean worktree instead of the dirty
+  local tree
 
 architectural notes:
 - the metadata layer now dispatches through a backend trait, with sled preserving legacy behavior and sqlite using typed relational tables plus child tables for nested collections
@@ -167,3 +175,7 @@ architectural notes:
   hardening follow-up
 - the vps at 100.109.217.118 is still on the sled metadata backend, but it now runs a local rustfs container on 127.0.0.1:9000 and passed an end-to-end bucket/db/queue smoke test on 2026-03-07
 - frontend dependency installation and vite builds now assume `mise exec -- pnpm ...` with the repo-pinned node/pnpm toolchain
+- prod release automation defaults to `root@100.109.217.118`, uploads
+  `/usr/local/bin/containr`, restarts `containr.service`, and verifies
+  `https://adm.svk77.com/` plus `/favicon.svg`, with env vars available to
+  override each target
