@@ -7,6 +7,8 @@ current context:
   explicit show/copy controls for passwords and connection strings
 - the frontend now ships a dedicated svg favicon so the dashboard has a stable
   branded tab icon in production builds
+- the checked-in web pnpm lockfile is now synced with the declared frontend
+  dependencies again so release builds pass the repo's frozen-lockfile step
 - the app detail container monitor now refetches `/api/containers` while a deployment is live, so
   newly started or replaced app replicas show up without requiring a hard page reload
 - app container list entries now include replica ordinals when a service has more than one replica,
