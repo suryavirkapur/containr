@@ -41,6 +41,9 @@ current context:
 - the managed database detail header now includes a dedicated restart control
   backed by `POST /api/databases/{id}/restart`, which performs a server-side
   stop/start cycle and persists the resulting database state
+- pgdog proxy startup now uses an explicit `/usr/local/bin/pgdog` entrypoint
+  with separate config/user arguments, so enabling the postgres proxy no
+  longer causes docker to try executing `--config` as the container binary
 - container ownership checks now accept the persisted docker ids for managed
   services and latest deployments, so exec/log endpoints keep working even when
   the caller passes a raw docker id instead of a containr-style name
@@ -172,6 +175,9 @@ important decisions:
 - implement database restart as a dedicated backend operation instead of making
   the frontend issue separate stop and start requests, so failed restarts still
   persist the updated managed service state cleanly
+- when overriding pgdog startup arguments, keep the executable in docker
+  `entrypoint` and pass only flags in `cmd`, because the image does not define
+  its own entrypoint and its default command is the pgdog binary path
 - bootstrap the oldest existing user to admin on upgrade instead of leaving the
   global settings surface writable by any authenticated account
 - isolate local database backup browsing and downloads by database id and
