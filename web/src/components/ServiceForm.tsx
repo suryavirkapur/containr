@@ -14,6 +14,9 @@ export interface Service {
 	cpu_limit: number | null;
 	depends_on: string[];
 	health_check_path: string;
+	health_check_interval_secs: number;
+	health_check_timeout_secs: number;
+	health_check_retries: number;
 	restart_policy: string;
 	registry_auth: ServiceRegistryAuth | null;
 	command: string[];
@@ -49,6 +52,9 @@ export function createEmptyService(): Service {
 		cpu_limit: null,
 		depends_on: [],
 		health_check_path: "",
+		health_check_interval_secs: 30,
+		health_check_timeout_secs: 5,
+		health_check_retries: 3,
 		restart_policy: "always",
 		registry_auth: null,
 		command: [],
@@ -366,6 +372,60 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 							}
 							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
 							placeholder="/health"
+						/>
+					</div>
+
+					<div>
+						<label class="block text-neutral-600 text-xs mb-1">
+							health interval (s)
+						</label>
+						<input
+							type="number"
+							min="1"
+							value={props.service.health_check_interval_secs}
+							onInput={(e) =>
+								updateField(
+									"health_check_interval_secs",
+									parseInt(e.currentTarget.value, 10) || 30,
+								)
+							}
+							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+						/>
+					</div>
+
+					<div>
+						<label class="block text-neutral-600 text-xs mb-1">
+							health timeout (s)
+						</label>
+						<input
+							type="number"
+							min="1"
+							value={props.service.health_check_timeout_secs}
+							onInput={(e) =>
+								updateField(
+									"health_check_timeout_secs",
+									parseInt(e.currentTarget.value, 10) || 5,
+								)
+							}
+							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+						/>
+					</div>
+
+					<div>
+						<label class="block text-neutral-600 text-xs mb-1">
+							health retries
+						</label>
+						<input
+							type="number"
+							min="1"
+							value={props.service.health_check_retries}
+							onInput={(e) =>
+								updateField(
+									"health_check_retries",
+									parseInt(e.currentTarget.value, 10) || 3,
+								)
+							}
+							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
 						/>
 					</div>
 

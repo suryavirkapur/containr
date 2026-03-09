@@ -4,7 +4,13 @@ import ServiceForm, {
 	Service,
 	createEmptyService,
 } from "../components/ServiceForm";
+import EnvVarEditor from "../components/EnvVarEditor";
 import { api, components } from "../api";
+import {
+	EditableEnvVar,
+	ensureSinglePublicHttpService,
+	mapServiceToRequest,
+} from "../utils/projectEditor";
 
 type GithubAppStatus = components["schemas"]["GithubAppStatusResponse"];
 type RepoInfo = components["schemas"]["RepoInfo"];
@@ -44,6 +50,7 @@ const NewApp: Component = () => {
 	const [singleContainerReplicas, setSingleContainerReplicas] =
 		createSignal("1");
 	const [services, setServices] = createSignal<Service[]>([]);
+	const [envVars, setEnvVars] = createSignal<EditableEnvVar[]>([]);
 	const [error, setError] = createSignal("");
 	const [loading, setLoading] = createSignal(false);
 	const [useRepoPicker, setUseRepoPicker] = createSignal(true);
@@ -98,25 +105,13 @@ const NewApp: Component = () => {
 	const updateService = (index: number, service: Service) => {
 		const updated = [...services()];
 		updated[index] = service;
-		if (service.expose_http) {
-			for (let i = 0; i < updated.length; i += 1) {
-				if (i !== index) {
-					updated[i] = { ...updated[i], expose_http: false };
-				}
-			}
-		}
-		if (!updated.some((entry) => entry.expose_http) && updated.length > 0) {
-			updated[0] = { ...updated[0], expose_http: true };
-		}
-		setServices(updated);
+		setServices(ensureSinglePublicHttpService(updated));
 	};
 
 	const removeService = (index: number) => {
-		const updated = services().filter((_, i) => i !== index);
-		if (!updated.some((entry) => entry.expose_http) && updated.length > 0) {
-			updated[0] = { ...updated[0], expose_http: true };
-		}
-		setServices(updated);
+		setServices(
+			ensureSinglePublicHttpService(services().filter((_, i) => i !== index)),
+		);
 	};
 
 	const handleSubmit = async (e: Event) => {
@@ -139,47 +134,17 @@ const NewApp: Component = () => {
 				domains,
 				domain: domains[0] || null,
 			};
+			if (envVars().length > 0) {
+				body.env_vars = envVars();
+			}
 
-			if (useMultiService() && services().length > 0) {
-				// multi-container mode
-				body.services = services().map((s) => ({
-					name: s.name,
-					image: s.image || null,
-					port: s.port,
-					expose_http: s.expose_http,
-					additional_ports:
-						s.additional_ports.length > 0 ? s.additional_ports : null,
-					replicas: s.replicas,
-					memory_limit_mb: s.memory_limit_mb,
-					cpu_limit: s.cpu_limit,
-					depends_on: s.depends_on.length > 0 ? s.depends_on : null,
-					health_check: s.health_check_path
-						? { path: s.health_check_path }
-						: null,
-					restart_policy: s.restart_policy,
-					registry_auth:
-						s.registry_auth &&
-						(s.registry_auth.username ||
-							s.registry_auth.password ||
-							s.registry_auth.server)
-							? {
-									server: s.registry_auth.server || null,
-									username: s.registry_auth.username || null,
-									password: s.registry_auth.password || null,
-								}
-							: null,
-					command: s.command.length > 0 ? s.command : null,
-					entrypoint: s.entrypoint.length > 0 ? s.entrypoint : null,
-					working_dir: s.working_dir.trim() ? s.working_dir.trim() : null,
-					mounts:
-						s.mounts.length > 0
-							? s.mounts.map((mount) => ({
-									name: mount.name,
-									target: mount.target,
-									read_only: mount.read_only,
-								}))
-							: null,
-				}));
+			if (useMultiService()) {
+				if (services().length === 0) {
+					throw new Error("add at least one service");
+				}
+				body.services = ensureSinglePublicHttpService(services()).map(
+					mapServiceToRequest,
+				);
 			} else {
 				if (parsedReplicas > 1) {
 					body.services = [
@@ -378,6 +343,8 @@ const NewApp: Component = () => {
 							and http will be refused until ready
 						</p>
 					</div>
+
+					<EnvVarEditor envVars={envVars()} onChange={setEnvVars} />
 
 					{/* multi-service toggle */}
 					<div class="border-t border-neutral-100 pt-6">
