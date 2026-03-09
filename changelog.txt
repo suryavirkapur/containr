@@ -34,6 +34,8 @@ changelog
 - promote the shared app model to a first-class `project` type, add dedicated
   `/api/projects` handlers and openapi operations, and switch the solidjs
   project pages to the project api while keeping legacy app compatibility
+- remove the dead duplicate frontend embed/build path from `containr-proxy` so
+  the dashboard bundle is only built into and served by `containr-api`
 - accept stored docker container ids during container ownership checks so
   terminal and other container endpoints work for managed databases and queues
 

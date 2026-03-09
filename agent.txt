@@ -35,6 +35,9 @@ current context:
   the dedicated `/api/projects` handlers now own the documented project api
 - the solidjs dashboard, project create flow, and project detail page now call
   `/api/projects` directly instead of using the legacy `/api/apps` endpoints
+- the dashboard frontend is now intended to live only in `containr-api`; the
+  proxy still forwards the base hostname to the api, but the old proxy-side
+  embedded frontend/build path is being removed as dead duplicate code
 - container ownership checks now accept the persisted docker ids for managed
   services and latest deployments, so exec/log endpoints keep working even when
   the caller passes a raw docker id instead of a containr-style name
@@ -160,6 +163,9 @@ important decisions:
 - treat `project` as the canonical shared model now, but keep `App = Project`
   and the existing `apps` sqlite table and legacy `/api/apps` routes as
   compatibility shims for older clients and deployed state
+- keep the dashboard bundle embedded only in `containr-api`, since the base
+  dashboard hostname already proxies straight to the api and the proxy-side
+  rust-embed copy only duplicated build time and binary size
 - bootstrap the oldest existing user to admin on upgrade instead of leaving the
   global settings surface writable by any authenticated account
 - isolate local database backup browsing and downloads by database id and
