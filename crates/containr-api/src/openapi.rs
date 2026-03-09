@@ -93,6 +93,7 @@ use crate::handlers::{
         databases::delete_database,
         databases::start_database,
         databases::stop_database,
+        databases::restart_database,
         databases::get_database_logs,
         databases::expose_database,
         databases::configure_pitr,

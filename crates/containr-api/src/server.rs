@@ -277,6 +277,10 @@ pub async fn run_server(
         .route("/api/databases/{id}/start", post(databases::start_database))
         .route("/api/databases/{id}/stop", post(databases::stop_database))
         .route(
+            "/api/databases/{id}/restart",
+            post(databases::restart_database),
+        )
+        .route(
             "/api/databases/{id}/logs",
             get(databases::get_database_logs),
         )
