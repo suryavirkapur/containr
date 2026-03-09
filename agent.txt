@@ -1,4 +1,11 @@
 current context:
+- the project creation flow now uses a render-style single-service-first page with
+  pre-selected web service type, explicit "expose to web" checkbox, collapsed
+  advanced settings, and a "create and deploy" action that sends a single-element
+  services array to the backend
+- user-facing terminology changed from "groups" to "services" across the dashboard,
+  navigation, and creation page, while the backend api and routes still use the
+  existing project/app model unchanged
 - managed database creation now provisions and starts the container during
   `POST /api/databases`, and failed startup attempts are persisted as failed
   resources instead of returning a successful create without a real database
