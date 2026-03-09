@@ -32,11 +32,10 @@ const Dashboard: Component = () => {
 			<div class="flex justify-between items-center mb-10">
 				<div>
 					<h1 class="text-3xl font-serif font-medium text-black">
-						your groups
+						your services
 					</h1>
 					<p class="text-neutral-500 mt-1 text-sm font-light">
-						each group keeps related services together while each service owns
-						its own routing
+						deploy and manage your containerized services
 					</p>
 				</div>
 				<A href="/projects/new">
@@ -54,7 +53,7 @@ const Dashboard: Component = () => {
 								d="M12 4v16m8-8H4"
 							/>
 						</svg>
-						new group
+						new service
 					</Button>
 				</A>
 			</div>
@@ -91,12 +90,12 @@ const Dashboard: Component = () => {
 							/>
 						</svg>
 					</div>
-					<h3 class="text-lg font-serif text-black mb-2">no groups yet</h3>
+					<h3 class="text-lg font-serif text-black mb-2">no services yet</h3>
 					<p class="text-neutral-500 mb-6 text-sm font-light">
-						create a group and define one or more services from a repository
+						deploy your first service from a repository
 					</p>
 					<A href="/projects/new">
-						<Button>create new group</Button>
+						<Button>deploy your first service</Button>
 					</A>
 				</div>
 			</Show>

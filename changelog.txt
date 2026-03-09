@@ -1,6 +1,11 @@
 changelog
 =========
 
+0.1.12-alpha - 2026-03-09
+- redesign the project creation flow into a render-style single-service-first page with pre-selected web service type, explicit "expose to web" checkbox, collapsed advanced settings, and a simplified "create and deploy" action
+- rename user-facing "group" terminology to "services" across the dashboard header, navigation, empty state, and creation page
+- collapse build settings, runtime configuration, and environment variables into an expandable advanced section during service creation instead of showing them in multi-tab service forms
+
 0.1.11-alpha - 2026-03-09
 - add first-class render-style service types (`web_service`, `private_service`, and `background_worker`) to the shared project model, sqlite persistence, api schema, generated client, deployment worker, and project forms
 - rebuild project creation around a render-style source-first flow with explicit service-type cards, immediate first deploy messaging, and service build/runtime/storage editing from the start
