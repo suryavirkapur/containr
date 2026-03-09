@@ -1,37 +1,18 @@
 import { components } from "../api";
 import { Service, createEmptyService } from "../components/ServiceForm";
+import { EditableKeyValueEntry } from "./keyValueEntries";
 
 export const secretMask = "********";
 
 type ServiceResponse = components["schemas"]["ServiceResponse"];
 
-export interface EditableEnvVar {
-	key: string;
-	value: string;
-	secret: boolean;
-}
+export type EditableEnvVar = EditableKeyValueEntry;
 
 export function createPrimaryService(): Service {
 	const service = createEmptyService();
 	service.name = "web";
 	service.expose_http = true;
 	return service;
-}
-
-export function ensureSinglePublicHttpService(services: Service[]): Service[] {
-	if (services.length === 0) {
-		return services;
-	}
-
-	let exposedIndex = services.findIndex((service) => service.expose_http);
-	if (exposedIndex < 0) {
-		exposedIndex = 0;
-	}
-
-	return services.map((service, index) => ({
-		...service,
-		expose_http: index === exposedIndex,
-	}));
 }
 
 export function mapServiceResponseToForm(service: ServiceResponse): Service {
@@ -57,6 +38,11 @@ export function mapServiceResponseToForm(service: ServiceResponse): Service {
 					password: secretMask,
 				}
 			: null,
+		env_vars: service.env_vars.map((entry) => ({ ...entry })),
+		build_context: service.build_context ?? "",
+		dockerfile_path: service.dockerfile_path ?? "",
+		build_target: service.build_target ?? "",
+		build_args: service.build_args.map((entry) => ({ ...entry })),
 		command: [...service.command],
 		entrypoint: [...service.entrypoint],
 		working_dir: service.working_dir ?? "",
@@ -72,6 +58,9 @@ export function mapServiceToRequest(service: Service) {
 	const image = service.image.trim();
 	const workingDir = service.working_dir.trim();
 	const healthCheckPath = service.health_check_path.trim();
+	const buildContext = service.build_context.trim();
+	const dockerfilePath = service.dockerfile_path.trim();
+	const buildTarget = service.build_target.trim();
 	const registryAuth =
 		service.registry_auth &&
 		(service.registry_auth.server.trim() ||
@@ -105,6 +94,11 @@ export function mapServiceToRequest(service: Service) {
 			: null,
 		restart_policy: normalizeRestartPolicy(service.restart_policy),
 		registry_auth: registryAuth,
+		env_vars: service.env_vars.length > 0 ? service.env_vars : null,
+		build_context: buildContext || null,
+		dockerfile_path: dockerfilePath || null,
+		build_target: buildTarget || null,
+		build_args: service.build_args.length > 0 ? service.build_args : null,
 		command: service.command.length > 0 ? service.command : null,
 		entrypoint: service.entrypoint.length > 0 ? service.entrypoint : null,
 		working_dir: workingDir || null,

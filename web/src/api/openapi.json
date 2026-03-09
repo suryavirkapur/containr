@@ -7081,6 +7081,30 @@
             },
             "description": "additional container ports"
           },
+          "build_args": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/EnvVarRequest"
+            },
+            "description": "docker build arguments"
+          },
+          "build_context": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "relative repo path used as the docker build context"
+          },
+          "build_target": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "docker build target stage"
+          },
           "command": {
             "type": [
               "array",
@@ -7109,6 +7133,13 @@
             },
             "description": "service names this depends on"
           },
+          "dockerfile_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "relative path to the dockerfile within the repo"
+          },
           "entrypoint": {
             "type": [
               "array",
@@ -7118,6 +7149,16 @@
               "type": "string"
             },
             "description": "entrypoint override"
+          },
+          "env_vars": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/EnvVarRequest"
+            },
+            "description": "service-specific environment variables"
           },
           "expose_http": {
             "type": [
@@ -7222,6 +7263,8 @@
           "replicas",
           "depends_on",
           "restart_policy",
+          "env_vars",
+          "build_args",
           "command",
           "entrypoint",
           "mounts"
@@ -7235,6 +7278,27 @@
               "minimum": 0
             },
             "description": "additional container ports"
+          },
+          "build_args": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnvVarResponse"
+            },
+            "description": "docker build arguments"
+          },
+          "build_context": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "relative repo path used as the docker build context"
+          },
+          "build_target": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "docker build target stage"
           },
           "command": {
             "type": "array",
@@ -7258,12 +7322,26 @@
             },
             "description": "dependencies"
           },
+          "dockerfile_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "relative path to the dockerfile within the repo"
+          },
           "entrypoint": {
             "type": "array",
             "items": {
               "type": "string"
             },
             "description": "entrypoint override"
+          },
+          "env_vars": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnvVarResponse"
+            },
+            "description": "service-specific environment variables"
           },
           "expose_http": {
             "type": "boolean",

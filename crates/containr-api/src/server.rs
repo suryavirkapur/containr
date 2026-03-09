@@ -18,6 +18,7 @@ use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
+use crate::deployment_source::resolve_source_deployment_source;
 use crate::github::DeploymentJob;
 use crate::handlers::{
     apps, auth, certificates, containers, databases, deployments, github_app, github_repos, health,
@@ -25,6 +26,7 @@ use crate::handlers::{
 };
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
+use containr_common::models::{App, Deployment, DeploymentStatus};
 use containr_common::{Config, Database, Result};
 
 /// runs the api server
@@ -47,6 +49,7 @@ pub async fn run_server(
         tx,
         cert_request_tx,
     );
+    let replay_state = state.clone();
     let config_snapshot = config.read().await.clone();
 
     // cors layer
@@ -355,5 +358,129 @@ pub async fn run_server(
         axum::serve(listener, app).await.unwrap();
     });
 
+    tokio::spawn(async move {
+        replay_interrupted_deployments(replay_state).await;
+    });
+
     Ok(rx)
+}
+
+async fn replay_interrupted_deployments(state: AppState) {
+    let interrupted = match collect_interrupted_deployments(&state.db) {
+        Ok(interrupted) => interrupted,
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                "failed to enumerate interrupted deployments for startup replay"
+            );
+            return;
+        }
+    };
+
+    if interrupted.is_empty() {
+        return;
+    }
+
+    tracing::warn!(
+        count = interrupted.len(),
+        "replaying interrupted deployments after containr restart"
+    );
+
+    for (app, deployment) in interrupted {
+        if let Err(error) = replay_deployment_job(&state, &app, &deployment).await {
+            tracing::warn!(
+                app_id = %app.id,
+                deployment_id = %deployment.id,
+                error = %error,
+                "failed to replay interrupted deployment"
+            );
+            mark_replayed_deployment_failed(&state.db, deployment.id, &error.to_string());
+        }
+    }
+}
+
+fn collect_interrupted_deployments(db: &Database) -> Result<Vec<(App, Deployment)>> {
+    let mut interrupted = Vec::new();
+
+    for app in db.list_apps()? {
+        let mut deployments = db.list_deployments_by_app(app.id)?;
+        deployments.sort_by_key(|deployment| deployment.created_at);
+
+        for deployment in deployments {
+            if is_interrupted_deployment_status(deployment.status) {
+                interrupted.push((app.clone(), deployment));
+            }
+        }
+    }
+
+    interrupted.sort_by_key(|(_, deployment)| deployment.created_at);
+    Ok(interrupted)
+}
+
+async fn replay_deployment_job(
+    state: &AppState,
+    app: &App,
+    deployment: &Deployment,
+) -> anyhow::Result<()> {
+    let source_url = deployment
+        .source_url
+        .clone()
+        .unwrap_or_else(|| app.github_url.clone());
+    let source = resolve_source_deployment_source(state, app.owner_id, &source_url)
+        .await
+        .map_err(|(status, error)| {
+            anyhow::anyhow!(
+                "source recovery failed with status {}: {}",
+                status,
+                error.error
+            )
+        })?;
+
+    state
+        .db
+        .append_deployment_log(deployment.id, "deployment requeued after containr restart")?;
+
+    let job = DeploymentJob {
+        deployment_id: deployment.id,
+        app_id: app.id,
+        commit_sha: deployment.commit_sha.clone(),
+        commit_message: deployment.commit_message.clone(),
+        branch: deployment.branch.clone(),
+        source,
+        rollout_strategy: deployment.rollout_strategy,
+        rollback_from_deployment_id: deployment.rollback_from_deployment_id,
+    };
+
+    state
+        .deployment_tx
+        .send(job)
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to requeue deployment: {}", error))?;
+
+    Ok(())
+}
+
+fn mark_replayed_deployment_failed(db: &Database, deployment_id: uuid::Uuid, message: &str) {
+    let Ok(Some(mut deployment)) = db.get_deployment(deployment_id) else {
+        return;
+    };
+
+    deployment.status = DeploymentStatus::Failed;
+    deployment.finished_at = Some(chrono::Utc::now());
+    let _ = db.append_deployment_log(
+        deployment.id,
+        &format!("startup replay failed: {}", message),
+    );
+    let _ = db.save_deployment(&deployment);
+}
+
+fn is_interrupted_deployment_status(status: DeploymentStatus) -> bool {
+    matches!(
+        status,
+        DeploymentStatus::Pending
+            | DeploymentStatus::Cloning
+            | DeploymentStatus::Building
+            | DeploymentStatus::Pushing
+            | DeploymentStatus::Starting
+    )
 }

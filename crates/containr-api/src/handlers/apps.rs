@@ -23,11 +23,12 @@ use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
+use crate::handlers::deployments::create_and_queue_deployment;
 use crate::security::encrypt_value;
 use crate::state::AppState;
 use containr_common::models::{
-    App, ContainerService, EnvVar, HealthCheck, RestartPolicy, RolloutStrategy, ServiceMount,
-    ServiceRegistryAuth,
+    App, BuildArg, ContainerService, EnvVar, HealthCheck, RestartPolicy, RolloutStrategy,
+    ServiceMount, ServiceRegistryAuth,
 };
 use containr_common::Config;
 use containr_runtime::DockerContainerManager;
@@ -172,6 +173,16 @@ pub struct ServiceRequest {
     pub restart_policy: Option<String>,
     /// private registry credentials for pulling the service image
     pub registry_auth: Option<ServiceRegistryAuthRequest>,
+    /// service-specific environment variables
+    pub env_vars: Option<Vec<EnvVarRequest>>,
+    /// relative repo path used as the docker build context
+    pub build_context: Option<String>,
+    /// relative path to the dockerfile within the repo
+    pub dockerfile_path: Option<String>,
+    /// docker build target stage
+    pub build_target: Option<String>,
+    /// docker build arguments
+    pub build_args: Option<Vec<EnvVarRequest>>,
     /// command arguments override
     pub command: Option<Vec<String>>,
     /// entrypoint override
@@ -211,6 +222,16 @@ pub struct ServiceResponse {
     pub restart_policy: String,
     /// private registry credentials metadata
     pub registry_auth: Option<ServiceRegistryAuthResponse>,
+    /// service-specific environment variables
+    pub env_vars: Vec<EnvVarResponse>,
+    /// relative repo path used as the docker build context
+    pub build_context: Option<String>,
+    /// relative path to the dockerfile within the repo
+    pub dockerfile_path: Option<String>,
+    /// docker build target stage
+    pub build_target: Option<String>,
+    /// docker build arguments
+    pub build_args: Vec<EnvVarResponse>,
     /// command arguments override
     pub command: Vec<String>,
     /// entrypoint override
@@ -344,6 +365,35 @@ impl From<&App> for AppResponse {
                             username: registry_auth.username.clone(),
                         }
                     }),
+                    env_vars: s
+                        .env_vars
+                        .iter()
+                        .map(|e| EnvVarResponse {
+                            key: e.key.clone(),
+                            value: if e.secret {
+                                "********".to_string()
+                            } else {
+                                e.value.clone()
+                            },
+                            secret: e.secret,
+                        })
+                        .collect(),
+                    build_context: s.build_context.clone(),
+                    dockerfile_path: s.dockerfile_path.clone(),
+                    build_target: s.build_target.clone(),
+                    build_args: s
+                        .build_args
+                        .iter()
+                        .map(|arg| EnvVarResponse {
+                            key: arg.key.clone(),
+                            value: if arg.secret {
+                                "********".to_string()
+                            } else {
+                                arg.value.clone()
+                            },
+                            secret: arg.secret,
+                        })
+                        .collect(),
                     command: s.command.clone().unwrap_or_default(),
                     entrypoint: s.entrypoint.clone().unwrap_or_default(),
                     working_dir: s.working_dir.clone(),
@@ -536,6 +586,176 @@ fn normalize_working_dir(
     }
 }
 
+fn normalize_repo_relative_path(
+    field: &str,
+    value: Option<String>,
+    existing: Option<&str>,
+) -> Result<Option<String>, (StatusCode, Json<ErrorResponse>)> {
+    match value {
+        Some(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+
+            let path = FsPath::new(trimmed);
+            if path.is_absolute() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!("{field} must be relative to the repository root"),
+                    }),
+                ));
+            }
+
+            for component in path.components() {
+                match component {
+                    Component::Normal(_) | Component::CurDir => {}
+                    _ => {
+                        return Err((
+                            StatusCode::BAD_REQUEST,
+                            Json(ErrorResponse {
+                                error: format!(
+                                    "{field} cannot contain parent traversal or absolute components"
+                                ),
+                            }),
+                        ))
+                    }
+                }
+            }
+
+            Ok(Some(trimmed.to_string()))
+        }
+        None => Ok(existing.map(|existing| existing.to_string())),
+    }
+}
+
+fn build_service_env_vars(
+    requests: Option<Vec<EnvVarRequest>>,
+    existing: &[EnvVar],
+) -> Result<Vec<EnvVar>, (StatusCode, Json<ErrorResponse>)> {
+    let Some(requests) = requests else {
+        return Ok(existing.to_vec());
+    };
+
+    let existing_by_key = existing
+        .iter()
+        .map(|env_var| (env_var.key.clone(), env_var.clone()))
+        .collect::<HashMap<_, _>>();
+    let mut seen_keys = HashSet::new();
+    let mut env_vars = Vec::new();
+
+    for request in requests {
+        let key = request.key.trim().to_string();
+        if key.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "service env var key cannot be empty".to_string(),
+                }),
+            ));
+        }
+
+        if !seen_keys.insert(key.clone()) {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("duplicate service env var key: {}", key),
+                }),
+            ));
+        }
+
+        let existing_value = existing_by_key.get(&key);
+        let secret = request
+            .secret
+            .unwrap_or_else(|| existing_value.map(|item| item.secret).unwrap_or(false));
+        let value = if secret && request.value == "********" {
+            existing_value
+                .map(|item| item.value.clone())
+                .ok_or_else(|| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: format!(
+                                "missing original value for masked service env var {}",
+                                key
+                            ),
+                        }),
+                    )
+                })?
+        } else {
+            request.value
+        };
+
+        env_vars.push(EnvVar { key, value, secret });
+    }
+
+    Ok(env_vars)
+}
+
+fn build_service_build_args(
+    requests: Option<Vec<EnvVarRequest>>,
+    existing: &[BuildArg],
+) -> Result<Vec<BuildArg>, (StatusCode, Json<ErrorResponse>)> {
+    let Some(requests) = requests else {
+        return Ok(existing.to_vec());
+    };
+
+    let existing_by_key = existing
+        .iter()
+        .map(|build_arg| (build_arg.key.clone(), build_arg.clone()))
+        .collect::<HashMap<_, _>>();
+    let mut seen_keys = HashSet::new();
+    let mut build_args = Vec::new();
+
+    for request in requests {
+        let key = request.key.trim().to_string();
+        if key.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "service build arg key cannot be empty".to_string(),
+                }),
+            ));
+        }
+
+        if !seen_keys.insert(key.clone()) {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("duplicate service build arg key: {}", key),
+                }),
+            ));
+        }
+
+        let existing_value = existing_by_key.get(&key);
+        let secret = request
+            .secret
+            .unwrap_or_else(|| existing_value.map(|item| item.secret).unwrap_or(false));
+        let value = if secret && request.value == "********" {
+            existing_value
+                .map(|item| item.value.clone())
+                .ok_or_else(|| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: format!(
+                                "missing original value for masked service build arg {}",
+                                key
+                            ),
+                        }),
+                    )
+                })?
+        } else {
+            request.value
+        };
+
+        build_args.push(BuildArg { key, value, secret });
+    }
+
+    Ok(build_args)
+}
+
 fn build_service_registry_auth(
     config: &Config,
     existing_auth: Option<&ServiceRegistryAuth>,
@@ -660,6 +880,22 @@ fn build_services(
             service.registry_auth.as_ref(),
             request.registry_auth,
         )?;
+        service.env_vars = build_service_env_vars(request.env_vars, &service.env_vars)?;
+        service.build_context = normalize_repo_relative_path(
+            "service build context",
+            request.build_context,
+            service.build_context.as_deref(),
+        )?;
+        service.dockerfile_path = normalize_repo_relative_path(
+            "service dockerfile path",
+            request.dockerfile_path,
+            service.dockerfile_path.as_deref(),
+        )?;
+        service.build_target = match request.build_target {
+            Some(build_target) => normalize_optional_string(Some(build_target)),
+            None => service.build_target.clone(),
+        };
+        service.build_args = build_service_build_args(request.build_args, &service.build_args)?;
         service.command = normalize_optional_args(request.command, service.command.as_deref());
         service.entrypoint =
             normalize_optional_args(request.entrypoint, service.entrypoint.as_deref());
@@ -1046,6 +1282,22 @@ pub async fn create_app(
     app.ensure_service_model();
 
     state.db.save_app(&app).map_err(internal_error)?;
+
+    if let Err(error) = create_and_queue_deployment(
+        &state,
+        user_id,
+        &app,
+        "initial".to_string(),
+        Some("initial deployment".to_string()),
+        app.branch.clone(),
+        app.rollout_strategy,
+        None,
+    )
+    .await
+    {
+        let _ = state.db.delete_app(app.id);
+        return Err(error);
+    }
 
     let domains = app.custom_domains();
     if !domains.is_empty() {
@@ -1731,6 +1983,11 @@ mod tests {
                 }),
                 restart_policy: Some("always".to_string()),
                 registry_auth: None,
+                env_vars: None,
+                build_context: None,
+                dockerfile_path: None,
+                build_target: None,
+                build_args: None,
                 command: Some(vec![
                     "npm".to_string(),
                     "run".to_string(),
@@ -1863,6 +2120,11 @@ mod tests {
                     health_check: None,
                     restart_policy: None,
                     registry_auth: None,
+                    env_vars: None,
+                    build_context: None,
+                    dockerfile_path: None,
+                    build_target: None,
+                    build_args: None,
                     command: None,
                     entrypoint: None,
                     working_dir: None,
@@ -1881,6 +2143,11 @@ mod tests {
                     health_check: None,
                     restart_policy: None,
                     registry_auth: None,
+                    env_vars: None,
+                    build_context: None,
+                    dockerfile_path: None,
+                    build_target: None,
+                    build_args: None,
                     command: None,
                     entrypoint: None,
                     working_dir: None,

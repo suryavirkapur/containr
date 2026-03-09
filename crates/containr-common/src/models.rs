@@ -36,6 +36,10 @@ fn default_port() -> u16 {
     8080
 }
 
+fn default_branch_name() -> String {
+    "main".to_string()
+}
+
 pub type App = Project;
 
 impl Project {
@@ -46,7 +50,7 @@ impl Project {
             id: Uuid::new_v4(),
             name,
             github_url,
-            branch: "main".to_string(),
+            branch: default_branch_name(),
             domains: Vec::new(),
             domain: None,
             env_vars: Vec::new(),
@@ -91,6 +95,11 @@ impl Project {
             health_check: None,
             restart_policy: RestartPolicy::default(),
             registry_auth: None,
+            env_vars: Vec::new(),
+            build_context: None,
+            dockerfile_path: None,
+            build_target: None,
+            build_args: Vec::new(),
             command: None,
             entrypoint: None,
             working_dir: None,
@@ -129,6 +138,14 @@ impl Project {
 /// environment variable for an app
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvVar {
+    pub key: String,
+    pub value: String,
+    pub secret: bool,
+}
+
+/// docker build argument for a service image
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuildArg {
     pub key: String,
     pub value: String,
     pub secret: bool,
@@ -235,6 +252,16 @@ pub struct ContainerService {
     #[serde(default)]
     pub registry_auth: Option<ServiceRegistryAuth>,
     #[serde(default)]
+    pub env_vars: Vec<EnvVar>,
+    #[serde(default)]
+    pub build_context: Option<String>,
+    #[serde(default)]
+    pub dockerfile_path: Option<String>,
+    #[serde(default)]
+    pub build_target: Option<String>,
+    #[serde(default)]
+    pub build_args: Vec<BuildArg>,
+    #[serde(default)]
     pub command: Option<Vec<String>>,
     #[serde(default)]
     pub entrypoint: Option<Vec<String>>,
@@ -269,6 +296,11 @@ impl ContainerService {
             health_check: None,
             restart_policy: RestartPolicy::default(),
             registry_auth: None,
+            env_vars: Vec::new(),
+            build_context: None,
+            dockerfile_path: None,
+            build_target: None,
+            build_args: Vec::new(),
             command: None,
             entrypoint: None,
             working_dir: None,
@@ -300,6 +332,8 @@ pub struct ServiceDeployment {
     pub replica_index: u32,
     pub status: DeploymentStatus,
     pub container_id: Option<String>,
+    #[serde(default)]
+    pub image_id: Option<String>,
     pub health: ServiceHealth,
     pub logs: Vec<String>,
     pub started_at: Option<DateTime<Utc>>,
@@ -317,6 +351,7 @@ impl ServiceDeployment {
             replica_index,
             status: DeploymentStatus::Pending,
             container_id: None,
+            image_id: None,
             health: ServiceHealth::Unknown,
             logs: Vec::new(),
             started_at: None,
@@ -347,6 +382,14 @@ pub struct Deployment {
     pub app_id: Uuid,
     pub commit_sha: String,
     pub commit_message: Option<String>,
+    #[serde(default = "default_branch_name")]
+    pub branch: String,
+    #[serde(default)]
+    pub source_url: Option<String>,
+    #[serde(default)]
+    pub rollout_strategy: RolloutStrategy,
+    #[serde(default)]
+    pub rollback_from_deployment_id: Option<Uuid>,
     pub status: DeploymentStatus,
     /// deprecated: use service_deployments for multi-container apps
     pub container_id: Option<String>,
@@ -370,6 +413,10 @@ impl Deployment {
             app_id,
             commit_sha,
             commit_message: None,
+            branch: default_branch_name(),
+            source_url: None,
+            rollout_strategy: RolloutStrategy::default(),
+            rollback_from_deployment_id: None,
             status: DeploymentStatus::Pending,
             container_id: None,
             image_id: None,

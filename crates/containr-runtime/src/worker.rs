@@ -4,7 +4,7 @@
 //! building images, and starting containers.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use git2::build::RepoBuilder;
 use git2::{Cred, FetchOptions, RemoteCallbacks};
@@ -16,7 +16,7 @@ use crate::docker::{
     DockerBindMount, DockerContainerConfig, DockerContainerManager, DockerNetworkAttachment,
     INTERNAL_NETWORK_NAME,
 };
-use crate::image::{ImageManager, RegistryCredentials};
+use crate::image::{ImageBuildConfig, ImageManager, RegistryCredentials};
 use crate::route_updates::ProxyRouteUpdate;
 use containr_common::models::{
     ContainerService, Deployment, DeploymentSource, DeploymentStatus, RolloutStrategy,
@@ -145,7 +145,13 @@ impl DeploymentWorker {
             return Err(anyhow::anyhow!("deployment app mismatch"));
         }
 
-        let image_name = if let Some(source_deployment_id) = job.rollback_from_deployment_id {
+        // get app config
+        let app = self
+            .db
+            .get_app(job.app_id)?
+            .ok_or_else(|| anyhow::anyhow!("app not found"))?;
+
+        let service_images = if let Some(source_deployment_id) = job.rollback_from_deployment_id {
             let source = self
                 .db
                 .get_deployment(source_deployment_id)?
@@ -155,18 +161,14 @@ impl DeploymentWorker {
                 return Err(anyhow::anyhow!("rollback source does not belong to app"));
             }
 
-            let image = source
-                .image_id
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("rollback source missing image artifact"))?;
             let _ = self.db.append_deployment_log(
                 deployment.id,
                 &format!(
-                    "rollback: using image artifact from deployment {}",
+                    "rollback: using service image artifacts from deployment {}",
                     source.id
                 ),
             );
-            image
+            self.resolve_rollback_service_images(&app, &source)?
         } else {
             // update status to cloning
             self.update_status(&deployment, DeploymentStatus::Cloning)?;
@@ -176,34 +178,17 @@ impl DeploymentWorker {
 
             // update status to building
             self.update_status(&deployment, DeploymentStatus::Building)?;
-
-            // build docker image
-            let commit_prefix = if job.commit_sha.len() >= 8 {
-                &job.commit_sha[..8]
-            } else {
-                &job.commit_sha
-            };
-            let image_name = format!("containr/{}:{}", job.app_id, commit_prefix);
-
-            self.image_manager
-                .build_image_with_logs(&image_name, repo_path.to_str().unwrap(), None, |line| {
-                    let _ = self.db.append_deployment_log(deployment.id, line);
-                })
+            let service_images = self
+                .build_service_images(&app, &deployment, &repo_path, &job.commit_sha)
                 .await?;
 
             // cleanup repo directory
             let _ = tokio::fs::remove_dir_all(&repo_path).await;
-            image_name
+            service_images
         };
 
         // update status to starting
         self.update_status(&deployment, DeploymentStatus::Starting)?;
-
-        // get app config
-        let app = self
-            .db
-            .get_app(job.app_id)?
-            .ok_or_else(|| anyhow::anyhow!("app not found"))?;
 
         // prepare shared env vars (all services inherit these)
         let mut env_vars = HashMap::new();
@@ -222,7 +207,7 @@ impl DeploymentWorker {
             &app,
             &deployment,
             &network_name,
-            &image_name,
+            &service_images,
             &env_vars,
             job.rollout_strategy,
         )
@@ -243,7 +228,7 @@ impl DeploymentWorker {
         app: &containr_common::models::App,
         deployment: &Deployment,
         network_name: &str,
-        image_name: &str,
+        service_images: &HashMap<Uuid, String>,
         shared_env_vars: &HashMap<String, String>,
         rollout_strategy: RolloutStrategy,
     ) -> anyhow::Result<()> {
@@ -307,6 +292,9 @@ impl DeploymentWorker {
                 env_vars.insert("PORT".to_string(), service.port.to_string());
                 env_vars.insert("SERVICE_NAME".to_string(), service.name.clone());
                 env_vars.insert("REPLICA_INDEX".to_string(), replica_idx.to_string());
+                for env_var in &service.env_vars {
+                    env_vars.insert(env_var.key.clone(), env_var.value.clone());
+                }
 
                 // convert health check if configured
                 let health_check =
@@ -331,12 +319,10 @@ impl DeploymentWorker {
                     RestartPolicy::OnFailure => "on-failure".to_string(),
                 };
 
-                // use service image if specified, otherwise use built image
-                let service_image = if service.image.is_empty() {
-                    image_name.to_string()
-                } else {
-                    service.image.clone()
-                };
+                let service_image = service_images
+                    .get(&service.id)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("missing image for service {}", service.name))?;
 
                 if !service.image.is_empty() {
                     let registry_credentials = self.resolve_service_registry_auth(&service)?;
@@ -351,7 +337,7 @@ impl DeploymentWorker {
 
                 let config = DockerContainerConfig {
                     id: container_id.clone(),
-                    image: service_image,
+                    image: service_image.clone(),
                     env_vars,
                     port: service.port,
                     additional_ports: service.additional_ports.clone(),
@@ -395,6 +381,7 @@ impl DeploymentWorker {
                 // create service deployment record
                 let mut sd = ServiceDeployment::new(service.id, deployment.id, replica_idx);
                 sd.container_id = Some(container_info.id);
+                sd.image_id = Some(service_image.clone());
                 sd.status = containr_common::models::DeploymentStatus::Running;
                 sd.started_at = Some(chrono::Utc::now());
 
@@ -408,7 +395,7 @@ impl DeploymentWorker {
         let mut updated_deployment = deployment.clone();
         updated_deployment.status = containr_common::models::DeploymentStatus::Running;
         updated_deployment.service_deployments = service_deployments;
-        updated_deployment.image_id = Some(image_name.to_string());
+        updated_deployment.image_id = self.primary_deployment_image_id(service_images);
         updated_deployment.started_at = Some(chrono::Utc::now());
         updated_deployment.finished_at = Some(chrono::Utc::now());
         self.db.save_deployment(&updated_deployment)?;
@@ -430,6 +417,227 @@ impl DeploymentWorker {
         }
 
         Ok(())
+    }
+
+    async fn build_service_images(
+        &self,
+        app: &containr_common::models::App,
+        deployment: &Deployment,
+        repo_path: &Path,
+        commit_sha: &str,
+    ) -> anyhow::Result<HashMap<Uuid, String>> {
+        let commit_prefix = if commit_sha.len() >= 8 {
+            &commit_sha[..8]
+        } else {
+            commit_sha
+        };
+        let mut service_images = HashMap::new();
+        let mut built_by_key: HashMap<String, String> = HashMap::new();
+
+        for service in &app.services {
+            if !service.image.is_empty() {
+                service_images.insert(service.id, service.image.clone());
+                continue;
+            }
+
+            let build_config = self.resolve_service_build_config(repo_path, service)?;
+            let build_key = self.service_build_cache_key(service, &build_config);
+            if let Some(existing_image) = built_by_key.get(&build_key) {
+                service_images.insert(service.id, existing_image.clone());
+                continue;
+            }
+
+            let image_name = format!(
+                "containr/{}:{}-{}",
+                app.id,
+                commit_prefix,
+                self.sanitize_image_suffix(&service.name)
+            );
+            let _ = self.db.append_deployment_log(
+                deployment.id,
+                &format!("building image for service {}", service.name),
+            );
+            self.image_manager
+                .build_image_config_with_logs(&image_name, &build_config, |line| {
+                    let _ = self.db.append_deployment_log(deployment.id, line);
+                })
+                .await?;
+
+            built_by_key.insert(build_key, image_name.clone());
+            service_images.insert(service.id, image_name);
+        }
+
+        Ok(service_images)
+    }
+
+    fn resolve_service_build_config(
+        &self,
+        repo_path: &Path,
+        service: &ContainerService,
+    ) -> anyhow::Result<ImageBuildConfig> {
+        let context_rel = service.build_context.as_deref().unwrap_or(".");
+        let context_path = repo_path.join(context_rel);
+        if !context_path.exists() {
+            return Err(anyhow::anyhow!(
+                "build context {} does not exist for service {}",
+                context_rel,
+                service.name
+            ));
+        }
+        if !context_path.is_dir() {
+            return Err(anyhow::anyhow!(
+                "build context {} is not a directory for service {}",
+                context_rel,
+                service.name
+            ));
+        }
+
+        let dockerfile = match service.dockerfile_path.as_deref() {
+            Some(path) => Some(self.resolve_context_dockerfile_path(context_rel, path)?),
+            None => None,
+        };
+        if let Some(ref dockerfile) = dockerfile {
+            let dockerfile_path = context_path.join(dockerfile);
+            if !dockerfile_path.exists() {
+                return Err(anyhow::anyhow!(
+                    "dockerfile {} does not exist for service {}",
+                    dockerfile,
+                    service.name
+                ));
+            }
+        }
+
+        let build_args = service
+            .build_args
+            .iter()
+            .map(|arg| (arg.key.clone(), arg.value.clone()))
+            .collect();
+
+        Ok(ImageBuildConfig {
+            context_path: context_path.to_string_lossy().to_string(),
+            dockerfile,
+            target: service.build_target.clone(),
+            build_args,
+        })
+    }
+
+    fn resolve_context_dockerfile_path(
+        &self,
+        context_rel: &str,
+        dockerfile_path: &str,
+    ) -> anyhow::Result<String> {
+        let dockerfile = Path::new(dockerfile_path);
+        if context_rel == "." {
+            return Ok(dockerfile_path.to_string());
+        }
+
+        let context_path = Path::new(context_rel);
+        if let Ok(stripped) = dockerfile.strip_prefix(context_path) {
+            return Ok(stripped.to_string_lossy().to_string());
+        }
+
+        if dockerfile.is_absolute() {
+            return Err(anyhow::anyhow!("dockerfile path must be relative"));
+        }
+
+        Ok(dockerfile_path.to_string())
+    }
+
+    fn service_build_cache_key(
+        &self,
+        service: &ContainerService,
+        build_config: &ImageBuildConfig,
+    ) -> String {
+        let mut build_args = service
+            .build_args
+            .iter()
+            .map(|arg| format!("{}={}", arg.key, arg.value))
+            .collect::<Vec<_>>();
+        build_args.sort();
+
+        format!(
+            "{}|{}|{}|{}",
+            build_config.context_path,
+            build_config.dockerfile.clone().unwrap_or_default(),
+            build_config.target.clone().unwrap_or_default(),
+            build_args.join(";")
+        )
+    }
+
+    fn sanitize_image_suffix(&self, value: &str) -> String {
+        let sanitized = value
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                    ch
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>();
+        if sanitized.is_empty() {
+            "service".to_string()
+        } else {
+            sanitized
+        }
+    }
+
+    fn resolve_rollback_service_images(
+        &self,
+        app: &containr_common::models::App,
+        source: &Deployment,
+    ) -> anyhow::Result<HashMap<Uuid, String>> {
+        let mut source_images = HashMap::new();
+        for service_deployment in &source.service_deployments {
+            if let Some(image_id) = &service_deployment.image_id {
+                source_images
+                    .entry(service_deployment.service_id)
+                    .or_insert_with(|| image_id.clone());
+            }
+        }
+
+        let mut service_images = HashMap::new();
+        for service in &app.services {
+            if let Some(image_id) = source_images.get(&service.id) {
+                service_images.insert(service.id, image_id.clone());
+                continue;
+            }
+
+            if !service.image.is_empty() {
+                service_images.insert(service.id, service.image.clone());
+                continue;
+            }
+
+            if let Some(image_id) = &source.image_id {
+                service_images.insert(service.id, image_id.clone());
+                continue;
+            }
+
+            return Err(anyhow::anyhow!(
+                "rollback source missing image artifact for service {}",
+                service.name
+            ));
+        }
+
+        Ok(service_images)
+    }
+
+    fn primary_deployment_image_id(
+        &self,
+        service_images: &HashMap<Uuid, String>,
+    ) -> Option<String> {
+        let unique = service_images
+            .values()
+            .cloned()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        if unique.len() == 1 {
+            unique.into_iter().next()
+        } else {
+            None
+        }
     }
 
     fn get_previous_running_deployment(

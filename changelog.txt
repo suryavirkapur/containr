@@ -4,6 +4,12 @@ changelog
 0.1.11-alpha - 2026-03-09
 - redesign the project service editor into overview, runtime, and storage tabs with denser service summaries, responsive layouts, and clearer grouping for multi-service configuration
 - replace the project detail page's flat service list with a tabbed service browser that surfaces per-service network, runtime, and storage details along with mount backup and restore actions
+- record the next service-platform implementation task list in `agent.txt` so work can continue cleanly across session compaction
+- add per-service env vars plus docker build settings (`build_context`, `dockerfile_path`, `build_target`, and `build_args`) to the shared project model, sqlite persistence, deployment worker image builder, api schema, and generated frontend client
+- queue the initial deployment immediately when a project is created, so new projects start cloning and building without a separate manual deploy action
+- replay interrupted pending/cloning/building/pushing/starting deployments from persisted deployment rows on startup instead of failing them, and reuse the saved source metadata to requeue the worker job
+- allow projects to run with zero public http services by removing the frontend's forced public-service fallback and by removing stale proxy routes when no service opts into public routing
+- rebuild the service editor around overview/build/runtime/storage tabs with shared key/value editors for project env vars, service env vars, and build args, and expose private-vs-public routing clearly in the project ui
 
 0.1.10-alpha - 2026-03-08
 - start managed database containers during database creation and persist failed provisioning attempts as failed database resources
