@@ -7140,6 +7140,23 @@
             ],
             "description": "relative path to the dockerfile within the repo"
           },
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "service-specific custom domain"
+          },
+          "domains": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "service-specific custom domains"
+          },
           "entrypoint": {
             "type": [
               "array",
@@ -7267,6 +7284,7 @@
           "service_type",
           "port",
           "expose_http",
+          "domains",
           "additional_ports",
           "replicas",
           "depends_on",
@@ -7336,6 +7354,20 @@
               "null"
             ],
             "description": "relative path to the dockerfile within the repo"
+          },
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "primary custom domain"
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "service-specific custom domains"
           },
           "entrypoint": {
             "type": "array",

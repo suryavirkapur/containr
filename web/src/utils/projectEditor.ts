@@ -25,6 +25,7 @@ export function mapServiceResponseToForm(service: ServiceResponse): Service {
 		service_type: normalizeServiceType(service.service_type),
 		port: service.port,
 		expose_http: service.expose_http,
+		domains: [...(service.domains || [])],
 		additional_ports: [...service.additional_ports],
 		replicas: service.replicas,
 		memory_limit_mb: service.memory_limit_mb ?? null,
@@ -83,6 +84,7 @@ export function mapServiceToRequest(service: Service) {
 		service_type: service.service_type,
 		port: service.port,
 		expose_http: service.expose_http,
+		domains: service.domains.length > 0 ? service.domains : null,
 		additional_ports:
 			service.additional_ports.length > 0 ? service.additional_ports : null,
 		replicas: service.replicas,

@@ -547,6 +547,20 @@ async fn refresh_routes_for_app(
         });
         tracing::info!(domain = %service_domain, "refreshed service route for app");
 
+        for custom_domain in service.custom_domains() {
+            routes.add_route(containr_proxy::routes::Route {
+                domain: custom_domain.clone(),
+                upstreams: upstreams.clone(),
+                ssl_enabled: true,
+                algorithm,
+            });
+            tracing::info!(
+                domain = %custom_domain,
+                service = %service.name,
+                "refreshed custom domain route for service"
+            );
+        }
+
         if service.id == primary_service.id {
             let subdomain = app_subdomain(&app, base_domain);
             routes.add_route(containr_proxy::routes::Route {
@@ -556,19 +570,6 @@ async fn refresh_routes_for_app(
                 algorithm,
             });
             tracing::info!(subdomain = %subdomain, "refreshed subdomain route for app");
-
-            for custom_domain in app.custom_domains() {
-                routes.add_route(containr_proxy::routes::Route {
-                    domain: custom_domain.clone(),
-                    upstreams: upstreams.clone(),
-                    ssl_enabled: true,
-                    algorithm,
-                });
-                tracing::info!(
-                    domain = %custom_domain,
-                    "refreshed custom domain route for app"
-                );
-            }
         }
     }
 }

@@ -30,6 +30,7 @@ export interface Service {
 	service_type: ServiceType;
 	port: number;
 	expose_http: boolean;
+	domains: string[];
 	additional_ports: number[];
 	replicas: number;
 	memory_limit_mb: number | null;
@@ -74,6 +75,7 @@ export function createEmptyService(): Service {
 		service_type: "private_service",
 		port: 8080,
 		expose_http: false,
+		domains: [],
 		additional_ports: [],
 		replicas: 1,
 		memory_limit_mb: null,
@@ -113,7 +115,7 @@ export function serviceTypeDescription(serviceType: string | null | undefined) {
 		case "web_service":
 			return "public url, routed http traffic, and optional custom domains";
 		case "private_service":
-			return "internal-only service with a stable network address inside the project";
+			return "internal-only service with a stable network address inside the group";
 		case "background_worker":
 			return "no inbound traffic, intended for queues, jobs, and long-running workers";
 	}
@@ -134,6 +136,10 @@ export function applyServiceType(
 		next.health_check_path = "";
 	} else if (next.port === 0) {
 		next.port = 8080;
+	}
+
+	if (serviceType !== "web_service") {
+		next.domains = [];
 	}
 
 	return next;
@@ -183,6 +189,18 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 			.filter(
 				(entry) => Number.isInteger(entry) && entry > 0 && entry <= 65535,
 			);
+
+	const domainsToText = (value: string[]) => value.join("\n");
+
+	const textToDomains = (value: string) =>
+		Array.from(
+			new Set(
+				value
+					.split(/[\n,]+/)
+					.map((entry) => entry.trim().toLowerCase())
+					.filter((entry) => entry.length > 0),
+			),
+		);
 
 	const updateField = <K extends keyof Service>(
 		field: K,
@@ -299,6 +317,12 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 						<span class="border border-neutral-200 px-2 py-1">
 							{props.service.env_vars.length} env
 						</span>
+						<Show when={props.service.domains.length > 0}>
+							<span class="border border-neutral-200 px-2 py-1">
+								{props.service.domains.length} domain
+								{props.service.domains.length === 1 ? "" : "s"}
+							</span>
+						</Show>
 						<Show when={props.service.mounts.length > 0}>
 							<span class="border border-neutral-200 px-2 py-1">
 								{props.service.mounts.length} mount
@@ -429,12 +453,37 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 						<div class="md:col-span-2 border border-neutral-200 bg-neutral-50 px-3 py-3">
 							<p class="text-xs text-neutral-600">
 								{props.service.service_type === "web_service"
-									? "rendered like a public web service with a routed project url."
+									? "public web service with its own generated service subdomain and optional custom domains."
 									: props.service.service_type === "private_service"
-										? "internal-only service with no public url but a stable project network address."
+										? "internal-only service with no public url but a stable group network address."
 										: "background worker with no inbound traffic and no routed url."}
 							</p>
 						</div>
+
+						<Show when={props.service.service_type === "web_service"}>
+							<div class="md:col-span-2">
+								<label class="mb-1 block text-xs text-neutral-600">
+									custom domains
+								</label>
+								<textarea
+									value={domainsToText(props.service.domains)}
+									onInput={(event) =>
+										updateField(
+											"domains",
+											textToDomains(event.currentTarget.value),
+										)
+									}
+									rows="3"
+									class="w-full border border-neutral-300 bg-white px-2 py-1.5 font-mono text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
+									placeholder={"api.example.com\nwww.example.com"}
+								/>
+								<p class="mt-1 text-xs text-neutral-400">
+									each web service always gets its own generated service
+									subdomain. add custom domains here when this service should
+									also answer on your domains.
+								</p>
+							</div>
+						</Show>
 
 						<div>
 							<label class="mb-1 block text-xs text-neutral-600">
@@ -604,7 +653,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 							envVars={props.service.env_vars}
 							onChange={(envVars) => updateField("env_vars", envVars)}
 							title="service environment"
-							description="applies only to this service. shared project env vars are merged in automatically."
+							description="applies only to this service. shared group env vars are merged in automatically."
 							emptyText="no service-specific environment variables configured"
 							addLabel="add service variable"
 						/>

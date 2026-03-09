@@ -26,7 +26,7 @@ const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
 		isDark() ? "text-neutral-400" : "text-neutral-500";
 	const title = () => props.title ?? "environment variables";
 	const description = () =>
-		props.description ?? "shared across every service in this project";
+		props.description ?? "shared across every service in this group";
 	const emptyText = () =>
 		props.emptyText ?? "no environment variables configured";
 	const addLabel = () => props.addLabel ?? "add key/value pair";
