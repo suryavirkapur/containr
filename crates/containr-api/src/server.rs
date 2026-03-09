@@ -21,7 +21,7 @@ use utoipa_scalar::{Scalar, Servable};
 use crate::github::DeploymentJob;
 use crate::handlers::{
     apps, auth, certificates, containers, databases, deployments, github_app, github_repos, health,
-    queues, settings, storage, system, webhooks, websocket,
+    projects, queues, settings, storage, system, webhooks, websocket,
 };
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
@@ -173,55 +173,58 @@ pub async fn run_server(
             "/api/apps/{app_id}/deployments/{id}/logs/ws",
             get(websocket::deployment_logs_ws),
         )
-        // project aliases
-        .route("/api/projects", get(apps::list_apps))
-        .route("/api/projects", post(apps::create_app))
-        .route("/api/projects/{id}", get(apps::get_app))
-        .route("/api/projects/{id}", put(apps::update_app))
-        .route("/api/projects/{id}", delete(apps::delete_app))
-        .route("/api/projects/{id}/metrics", get(apps::get_app_metrics))
+        // projects
+        .route("/api/projects", get(projects::list_projects))
+        .route("/api/projects", post(projects::create_project))
+        .route("/api/projects/{id}", get(projects::get_project))
+        .route("/api/projects/{id}", put(projects::update_project))
+        .route("/api/projects/{id}", delete(projects::delete_project))
+        .route(
+            "/api/projects/{id}/metrics",
+            get(projects::get_project_metrics),
+        )
         .route(
             "/api/projects/{id}/services/{service_name}/mounts/backup",
-            get(apps::backup_service_mounts),
+            get(projects::backup_service_mounts),
         )
         .route(
             "/api/projects/{id}/services/{service_name}/mounts/restore",
-            post(apps::restore_service_mounts),
+            post(projects::restore_service_mounts),
         )
         .route(
             "/api/projects/{id}/deployments",
-            get(deployments::list_deployments),
+            get(projects::list_deployments),
         )
         .route(
             "/api/projects/{id}/deployments",
-            post(deployments::trigger_deployment),
+            post(projects::trigger_deployment),
         )
         .route(
-            "/api/projects/{app_id}/deployments/{id}",
-            get(deployments::get_deployment),
+            "/api/projects/{project_id}/deployments/{id}",
+            get(projects::get_deployment),
         )
         .route(
-            "/api/projects/{app_id}/deployments/{id}/rollback",
-            post(deployments::rollback_deployment),
+            "/api/projects/{project_id}/deployments/{id}/rollback",
+            post(projects::rollback_deployment),
         )
         .route(
-            "/api/projects/{app_id}/deployments/{id}/logs",
-            get(deployments::get_deployment_logs),
+            "/api/projects/{project_id}/deployments/{id}/logs",
+            get(projects::get_deployment_logs),
         )
         .route(
             "/api/projects/{id}/certificate",
-            get(certificates::get_certificate),
+            get(projects::get_certificate),
         )
         .route(
             "/api/projects/{id}/certificate/reissue",
-            post(certificates::reissue_certificate),
+            post(projects::reissue_certificate),
         )
         .route(
             "/api/projects/{id}/logs/ws",
             get(websocket::container_logs_ws),
         )
         .route(
-            "/api/projects/{app_id}/deployments/{id}/logs/ws",
+            "/api/projects/{project_id}/deployments/{id}/logs/ws",
             get(websocket::deployment_logs_ws),
         )
         // containers

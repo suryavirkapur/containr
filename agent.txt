@@ -30,6 +30,11 @@ current context:
 - the dashboard now exposes the existing multi-service app model as projects
   through `/projects` routes and project-centric navigation while keeping the
   legacy `/apps` routes working
+- the shared deployment model now treats `project` as the canonical type,
+  with `app` kept as a compatibility alias for storage and older handlers, and
+  the dedicated `/api/projects` handlers now own the documented project api
+- the solidjs dashboard, project create flow, and project detail page now call
+  `/api/projects` directly instead of using the legacy `/api/apps` endpoints
 - container ownership checks now accept the persisted docker ids for managed
   services and latest deployments, so exec/log endpoints keep working even when
   the caller passes a raw docker id instead of a containr-style name
@@ -113,8 +118,9 @@ pending tasks:
 - add a rustfs bucket verification/read-path in the api so the ui can inspect objects directly instead of only showing stored size metadata
 - add a rollback-friendly prod release task that can redeploy or revert to a
   chosen binary backup without manual ssh steps
-- replace the container exec websocket's long-lived query-string bearer token
-  with a short-lived dedicated exec token
+- decide whether to migrate persisted sqlite table names and internal function
+  names from `app*` to `project*` after the compatibility layer has baked long
+  enough in production
 
 important decisions:
 - keep the runtime compatible during rename by accepting `CONTAINR_ENCRYPTION_KEY` first and
@@ -151,6 +157,9 @@ important decisions:
 - keep prod release automation in repo-local `mise` tasks and shell scripts so
   deploys always build from a committed clean worktree instead of the dirty
   local tree
+- treat `project` as the canonical shared model now, but keep `App = Project`
+  and the existing `apps` sqlite table and legacy `/api/apps` routes as
+  compatibility shims for older clients and deployed state
 - bootstrap the oldest existing user to admin on upgrade instead of leaving the
   global settings surface writable by any authenticated account
 - isolate local database backup browsing and downloads by database id and

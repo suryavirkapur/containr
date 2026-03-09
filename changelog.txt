@@ -31,6 +31,9 @@ changelog
 - add project-oriented routes and navigation on top of the existing
   multi-service app model, including `/projects` urls and project list cards
   that surface service counts
+- promote the shared app model to a first-class `project` type, add dedicated
+  `/api/projects` handlers and openapi operations, and switch the solidjs
+  project pages to the project api while keeping legacy app compatibility
 - accept stored docker container ids during container ownership checks so
   terminal and other container endpoints work for managed databases and queues
 

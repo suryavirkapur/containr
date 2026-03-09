@@ -13,16 +13,16 @@ import { parseAnsi } from "../utils/ansi";
 import ContainerMonitor from "../components/ContainerMonitor";
 import { api, components } from "../api";
 
-type App = components["schemas"]["AppResponse"];
+type Project = components["schemas"]["AppResponse"];
 type Deployment = components["schemas"]["DeploymentResponse"];
 type CertificateStatus = components["schemas"]["CertificateResponse"];
 type ContainerListItem = components["schemas"]["ContainerListItem"];
 
 /**
- * fetches app details
+ * fetches project details
  */
-const fetchApp = async (id: string): Promise<App> => {
-	const { data, error } = await api.GET("/api/apps/{id}", {
+const fetchProject = async (id: string): Promise<Project> => {
+	const { data, error } = await api.GET("/api/projects/{id}", {
 		params: { path: { id } },
 	});
 	if (error) throw error;
@@ -30,24 +30,24 @@ const fetchApp = async (id: string): Promise<App> => {
 };
 
 /**
- * fetches deployments for an app
+ * fetches deployments for a project
  */
-const fetchDeployments = async (appId: string): Promise<Deployment[]> => {
-	const { data, error } = await api.GET("/api/apps/{id}/deployments", {
-		params: { path: { id: appId } },
+const fetchDeployments = async (projectId: string): Promise<Deployment[]> => {
+	const { data, error } = await api.GET("/api/projects/{id}/deployments", {
+		params: { path: { id: projectId } },
 	});
 	if (error) throw error;
 	return data;
 };
 
 /**
- * fetches certificate status for an app
+ * fetches certificate status for a project
  */
 const fetchCertificate = async (
-	appId: string,
+	projectId: string,
 ): Promise<CertificateStatus[]> => {
-	const { data, error } = await api.GET("/api/apps/{id}/certificate", {
-		params: { path: { id: appId } },
+	const { data, error } = await api.GET("/api/projects/{id}/certificate", {
+		params: { path: { id: projectId } },
 	});
 	if (error) throw error;
 	return data;
@@ -86,7 +86,7 @@ const AppDetail: Component = () => {
 
 	const [app, { refetch: refetchApp }] = createResource(
 		() => params.id,
-		fetchApp,
+		fetchProject,
 	);
 
 	const [deployments, { refetch: refetchDeployments }] = createResource(
@@ -144,10 +144,13 @@ const AppDetail: Component = () => {
 	const reissueCertificate = async (domain?: string) => {
 		setReissuing(true);
 		try {
-			const { error } = await api.POST("/api/apps/{id}/certificate/reissue", {
-				params: { path: { id: params.id! } },
-				body: domain ? { domain } : {},
-			});
+			const { error } = await api.POST(
+				"/api/projects/{id}/certificate/reissue",
+				{
+					params: { path: { id: params.id! } },
+					body: domain ? { domain } : {},
+				},
+			);
 			if (error) throw error;
 
 			refetchCertificate();
@@ -198,7 +201,7 @@ const AppDetail: Component = () => {
 
 		try {
 			const response = await fetch(
-				`/api/apps/${params.id}/services/${encodeURIComponent(serviceName)}/mounts/backup`,
+				`/api/projects/${params.id}/services/${encodeURIComponent(serviceName)}/mounts/backup`,
 				{
 					headers: {
 						Authorization: `Bearer ${token}`,
@@ -264,7 +267,7 @@ const AppDetail: Component = () => {
 			form.append("archive", archive, archive.name);
 
 			const response = await fetch(
-				`/api/apps/${params.id}/services/${encodeURIComponent(serviceName)}/mounts/restore`,
+				`/api/projects/${params.id}/services/${encodeURIComponent(serviceName)}/mounts/restore`,
 				{
 					method: "POST",
 					headers: {
@@ -314,7 +317,7 @@ const AppDetail: Component = () => {
 
 	const domainsToText = (domains: string[]) => domains.join("\n");
 
-	const selectPrimaryServiceIndex = (currentApp: App) => {
+	const selectPrimaryServiceIndex = (currentApp: Project) => {
 		if (!currentApp.services || currentApp.services.length === 0) {
 			return -1;
 		}
@@ -336,7 +339,7 @@ const AppDetail: Component = () => {
 		return 0;
 	};
 
-	const isPrimaryService = (currentApp: App, serviceId: string) => {
+	const isPrimaryService = (currentApp: Project, serviceId: string) => {
 		const primaryServiceIndex = selectPrimaryServiceIndex(currentApp);
 		if (primaryServiceIndex < 0) {
 			return false;
@@ -462,7 +465,7 @@ const AppDetail: Component = () => {
 		setBulkEditEnv(!bulkEditEnv());
 	};
 
-	const buildServiceUpdateBody = (currentApp: App) => {
+	const buildServiceUpdateBody = (currentApp: Project) => {
 		const form = editForm();
 
 		if (!currentApp.services || currentApp.services.length === 0) {
@@ -530,7 +533,7 @@ const AppDetail: Component = () => {
 
 			const form = editForm();
 			const domains = parseDomainsText(form.domainsText);
-			const { error } = await api.PUT("/api/apps/{id}", {
+			const { error } = await api.PUT("/api/projects/{id}", {
 				params: { path: { id: params.id! } },
 				body: {
 					domains,
@@ -576,7 +579,7 @@ const AppDetail: Component = () => {
 			setLogsConnected(false);
 
 			const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-			const wsUrl = `${protocol}//${window.location.host}/api/apps/${params.id}/logs/ws?tail=100`;
+			const wsUrl = `${protocol}//${window.location.host}/api/projects/${params.id}/logs/ws?tail=100`;
 
 			setLogs(["connecting..."]);
 
@@ -635,10 +638,10 @@ const AppDetail: Component = () => {
 			const offset = reset ? 0 : deploymentLogOffset();
 
 			const { data, error } = await api.GET(
-				"/api/apps/{app_id}/deployments/{id}/logs",
+				"/api/projects/{project_id}/deployments/{id}/logs",
 				{
 					params: {
-						path: { app_id: params.id!, id: deploymentId },
+						path: { project_id: params.id!, id: deploymentId },
 						query: { limit, offset },
 					},
 				},
@@ -684,7 +687,7 @@ const AppDetail: Component = () => {
 			setDeploymentLogsConnected(false);
 
 			const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-			const wsUrl = `${protocol}//${window.location.host}/api/apps/${params.id}/deployments/${deploymentId}/logs/ws?offset=${offset}`;
+			const wsUrl = `${protocol}//${window.location.host}/api/projects/${params.id}/deployments/${deploymentId}/logs/ws?offset=${offset}`;
 
 			deploymentLogsSocket = new WebSocket(wsUrl);
 
@@ -741,7 +744,7 @@ const AppDetail: Component = () => {
 		setDeploying(true);
 		setDeployError("");
 		try {
-			const { error } = await api.POST("/api/apps/{id}/deployments", {
+			const { error } = await api.POST("/api/projects/{id}/deployments", {
 				params: { path: { id: params.id! } },
 				body: {},
 			});
@@ -775,7 +778,7 @@ const AppDetail: Component = () => {
 
 		setDeleting(true);
 		try {
-			const { error } = await api.DELETE("/api/apps/{id}", {
+			const { error } = await api.DELETE("/api/projects/{id}", {
 				params: { path: { id: params.id! } },
 			});
 			if (error) throw error;

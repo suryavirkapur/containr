@@ -208,7 +208,9 @@ const NewApp: Component = () => {
 				}
 			}
 
-			const { data, error: apiError } = await api.POST("/api/apps", { body });
+			const { data, error: apiError } = await api.POST("/api/projects", {
+				body,
+			});
 			if (apiError) throw new Error("failed to create project");
 			navigate(`/projects/${data.id}`);
 		} catch (err: any) {

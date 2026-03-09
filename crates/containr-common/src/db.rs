@@ -19,7 +19,7 @@ use crate::managed_services::{
 #[allow(unused_imports)]
 use crate::models::{
     App, Certificate, ContainerService, Deployment, DeploymentStatus, EnvVar, GithubAppConfig,
-    GithubInstallation, HealthCheck, RestartPolicy, RolloutStrategy, ServiceDeployment,
+    GithubInstallation, HealthCheck, Project, RestartPolicy, RolloutStrategy, ServiceDeployment,
     ServiceHealth, ServiceMount, ServiceRegistryAuth, User,
 };
 
@@ -175,11 +175,19 @@ impl Database {
         self.backend.save_app(&app.normalized_for_service_model())
     }
 
+    pub fn save_project(&self, project: &Project) -> Result<()> {
+        self.save_app(project)
+    }
+
     pub fn get_app(&self, id: Uuid) -> Result<Option<App>> {
         Ok(self
             .backend
             .get_app(id)?
             .map(|app| app.normalized_for_service_model()))
+    }
+
+    pub fn get_project(&self, id: Uuid) -> Result<Option<Project>> {
+        self.get_app(id)
     }
 
     pub fn list_apps(&self) -> Result<Vec<App>> {
@@ -191,6 +199,10 @@ impl Database {
             .collect())
     }
 
+    pub fn list_projects(&self) -> Result<Vec<Project>> {
+        self.list_apps()
+    }
+
     pub fn list_apps_by_owner(&self, owner_id: Uuid) -> Result<Vec<App>> {
         Ok(self
             .backend
@@ -200,6 +212,10 @@ impl Database {
             .collect())
     }
 
+    pub fn list_projects_by_owner(&self, owner_id: Uuid) -> Result<Vec<Project>> {
+        self.list_apps_by_owner(owner_id)
+    }
+
     pub fn get_app_by_domain(&self, domain: &str) -> Result<Option<App>> {
         Ok(self
             .backend
@@ -207,8 +223,16 @@ impl Database {
             .map(|app| app.normalized_for_service_model()))
     }
 
+    pub fn get_project_by_domain(&self, domain: &str) -> Result<Option<Project>> {
+        self.get_app_by_domain(domain)
+    }
+
     pub fn delete_app(&self, id: Uuid) -> Result<bool> {
         self.backend.delete_app(id)
+    }
+
+    pub fn delete_project(&self, id: Uuid) -> Result<bool> {
+        self.delete_app(id)
     }
 
     pub fn get_app_by_github_url(&self, github_url: &str, branch: &str) -> Result<Option<App>> {
@@ -216,6 +240,14 @@ impl Database {
             .backend
             .get_app_by_github_url(github_url, branch)?
             .map(|app| app.normalized_for_service_model()))
+    }
+
+    pub fn get_project_by_github_url(
+        &self,
+        github_url: &str,
+        branch: &str,
+    ) -> Result<Option<Project>> {
+        self.get_app_by_github_url(github_url, branch)
     }
 
     pub fn save_service(&self, service: &ContainerService) -> Result<()> {

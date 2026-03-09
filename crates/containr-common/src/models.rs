@@ -4,9 +4,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// represents a deployed application
+/// represents a deployed project
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct App {
+pub struct Project {
     pub id: Uuid,
     pub name: String,
     pub github_url: String,
@@ -36,8 +36,10 @@ fn default_port() -> u16 {
     8080
 }
 
-impl App {
-    /// creates a new app with default values
+pub type App = Project;
+
+impl Project {
+    /// creates a new project with default values
     pub fn new(name: String, github_url: String, owner_id: Uuid) -> Self {
         let now = Utc::now();
         Self {
@@ -57,7 +59,7 @@ impl App {
         }
     }
 
-    /// returns true if this app uses multi-container services
+    /// returns true if this project uses multi-container services
     pub fn has_services(&self) -> bool {
         !self.services.is_empty()
     }
@@ -68,7 +70,7 @@ impl App {
         Uuid::new_v5(&Uuid::NAMESPACE_OID, seed.as_bytes())
     }
 
-    /// ensures the app is represented with at least one service
+    /// ensures the project is represented with at least one service
     pub fn ensure_service_model(&mut self) {
         if !self.services.is_empty() {
             return;
@@ -98,14 +100,14 @@ impl App {
         });
     }
 
-    /// returns a copy of the app using the service deployment model
+    /// returns a copy of the project using the service deployment model
     pub fn normalized_for_service_model(&self) -> Self {
-        let mut app = self.clone();
-        app.ensure_service_model();
-        app
+        let mut project = self.clone();
+        project.ensure_service_model();
+        project
     }
 
-    /// returns all custom domains for this app
+    /// returns all custom domains for this project
     pub fn custom_domains(&self) -> Vec<String> {
         let mut domains = self.domains.clone();
         if let Some(domain) = &self.domain {
