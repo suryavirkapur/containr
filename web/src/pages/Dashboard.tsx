@@ -6,14 +6,14 @@ import { Badge } from "../components/ui/Badge";
 import SystemMonitor from "../components/SystemMonitor";
 import { api, type components } from "../api";
 
-type App = components["schemas"]["AppResponse"];
+type Project = components["schemas"]["AppResponse"];
 
 /**
  * fetches projects from the api
  */
-const fetchApps = async (): Promise<App[]> => {
-	const { data, error } = await api.GET("/api/apps");
-	if (error) throw new Error("failed to fetch apps");
+const fetchProjects = async (): Promise<Project[]> => {
+	const { data, error } = await api.GET("/api/projects");
+	if (error) throw new Error("failed to fetch projects");
 	return data ?? [];
 };
 
@@ -21,7 +21,7 @@ const fetchApps = async (): Promise<App[]> => {
  * dashboard page showing all projects
  */
 const Dashboard: Component = () => {
-	const [apps] = createResource(fetchApps);
+	const [apps] = createResource(fetchProjects);
 
 	return (
 		<div>

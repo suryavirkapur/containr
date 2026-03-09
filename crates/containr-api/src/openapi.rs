@@ -4,8 +4,8 @@ use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
 use crate::handlers::{
-    apps, auth, certificates, containers, databases, deployments, github_app, health, queues,
-    settings, storage, system,
+    apps, auth, certificates, containers, databases, deployments, github_app, health, projects,
+    queues, settings, storage, system,
 };
 
 /// api documentation
@@ -14,13 +14,14 @@ use crate::handlers::{
     info(
         title = "containr api",
         version = "1.0.0",
-        description = "containr paas api for managing apps and deployments"
+        description = "containr paas api for managing projects, services, and deployments"
     ),
     tags(
         (name = "health", description = "health check endpoints"),
         (name = "auth", description = "authentication endpoints"),
         (name = "settings", description = "server settings management"),
         (name = "apps", description = "application management"),
+        (name = "projects", description = "project management"),
         (name = "deployments", description = "deployment management"),
         (name = "certificates", description = "ssl certificate management"),
         (name = "databases", description = "managed databases"),
@@ -60,6 +61,22 @@ use crate::handlers::{
         apps::restore_service_mounts,
         apps::update_app,
         apps::delete_app,
+        // projects
+        projects::list_projects,
+        projects::create_project,
+        projects::get_project,
+        projects::get_project_metrics,
+        projects::backup_service_mounts,
+        projects::restore_service_mounts,
+        projects::update_project,
+        projects::delete_project,
+        projects::list_deployments,
+        projects::get_deployment,
+        projects::trigger_deployment,
+        projects::rollback_deployment,
+        projects::get_deployment_logs,
+        projects::get_certificate,
+        projects::reissue_certificate,
         // deployments
         deployments::list_deployments,
         deployments::get_deployment,
