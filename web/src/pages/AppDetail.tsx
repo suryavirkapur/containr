@@ -362,22 +362,11 @@ const AppDetail: Component = () => {
 	const [saving, setSaving] = createSignal(false);
 	const [editError, setEditError] = createSignal("");
 	const [editForm, setEditForm] = createSignal({
-		domainsText: "",
 		github_url: "",
 		branch: "main",
 		env_vars: [] as EditableEnvVar[],
 		services: [] as Service[],
 	});
-
-	const parseDomainsText = (value: string) => {
-		const entries = value
-			.split(/[\n,]+/)
-			.map((entry) => entry.trim())
-			.filter(Boolean);
-		return Array.from(new Set(entries));
-	};
-
-	const domainsToText = (domains: string[]) => domains.join("\n");
 
 	const formatServicePorts = (service: Project["services"][number]) => {
 		if (service.service_type === "background_worker" || service.port === 0) {
@@ -440,35 +429,31 @@ const AppDetail: Component = () => {
 			return "none";
 		}
 
-		const primaryPublicService =
-			projectServices().find(
-				(entry) => entry.service_type === "web_service" && entry.name === "web",
-			) ||
-			projectServices().find((entry) => entry.service_type === "web_service");
-		if (primaryPublicService && primaryPublicService.id !== service.id) {
+		if (!service.domains || service.domains.length === 0) {
 			return "service subdomain";
 		}
 
-		const customDomainCount = appDomains().length;
-		if (customDomainCount === 0) {
-			return "project subdomain";
-		}
-
-		return `project subdomain + ${customDomainCount} custom domain${
-			customDomainCount === 1 ? "" : "s"
+		return `service subdomain + ${service.domains.length} custom domain${
+			service.domains.length === 1 ? "" : "s"
 		}`;
 	};
 
 	const appDomains = createMemo(() => {
 		const current = app();
 		if (!current) return [];
-		if (current.domains && current.domains.length > 0) {
-			return current.domains;
+		const serviceDomains = Array.from(
+			new Set(
+				(current.services || []).flatMap((service) => service.domains || []),
+			),
+		);
+		if (serviceDomains.length > 0) {
+			return serviceDomains;
 		}
-		if (current.domain) {
-			return [current.domain];
-		}
-		return [];
+		return current.domains && current.domains.length > 0
+			? current.domains
+			: current.domain
+				? [current.domain]
+				: [];
 	});
 
 	const certificateList = createMemo(() => certificate() || []);
@@ -519,19 +504,9 @@ const AppDetail: Component = () => {
 		}
 	};
 
-	const editDomains = createMemo(() =>
-		parseDomainsText(editForm().domainsText),
-	);
-
 	const openEditModal = () => {
 		const currentApp = app();
 		if (currentApp) {
-			const domains =
-				currentApp.domains && currentApp.domains.length > 0
-					? currentApp.domains
-					: currentApp.domain
-						? [currentApp.domain]
-						: [];
 			const services =
 				currentApp.services.length > 0
 					? currentApp.services.map(mapServiceResponseToForm)
@@ -542,7 +517,6 @@ const AppDetail: Component = () => {
 							},
 						];
 			setEditForm({
-				domainsText: domainsToText(domains),
 				github_url: currentApp.github_url,
 				branch: currentApp.branch,
 				env_vars: currentApp.env_vars
@@ -601,7 +575,7 @@ const AppDetail: Component = () => {
 			return error.message;
 		}
 
-		return "failed to update project";
+		return "failed to update group";
 	};
 
 	const updateApp = async () => {
@@ -609,7 +583,6 @@ const AppDetail: Component = () => {
 		setEditError("");
 		try {
 			const form = editForm();
-			const domains = parseDomainsText(form.domainsText);
 			const services = form.services;
 			if (services.length === 0) {
 				throw new Error("add at least one service");
@@ -618,8 +591,6 @@ const AppDetail: Component = () => {
 			const { error } = await api.PUT("/api/projects/{id}", {
 				params: { path: { id: params.id! } },
 				body: {
-					domains,
-					domain: domains[0] || null,
 					github_url: form.github_url,
 					branch: form.branch,
 					env_vars: form.env_vars,
@@ -851,7 +822,7 @@ const AppDetail: Component = () => {
 	};
 
 	const deleteApp = async () => {
-		if (!confirm("are you sure you want to delete this project?")) {
+		if (!confirm("are you sure you want to delete this group?")) {
 			return;
 		}
 
@@ -960,10 +931,10 @@ const AppDetail: Component = () => {
 						</div>
 					</div>
 
-					{/* domains */}
+					{/* custom domains */}
 					<div class="bg-white p-5">
 						<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-							domains
+							custom domains
 						</h3>
 						<Show
 							when={appDomains().length > 0}
@@ -1109,7 +1080,12 @@ const AppDetail: Component = () => {
 												}`}
 											>
 												<span>{formatServicePorts(service)}</span>
-												<span>{service.replicas}x</span>
+												<span>
+													{service.replicas}x
+													{service.domains?.length
+														? ` · ${service.domains.length}d`
+														: ""}
+												</span>
 											</div>
 										</button>
 									)}
@@ -1201,9 +1177,62 @@ const AppDetail: Component = () => {
 												</div>
 												<div>
 													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														public url
+														default route
 													</p>
 													<p class="mt-1">{formatPublicUrlStatus(service())}</p>
+												</div>
+												<div>
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														custom domains
+													</p>
+													<Show
+														when={service().domains.length > 0}
+														fallback={<p class="mt-1">none</p>}
+													>
+														<div class="mt-2 space-y-2">
+															<For each={service().domains}>
+																{(domain) => {
+																	const cert = certificateList().find(
+																		(entry) => entry.domain === domain,
+																	);
+																	const status = cert?.status || "none";
+																	return (
+																		<div class="flex items-center justify-between gap-2 border border-neutral-200 bg-white px-2 py-2 text-xs">
+																			<div class="flex items-center gap-2 overflow-hidden">
+																				<span
+																					class={`h-2 w-2 ${certificateDotClass(status)}`}
+																				></span>
+																				<a
+																					href={`https://${domain}`}
+																					target="_blank"
+																					class="truncate font-mono text-black hover:underline"
+																				>
+																					{domain}
+																				</a>
+																			</div>
+																			<div class="flex items-center gap-2 text-neutral-500">
+																				<span>
+																					{certificateStatusLabel(status)}
+																				</span>
+																				<Show when={status !== "pending"}>
+																					<button
+																						type="button"
+																						onClick={() =>
+																							reissueCertificate(domain)
+																						}
+																						disabled={reissuing()}
+																						class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600 hover:border-black hover:text-black disabled:opacity-50"
+																					>
+																						{reissuing() ? "..." : "reissue"}
+																					</button>
+																				</Show>
+																			</div>
+																		</div>
+																	);
+																}}
+															</For>
+														</div>
+													</Show>
 												</div>
 												<div>
 													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
@@ -1434,7 +1463,7 @@ const AppDetail: Component = () => {
 						</Show>
 						<Show when={appContainers().length === 0}>
 							<div class="border border-dashed border-neutral-200 p-8 text-center text-neutral-400 text-sm">
-								no running containers for this project
+								no running containers for this group
 							</div>
 						</Show>
 					</div>
@@ -1506,7 +1535,7 @@ const AppDetail: Component = () => {
 				<div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">
 					<div class="bg-white border border-neutral-300 w-full max-w-6xl max-h-[90vh] flex flex-col">
 						<div class="border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
-							<h2 class="text-lg font-serif text-black">project settings</h2>
+							<h2 class="text-lg font-serif text-black">group settings</h2>
 							<button
 								onClick={() => setEditing(false)}
 								class="text-neutral-400 hover:text-black"
@@ -1528,76 +1557,6 @@ const AppDetail: Component = () => {
 						</div>
 
 						<div class="flex-1 overflow-y-auto p-6 space-y-6">
-							{/* domain section */}
-							<section class="border border-neutral-200 p-4">
-								<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-4">
-									http settings
-								</h3>
-
-								<Show when={editDomains().length > 0}>
-									<div class="mb-4">
-										<p class="text-xs text-neutral-500 mb-2">
-											your project is publicly available at:
-										</p>
-										<div class="space-y-2">
-											<For each={editDomains()}>
-												{(domain) => {
-													const cert = certificateList().find(
-														(entry) => entry.domain === domain,
-													);
-													const status = cert?.status || "none";
-													return (
-														<div class="flex items-center gap-2 p-2 border border-neutral-200 bg-neutral-50">
-															<span
-																class={`w-2 h-2 ${certificateDotClass(status)}`}
-															></span>
-															<span class="text-xs text-neutral-500">
-																{certificateStatusLabel(status)}
-															</span>
-															<Show when={status !== "pending"}>
-																<button
-																	onClick={() => reissueCertificate(domain)}
-																	disabled={reissuing()}
-																	class="px-2 py-0.5 text-xs border border-neutral-400 text-neutral-700 hover:border-black hover:text-black disabled:opacity-50"
-																>
-																	{reissuing() ? "..." : "reissue"}
-																</button>
-															</Show>
-															<a
-																href={`https://${domain}`}
-																target="_blank"
-																class="text-sm text-blue-600 hover:underline font-mono ml-auto"
-															>
-																{domain}
-															</a>
-														</div>
-													);
-												}}
-											</For>
-										</div>
-									</div>
-								</Show>
-
-								<div class="flex gap-2">
-									<textarea
-										rows={3}
-										value={editForm().domainsText}
-										onInput={(e) =>
-											setEditForm((prev) => ({
-												...prev,
-												domainsText: e.currentTarget.value,
-											}))
-										}
-										placeholder="your-custom-domain.com&#10;www.your-custom-domain.com"
-										class="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
-									/>
-								</div>
-								<p class="text-xs text-neutral-400 mt-2">
-									point your domains' dns to this server, then list them above.
-									custom domains route to the primary web service.
-								</p>
-							</section>
-
 							{/* source settings */}
 							<section class="border border-neutral-200 p-4">
 								<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-4">
@@ -1658,7 +1617,8 @@ const AppDetail: Component = () => {
 											services
 										</h3>
 										<p class="text-xs text-neutral-400 mt-2">
-											define render-style service types for this project
+											define render-style service types for this group. custom
+											domains now belong to each web service card.
 										</p>
 									</div>
 									<div class="flex flex-wrap gap-2">
@@ -1687,7 +1647,7 @@ const AppDetail: Component = () => {
 													{serviceType === "web_service"
 														? "public url, http routing, and optional custom domains"
 														: serviceType === "private_service"
-															? "internal-only service that other project services can reach"
+															? "internal-only service that other group services can reach"
 															: "no inbound port, built for queues, cron jobs, and workers"}
 												</p>
 											</div>

@@ -53,8 +53,16 @@ current context:
   add-web/add-private/add-worker cards and the same service editor used during
   project editing
 - projects can now expose more than one web service: the primary web service
-  keeps the project subdomain plus custom domains, while each public web
-  service also gets its own `service.project.base_domain` route
+  keeps the legacy project subdomain alias for compatibility, while each public
+  web service owns its own custom domains and generated
+  `service.project.base_domain` route
+- custom domains now belong to individual web services instead of the project
+  record, with sqlite persistence, api validation, certificate issuance, proxy
+  route refresh, and solidjs create/edit/detail views updated to follow that
+  ownership model
+- the dashboard and editor now use "group" as the main user-facing label for
+  the `/projects` surface so it is clearer that the parent object just keeps
+  multiple services together
 - the dashboard frontend is now intended to live only in `containr-api`; the
   proxy still forwards the base hostname to the api, but the old proxy-side
   embedded frontend/build path is being removed as dead duplicate code
@@ -149,17 +157,14 @@ pending tasks:
      - consider navigating straight to the first deployment log stream
   2. surface public service urls explicitly:
      - add generated service subdomains to the api response
-     - show copy/open actions for the primary project url and each web service url
-  3. decide whether custom domains should stay project-level:
-     - current custom domains attach to the primary web service
-     - full render parity likely wants service-level domain ownership
-  4. harden startup replay coverage:
+     - show copy/open actions for the compatibility group url and each web service url
+  3. harden startup replay coverage:
      - add regression tests for replayed deployment reconstruction
      - add a route-refresh test for the zero-public-service case
-  5. decide whether deployment-row replay is enough durability:
+  4. decide whether deployment-row replay is enough durability:
      - current deploys survive restarts through persisted deployment rows
      - decide if a separate queue table is still worth the complexity
-  6. keep pushing the product model forward:
+  5. keep pushing the product model forward:
      - migrate `github_url` api naming toward a generic source model
      - add queue logs and health visibility in the ui
      - improve env/build validation and duplicate-key feedback
@@ -218,6 +223,9 @@ important decisions:
   deploys always build from a committed clean worktree instead of the dirty
   local tree
 - treat `project` as the canonical shared model now, but keep `App = Project`
+- keep `/projects` routes and api names for compatibility, but treat the
+  object as a service group in user-facing copy and move custom domains to
+  service ownership
   and the existing `apps` sqlite table and legacy `/api/apps` routes as
   compatibility shims for older clients and deployed state
 - keep the dashboard bundle embedded only in `containr-api`, since the base

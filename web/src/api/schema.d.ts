@@ -1702,6 +1702,10 @@ export interface components {
             depends_on?: string[] | null;
             /** @description relative path to the dockerfile within the repo */
             dockerfile_path?: string | null;
+            /** @description service-specific custom domain */
+            domain?: string | null;
+            /** @description service-specific custom domains */
+            domains?: string[] | null;
             /** @description entrypoint override */
             entrypoint?: string[] | null;
             /** @description service-specific environment variables */
@@ -1759,6 +1763,10 @@ export interface components {
             depends_on: string[];
             /** @description relative path to the dockerfile within the repo */
             dockerfile_path?: string | null;
+            /** @description primary custom domain */
+            domain?: string | null;
+            /** @description service-specific custom domains */
+            domains: string[];
             /** @description entrypoint override */
             entrypoint: string[];
             /** @description service-specific environment variables */

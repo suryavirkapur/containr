@@ -82,21 +82,12 @@ const NewApp: Component = () => {
 	const [name, setName] = createSignal("");
 	const [githubUrl, setGithubUrl] = createSignal("");
 	const [branch, setBranch] = createSignal("main");
-	const [domainsText, setDomainsText] = createSignal("");
 	const [services, setServices] = createSignal<Service[]>([]);
 	const [envVars, setEnvVars] = createSignal<EditableEnvVar[]>([]);
 	const [error, setError] = createSignal("");
 	const [loading, setLoading] = createSignal(false);
 	const [useRepoPicker, setUseRepoPicker] = createSignal(true);
 	const [repoFilter, setRepoFilter] = createSignal("");
-
-	const parseDomains = (value: string) => {
-		const entries = value
-			.split(/[\n,]+/)
-			.map((entry) => entry.trim())
-			.filter(Boolean);
-		return Array.from(new Set(entries));
-	};
 
 	const applyRepoSelection = (repoUrl: string, defaultBranch?: string) => {
 		setGithubUrl(repoUrl);
@@ -152,7 +143,6 @@ const NewApp: Component = () => {
 		setLoading(true);
 
 		try {
-			const domains = parseDomains(domainsText());
 			if (services().length === 0) {
 				throw new Error("add at least one service");
 			}
@@ -162,8 +152,6 @@ const NewApp: Component = () => {
 					name: name().trim(),
 					github_url: githubUrl().trim(),
 					branch: branch().trim() || "main",
-					domains,
-					domain: domains[0] || null,
 					env_vars: envVars().length > 0 ? envVars() : null,
 					services: services().map(mapServiceToRequest),
 				},
@@ -175,7 +163,7 @@ const NewApp: Component = () => {
 
 			navigate(`/projects/${data.id}`);
 		} catch (err: any) {
-			setError(err?.error || err?.message || "failed to create project");
+			setError(err?.error || err?.message || "failed to create group");
 		} finally {
 			setLoading(false);
 		}
@@ -184,10 +172,10 @@ const NewApp: Component = () => {
 	return (
 		<div class="mx-auto max-w-5xl">
 			<div class="mb-10">
-				<h1 class="text-2xl font-serif text-black">new project</h1>
+				<h1 class="text-2xl font-serif text-black">new group</h1>
 				<p class="mt-1 text-sm text-neutral-500">
-					create a render-style project from a repository, choose service types,
-					and deploy immediately
+					create a render-style service group from a repository, choose service
+					types, and deploy immediately
 				</p>
 			</div>
 
@@ -203,8 +191,8 @@ const NewApp: Component = () => {
 						<div>
 							<h2 class="text-sm font-serif text-black">source</h2>
 							<p class="mt-1 text-xs text-neutral-500">
-								point the project at a repository and branch, then containr
-								builds and deploys it on create
+								point the group at a repository and branch, then containr builds
+								and deploys it on create
 							</p>
 						</div>
 						<Show when={hasGithubAccess()}>
@@ -221,7 +209,7 @@ const NewApp: Component = () => {
 					<div class="grid gap-4 md:grid-cols-2">
 						<div>
 							<label class="mb-2 block text-sm text-neutral-600">
-								project name
+								group name
 							</label>
 							<input
 								type="text"
@@ -359,8 +347,8 @@ const NewApp: Component = () => {
 					</div>
 
 					<p class="mt-3 text-xs text-neutral-400">
-						the primary web service gets the project url and custom domains.
-						additional web services get their own service subdomains.
+						every web service gets its own generated service subdomain. add
+						custom domains inside each web service card.
 					</p>
 
 					<Show when={services().length === 0}>
@@ -388,33 +376,16 @@ const NewApp: Component = () => {
 					<div class="mb-6">
 						<h2 class="text-sm font-serif text-black">advanced</h2>
 						<p class="mt-1 text-xs text-neutral-500">
-							shared configuration applied across the project
+							shared configuration applied across the group
 						</p>
 					</div>
 
 					<div class="space-y-6">
-						<div>
-							<label class="mb-2 block text-sm text-neutral-600">
-								custom domains <span class="text-neutral-400">(optional)</span>
-							</label>
-							<textarea
-								rows={3}
-								value={domainsText()}
-								onInput={(event) => setDomainsText(event.currentTarget.value)}
-								class="w-full border border-neutral-300 bg-white px-3 py-2.5 font-mono text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
-								placeholder="app.example.com&#10;api.example.com"
-							/>
-							<p class="mt-1.5 text-xs text-neutral-400">
-								one per line or comma-separated. leave blank to use the default
-								project subdomain only.
-							</p>
-						</div>
-
 						<EnvVarEditor
 							envVars={envVars()}
 							onChange={setEnvVars}
 							title="shared environment"
-							description="available to every service in the project"
+							description="available to every service in the group"
 							emptyText="no shared environment variables configured"
 							addLabel="add shared variable"
 						/>
@@ -427,7 +398,7 @@ const NewApp: Component = () => {
 						disabled={loading()}
 						class="flex-1 bg-black px-4 py-2.5 text-sm text-white transition-colors hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed"
 					>
-						{loading() ? "creating and deploying..." : "create project"}
+						{loading() ? "creating and deploying..." : "create group"}
 					</button>
 					<button
 						type="button"

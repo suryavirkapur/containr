@@ -97,6 +97,7 @@ impl Project {
             restart_policy: RestartPolicy::default(),
             registry_auth: None,
             env_vars: Vec::new(),
+            domains: Vec::new(),
             build_context: None,
             dockerfile_path: None,
             build_target: None,
@@ -113,16 +114,68 @@ impl Project {
     /// returns a copy of the project using the service deployment model
     pub fn normalized_for_service_model(&self) -> Self {
         let mut project = self.clone();
-        project.ensure_service_model();
+        project.normalize_legacy_domains_into_services();
         project
     }
 
-    /// returns all custom domains for this project
-    pub fn custom_domains(&self) -> Vec<String> {
+    /// returns the legacy project-level custom domains
+    pub fn legacy_custom_domains(&self) -> Vec<String> {
         let mut domains = self.domains.clone();
         if let Some(domain) = &self.domain {
             if !domains.iter().any(|d| d == domain) {
                 domains.push(domain.clone());
+            }
+        }
+        domains
+    }
+
+    /// returns the primary public service index
+    pub fn primary_public_service_index(&self) -> Option<usize> {
+        self.services
+            .iter()
+            .position(|service| service.is_public_http() && service.name == "web")
+            .or_else(|| {
+                self.services
+                    .iter()
+                    .position(|service| service.is_public_http())
+            })
+    }
+
+    /// returns a mutable reference to the primary public service
+    pub fn primary_public_service_mut(&mut self) -> Option<&mut ContainerService> {
+        let index = self.primary_public_service_index()?;
+        self.services.get_mut(index)
+    }
+
+    /// migrates legacy project-level domains onto the primary public service
+    pub fn normalize_legacy_domains_into_services(&mut self) {
+        self.ensure_service_model();
+
+        let legacy_domains = self.legacy_custom_domains();
+        if legacy_domains.is_empty() {
+            return;
+        }
+
+        if let Some(service) = self.primary_public_service_mut() {
+            for domain in legacy_domains {
+                if !service.domains.iter().any(|existing| existing == &domain) {
+                    service.domains.push(domain);
+                }
+            }
+        }
+
+        self.domain = None;
+        self.domains.clear();
+    }
+
+    /// returns all custom domains configured across the project's web services
+    pub fn custom_domains(&self) -> Vec<String> {
+        let mut domains = self.legacy_custom_domains();
+        for service in &self.services {
+            for domain in &service.domains {
+                if !domains.iter().any(|existing| existing == domain) {
+                    domains.push(domain.clone());
+                }
             }
         }
         domains
@@ -270,6 +323,8 @@ pub struct ContainerService {
     #[serde(default)]
     pub env_vars: Vec<EnvVar>,
     #[serde(default)]
+    pub domains: Vec<String>,
+    #[serde(default)]
     pub build_context: Option<String>,
     #[serde(default)]
     pub dockerfile_path: Option<String>,
@@ -314,6 +369,7 @@ impl ContainerService {
             restart_policy: RestartPolicy::default(),
             registry_auth: None,
             env_vars: Vec::new(),
+            domains: Vec::new(),
             build_context: None,
             dockerfile_path: None,
             build_target: None,
@@ -335,6 +391,17 @@ impl ContainerService {
     /// returns true when the service should be routed publicly
     pub fn is_public_http(&self) -> bool {
         matches!(self.service_type, ServiceType::WebService)
+    }
+
+    /// returns the custom domains configured for this service
+    pub fn custom_domains(&self) -> Vec<String> {
+        let mut domains = Vec::new();
+        for domain in &self.domains {
+            if !domain.trim().is_empty() && !domains.iter().any(|existing| existing == domain) {
+                domains.push(domain.clone());
+            }
+        }
+        domains
     }
 
     /// infers a service type from legacy fields
@@ -822,6 +889,40 @@ mod tests {
         assert_eq!(app.services[0].port, 9090);
         assert!(app.services[0].expose_http);
         assert_eq!(app.services[0].replicas, 1);
+        assert!(app.services[0].domains.is_empty());
+    }
+
+    #[test]
+    fn test_app_normalized_for_service_model_moves_legacy_domains_to_web_service() {
+        let owner_id = Uuid::new_v4();
+        let mut app = App::new(
+            "test-app".to_string(),
+            "https://github.com/user/repo".to_string(),
+            owner_id,
+        );
+        app.set_domains(vec![
+            "demo.example.com".to_string(),
+            "api.example.com".to_string(),
+        ]);
+
+        let normalized = app.normalized_for_service_model();
+
+        assert!(normalized.domain.is_none());
+        assert!(normalized.domains.is_empty());
+        assert_eq!(
+            normalized.services[0].domains,
+            vec![
+                "demo.example.com".to_string(),
+                "api.example.com".to_string()
+            ]
+        );
+        assert_eq!(
+            normalized.custom_domains(),
+            vec![
+                "demo.example.com".to_string(),
+                "api.example.com".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -878,6 +979,7 @@ mod tests {
         assert!(service.health_check.is_none());
         assert_eq!(service.restart_policy, RestartPolicy::Always);
         assert!(service.registry_auth.is_none());
+        assert!(service.domains.is_empty());
         assert!(service.command.is_none());
         assert!(service.entrypoint.is_none());
         assert!(service.working_dir.is_none());
@@ -908,6 +1010,7 @@ mod tests {
         assert!(service.health_check.is_none());
         assert_eq!(service.restart_policy, RestartPolicy::Always);
         assert!(service.registry_auth.is_none());
+        assert!(service.domains.is_empty());
         assert!(service.command.is_none());
         assert!(service.entrypoint.is_none());
         assert!(service.working_dir.is_none());

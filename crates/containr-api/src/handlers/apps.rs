@@ -57,7 +57,7 @@ pub struct CreateAppRequest {
 }
 
 /// env var in request
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct EnvVarRequest {
     /// variable key
     pub key: String,
@@ -79,7 +79,7 @@ pub struct EnvVarResponse {
 }
 
 /// health check configuration request
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct HealthCheckRequest {
     /// http path to check
     pub path: String,
@@ -147,7 +147,7 @@ pub struct ServiceRegistryAuthResponse {
 }
 
 /// service request for multi-container apps
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct ServiceRequest {
     /// service name (e.g. "web", "api", "db")
     pub name: String,
@@ -159,6 +159,10 @@ pub struct ServiceRequest {
     pub port: u16,
     /// whether this service receives public http traffic
     pub expose_http: Option<bool>,
+    /// service-specific custom domains
+    pub domains: Option<Vec<String>>,
+    /// service-specific custom domain
+    pub domain: Option<String>,
     /// additional container ports
     pub additional_ports: Option<Vec<u16>>,
     /// number of replicas
@@ -210,6 +214,10 @@ pub struct ServiceResponse {
     pub port: u16,
     /// whether this service receives public http traffic
     pub expose_http: bool,
+    /// primary custom domain
+    pub domain: Option<String>,
+    /// service-specific custom domains
+    pub domains: Vec<String>,
     /// additional container ports
     pub additional_ports: Vec<u16>,
     /// number of replicas
@@ -318,13 +326,15 @@ pub struct AppResponse {
 
 impl From<&App> for AppResponse {
     fn from(app: &App) -> Self {
+        let domains = app.custom_domains();
+        let primary_domain = app.domain.clone().or_else(|| domains.first().cloned());
         Self {
             id: app.id,
             name: app.name.clone(),
             github_url: app.github_url.clone(),
             branch: app.branch.clone(),
-            domain: app.domain.clone(),
-            domains: app.custom_domains(),
+            domain: primary_domain,
+            domains,
             port: app.port,
             env_vars: app
                 .env_vars
@@ -353,6 +363,8 @@ impl From<&App> for AppResponse {
                     },
                     port: s.port,
                     expose_http: s.is_public_http(),
+                    domain: s.domains.first().cloned(),
+                    domains: s.custom_domains(),
                     additional_ports: s.additional_ports.clone(),
                     replicas: s.replicas,
                     memory_limit_mb: s.memory_limit.map(|m| m / (1024 * 1024)),
@@ -919,6 +931,7 @@ fn build_services(
                 )
             });
         let service_type = resolve_service_type(&request, Some(&service))?;
+        let requested_domains = requested_service_domains(&request);
         let port = request.port;
         if matches!(service_type, ServiceType::BackgroundWorker) {
             if request.expose_http == Some(true) {
@@ -929,11 +942,35 @@ fn build_services(
                     }),
                 ));
             }
+            if requested_domains
+                .as_ref()
+                .is_some_and(|domains| !domains.is_empty())
+            {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "only web services can use custom domains".to_string(),
+                    }),
+                ));
+            }
         } else if port == 0 {
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
                     error: "web and private services require a container port".to_string(),
+                }),
+            ));
+        }
+
+        if matches!(service_type, ServiceType::PrivateService)
+            && requested_domains
+                .as_ref()
+                .is_some_and(|domains| !domains.is_empty())
+        {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "only web services can use custom domains".to_string(),
                 }),
             ));
         }
@@ -972,6 +1009,11 @@ fn build_services(
             request.registry_auth,
         )?;
         service.env_vars = build_service_env_vars(request.env_vars, &service.env_vars)?;
+        service.domains = if matches!(service_type, ServiceType::WebService) {
+            requested_domains.unwrap_or_else(|| service.custom_domains())
+        } else {
+            Vec::new()
+        };
         service.build_context = normalize_repo_relative_path(
             "service build context",
             request.build_context,
@@ -1281,6 +1323,7 @@ pub async fn create_app(
 ) -> Result<(StatusCode, Json<AppResponse>), (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+    let legacy_requested_domains = merge_domains(req.domain.clone(), req.domains.clone());
 
     // validate name
     if req.name.is_empty() || req.name.len() > 64 {
@@ -1292,42 +1335,24 @@ pub async fn create_app(
         ));
     }
 
-    let requested_domains = merge_domains(req.domain.clone(), req.domains.clone());
-
-    if !requested_domains.is_empty() {
-        // check domain uniqueness
-        for domain in &requested_domains {
-            if state
-                .db
-                .get_app_by_domain(domain)
-                .map_err(internal_error)?
-                .is_some()
-            {
-                return Err((
-                    StatusCode::CONFLICT,
-                    Json(ErrorResponse {
-                        error: "domain already in use".to_string(),
-                    }),
-                ));
-            }
-        }
-
-        validate_domains(
-            &requested_domains,
-            &config.proxy.base_domain,
-            config.proxy.public_ip.as_deref(),
-        )
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))?;
+    if !legacy_requested_domains.is_empty()
+        && req
+            .services
+            .as_ref()
+            .is_some_and(|services| request_contains_service_domains(services))
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "set custom domains on services instead of the project".to_string(),
+            }),
+        ));
     }
 
     // create app
     let mut app = App::new(req.name, req.github_url, user_id);
     if let Some(branch) = req.branch {
         app.branch = branch;
-    }
-    if !requested_domains.is_empty() {
-        app.set_domains(requested_domains);
     }
     if let Some(port) = req.port {
         app.port = port;
@@ -1358,6 +1383,11 @@ pub async fn create_app(
         app.services = build_services(&config, app.id, &[], services)?;
     }
     app.ensure_service_model();
+    apply_legacy_project_domains(
+        &mut app,
+        (!legacy_requested_domains.is_empty()).then_some(legacy_requested_domains),
+    )?;
+    let domains = validate_app_service_domains(&state, &config, &app).await?;
 
     state.db.save_app(&app).map_err(internal_error)?;
 
@@ -1377,7 +1407,6 @@ pub async fn create_app(
         return Err(error);
     }
 
-    let domains = app.custom_domains();
     if !domains.is_empty() {
         if let Some(tx) = &state.cert_request_tx {
             for domain in domains {
@@ -1717,8 +1746,21 @@ pub async fn update_app(
             }),
         ));
     }
-
-    let mut requested_domains: Option<Vec<String>> = None;
+    let previous_domains = app.custom_domains();
+    let legacy_requested_domains = merge_domains(req.domain.clone(), req.domains.clone());
+    if !legacy_requested_domains.is_empty()
+        && req
+            .services
+            .as_ref()
+            .is_some_and(|services| request_contains_service_domains(services))
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "set custom domains on services instead of the project".to_string(),
+            }),
+        ));
+    }
 
     // update fields
     if let Some(name) = req.name {
@@ -1726,38 +1768,6 @@ pub async fn update_app(
     }
     if let Some(branch) = req.branch {
         app.branch = branch;
-    }
-    if req.domain.is_some() || req.domains.is_some() {
-        let domains = merge_domains(req.domain, req.domains);
-        if !domains.is_empty() {
-            validate_domains(
-                &domains,
-                &config.proxy.base_domain,
-                config.proxy.public_ip.as_deref(),
-            )
-            .await
-            .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))?;
-
-            // check domain uniqueness
-            for domain in &domains {
-                if let Some(existing) =
-                    state.db.get_app_by_domain(domain).map_err(internal_error)?
-                {
-                    if existing.id != app.id {
-                        return Err((
-                            StatusCode::CONFLICT,
-                            Json(ErrorResponse {
-                                error: "domain already in use".to_string(),
-                            }),
-                        ));
-                    }
-                }
-            }
-        }
-        requested_domains = Some(domains);
-    }
-    if let Some(domains) = requested_domains.clone() {
-        app.set_domains(domains);
     }
 
     if let Some(port) = req.port {
@@ -1804,12 +1814,23 @@ pub async fn update_app(
     }
 
     app.ensure_service_model();
+    apply_legacy_project_domains(
+        &mut app,
+        (req.domain.is_some() || req.domains.is_some()).then_some(legacy_requested_domains),
+    )?;
     app.updated_at = chrono::Utc::now();
+    let current_domains = app.custom_domains();
+    let domains_changed = current_domains != previous_domains;
+    let validated_domains = if domains_changed {
+        validate_app_service_domains(&state, &config, &app).await?
+    } else {
+        current_domains
+    };
     state.db.save_app(&app).map_err(internal_error)?;
 
-    if requested_domains.is_some() {
+    if domains_changed {
         if let Some(tx) = &state.cert_request_tx {
-            for domain in app.custom_domains() {
+            for domain in validated_domains {
                 let _ = tx.try_send(domain);
             }
         } else {
@@ -1918,6 +1939,104 @@ fn merge_domains(domain: Option<String>, domains: Option<Vec<String>>) -> Vec<St
         combined.push(single);
     }
     normalize_domains(combined)
+}
+
+fn requested_service_domains(request: &ServiceRequest) -> Option<Vec<String>> {
+    if request.domain.is_none() && request.domains.is_none() {
+        return None;
+    }
+
+    Some(merge_domains(
+        request.domain.clone(),
+        request.domains.clone(),
+    ))
+}
+
+fn request_contains_service_domains(services: &[ServiceRequest]) -> bool {
+    services
+        .iter()
+        .any(|service| service.domain.is_some() || service.domains.is_some())
+}
+
+fn apply_legacy_project_domains(
+    app: &mut App,
+    domains: Option<Vec<String>>,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let Some(domains) = domains else {
+        return Ok(());
+    };
+
+    let service = app.primary_public_service_mut().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "custom domains require at least one web service".to_string(),
+            }),
+        )
+    })?;
+    service.domains = domains;
+    app.domain = None;
+    app.domains.clear();
+    Ok(())
+}
+
+async fn validate_app_service_domains(
+    state: &AppState,
+    config: &Config,
+    app: &App,
+) -> Result<Vec<String>, (StatusCode, Json<ErrorResponse>)> {
+    let mut domains = Vec::new();
+    let mut seen = HashSet::new();
+
+    for service in &app.services {
+        if !service.domains.is_empty() && !service.is_public_http() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "only web services can use custom domains".to_string(),
+                }),
+            ));
+        }
+
+        for domain in service.custom_domains() {
+            if !seen.insert(domain.clone()) {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!("duplicate custom domain: {}", domain),
+                    }),
+                ));
+            }
+            domains.push(domain);
+        }
+    }
+
+    if domains.is_empty() {
+        return Ok(domains);
+    }
+
+    validate_domains(
+        &domains,
+        &config.proxy.base_domain,
+        config.proxy.public_ip.as_deref(),
+    )
+    .await
+    .map_err(|error| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error })))?;
+
+    for domain in &domains {
+        if let Some(existing) = state.db.get_app_by_domain(domain).map_err(internal_error)? {
+            if existing.id != app.id {
+                return Err((
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error: "domain already in use".to_string(),
+                    }),
+                ));
+            }
+        }
+    }
+
+    Ok(domains)
 }
 
 async fn validate_domains(
@@ -2049,6 +2168,8 @@ mod tests {
                 service_type: None,
                 port: 9090,
                 expose_http: Some(true),
+                domains: None,
+                domain: None,
                 additional_ports: Some(vec![9091, 9092]),
                 replicas: Some(3),
                 memory_limit_mb: Some(256),
@@ -2192,6 +2313,8 @@ mod tests {
                     service_type: None,
                     port: 8080,
                     expose_http: Some(true),
+                    domains: None,
+                    domain: None,
                     additional_ports: None,
                     replicas: None,
                     memory_limit_mb: None,
@@ -2216,6 +2339,8 @@ mod tests {
                     service_type: None,
                     port: 9000,
                     expose_http: Some(true),
+                    domains: None,
+                    domain: None,
                     additional_ports: None,
                     replicas: None,
                     memory_limit_mb: None,

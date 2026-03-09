@@ -42,7 +42,7 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
 								href="/projects"
 								class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
 							>
-								projects
+								groups
 							</A>
 							<A
 								href="/databases"
@@ -66,7 +66,7 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
 								href="/projects/new"
 								class="text-neutral-500 hover:text-black transition-colors text-sm font-medium"
 							>
-								new project
+								new group
 							</A>
 							<A
 								href="/settings"

@@ -35,6 +35,7 @@ const SERVICE_ENTRYPOINT_ARGS_TABLE: &str = "service_entrypoint_args";
 const SERVICE_REGISTRY_AUTH_TABLE: &str = "service_registry_auth";
 const SERVICE_ENV_VARS_TABLE: &str = "service_env_vars";
 const SERVICE_BUILD_ARGS_TABLE: &str = "service_build_args";
+const SERVICE_DOMAINS_TABLE: &str = "service_domains";
 const SERVICE_MOUNTS_TABLE: &str = "service_mounts";
 const SERVICE_DEPLOYMENTS_TABLE: &str = "service_deployments";
 const SERVICE_DEPLOYMENT_LOGS_TABLE: &str = "service_deployment_logs";
@@ -532,7 +533,7 @@ impl DatabaseBackend for SledDatabase {
         for result in tree.iter() {
             let (_, value) = result?;
             let app: App = serde_json::from_slice(&value)?;
-            if app.domain.as_deref() == Some(domain) || app.domains.iter().any(|d| d == domain) {
+            if app.custom_domains().iter().any(|item| item == domain) {
                 return Ok(Some(app));
             }
         }
@@ -1044,9 +1045,7 @@ impl DatabaseBackend for LegacySqliteDatabase {
 
     fn get_app_by_domain(&self, domain: &str) -> Result<Option<App>> {
         for app in self.list_json::<App>(APPS_TABLE)? {
-            if app.domain.as_deref() == Some(domain)
-                || app.domains.iter().any(|item| item == domain)
-            {
+            if app.custom_domains().iter().any(|item| item == domain) {
                 return Ok(Some(app));
             }
         }
@@ -1376,6 +1375,10 @@ mod tests {
 
         let mut web = ContainerService::new(app.id, "web".to_string(), "".to_string(), 8080);
         web.expose_http = true;
+        web.domains = vec![
+            "web.demo.example.com".to_string(),
+            "demo.example.com".to_string(),
+        ];
         web.additional_ports = vec![8081, 9000];
         web.replicas = 2;
         web.registry_auth = Some(ServiceRegistryAuth {
@@ -1420,6 +1423,13 @@ mod tests {
             .find(|service| service.name == "web")
             .unwrap();
         assert!(loaded_web.expose_http);
+        assert_eq!(
+            loaded_web.domains,
+            vec![
+                "web.demo.example.com".to_string(),
+                "demo.example.com".to_string()
+            ]
+        );
         assert_eq!(loaded_web.replicas, 2);
         assert_eq!(loaded_web.additional_ports, vec![8081, 9000]);
         assert!(loaded_web.registry_auth.is_some());

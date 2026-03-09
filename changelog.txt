@@ -14,6 +14,8 @@ changelog
 - replay interrupted pending/cloning/building/pushing/starting deployments from persisted deployment rows on startup instead of failing them, and reuse the saved source metadata to requeue the worker job
 - allow projects to run with zero public http services by removing the frontend's forced public-service fallback and by removing stale proxy routes when no service opts into public routing
 - rebuild the service editor around overview/build/runtime/storage tabs with shared key/value editors for project env vars, service env vars, and build args, and expose private-vs-public routing clearly in the project ui
+- move custom domain ownership from projects onto individual web services across the shared model, sqlite persistence, api validation, certificate issuance, proxy route refresh, and solidjs create/edit/detail views
+- keep `/projects` as the compatibility route and api surface, but shift the visible dashboard copy to "groups" so it is clear that the parent object organizes services rather than owning their domains
 
 0.1.10-alpha - 2026-03-08
 - start managed database containers during database creation and persist failed provisioning attempts as failed database resources

@@ -24,7 +24,7 @@ impl SqliteDatabase {
             pragma journal_mode = wal;
             pragma synchronous = normal;
             pragma foreign_keys = on;
-            pragma user_version = 7;
+            pragma user_version = 8;
 
             create table if not exists users (
                 id text primary key,
@@ -150,6 +150,16 @@ impl SqliteDatabase {
                 primary key (service_id, position),
                 foreign key (service_id) references services(id) on delete cascade
             );
+
+            create table if not exists service_domains (
+                service_id text not null,
+                domain text not null unique,
+                position integer not null,
+                primary key (service_id, domain),
+                foreign key (service_id) references services(id) on delete cascade
+            );
+            create index if not exists service_domains_service_idx
+                on service_domains (service_id, position);
 
             create table if not exists service_build_args (
                 service_id text not null,
@@ -570,6 +580,22 @@ impl SqliteDatabase {
         Ok(env_vars)
     }
 
+    fn load_service_domains(&self, conn: &Connection, service_id: &str) -> Result<Vec<String>> {
+        let mut statement = conn.prepare(&format!(
+            "select domain from {SERVICE_DOMAINS_TABLE}
+             where service_id = ?1
+             order by position asc"
+        ))?;
+        let mut rows = statement.query(params![service_id])?;
+        let mut domains = Vec::new();
+
+        while let Some(row) = rows.next()? {
+            domains.push(row.get(0)?);
+        }
+
+        Ok(domains)
+    }
+
     fn load_service_build_args(
         &self,
         conn: &Connection,
@@ -751,6 +777,7 @@ impl SqliteDatabase {
             restart_policy: decode_enum(record.14)?,
             created_at: parse_datetime(record.19)?,
             updated_at: parse_datetime(record.20)?,
+            domains: self.load_service_domains(conn, service_id)?,
         }))
     }
 
@@ -1407,6 +1434,7 @@ impl SqliteDatabase {
         self.replace_service_dependencies(tx, service.id, &service.depends_on)?;
         self.replace_service_additional_ports(tx, service.id, &service.additional_ports)?;
         self.replace_service_env_vars(tx, service.id, &service.env_vars)?;
+        self.replace_service_domains(tx, service.id, &service.domains)?;
         self.replace_service_build_args(tx, service.id, &service.build_args)?;
         self.replace_service_args(
             tx,
@@ -1482,6 +1510,31 @@ impl SqliteDatabase {
                     &build_arg.value,
                     bool_to_int(build_arg.secret),
                 ],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn replace_service_domains(
+        &self,
+        tx: &Transaction<'_>,
+        service_id: Uuid,
+        domains: &[String],
+    ) -> Result<()> {
+        let service_id = service_id.to_string();
+        tx.execute(
+            &format!("delete from {SERVICE_DOMAINS_TABLE} where service_id = ?1"),
+            params![&service_id],
+        )?;
+
+        for (position, domain) in domains.iter().enumerate() {
+            tx.execute(
+                &format!(
+                    "insert into {SERVICE_DOMAINS_TABLE} (service_id, domain, position)
+                     values (?1, ?2, ?3)"
+                ),
+                params![&service_id, domain, position as i64],
             )?;
         }
 
@@ -1864,7 +1917,7 @@ impl DatabaseBackend for SqliteDatabase {
                 &format!("delete from {APP_DOMAINS_TABLE} where app_id = ?1"),
                 params![app.id.to_string()],
             )?;
-            for (position, domain) in app.custom_domains().into_iter().enumerate() {
+            for (position, domain) in app.legacy_custom_domains().into_iter().enumerate() {
                 tx.execute(
                     &format!(
                         "insert into {APP_DOMAINS_TABLE} (app_id, domain, position)
@@ -1954,6 +2007,11 @@ impl DatabaseBackend for SqliteDatabase {
                         "select id from {APPS_TABLE} where domain = ?1
                          union
                          select app_id as id from {APP_DOMAINS_TABLE} where domain = ?1
+                         union
+                         select services.app_id as id
+                         from {SERVICE_DOMAINS_TABLE}
+                         inner join {SERVICES_TABLE} on services.id = service_domains.service_id
+                         where service_domains.domain = ?1
                          limit 1"
                     ),
                     params![domain],
