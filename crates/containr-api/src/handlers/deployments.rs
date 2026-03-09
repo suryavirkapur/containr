@@ -14,7 +14,9 @@ use crate::deployment_source::resolve_app_deployment_source;
 use crate::github::DeploymentJob;
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
-use containr_common::models::{Deployment, DeploymentStatus, RolloutStrategy};
+use containr_common::models::{
+    App, Deployment, DeploymentSource, DeploymentStatus, RolloutStrategy,
+};
 
 /// deployment response
 #[derive(Debug, Serialize, ToSchema)]
@@ -65,6 +67,55 @@ impl From<&Deployment> for DeploymentResponse {
             finished_at: d.finished_at.map(|t| t.to_rfc3339()),
         }
     }
+}
+
+fn deployment_source_url(source: &DeploymentSource) -> String {
+    match source {
+        DeploymentSource::RemoteGit { url, .. } => url.clone(),
+        DeploymentSource::LocalPath { path } => path.clone(),
+    }
+}
+
+pub(crate) async fn create_and_queue_deployment(
+    state: &AppState,
+    owner_id: Uuid,
+    app: &App,
+    commit_sha: String,
+    commit_message: Option<String>,
+    branch: String,
+    rollout_strategy: RolloutStrategy,
+    rollback_from_deployment_id: Option<Uuid>,
+) -> Result<Deployment, (StatusCode, Json<ErrorResponse>)> {
+    let source = resolve_app_deployment_source(state, owner_id, app).await?;
+
+    let mut deployment = Deployment::new(app.id, commit_sha.clone());
+    deployment.commit_message = commit_message.clone();
+    deployment.branch = branch.clone();
+    deployment.source_url = Some(deployment_source_url(&source));
+    deployment.rollout_strategy = rollout_strategy;
+    deployment.rollback_from_deployment_id = rollback_from_deployment_id;
+    state
+        .db
+        .save_deployment(&deployment)
+        .map_err(internal_error)?;
+
+    let job = DeploymentJob {
+        deployment_id: deployment.id,
+        app_id: app.id,
+        commit_sha,
+        commit_message,
+        branch,
+        source,
+        rollout_strategy,
+        rollback_from_deployment_id,
+    };
+
+    state.deployment_tx.send(job).await.map_err(|e| {
+        let _ = state.db.delete_deployment(deployment.id);
+        internal_error(format!("failed to queue deployment: {}", e))
+    })?;
+
+    Ok(deployment)
 }
 
 /// extracts user id from authorization header
@@ -294,35 +345,21 @@ pub async fn trigger_deployment(
         app.rollout_strategy,
     )?;
 
-    let source = resolve_app_deployment_source(&state, user_id, &app).await?;
     let branch = trigger
         .as_ref()
         .and_then(|t| t.branch.clone())
         .unwrap_or_else(|| app.branch.clone());
-
-    // create deployment record only after source resolution succeeds
-    let mut deployment = Deployment::new(app_id, commit_sha.clone());
-    deployment.commit_message = commit_message.clone();
-    state
-        .db
-        .save_deployment(&deployment)
-        .map_err(internal_error)?;
-
-    let job = DeploymentJob {
-        deployment_id: deployment.id,
-        app_id,
-        commit_sha: commit_sha.clone(),
-        commit_message: commit_message.clone(),
+    let deployment = create_and_queue_deployment(
+        &state,
+        user_id,
+        &app,
+        commit_sha.clone(),
+        commit_message.clone(),
         branch,
-        source,
         rollout_strategy,
-        rollback_from_deployment_id: None,
-    };
-
-    state.deployment_tx.send(job).await.map_err(|e| {
-        let _ = state.db.delete_deployment(deployment.id);
-        internal_error(format!("failed to queue deployment: {}", e))
-    })?;
+        None,
+    )
+    .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -417,31 +454,17 @@ pub async fn rollback_deployment(
         req.as_ref().and_then(|r| r.rollout_strategy.as_deref()),
         app.rollout_strategy,
     )?;
-
-    let source = resolve_app_deployment_source(&state, user_id, &app).await?;
-
-    let mut deployment = Deployment::new(app_id, target.commit_sha.clone());
-    deployment.commit_message = Some(format!("rollback to deployment {}", target_deployment_id));
-    state
-        .db
-        .save_deployment(&deployment)
-        .map_err(internal_error)?;
-
-    let job = DeploymentJob {
-        deployment_id: deployment.id,
-        app_id,
-        commit_sha: target.commit_sha.clone(),
-        commit_message: deployment.commit_message.clone(),
-        branch: app.branch.clone(),
-        source,
+    let deployment = create_and_queue_deployment(
+        &state,
+        user_id,
+        &app,
+        target.commit_sha.clone(),
+        Some(format!("rollback to deployment {}", target_deployment_id)),
+        app.branch.clone(),
         rollout_strategy,
-        rollback_from_deployment_id: Some(target_deployment_id),
-    };
-
-    state.deployment_tx.send(job).await.map_err(|e| {
-        let _ = state.db.delete_deployment(deployment.id);
-        internal_error(format!("failed to queue rollback: {}", e))
-    })?;
+        Some(target_deployment_id),
+    )
+    .await?;
 
     Ok((
         StatusCode::CREATED,

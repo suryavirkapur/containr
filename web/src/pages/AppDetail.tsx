@@ -17,7 +17,6 @@ import { api, components } from "../api";
 import {
 	createPrimaryService,
 	EditableEnvVar,
-	ensureSinglePublicHttpService,
 	mapServiceResponseToForm,
 	mapServiceToRequest,
 } from "../utils/projectEditor";
@@ -344,35 +343,21 @@ const AppDetail: Component = () => {
 
 	const domainsToText = (domains: string[]) => domains.join("\n");
 
-	const selectPrimaryServiceIndex = (currentApp: Project) => {
+	const selectPublicServiceIndex = (currentApp: Project) => {
 		if (!currentApp.services || currentApp.services.length === 0) {
 			return -1;
 		}
 
-		const explicitIndex = currentApp.services.findIndex(
-			(service) => service.expose_http,
-		);
-		if (explicitIndex >= 0) {
-			return explicitIndex;
-		}
-
-		const webIndex = currentApp.services.findIndex(
-			(service) => service.name === "web",
-		);
-		if (webIndex >= 0) {
-			return webIndex;
-		}
-
-		return 0;
+		return currentApp.services.findIndex((service) => service.expose_http);
 	};
 
-	const isPrimaryService = (currentApp: Project, serviceId: string) => {
-		const primaryServiceIndex = selectPrimaryServiceIndex(currentApp);
-		if (primaryServiceIndex < 0) {
+	const isPublicService = (currentApp: Project, serviceId: string) => {
+		const publicServiceIndex = selectPublicServiceIndex(currentApp);
+		if (publicServiceIndex < 0) {
 			return false;
 		}
 
-		return currentApp.services[primaryServiceIndex]?.id === serviceId;
+		return currentApp.services[publicServiceIndex]?.id === serviceId;
 	};
 
 	const formatServicePorts = (service: Project["services"][number]) => {
@@ -411,6 +396,21 @@ const AppDetail: Component = () => {
 		return registryAuth.server
 			? `${registryAuth.username} @ ${registryAuth.server}`
 			: registryAuth.username;
+	};
+
+	const formatPublicUrlStatus = (service: Project["services"][number]) => {
+		if (!service.expose_http) {
+			return "none";
+		}
+
+		const customDomainCount = appDomains().length;
+		if (customDomainCount === 0) {
+			return "project subdomain";
+		}
+
+		return `project subdomain + ${customDomainCount} custom domain${
+			customDomainCount === 1 ? "" : "s"
+		}`;
 	};
 
 	const appDomains = createMemo(() => {
@@ -475,9 +475,7 @@ const AppDetail: Component = () => {
 						: [];
 			const services =
 				currentApp.services.length > 0
-					? ensureSinglePublicHttpService(
-							currentApp.services.map(mapServiceResponseToForm),
-						)
+					? currentApp.services.map(mapServiceResponseToForm)
 					: [
 							{
 								...createPrimaryService(),
@@ -525,7 +523,7 @@ const AppDetail: Component = () => {
 			services[index] = service;
 			return {
 				...previous,
-				services: ensureSinglePublicHttpService(services),
+				services,
 			};
 		});
 	};
@@ -533,8 +531,8 @@ const AppDetail: Component = () => {
 	const removeEditService = (index: number) => {
 		setEditForm((previous) => ({
 			...previous,
-			services: ensureSinglePublicHttpService(
-				previous.services.filter((_, serviceIndex) => serviceIndex !== index),
+			services: previous.services.filter(
+				(_, serviceIndex) => serviceIndex !== index,
 			),
 		}));
 	};
@@ -562,7 +560,7 @@ const AppDetail: Component = () => {
 		try {
 			const form = editForm();
 			const domains = parseDomainsText(form.domainsText);
-			const services = ensureSinglePublicHttpService(form.services);
+			const services = form.services;
 			if (services.length === 0) {
 				throw new Error("add at least one service");
 			}
@@ -1041,7 +1039,7 @@ const AppDetail: Component = () => {
 										>
 											<div class="flex items-center justify-between gap-3">
 												<span class="text-sm font-medium">{service.name}</span>
-												<Show when={isPrimaryService(app()!, service.id)}>
+												<Show when={isPublicService(app()!, service.id)}>
 													<span
 														class={`text-[10px] uppercase tracking-wide ${
 															selectedProjectService()?.id === service.id
@@ -1080,9 +1078,14 @@ const AppDetail: Component = () => {
 														<h3 class="text-xl font-serif text-black">
 															{service().name}
 														</h3>
-														<Show when={isPrimaryService(app()!, service().id)}>
+														<Show when={isPublicService(app()!, service().id)}>
 															<span class="border border-black px-2 py-1 text-[10px] uppercase tracking-wide text-black">
 																public http
+															</span>
+														</Show>
+														<Show when={!service().expose_http}>
+															<span class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-500">
+																private only
 															</span>
 														</Show>
 													</div>
@@ -1150,6 +1153,12 @@ const AppDetail: Component = () => {
 													<p class="mt-1">
 														{service().expose_http ? "enabled" : "disabled"}
 													</p>
+												</div>
+												<div>
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														public url
+													</p>
+													<p class="mt-1">{formatPublicUrlStatus(service())}</p>
 												</div>
 												<div>
 													<p class="text-[10px] uppercase tracking-wide text-neutral-400">

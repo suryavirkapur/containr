@@ -16,13 +16,21 @@ pub async fn resolve_app_deployment_source(
     owner_id: Uuid,
     app: &App,
 ) -> Result<DeploymentSource, (StatusCode, Json<ErrorResponse>)> {
-    if is_local_source_path(&app.github_url) {
+    resolve_source_deployment_source(state, owner_id, &app.github_url).await
+}
+
+pub async fn resolve_source_deployment_source(
+    state: &AppState,
+    owner_id: Uuid,
+    source_url: &str,
+) -> Result<DeploymentSource, (StatusCode, Json<ErrorResponse>)> {
+    if is_local_source_path(source_url) {
         return Ok(DeploymentSource::LocalPath {
-            path: app.github_url.clone(),
+            path: source_url.to_string(),
         });
     }
 
-    resolve_remote_deployment_source(state, owner_id, app).await
+    resolve_remote_source_deployment(state, owner_id, source_url).await
 }
 
 pub async fn resolve_remote_deployment_source(
@@ -30,9 +38,17 @@ pub async fn resolve_remote_deployment_source(
     owner_id: Uuid,
     app: &App,
 ) -> Result<DeploymentSource, (StatusCode, Json<ErrorResponse>)> {
-    let token = resolve_remote_git_token(state, owner_id, app).await?;
+    resolve_remote_source_deployment(state, owner_id, &app.github_url).await
+}
+
+pub async fn resolve_remote_source_deployment(
+    state: &AppState,
+    owner_id: Uuid,
+    source_url: &str,
+) -> Result<DeploymentSource, (StatusCode, Json<ErrorResponse>)> {
+    let token = resolve_remote_git_token(state, owner_id, source_url).await?;
     Ok(DeploymentSource::RemoteGit {
-        url: app.github_url.clone(),
+        url: source_url.to_string(),
         token,
     })
 }
@@ -40,7 +56,7 @@ pub async fn resolve_remote_deployment_source(
 pub async fn resolve_remote_git_token(
     state: &AppState,
     owner_id: Uuid,
-    app: &App,
+    repo_url: &str,
 ) -> Result<Option<String>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
 
@@ -52,7 +68,7 @@ pub async fn resolve_remote_git_token(
         )
         .map_err(internal_error)?;
 
-        let token = get_repo_installation_token(&app_config, &private_key_pem, &app.github_url)
+        let token = get_repo_installation_token(&app_config, &private_key_pem, repo_url)
             .await
             .map_err(|e| {
                 (

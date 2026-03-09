@@ -1,11 +1,16 @@
 import { Component, createEffect, createSignal, For, Show } from "solid-js";
 
-import { EditableEnvVar } from "../utils/projectEditor";
+import { EditableKeyValueEntry } from "../utils/keyValueEntries";
 
 interface EnvVarEditorProps {
-	envVars: EditableEnvVar[];
-	onChange: (envVars: EditableEnvVar[]) => void;
+	envVars: EditableKeyValueEntry[];
+	onChange: (envVars: EditableKeyValueEntry[]) => void;
 	theme?: "light" | "dark";
+	title?: string;
+	description?: string;
+	emptyText?: string;
+	addLabel?: string;
+	bulkHint?: string;
 }
 
 const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
@@ -19,6 +24,15 @@ const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
 			: "bg-white border-neutral-300 text-black focus:border-black";
 	const subtleTextClass = () =>
 		isDark() ? "text-neutral-400" : "text-neutral-500";
+	const title = () => props.title ?? "environment variables";
+	const description = () =>
+		props.description ?? "shared across every service in this project";
+	const emptyText = () =>
+		props.emptyText ?? "no environment variables configured";
+	const addLabel = () => props.addLabel ?? "add key/value pair";
+	const bulkHint = () =>
+		props.bulkHint ??
+		".env format works. existing secret keys keep their secret flag.";
 
 	createEffect(() => {
 		if (!bulkEdit()) {
@@ -37,7 +51,7 @@ const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
 
 	const updateEnvVar = (
 		index: number,
-		field: keyof EditableEnvVar,
+		field: keyof EditableKeyValueEntry,
 		value: string | boolean,
 	) => {
 		props.onChange(
@@ -60,11 +74,9 @@ const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
 			<div class="flex justify-between items-center mb-4">
 				<div>
 					<h3 class="text-xs text-neutral-500 uppercase tracking-wider">
-						environment variables
+						{title()}
 					</h3>
-					<p class={`text-xs mt-2 ${subtleTextClass()}`}>
-						shared across every service in this project
-					</p>
+					<p class={`text-xs mt-2 ${subtleTextClass()}`}>{description()}</p>
 				</div>
 				<label class="flex items-center gap-2 cursor-pointer text-xs text-neutral-500">
 					<span>bulk edit</span>
@@ -91,9 +103,7 @@ const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
 					placeholder={"export key=value\nanother_key=another_value"}
 					class={`w-full h-36 px-3 py-2 border focus:outline-none text-sm font-mono resize-none ${inputClass()}`}
 				/>
-				<p class={`text-xs mt-2 ${subtleTextClass()}`}>
-					.env format works. existing secret keys keep their secret flag.
-				</p>
+				<p class={`text-xs mt-2 ${subtleTextClass()}`}>{bulkHint()}</p>
 			</Show>
 
 			<Show when={!bulkEdit()}>
@@ -148,7 +158,7 @@ const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
 					<div
 						class={`text-center py-8 text-sm border border-dashed border-neutral-200 ${subtleTextClass()}`}
 					>
-						no environment variables configured
+						{emptyText()}
 					</div>
 				</Show>
 
@@ -157,21 +167,21 @@ const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
 					onClick={addEnvVar}
 					class="mt-3 px-3 py-1.5 border border-neutral-300 text-neutral-700 hover:border-black hover:text-black text-xs"
 				>
-					add key/value pair
+					{addLabel()}
 				</button>
 			</Show>
 		</section>
 	);
 };
 
-function envVarsToBulkText(envVars: EditableEnvVar[]) {
+function envVarsToBulkText(envVars: EditableKeyValueEntry[]) {
 	return envVars.map((envVar) => `${envVar.key}=${envVar.value}`).join("\n");
 }
 
 function bulkTextToEnvVars(
 	text: string,
-	existingEnvVars: EditableEnvVar[],
-): EditableEnvVar[] {
+	existingEnvVars: EditableKeyValueEntry[],
+): EditableKeyValueEntry[] {
 	const existingByKey = new Map(
 		existingEnvVars.map((envVar) => [envVar.key, envVar]),
 	);
@@ -201,7 +211,7 @@ function bulkTextToEnvVars(
 				secret: existing?.secret ?? false,
 			};
 		})
-		.filter((envVar): envVar is EditableEnvVar => envVar !== null);
+		.filter((envVar): envVar is EditableKeyValueEntry => envVar !== null);
 }
 
 export default EnvVarEditor;

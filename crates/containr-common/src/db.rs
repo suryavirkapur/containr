@@ -18,9 +18,9 @@ use crate::managed_services::{
 };
 #[allow(unused_imports)]
 use crate::models::{
-    App, Certificate, ContainerService, Deployment, DeploymentStatus, EnvVar, GithubAppConfig,
-    GithubInstallation, HealthCheck, Project, RestartPolicy, RolloutStrategy, ServiceDeployment,
-    ServiceHealth, ServiceMount, ServiceRegistryAuth, User,
+    App, BuildArg, Certificate, ContainerService, Deployment, DeploymentStatus, EnvVar,
+    GithubAppConfig, GithubInstallation, HealthCheck, Project, RestartPolicy, RolloutStrategy,
+    ServiceDeployment, ServiceHealth, ServiceMount, ServiceRegistryAuth, User,
 };
 
 const USERS_TABLE: &str = "users";
@@ -33,6 +33,8 @@ const SERVICE_ADDITIONAL_PORTS_TABLE: &str = "service_additional_ports";
 const SERVICE_COMMAND_ARGS_TABLE: &str = "service_command_args";
 const SERVICE_ENTRYPOINT_ARGS_TABLE: &str = "service_entrypoint_args";
 const SERVICE_REGISTRY_AUTH_TABLE: &str = "service_registry_auth";
+const SERVICE_ENV_VARS_TABLE: &str = "service_env_vars";
+const SERVICE_BUILD_ARGS_TABLE: &str = "service_build_args";
 const SERVICE_MOUNTS_TABLE: &str = "service_mounts";
 const SERVICE_DEPLOYMENTS_TABLE: &str = "service_deployments";
 const SERVICE_DEPLOYMENT_LOGS_TABLE: &str = "service_deployment_logs";

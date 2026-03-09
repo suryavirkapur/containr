@@ -19,8 +19,9 @@ current context:
   by database id instead of a shared backup folder filtered by database name
 - managed queue creation now starts the queue container immediately and persists
   failed startup attempts as failed queue resources
-- containr startup now marks any interrupted pending/cloning/building/pushing/
-  starting deployments as failed with a recovery log entry
+- containr startup now replays interrupted pending/cloning/building/pushing/
+  starting deployments from persisted deployment rows, reconstructs the saved
+  deployment source, and only marks the row failed if replay itself breaks
 - the committed workspace manifest now enables the `uuid` v5 feature so clean
   release worktrees build the checked-in code without relying on dirty local
   dependency feature changes
@@ -35,6 +36,16 @@ current context:
   the dedicated `/api/projects` handlers now own the documented project api
 - the solidjs dashboard, project create flow, and project detail page now call
   `/api/projects` directly instead of using the legacy `/api/apps` endpoints
+- projects now persist per-service env vars plus docker build settings
+  (`build_context`, `dockerfile_path`, `build_target`, and `build_args`) in
+  the shared model, sqlite, the api, and the deployment worker
+- project creation now queues its initial deployment immediately, so create is
+  also the first deploy unless source resolution or queue submission fails
+- services can now stay fully private: the ui no longer forces a public http
+  service, and the proxy removes stale routes if no service is exposed
+- the service editor now has dedicated overview/build/runtime/storage tabs and
+  reuses the shared key/value editor pattern for project env vars, service env
+  vars, and build arguments
 - the dashboard frontend is now intended to live only in `containr-api`; the
   proxy still forwards the base hostname to the api, but the old proxy-side
   embedded frontend/build path is being removed as dead duplicate code
@@ -123,8 +134,20 @@ current context:
   service through tar archive endpoints rooted at the host-side mount path
 
 pending tasks:
-- make deployment queueing durable across process restarts instead of relying on
-  an in-memory worker channel
+- platform roadmap:
+  1. expose initial deployment state better after create:
+     - return or surface the queued deployment id/status directly from create
+     - consider navigating straight to the first deployment log stream
+  2. harden startup replay coverage:
+     - add regression tests for replayed deployment reconstruction
+     - add a route-refresh test for the zero-public-service case
+  3. decide whether deployment-row replay is enough durability:
+     - current deploys survive restarts through persisted deployment rows
+     - decide if a separate queue table is still worth the complexity
+  4. keep pushing the product model forward:
+     - migrate `github_url` api naming toward a generic source model
+     - add queue logs and health visibility in the ui
+     - improve env/build validation and duplicate-key feedback
 - add true per-bucket rustfs credentials and policies instead of exposing the current shared
   storage principal through the bucket connection endpoint
 - migrate app api field names from github_url to a generic source_url/source model without breaking clients
@@ -135,7 +158,6 @@ pending tasks:
   handling in the shared env editor
 - consider adding server-side repo search or incremental loading for very large github installations
 - add automated coverage for deployment log websocket resume behavior and historical-log preload in the ui
-- make deployment jobs durable across restarts instead of relying on the in-memory queue
 - add regression coverage for github app deployment source resolution with derived encryption keys and legacy-secret fallback
 - add migration/import tooling if existing sled installs need a one-step move into sqlite metadata storage
 - add a rustfs bucket verification/read-path in the api so the ui can inspect objects directly instead of only showing stored size metadata

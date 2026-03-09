@@ -1685,6 +1685,12 @@ export interface components {
         ServiceRequest: {
             /** @description additional container ports */
             additional_ports?: number[] | null;
+            /** @description docker build arguments */
+            build_args?: components["schemas"]["EnvVarRequest"][] | null;
+            /** @description relative repo path used as the docker build context */
+            build_context?: string | null;
+            /** @description docker build target stage */
+            build_target?: string | null;
             /** @description command arguments override */
             command?: string[] | null;
             /**
@@ -1694,8 +1700,12 @@ export interface components {
             cpu_limit?: number | null;
             /** @description service names this depends on */
             depends_on?: string[] | null;
+            /** @description relative path to the dockerfile within the repo */
+            dockerfile_path?: string | null;
             /** @description entrypoint override */
             entrypoint?: string[] | null;
+            /** @description service-specific environment variables */
+            env_vars?: components["schemas"]["EnvVarRequest"][] | null;
             /** @description whether this service receives public http traffic */
             expose_http?: boolean | null;
             health_check?: null | components["schemas"]["HealthCheckRequest"];
@@ -1730,6 +1740,12 @@ export interface components {
         ServiceResponse: {
             /** @description additional container ports */
             additional_ports: number[];
+            /** @description docker build arguments */
+            build_args: components["schemas"]["EnvVarResponse"][];
+            /** @description relative repo path used as the docker build context */
+            build_context?: string | null;
+            /** @description docker build target stage */
+            build_target?: string | null;
             /** @description command arguments override */
             command: string[];
             /**
@@ -1739,8 +1755,12 @@ export interface components {
             cpu_limit?: number | null;
             /** @description dependencies */
             depends_on: string[];
+            /** @description relative path to the dockerfile within the repo */
+            dockerfile_path?: string | null;
             /** @description entrypoint override */
             entrypoint: string[];
+            /** @description service-specific environment variables */
+            env_vars: components["schemas"]["EnvVarResponse"][];
             /** @description whether this service receives public http traffic */
             expose_http: boolean;
             health_check?: null | components["schemas"]["HealthCheckResponse"];

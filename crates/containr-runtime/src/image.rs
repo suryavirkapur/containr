@@ -2,6 +2,7 @@
 //!
 //! high-level api for container image operations using bollard.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -28,6 +29,15 @@ pub struct RegistryCredentials {
     pub server: Option<String>,
     pub username: String,
     pub password: String,
+}
+
+/// docker image build configuration
+#[derive(Debug, Clone, Default)]
+pub struct ImageBuildConfig {
+    pub context_path: String,
+    pub dockerfile: Option<String>,
+    pub target: Option<String>,
+    pub build_args: HashMap<String, String>,
 }
 
 /// manages container image operations
@@ -162,7 +172,13 @@ impl ImageManager {
         context_path: &str,
         dockerfile: Option<&str>,
     ) -> Result<ImageInfo> {
-        self.build_image_with_logs(name, context_path, dockerfile, |_| {})
+        let config = ImageBuildConfig {
+            context_path: context_path.to_string(),
+            dockerfile: dockerfile.map(|value| value.to_string()),
+            target: None,
+            build_args: HashMap::new(),
+        };
+        self.build_image_config_with_logs(name, &config, |_| {})
             .await
     }
 
@@ -172,12 +188,32 @@ impl ImageManager {
         name: &str,
         context_path: &str,
         dockerfile: Option<&str>,
+        log_line: F,
+    ) -> Result<ImageInfo>
+    where
+        F: FnMut(&str),
+    {
+        let config = ImageBuildConfig {
+            context_path: context_path.to_string(),
+            dockerfile: dockerfile.map(|value| value.to_string()),
+            target: None,
+            build_args: HashMap::new(),
+        };
+        self.build_image_config_with_logs(name, &config, log_line)
+            .await
+    }
+
+    /// builds an image from an explicit build configuration
+    pub async fn build_image_config_with_logs<F>(
+        &self,
+        name: &str,
+        config: &ImageBuildConfig,
         mut log_line: F,
     ) -> Result<ImageInfo>
     where
         F: FnMut(&str),
     {
-        info!(name = %name, context = %context_path, "building image");
+        info!(name = %name, context = %config.context_path, "building image");
 
         if self.stub_mode {
             log_line("[stub] build skipped (docker not available)");
@@ -189,12 +225,12 @@ impl ImageManager {
         }
 
         // determine which containerfile to use
-        let containerfile = match dockerfile {
+        let containerfile = match config.dockerfile.as_deref() {
             Some(f) => f.to_string(),
             None => {
                 // auto-detect: prefer Containerfile over Dockerfile
-                let containerfile_path = Path::new(context_path).join("Containerfile");
-                let dockerfile_path = Path::new(context_path).join("Dockerfile");
+                let containerfile_path = Path::new(&config.context_path).join("Containerfile");
+                let dockerfile_path = Path::new(&config.context_path).join("Dockerfile");
 
                 if containerfile_path.exists() {
                     info!(name = %name, "auto-detected Containerfile");
@@ -210,15 +246,27 @@ impl ImageManager {
             }
         };
 
-        info!(name = %name, context = %context_path, containerfile = %containerfile, "building image with containerfile");
+        info!(
+            name = %name,
+            context = %config.context_path,
+            containerfile = %containerfile,
+            target = %config.target.clone().unwrap_or_default(),
+            "building image with containerfile"
+        );
 
         // create tar archive of the context directory
-        let tar_data = create_tar_archive(context_path)
+        let tar_data = create_tar_archive(&config.context_path)
             .map_err(|e| ClientError::Operation(format!("failed to create tar archive: {}", e)))?;
 
         let options = BuildImageOptions {
             dockerfile: containerfile,
             t: Some(name.to_string()),
+            buildargs: if config.build_args.is_empty() {
+                None
+            } else {
+                Some(config.build_args.clone())
+            },
+            target: config.target.clone().unwrap_or_default(),
             rm: true,
             ..Default::default()
         };

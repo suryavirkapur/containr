@@ -6,11 +6,7 @@ import ServiceForm, {
 } from "../components/ServiceForm";
 import EnvVarEditor from "../components/EnvVarEditor";
 import { api, components } from "../api";
-import {
-	EditableEnvVar,
-	ensureSinglePublicHttpService,
-	mapServiceToRequest,
-} from "../utils/projectEditor";
+import { EditableEnvVar, mapServiceToRequest } from "../utils/projectEditor";
 
 type GithubAppStatus = components["schemas"]["GithubAppStatusResponse"];
 type RepoInfo = components["schemas"]["RepoInfo"];
@@ -49,6 +45,7 @@ const NewApp: Component = () => {
 	const [port, setPort] = createSignal("8080");
 	const [singleContainerReplicas, setSingleContainerReplicas] =
 		createSignal("1");
+	const [singleContainerPublic, setSingleContainerPublic] = createSignal(true);
 	const [services, setServices] = createSignal<Service[]>([]);
 	const [envVars, setEnvVars] = createSignal<EditableEnvVar[]>([]);
 	const [error, setError] = createSignal("");
@@ -96,7 +93,7 @@ const NewApp: Component = () => {
 	const addService = () => {
 		const currentServices = services();
 		const service = createEmptyService();
-		if (!currentServices.some((entry) => entry.expose_http)) {
+		if (currentServices.length === 0) {
 			service.expose_http = true;
 		}
 		setServices([...currentServices, service]);
@@ -105,13 +102,11 @@ const NewApp: Component = () => {
 	const updateService = (index: number, service: Service) => {
 		const updated = [...services()];
 		updated[index] = service;
-		setServices(ensureSinglePublicHttpService(updated));
+		setServices(updated);
 	};
 
 	const removeService = (index: number) => {
-		setServices(
-			ensureSinglePublicHttpService(services().filter((_, i) => i !== index)),
-		);
+		setServices(services().filter((_, i) => i !== index));
 	};
 
 	const handleSubmit = async (e: Event) => {
@@ -142,35 +137,33 @@ const NewApp: Component = () => {
 				if (services().length === 0) {
 					throw new Error("add at least one service");
 				}
-				body.services = ensureSinglePublicHttpService(services()).map(
-					mapServiceToRequest,
-				);
+				body.services = services().map(mapServiceToRequest);
 			} else {
-				if (parsedReplicas > 1) {
-					body.services = [
-						{
-							name: "web",
-							image: null,
-							port: parsedPort,
-							expose_http: true,
-							additional_ports: null,
-							replicas: parsedReplicas,
-							memory_limit_mb: null,
-							cpu_limit: null,
-							depends_on: null,
-							health_check: null,
-							restart_policy: "always",
-							registry_auth: null,
-							command: null,
-							entrypoint: null,
-							working_dir: null,
-							mounts: null,
-						},
-					];
-				} else {
-					// single-container mode (backward compat)
-					body.port = parsedPort;
-				}
+				body.services = [
+					{
+						name: "web",
+						image: null,
+						port: parsedPort,
+						expose_http: singleContainerPublic(),
+						additional_ports: null,
+						replicas: parsedReplicas,
+						memory_limit_mb: null,
+						cpu_limit: null,
+						depends_on: null,
+						health_check: null,
+						restart_policy: "always",
+						registry_auth: null,
+						env_vars: null,
+						build_context: null,
+						dockerfile_path: null,
+						build_target: null,
+						build_args: null,
+						command: null,
+						entrypoint: null,
+						working_dir: null,
+						mounts: null,
+					},
+				];
 			}
 
 			const { data, error: apiError } = await api.POST("/api/projects", {
@@ -407,6 +400,23 @@ const NewApp: Component = () => {
 										values above 1 are deployed as a replicated `web` service.
 									</p>
 								</div>
+							</div>
+							<div class="mt-4 border border-neutral-200 bg-neutral-50 px-4 py-3">
+								<label class="flex items-center gap-2 text-xs text-neutral-600">
+									<input
+										type="checkbox"
+										checked={singleContainerPublic()}
+										onChange={(e) =>
+											setSingleContainerPublic(e.currentTarget.checked)
+										}
+										class="border border-neutral-300"
+									/>
+									public http service
+								</label>
+								<p class="mt-2 text-xs text-neutral-500">
+									disable this when the single service should run privately
+									without a routed project url.
+								</p>
 							</div>
 						</div>
 					</Show>

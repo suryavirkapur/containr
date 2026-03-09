@@ -15,7 +15,6 @@ use tokio::time::MissedTickBehavior;
 use tracing::{info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
-use containr_common::models::DeploymentStatus;
 use containr_common::{Config, Database};
 
 const CERT_RENEWAL_CHECK_INTERVAL_SECS: u64 = 12 * 60 * 60;
@@ -84,7 +83,6 @@ async fn main() -> anyhow::Result<()> {
     // open database
     let db = Database::open(&config.database)?;
     bootstrap_admin_user(&db)?;
-    recover_interrupted_deployments(&db)?;
     info!(path = %config.database.path, backend = ?config.database.backend, "database opened");
     let shared_config = Arc::new(RwLock::new(config.clone()));
 
@@ -388,47 +386,6 @@ fn bootstrap_admin_user(db: &Database) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn recover_interrupted_deployments(db: &Database) -> anyhow::Result<()> {
-    let mut recovered = 0usize;
-
-    for app in db.list_apps()? {
-        for mut deployment in db.list_deployments_by_app(app.id)? {
-            if !is_interrupted_deployment_status(deployment.status) {
-                continue;
-            }
-
-            deployment.status = DeploymentStatus::Failed;
-            deployment.finished_at = Some(chrono::Utc::now());
-            db.append_deployment_log(
-                deployment.id,
-                "deployment marked failed after containr restarted",
-            )?;
-            db.save_deployment(&deployment)?;
-            recovered += 1;
-        }
-    }
-
-    if recovered > 0 {
-        warn!(
-            count = recovered,
-            "marked interrupted deployments as failed during startup recovery"
-        );
-    }
-
-    Ok(())
-}
-
-fn is_interrupted_deployment_status(status: DeploymentStatus) -> bool {
-    matches!(
-        status,
-        DeploymentStatus::Pending
-            | DeploymentStatus::Cloning
-            | DeploymentStatus::Building
-            | DeploymentStatus::Pushing
-            | DeploymentStatus::Starting
-    )
-}
-
 /// loads routes from database for all apps with domains
 async fn load_routes_from_db(
     db: &containr_common::Database,
@@ -517,6 +474,7 @@ async fn refresh_routes_for_app(
     let service = match select_exposed_service(&app) {
         Some(service) => service,
         None => {
+            remove_app_routes(routes, &app, base_domain);
             tracing::warn!(app_id = %app.id, "no exposed http service selected for app");
             return;
         }
@@ -596,6 +554,18 @@ async fn refresh_routes_for_app(
             algorithm,
         });
         tracing::info!(domain = %custom_domain, "refreshed custom domain route for app");
+    }
+}
+
+fn remove_app_routes(
+    routes: &containr_proxy::RouteManager,
+    app: &containr_common::models::App,
+    base_domain: &str,
+) {
+    let subdomain = format!("{}.{}", app.name, base_domain);
+    routes.remove_route(&subdomain);
+    for custom_domain in app.custom_domains() {
+        routes.remove_route(&custom_domain);
     }
 }
 
@@ -688,19 +658,10 @@ async fn storage_or_dashboard_domain_allowed(config: &Arc<RwLock<Config>>, domai
 fn select_exposed_service(
     app: &containr_common::models::App,
 ) -> Option<containr_common::models::ContainerService> {
-    if app.services.is_empty() {
-        return None;
-    }
-
-    if let Some(service) = app.services.iter().find(|service| service.expose_http) {
-        return Some(service.clone());
-    }
-
-    if let Some(service) = app.services.iter().find(|service| service.name == "web") {
-        return Some(service.clone());
-    }
-
-    app.services.first().cloned()
+    app.services
+        .iter()
+        .find(|service| service.expose_http)
+        .cloned()
 }
 
 fn active_http_container_ids(

@@ -24,7 +24,7 @@ impl SqliteDatabase {
             pragma journal_mode = wal;
             pragma synchronous = normal;
             pragma foreign_keys = on;
-            pragma user_version = 5;
+            pragma user_version = 6;
 
             create table if not exists users (
                 id text primary key,
@@ -89,6 +89,9 @@ impl SqliteDatabase {
                 health_check_timeout_secs integer,
                 health_check_retries integer,
                 restart_policy text not null,
+                build_context text,
+                dockerfile_path text,
+                build_target text,
                 working_dir text,
                 created_at text not null,
                 updated_at text not null,
@@ -137,6 +140,26 @@ impl SqliteDatabase {
                 foreign key (service_id) references services(id) on delete cascade
             );
 
+            create table if not exists service_env_vars (
+                service_id text not null,
+                position integer not null,
+                key text not null,
+                value text not null,
+                secret integer not null,
+                primary key (service_id, position),
+                foreign key (service_id) references services(id) on delete cascade
+            );
+
+            create table if not exists service_build_args (
+                service_id text not null,
+                position integer not null,
+                key text not null,
+                value text not null,
+                secret integer not null,
+                primary key (service_id, position),
+                foreign key (service_id) references services(id) on delete cascade
+            );
+
             create table if not exists service_mounts (
                 service_id text not null,
                 position integer not null,
@@ -152,6 +175,10 @@ impl SqliteDatabase {
                 app_id text not null,
                 commit_sha text not null,
                 commit_message text,
+                branch text not null default 'main',
+                source_url text,
+                rollout_strategy text not null default 'stop_first',
+                rollback_from_deployment_id text,
                 status text not null,
                 container_id text,
                 image_id text,
@@ -179,6 +206,7 @@ impl SqliteDatabase {
                 replica_index integer not null,
                 status text not null,
                 container_id text,
+                image_id text,
                 health text not null,
                 started_at text,
                 finished_at text,
@@ -354,7 +382,30 @@ impl SqliteDatabase {
             "expose_http",
             "integer not null default 0",
         )?;
+        ensure_column(&connection, SERVICES_TABLE, "build_context", "text")?;
+        ensure_column(&connection, SERVICES_TABLE, "dockerfile_path", "text")?;
+        ensure_column(&connection, SERVICES_TABLE, "build_target", "text")?;
         ensure_column(&connection, SERVICES_TABLE, "working_dir", "text")?;
+        ensure_column(
+            &connection,
+            DEPLOYMENTS_TABLE,
+            "branch",
+            "text not null default 'main'",
+        )?;
+        ensure_column(&connection, DEPLOYMENTS_TABLE, "source_url", "text")?;
+        ensure_column(
+            &connection,
+            DEPLOYMENTS_TABLE,
+            "rollout_strategy",
+            "text not null default 'stop_first'",
+        )?;
+        ensure_column(
+            &connection,
+            DEPLOYMENTS_TABLE,
+            "rollback_from_deployment_id",
+            "text",
+        )?;
+        ensure_column(&connection, SERVICE_DEPLOYMENTS_TABLE, "image_id", "text")?;
 
         Ok(Self {
             conn: Mutex::new(connection),
@@ -497,6 +548,50 @@ impl SqliteDatabase {
         Ok(mounts)
     }
 
+    fn load_service_env_vars(&self, conn: &Connection, service_id: &str) -> Result<Vec<EnvVar>> {
+        let mut statement = conn.prepare(&format!(
+            "select key, value, secret from {SERVICE_ENV_VARS_TABLE}
+             where service_id = ?1
+             order by position asc"
+        ))?;
+        let mut rows = statement.query(params![service_id])?;
+        let mut env_vars = Vec::new();
+
+        while let Some(row) = rows.next()? {
+            env_vars.push(EnvVar {
+                key: row.get(0)?,
+                value: row.get(1)?,
+                secret: int_to_bool(row.get::<_, i64>(2)?),
+            });
+        }
+
+        Ok(env_vars)
+    }
+
+    fn load_service_build_args(
+        &self,
+        conn: &Connection,
+        service_id: &str,
+    ) -> Result<Vec<BuildArg>> {
+        let mut statement = conn.prepare(&format!(
+            "select key, value, secret from {SERVICE_BUILD_ARGS_TABLE}
+             where service_id = ?1
+             order by position asc"
+        ))?;
+        let mut rows = statement.query(params![service_id])?;
+        let mut build_args = Vec::new();
+
+        while let Some(row) = rows.next()? {
+            build_args.push(BuildArg {
+                key: row.get(0)?,
+                value: row.get(1)?,
+                secret: int_to_bool(row.get::<_, i64>(2)?),
+            });
+        }
+
+        Ok(build_args)
+    }
+
     fn load_service_additional_ports(
         &self,
         conn: &Connection,
@@ -577,7 +672,8 @@ impl SqliteDatabase {
                         memory_limit, cpu_limit,
                         health_check_path, health_check_interval_secs,
                         health_check_timeout_secs, health_check_retries, restart_policy,
-                        working_dir, created_at, updated_at
+                        build_context, dockerfile_path, build_target, working_dir, created_at,
+                        updated_at
                      from {SERVICES_TABLE}
                      where id = ?1"
                 ),
@@ -599,8 +695,11 @@ impl SqliteDatabase {
                         row.get::<_, Option<i64>>(12)?,
                         row.get::<_, String>(13)?,
                         row.get::<_, Option<String>>(14)?,
-                        row.get::<_, String>(15)?,
-                        row.get::<_, String>(16)?,
+                        row.get::<_, Option<String>>(15)?,
+                        row.get::<_, Option<String>>(16)?,
+                        row.get::<_, Option<String>>(17)?,
+                        row.get::<_, String>(18)?,
+                        row.get::<_, String>(19)?,
                     ))
                 },
             )
@@ -632,15 +731,20 @@ impl SqliteDatabase {
             memory_limit: transpose_i64_to_u64(record.7, "service memory_limit")?,
             cpu_limit: record.8,
             depends_on: self.load_service_dependencies(conn, service_id)?,
+            env_vars: self.load_service_env_vars(conn, service_id)?,
+            build_context: record.14,
+            dockerfile_path: record.15,
+            build_target: record.16,
+            build_args: self.load_service_build_args(conn, service_id)?,
             command: self.load_service_args(conn, SERVICE_COMMAND_ARGS_TABLE, service_id)?,
             entrypoint: self.load_service_args(conn, SERVICE_ENTRYPOINT_ARGS_TABLE, service_id)?,
-            working_dir: record.14,
+            working_dir: record.17,
             registry_auth: self.load_service_registry_auth(conn, service_id)?,
             mounts: self.load_service_mounts(conn, service_id)?,
             health_check,
             restart_policy: decode_enum(record.13)?,
-            created_at: parse_datetime(record.15)?,
-            updated_at: parse_datetime(record.16)?,
+            created_at: parse_datetime(record.18)?,
+            updated_at: parse_datetime(record.19)?,
         }))
     }
 
@@ -748,7 +852,7 @@ impl SqliteDatabase {
             .query_row(
                 &format!(
                     "select id, service_id, deployment_id, replica_index, status, container_id,
-                        health, started_at, finished_at, created_at
+                        image_id, health, started_at, finished_at, created_at
                      from {SERVICE_DEPLOYMENTS_TABLE}
                      where id = ?1"
                 ),
@@ -761,10 +865,11 @@ impl SqliteDatabase {
                         row.get::<_, i64>(3)?,
                         row.get::<_, String>(4)?,
                         row.get::<_, Option<String>>(5)?,
-                        row.get::<_, String>(6)?,
-                        row.get::<_, Option<String>>(7)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, String>(7)?,
                         row.get::<_, Option<String>>(8)?,
-                        row.get::<_, String>(9)?,
+                        row.get::<_, Option<String>>(9)?,
+                        row.get::<_, String>(10)?,
                     ))
                 },
             )
@@ -781,11 +886,12 @@ impl SqliteDatabase {
             replica_index: parse_u32(record.3, "service deployment replica_index")?,
             status: decode_enum(record.4)?,
             container_id: record.5,
-            health: decode_enum(record.6)?,
+            image_id: record.6,
+            health: decode_enum(record.7)?,
             logs: self.load_service_deployment_logs(conn, service_deployment_id)?,
-            started_at: parse_optional_datetime(record.7)?,
-            finished_at: parse_optional_datetime(record.8)?,
-            created_at: parse_datetime(record.9)?,
+            started_at: parse_optional_datetime(record.8)?,
+            finished_at: parse_optional_datetime(record.9)?,
+            created_at: parse_datetime(record.10)?,
         }))
     }
 
@@ -851,7 +957,8 @@ impl SqliteDatabase {
         let record = conn
             .query_row(
                 &format!(
-                    "select id, app_id, commit_sha, commit_message, status, container_id,
+                    "select id, app_id, commit_sha, commit_message, branch, source_url,
+                        rollout_strategy, rollback_from_deployment_id, status, container_id,
                         image_id, started_at, finished_at, created_at
                      from {DEPLOYMENTS_TABLE}
                      where id = ?1"
@@ -865,10 +972,14 @@ impl SqliteDatabase {
                         row.get::<_, Option<String>>(3)?,
                         row.get::<_, String>(4)?,
                         row.get::<_, Option<String>>(5)?,
-                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, String>(6)?,
                         row.get::<_, Option<String>>(7)?,
-                        row.get::<_, Option<String>>(8)?,
-                        row.get::<_, String>(9)?,
+                        row.get::<_, String>(8)?,
+                        row.get::<_, Option<String>>(9)?,
+                        row.get::<_, Option<String>>(10)?,
+                        row.get::<_, Option<String>>(11)?,
+                        row.get::<_, Option<String>>(12)?,
+                        row.get::<_, String>(13)?,
                     ))
                 },
             )
@@ -883,15 +994,19 @@ impl SqliteDatabase {
             app_id: parse_uuid(record.1)?,
             commit_sha: record.2,
             commit_message: record.3,
-            status: decode_enum(record.4)?,
-            container_id: record.5,
-            image_id: record.6,
+            branch: record.4,
+            source_url: record.5,
+            rollout_strategy: decode_enum(record.6)?,
+            rollback_from_deployment_id: transpose_string_to_uuid(record.7)?,
+            status: decode_enum(record.8)?,
+            container_id: record.9,
+            image_id: record.10,
             service_deployments: self
                 .load_service_deployments_for_deployment(conn, deployment_id)?,
             logs: Vec::new(),
-            started_at: parse_optional_datetime(record.7)?,
-            finished_at: parse_optional_datetime(record.8)?,
-            created_at: parse_datetime(record.9)?,
+            started_at: parse_optional_datetime(record.11)?,
+            finished_at: parse_optional_datetime(record.12)?,
+            created_at: parse_datetime(record.13)?,
         }))
     }
 
@@ -1230,9 +1345,11 @@ impl SqliteDatabase {
                     id, app_id, name, image, port, expose_http, replicas, memory_limit,
                     cpu_limit, health_check_path, health_check_interval_secs,
                     health_check_timeout_secs, health_check_retries, restart_policy,
-                    working_dir, created_at, updated_at
+                    build_context, dockerfile_path, build_target, working_dir, created_at,
+                    updated_at
                 ) values (
-                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+                    ?17, ?18, ?19, ?20
                 )
                 on conflict(id) do update set
                     app_id = excluded.app_id,
@@ -1248,6 +1365,9 @@ impl SqliteDatabase {
                     health_check_timeout_secs = excluded.health_check_timeout_secs,
                     health_check_retries = excluded.health_check_retries,
                     restart_policy = excluded.restart_policy,
+                    build_context = excluded.build_context,
+                    dockerfile_path = excluded.dockerfile_path,
+                    build_target = excluded.build_target,
                     working_dir = excluded.working_dir,
                     created_at = excluded.created_at,
                     updated_at = excluded.updated_at"
@@ -1267,6 +1387,9 @@ impl SqliteDatabase {
                 health_timeout,
                 health_retries,
                 encode_enum(&service.restart_policy)?,
+                service.build_context.as_deref(),
+                service.dockerfile_path.as_deref(),
+                service.build_target.as_deref(),
                 service.working_dir.as_deref(),
                 service.created_at.to_rfc3339(),
                 service.updated_at.to_rfc3339(),
@@ -1275,6 +1398,8 @@ impl SqliteDatabase {
 
         self.replace_service_dependencies(tx, service.id, &service.depends_on)?;
         self.replace_service_additional_ports(tx, service.id, &service.additional_ports)?;
+        self.replace_service_env_vars(tx, service.id, &service.env_vars)?;
+        self.replace_service_build_args(tx, service.id, &service.build_args)?;
         self.replace_service_args(
             tx,
             SERVICE_COMMAND_ARGS_TABLE,
@@ -1289,6 +1414,70 @@ impl SqliteDatabase {
         )?;
         self.replace_service_registry_auth(tx, service.id, service.registry_auth.as_ref())?;
         self.replace_service_mounts(tx, service.id, &service.mounts)
+    }
+
+    fn replace_service_env_vars(
+        &self,
+        tx: &Transaction<'_>,
+        service_id: Uuid,
+        env_vars: &[EnvVar],
+    ) -> Result<()> {
+        let service_id = service_id.to_string();
+        tx.execute(
+            &format!("delete from {SERVICE_ENV_VARS_TABLE} where service_id = ?1"),
+            params![&service_id],
+        )?;
+
+        for (position, env_var) in env_vars.iter().enumerate() {
+            tx.execute(
+                &format!(
+                    "insert into {SERVICE_ENV_VARS_TABLE} (
+                        service_id, position, key, value, secret
+                    ) values (?1, ?2, ?3, ?4, ?5)"
+                ),
+                params![
+                    &service_id,
+                    position as i64,
+                    &env_var.key,
+                    &env_var.value,
+                    bool_to_int(env_var.secret),
+                ],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn replace_service_build_args(
+        &self,
+        tx: &Transaction<'_>,
+        service_id: Uuid,
+        build_args: &[BuildArg],
+    ) -> Result<()> {
+        let service_id = service_id.to_string();
+        tx.execute(
+            &format!("delete from {SERVICE_BUILD_ARGS_TABLE} where service_id = ?1"),
+            params![&service_id],
+        )?;
+
+        for (position, build_arg) in build_args.iter().enumerate() {
+            tx.execute(
+                &format!(
+                    "insert into {SERVICE_BUILD_ARGS_TABLE} (
+                        service_id, position, key, value, secret
+                    ) values (?1, ?2, ?3, ?4, ?5)"
+                ),
+                params![
+                    &service_id,
+                    position as i64,
+                    &build_arg.key,
+                    &build_arg.value,
+                    bool_to_int(build_arg.secret),
+                ],
+            )?;
+        }
+
+        Ok(())
     }
 
     fn replace_service_dependencies(
@@ -1475,15 +1664,16 @@ impl SqliteDatabase {
         tx.execute(
             &format!(
                 "insert into {SERVICE_DEPLOYMENTS_TABLE} (
-                    id, service_id, deployment_id, replica_index, status, container_id, health,
-                    started_at, finished_at, created_at
-                ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                    id, service_id, deployment_id, replica_index, status, container_id, image_id,
+                    health, started_at, finished_at, created_at
+                ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                 on conflict(id) do update set
                     service_id = excluded.service_id,
                     deployment_id = excluded.deployment_id,
                     replica_index = excluded.replica_index,
                     status = excluded.status,
                     container_id = excluded.container_id,
+                    image_id = excluded.image_id,
                     health = excluded.health,
                     started_at = excluded.started_at,
                     finished_at = excluded.finished_at,
@@ -1496,6 +1686,7 @@ impl SqliteDatabase {
                 i64::from(deployment.replica_index),
                 encode_enum(&deployment.status)?,
                 &deployment.container_id,
+                &deployment.image_id,
                 encode_enum(&deployment.health)?,
                 deployment.started_at.map(|value| value.to_rfc3339()),
                 deployment.finished_at.map(|value| value.to_rfc3339()),
@@ -1852,13 +2043,19 @@ impl DatabaseBackend for SqliteDatabase {
             tx.execute(
                 &format!(
                     "insert into {DEPLOYMENTS_TABLE} (
-                        id, app_id, commit_sha, commit_message, status, container_id, image_id,
-                        started_at, finished_at, created_at
-                    ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                        id, app_id, commit_sha, commit_message, branch, source_url,
+                        rollout_strategy, rollback_from_deployment_id, status, container_id,
+                        image_id, started_at, finished_at, created_at
+                    ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
                     on conflict(id) do update set
                         app_id = excluded.app_id,
                         commit_sha = excluded.commit_sha,
                         commit_message = excluded.commit_message,
+                        branch = excluded.branch,
+                        source_url = excluded.source_url,
+                        rollout_strategy = excluded.rollout_strategy,
+                        rollback_from_deployment_id =
+                            excluded.rollback_from_deployment_id,
                         status = excluded.status,
                         container_id = excluded.container_id,
                         image_id = excluded.image_id,
@@ -1871,6 +2068,12 @@ impl DatabaseBackend for SqliteDatabase {
                     deployment.app_id.to_string(),
                     &deployment.commit_sha,
                     &deployment.commit_message,
+                    &deployment.branch,
+                    &deployment.source_url,
+                    encode_enum(&deployment.rollout_strategy)?,
+                    deployment
+                        .rollback_from_deployment_id
+                        .map(|value| value.to_string()),
                     encode_enum(&deployment.status)?,
                     &deployment.container_id,
                     &deployment.image_id,
@@ -2463,6 +2666,10 @@ fn transpose_i64_to_u64(value: Option<i64>, field: &str) -> Result<Option<u64>> 
 
 fn transpose_u64_to_i64(value: Option<u64>, field: &str) -> Result<Option<i64>> {
     value.map(|value| u64_to_i64(value, field)).transpose()
+}
+
+fn transpose_string_to_uuid(value: Option<String>) -> Result<Option<Uuid>> {
+    value.map(parse_uuid).transpose()
 }
 
 fn u64_to_i64(value: u64, field: &str) -> Result<i64> {
