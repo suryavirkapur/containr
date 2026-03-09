@@ -111,11 +111,18 @@ const AppDetail: Component = () => {
 	const [containers, { refetch: refetchContainers }] =
 		createResource(fetchContainers);
 	const [selectedContainer, setSelectedContainer] = createSignal("");
+	const [selectedServiceId, setSelectedServiceId] = createSignal("");
 
 	const appContainers = createMemo(() =>
 		(containers() || []).filter(
 			(item) => item.resource_type === "app" && item.resource_id === params.id,
 		),
+	);
+	const projectServices = createMemo(() => app()?.services || []);
+	const selectedProjectService = createMemo(
+		() =>
+			projectServices().find((service) => service.id === selectedServiceId()) ||
+			projectServices()[0],
 	);
 
 	createEffect(() => {
@@ -128,6 +135,19 @@ const AppDetail: Component = () => {
 
 		if (!selectedContainer() && appContainers().length > 0) {
 			setSelectedContainer(appContainers()[0].id);
+		}
+	});
+
+	createEffect(() => {
+		if (
+			selectedServiceId() &&
+			!projectServices().some((service) => service.id === selectedServiceId())
+		) {
+			setSelectedServiceId("");
+		}
+
+		if (!selectedServiceId() && projectServices().length > 0) {
+			setSelectedServiceId(projectServices()[0].id);
 		}
 	});
 
@@ -353,6 +373,44 @@ const AppDetail: Component = () => {
 		}
 
 		return currentApp.services[primaryServiceIndex]?.id === serviceId;
+	};
+
+	const formatServicePorts = (service: Project["services"][number]) => {
+		if (service.additional_ports.length === 0) {
+			return `:${service.port}`;
+		}
+
+		return `:${service.port} + ${service.additional_ports.join(", ")}`;
+	};
+
+	const formatServiceHealth = (service: Project["services"][number]) => {
+		if (!service.health_check) {
+			return "none";
+		}
+
+		return `${service.health_check.path} every ${service.health_check.interval_secs}s`;
+	};
+
+	const formatServiceHealthDetail = (service: Project["services"][number]) => {
+		if (!service.health_check) {
+			return "none";
+		}
+
+		const healthCheck = service.health_check;
+		return `${healthCheck.path} / ${healthCheck.interval_secs}s / ${
+			healthCheck.timeout_secs
+		}s / ${healthCheck.retries} retries`;
+	};
+
+	const formatServiceRegistry = (service: Project["services"][number]) => {
+		if (!service.registry_auth) {
+			return "none";
+		}
+
+		const registryAuth = service.registry_auth;
+		return registryAuth.server
+			? `${registryAuth.username} @ ${registryAuth.server}`
+			: registryAuth.username;
 	};
 
 	const appDomains = createMemo(() => {
@@ -934,148 +992,319 @@ const AppDetail: Component = () => {
 					</div>
 				</div>
 
-				{/* services section for multi-container apps */}
-				<Show when={app()!.services && app()!.services.length > 0}>
+				<Show when={projectServices().length > 0}>
 					<div class="border border-neutral-200 mb-8">
-						<div class="border-b border-neutral-200 px-5 py-3">
-							<h2 class="text-sm font-serif text-black">services</h2>
+						<div class="border-b border-neutral-200 px-5 py-4 flex flex-wrap items-start justify-between gap-4">
+							<div>
+								<h2 class="text-sm font-serif text-black">services</h2>
+								<p class="mt-1 text-xs text-neutral-500">
+									{projectServices().length} configured service
+									{projectServices().length === 1 ? "" : "s"} with{" "}
+									{projectServices().reduce(
+										(total, service) => total + service.replicas,
+										0,
+									)}{" "}
+									total running slots
+								</p>
+							</div>
+							<div class="flex flex-wrap gap-2 text-xs text-neutral-500">
+								<span class="border border-neutral-200 px-2 py-1">
+									public{" "}
+									{
+										projectServices().filter((service) => service.expose_http)
+											.length
+									}
+								</span>
+								<span class="border border-neutral-200 px-2 py-1">
+									with mounts{" "}
+									{
+										projectServices().filter(
+											(service) => service.mounts.length > 0,
+										).length
+									}
+								</span>
+							</div>
 						</div>
-						<div class="divide-y divide-neutral-100">
-							<For each={app()!.services}>
-								{(service) => (
-									<div class="px-5 py-4">
-										<div class="flex justify-between items-start">
-											<div>
-												<div class="flex items-center gap-3">
-													<span class="w-2 h-2 bg-black"></span>
-													<span class="text-black text-sm font-medium">
-														{service.name}
+
+						<div class="border-b border-neutral-200 px-5 py-3 overflow-x-auto">
+							<div class="flex gap-2 min-w-max">
+								<For each={projectServices()}>
+									{(service) => (
+										<button
+											type="button"
+											onClick={() => setSelectedServiceId(service.id)}
+											class={`border px-3 py-2 text-left min-w-[220px] transition-colors ${
+												selectedProjectService()?.id === service.id
+													? "border-black bg-black text-white"
+													: "border-neutral-200 text-black hover:border-neutral-400"
+											}`}
+										>
+											<div class="flex items-center justify-between gap-3">
+												<span class="text-sm font-medium">{service.name}</span>
+												<Show when={isPrimaryService(app()!, service.id)}>
+													<span
+														class={`text-[10px] uppercase tracking-wide ${
+															selectedProjectService()?.id === service.id
+																? "text-neutral-200"
+																: "text-neutral-500"
+														}`}
+													>
+														public
 													</span>
-													<Show when={isPrimaryService(app()!, service.id)}>
-														<span class="text-xs text-neutral-500">
-															public http
-														</span>
-													</Show>
-													<span class="text-xs text-neutral-400">
-														:{service.port}
-														<Show when={service.additional_ports.length > 0}>
-															{` + ${service.additional_ports.join(", ")}`}
-														</Show>
-													</span>
-												</div>
-												<Show when={service.image}>
-													<p class="text-xs text-neutral-500 mt-1 ml-5 font-mono">
-														{service.image}
-													</p>
-												</Show>
-												<Show when={service.registry_auth}>
-													<p class="text-xs text-neutral-400 mt-1 ml-5 font-mono">
-														registry {service.registry_auth?.username}
-														{service.registry_auth?.server
-															? ` @ ${service.registry_auth.server}`
-															: ""}
-													</p>
-												</Show>
-												<Show when={service.working_dir}>
-													<p class="text-xs text-neutral-400 mt-1 ml-5 font-mono">
-														cwd {service.working_dir}
-													</p>
 												</Show>
 											</div>
-											<div class="flex items-center gap-4 text-xs text-neutral-500">
-												<span>
-													{service.replicas} replica
-													{service.replicas > 1 ? "s" : ""}
-												</span>
-												<Show when={service.memory_limit_mb}>
-													<span>{service.memory_limit_mb}mb</span>
-												</Show>
-												<Show when={service.depends_on.length > 0}>
-													<span>→ {service.depends_on.join(", ")}</span>
-												</Show>
+											<div
+												class={`mt-2 flex items-center justify-between text-xs ${
+													selectedProjectService()?.id === service.id
+														? "text-neutral-200"
+														: "text-neutral-500"
+												}`}
+											>
+												<span>{formatServicePorts(service)}</span>
+												<span>{service.replicas}x</span>
+											</div>
+										</button>
+									)}
+								</For>
+							</div>
+						</div>
+
+						<Show when={selectedProjectService()}>
+							{(service) => (
+								<div class="px-5 py-5 space-y-4">
+									<div class="grid lg:grid-cols-[1.6fr_1fr] gap-4">
+										<div class="border border-neutral-200 bg-neutral-50 p-4">
+											<div class="flex flex-wrap items-start justify-between gap-4">
+												<div>
+													<div class="flex items-center gap-3">
+														<h3 class="text-xl font-serif text-black">
+															{service().name}
+														</h3>
+														<Show when={isPrimaryService(app()!, service().id)}>
+															<span class="border border-black px-2 py-1 text-[10px] uppercase tracking-wide text-black">
+																public http
+															</span>
+														</Show>
+													</div>
+													<p class="mt-2 text-sm text-neutral-500 font-mono">
+														{service().image || "built from repository"}
+													</p>
+												</div>
+												<div class="text-xs text-neutral-500 space-y-1">
+													<p>restart {service().restart_policy}</p>
+													<p>health {formatServiceHealth(service())}</p>
+												</div>
 											</div>
 										</div>
-										<Show when={service.mounts.length > 0}>
-											<div class="mt-3 ml-5 flex flex-wrap gap-2 text-xs">
-												<For each={service.mounts}>
-													{(mount) => (
-														<span class="border border-neutral-200 px-2 py-1 text-neutral-500 font-mono">
-															{mount.name}:{mount.target}
-															{mount.read_only ? ":ro" : ""}
-														</span>
-													)}
-												</For>
+
+										<div class="grid grid-cols-2 gap-3">
+											<div class="border border-neutral-200 p-3">
+												<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+													listen
+												</p>
+												<p class="mt-2 text-sm font-mono text-black">
+													{formatServicePorts(service())}
+												</p>
 											</div>
-										</Show>
-										<Show when={service.mounts.length > 0}>
-											<div class="mt-3 ml-5 flex items-center gap-2 text-xs">
-												<button
-													onClick={() =>
-														void downloadServiceMounts(service.name)
-													}
-													disabled={
-														serviceMountAction()?.service === service.name
-													}
-													class="border border-neutral-300 px-2 py-1 text-neutral-700 hover:border-neutral-400 disabled:opacity-50"
-												>
-													{serviceMountAction()?.service === service.name &&
-													serviceMountAction()?.kind === "backup"
-														? "backing up..."
-														: "backup mounts"}
-												</button>
-												<label
-													class={`border px-2 py-1 ${serviceMountAction()?.service === service.name ? "border-neutral-200 text-neutral-300 cursor-not-allowed" : "border-neutral-300 text-neutral-700 hover:border-neutral-400 cursor-pointer"}`}
-												>
-													{serviceMountAction()?.service === service.name &&
-													serviceMountAction()?.kind === "restore"
-														? "restoring..."
-														: "restore mounts"}
-													<input
-														type="file"
-														accept=".tar,application/x-tar"
-														class="hidden"
-														disabled={
-															serviceMountAction()?.service === service.name
-														}
-														onChange={(event) => {
-															const input = event.currentTarget;
-															void restoreServiceMounts(
-																service.name,
-																input.files,
-															).finally(() => {
-																input.value = "";
-															});
-														}}
-													/>
-												</label>
+											<div class="border border-neutral-200 p-3">
+												<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+													replicas
+												</p>
+												<p class="mt-2 text-sm font-mono text-black">
+													{service().replicas}
+												</p>
 											</div>
-										</Show>
-										<Show
-											when={serviceMountActionError()?.service === service.name}
-										>
-											<p class="mt-2 ml-5 text-xs text-neutral-500">
-												{serviceMountActionError()?.message}
-											</p>
-										</Show>
-										<Show
-											when={
-												service.command.length > 0 ||
-												service.entrypoint.length > 0
-											}
-										>
-											<div class="mt-3 ml-5 space-y-1 text-xs text-neutral-500 font-mono">
-												<Show when={service.entrypoint.length > 0}>
-													<p>entrypoint {service.entrypoint.join(" ")}</p>
-												</Show>
-												<Show when={service.command.length > 0}>
-													<p>cmd {service.command.join(" ")}</p>
-												</Show>
+											<div class="border border-neutral-200 p-3">
+												<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+													memory
+												</p>
+												<p class="mt-2 text-sm font-mono text-black">
+													{service().memory_limit_mb
+														? `${service().memory_limit_mb}mb`
+														: "auto"}
+												</p>
 											</div>
-										</Show>
+											<div class="border border-neutral-200 p-3">
+												<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+													cpu
+												</p>
+												<p class="mt-2 text-sm font-mono text-black">
+													{service().cpu_limit
+														? `${service().cpu_limit}`
+														: "auto"}
+												</p>
+											</div>
+										</div>
 									</div>
-								)}
-							</For>
-						</div>
+
+									<div class="grid lg:grid-cols-3 gap-4">
+										<section class="border border-neutral-200 p-4">
+											<h4 class="text-xs uppercase tracking-wide text-neutral-400">
+												network
+											</h4>
+											<div class="mt-4 space-y-3 text-sm text-neutral-600">
+												<div>
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														public routing
+													</p>
+													<p class="mt-1">
+														{service().expose_http ? "enabled" : "disabled"}
+													</p>
+												</div>
+												<div>
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														ports
+													</p>
+													<p class="mt-1 font-mono text-black">
+														{formatServicePorts(service())}
+													</p>
+												</div>
+												<div>
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														depends on
+													</p>
+													<p class="mt-1">
+														{service().depends_on.length > 0
+															? service().depends_on.join(", ")
+															: "none"}
+													</p>
+												</div>
+											</div>
+										</section>
+
+										<section class="border border-neutral-200 p-4">
+											<h4 class="text-xs uppercase tracking-wide text-neutral-400">
+												runtime
+											</h4>
+											<div class="mt-4 space-y-3 text-sm text-neutral-600">
+												<div>
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														health check
+													</p>
+													<p class="mt-1">
+														{formatServiceHealthDetail(service())}
+													</p>
+												</div>
+												<div>
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														working dir
+													</p>
+													<p class="mt-1 font-mono text-black">
+														{service().working_dir || "default"}
+													</p>
+												</div>
+												<div>
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														registry
+													</p>
+													<p class="mt-1">{formatServiceRegistry(service())}</p>
+												</div>
+												<Show
+													when={
+														service().entrypoint.length > 0 ||
+														service().command.length > 0
+													}
+												>
+													<div class="space-y-2 text-xs text-neutral-500 font-mono">
+														<Show when={service().entrypoint.length > 0}>
+															<p>entrypoint {service().entrypoint.join(" ")}</p>
+														</Show>
+														<Show when={service().command.length > 0}>
+															<p>cmd {service().command.join(" ")}</p>
+														</Show>
+													</div>
+												</Show>
+											</div>
+										</section>
+
+										<section class="border border-neutral-200 p-4">
+											<h4 class="text-xs uppercase tracking-wide text-neutral-400">
+												storage
+											</h4>
+											<Show
+												when={service().mounts.length > 0}
+												fallback={
+													<p class="mt-4 text-sm text-neutral-500">
+														no persistent mounts configured
+													</p>
+												}
+											>
+												<div class="mt-4 space-y-3">
+													<div class="flex flex-wrap gap-2 text-xs">
+														<For each={service().mounts}>
+															{(mount) => (
+																<span class="border border-neutral-200 px-2 py-1 text-neutral-600 font-mono">
+																	{mount.name}:{mount.target}
+																	{mount.read_only ? ":ro" : ""}
+																</span>
+															)}
+														</For>
+													</div>
+													<div class="flex flex-wrap items-center gap-2 text-xs">
+														<button
+															onClick={() =>
+																void downloadServiceMounts(service().name)
+															}
+															disabled={
+																serviceMountAction()?.service === service().name
+															}
+															class="border border-neutral-300 px-2 py-1 text-neutral-700 hover:border-neutral-400 disabled:opacity-50"
+														>
+															{serviceMountAction()?.service ===
+																service().name &&
+															serviceMountAction()?.kind === "backup"
+																? "backing up..."
+																: "backup mounts"}
+														</button>
+														<label
+															class={`border px-2 py-1 ${
+																serviceMountAction()?.service === service().name
+																	? "border-neutral-200 text-neutral-300 cursor-not-allowed"
+																	: "border-neutral-300 text-neutral-700 hover:border-neutral-400 cursor-pointer"
+															}`}
+														>
+															{serviceMountAction()?.service ===
+																service().name &&
+															serviceMountAction()?.kind === "restore"
+																? "restoring..."
+																: "restore mounts"}
+															<input
+																type="file"
+																accept=".tar,application/x-tar"
+																class="hidden"
+																disabled={
+																	serviceMountAction()?.service ===
+																	service().name
+																}
+																onChange={(event) => {
+																	const input = event.currentTarget;
+																	void restoreServiceMounts(
+																		service().name,
+																		input.files,
+																	).finally(() => {
+																		input.value = "";
+																	});
+																}}
+															/>
+														</label>
+													</div>
+													<Show
+														when={
+															serviceMountActionError()?.service ===
+															service().name
+														}
+													>
+														<p class="text-xs text-neutral-500">
+															{serviceMountActionError()?.message}
+														</p>
+													</Show>
+												</div>
+											</Show>
+										</section>
+									</div>
+								</div>
+							)}
+						</Show>
 					</div>
 				</Show>
 
