@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
+use std::io::ErrorKind;
 use std::net::IpAddr;
 use std::path::{Component, Path as FsPath, PathBuf};
 
@@ -31,7 +32,7 @@ use containr_common::models::{
     ServiceMount, ServiceRegistryAuth, ServiceType,
 };
 use containr_common::Config;
-use containr_runtime::DockerContainerManager;
+use containr_runtime::{DockerContainerManager, ProxyRouteUpdate};
 
 /// create app request
 #[derive(Debug, Deserialize, ToSchema)]
@@ -1120,6 +1121,45 @@ fn service_mount_root(data_dir: &FsPath, app_id: Uuid, service_id: Uuid) -> Path
         .join(service_id.to_string())
 }
 
+async fn delete_app_runtime(
+    state: &AppState,
+    app: &App,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let docker_manager = DockerContainerManager::new();
+    let container_prefix = format!("containr-{}", app.id);
+    let container_names = docker_manager
+        .list_containers()
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|container| container.id)
+        .filter(|name| name.starts_with(&container_prefix))
+        .collect::<Vec<_>>();
+
+    docker_manager
+        .stop_service_group(container_names)
+        .await
+        .map_err(internal_error)?;
+    docker_manager
+        .remove_network(&format!("containr-{}", app.id))
+        .await
+        .map_err(internal_error)?;
+
+    for service in &app.services {
+        let mount_root = service_mount_root(&state.data_dir, app.id, service.id);
+        if let Err(error) = tokio::fs::remove_dir_all(&mount_root).await {
+            if error.kind() != ErrorKind::NotFound {
+                return Err(internal_error(format!(
+                    "failed to remove service mount data: {}",
+                    error
+                )));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn sanitize_archive_entry_path(
     path: &FsPath,
     allowed_mounts: &HashSet<String>,
@@ -1884,6 +1924,14 @@ pub async fn delete_app(
                 error: "access denied".to_string(),
             }),
         ));
+    }
+
+    delete_app_runtime(&state, &app).await?;
+
+    if let Some(proxy_update_tx) = &state.proxy_update_tx {
+        let _ = proxy_update_tx
+            .send(ProxyRouteUpdate::RemoveApp { app: app.clone() })
+            .await;
     }
 
     state.db.delete_app(id).map_err(internal_error)?;

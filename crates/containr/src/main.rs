@@ -102,6 +102,8 @@ async fn main() -> anyhow::Result<()> {
 
     // create certificate request channel (shared between api and proxy)
     let (cert_request_tx, mut cert_request_rx) = tokio::sync::mpsc::channel::<String>(64);
+    let (proxy_update_tx, mut proxy_update_rx) =
+        tokio::sync::mpsc::channel::<containr_runtime::ProxyRouteUpdate>(64);
 
     // start api server and get deployment queue receiver
     let deployment_rx = containr_api::run_server(
@@ -109,6 +111,7 @@ async fn main() -> anyhow::Result<()> {
         args.config.clone(),
         args.data_dir.clone(),
         db.clone(),
+        Some(proxy_update_tx.clone()),
         Some(cert_request_tx.clone()),
     )
     .await?;
@@ -270,9 +273,6 @@ async fn main() -> anyhow::Result<()> {
     // start deployment worker
     let work_dir = args.data_dir.join("builds");
 
-    let (proxy_update_tx, mut proxy_update_rx) =
-        tokio::sync::mpsc::channel::<containr_runtime::ProxyRouteUpdate>(64);
-
     let proxy_routes_for_updates = routes.clone();
     let proxy_db_for_updates = db.clone();
     let proxy_algorithm = config.proxy.load_balance;
@@ -302,6 +302,9 @@ async fn main() -> anyhow::Result<()> {
                         &docker,
                     )
                     .await;
+                }
+                containr_runtime::ProxyRouteUpdate::RemoveApp { app } => {
+                    remove_app_routes(&proxy_routes_for_updates, &app, &base_domain);
                 }
             }
         }
