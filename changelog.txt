@@ -38,6 +38,8 @@ changelog
   the dashboard bundle is only built into and served by `containr-api`
 - add a dedicated managed database restart endpoint and expose a restart button
   on the database detail page header for running databases
+- fix pgdog proxy startup by restoring the explicit pgdog binary entrypoint
+  when passing `--config` and `--users` arguments to the container
 - accept stored docker container ids during container ownership checks so
   terminal and other container endpoints work for managed databases and queues
 

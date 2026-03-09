@@ -31,6 +31,7 @@ use containr_common::managed_services::{
 };
 
 const PGDOG_IMAGE: &str = "ghcr.io/pgdogdev/pgdog:v0.1.6";
+const PGDOG_BINARY_PATH: &str = "/usr/local/bin/pgdog";
 const PGDOG_CONFIG_DIR: &str = "/etc/pgdog";
 const PGDOG_CONFIG_PATH: &str = "/etc/pgdog/pgdog.toml";
 const PGDOG_USERS_PATH: &str = "/etc/pgdog/users.toml";
@@ -550,12 +551,8 @@ impl DatabaseManager {
             hostname: Some(proxy_host),
             host_config: Some(host_config),
             networking_config,
-            cmd: Some(vec![
-                "--config".to_string(),
-                PGDOG_CONFIG_PATH.to_string(),
-                "--users".to_string(),
-                PGDOG_USERS_PATH.to_string(),
-            ]),
+            entrypoint: Some(Self::build_pgdog_entrypoint()),
+            cmd: Some(Self::build_pgdog_command()),
             ..Default::default()
         };
 
@@ -739,6 +736,19 @@ impl DatabaseManager {
                 "archive_command=test ! -f {0}/%f && cp %p {0}/%f",
                 POSTGRES_PITR_WAL_PATH
             ),
+        ]
+    }
+
+    fn build_pgdog_entrypoint() -> Vec<String> {
+        vec![PGDOG_BINARY_PATH.to_string()]
+    }
+
+    fn build_pgdog_command() -> Vec<String> {
+        vec![
+            "--config".to_string(),
+            PGDOG_CONFIG_PATH.to_string(),
+            "--users".to_string(),
+            PGDOG_USERS_PATH.to_string(),
         ]
     }
 
@@ -1109,5 +1119,22 @@ mod tests {
         assert!(joined.contains("wal_level=replica"));
         assert!(joined.contains("archive_mode=on"));
         assert!(joined.contains(POSTGRES_PITR_WAL_PATH));
+    }
+
+    #[test]
+    fn pgdog_container_uses_explicit_binary_and_config_args() {
+        assert_eq!(
+            DatabaseManager::build_pgdog_entrypoint(),
+            vec![PGDOG_BINARY_PATH.to_string()]
+        );
+        assert_eq!(
+            DatabaseManager::build_pgdog_command(),
+            vec![
+                "--config".to_string(),
+                PGDOG_CONFIG_PATH.to_string(),
+                "--users".to_string(),
+                PGDOG_USERS_PATH.to_string(),
+            ]
+        );
     }
 }
