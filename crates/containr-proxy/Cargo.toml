@@ -39,7 +39,3 @@ pingora = "0.6"
 pingora-proxy = { version = "0.6", features = ["openssl"] }
 pingora-http = "0.6"
 pingora-core = { version = "0.6", features = ["openssl"] }
-
-# embedded static files
-rust-embed = "8.9"
-mime_guess = "2"
