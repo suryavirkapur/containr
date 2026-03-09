@@ -352,11 +352,17 @@ impl DockerContainerManager {
                 start_interval: None,
             });
 
+        let exposed_ports = build_exposed_ports(config.port, &config.additional_ports);
+
         let container_config = ContainerCreateBody {
             image: Some(config.image.clone()),
             hostname: Some(config.id.to_string()),
             env: Some(env),
-            exposed_ports: Some(build_exposed_ports(config.port, &config.additional_ports)),
+            exposed_ports: if exposed_ports.is_empty() {
+                None
+            } else {
+                Some(exposed_ports)
+            },
             cmd: config.command,
             working_dir: config.working_dir,
             entrypoint: config.entrypoint,
@@ -887,8 +893,10 @@ fn build_networking_config(network: &DockerNetworkAttachment) -> NetworkingConfi
 }
 
 fn build_exposed_ports(primary_port: u16, additional_ports: &[u16]) -> Vec<String> {
-    let mut ports = Vec::with_capacity(additional_ports.len() + 1);
-    ports.push(format!("{}/tcp", primary_port));
+    let mut ports = Vec::with_capacity(additional_ports.len() + usize::from(primary_port > 0));
+    if primary_port > 0 {
+        ports.push(format!("{}/tcp", primary_port));
+    }
     ports.extend(additional_ports.iter().map(|port| format!("{}/tcp", port)));
     ports
 }

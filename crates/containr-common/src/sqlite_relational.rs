@@ -24,7 +24,7 @@ impl SqliteDatabase {
             pragma journal_mode = wal;
             pragma synchronous = normal;
             pragma foreign_keys = on;
-            pragma user_version = 6;
+            pragma user_version = 7;
 
             create table if not exists users (
                 id text primary key,
@@ -79,6 +79,7 @@ impl SqliteDatabase {
                 app_id text not null,
                 name text not null,
                 image text not null,
+                service_type text,
                 port integer not null,
                 expose_http integer not null default 0,
                 replicas integer not null,
@@ -382,6 +383,7 @@ impl SqliteDatabase {
             "expose_http",
             "integer not null default 0",
         )?;
+        ensure_column(&connection, SERVICES_TABLE, "service_type", "text")?;
         ensure_column(&connection, SERVICES_TABLE, "build_context", "text")?;
         ensure_column(&connection, SERVICES_TABLE, "dockerfile_path", "text")?;
         ensure_column(&connection, SERVICES_TABLE, "build_target", "text")?;
@@ -668,7 +670,7 @@ impl SqliteDatabase {
         let record = conn
             .query_row(
                 &format!(
-                    "select id, app_id, name, image, port, expose_http, replicas,
+                    "select id, app_id, name, image, service_type, port, expose_http, replicas,
                         memory_limit, cpu_limit,
                         health_check_path, health_check_interval_secs,
                         health_check_timeout_secs, health_check_retries, restart_policy,
@@ -684,22 +686,23 @@ impl SqliteDatabase {
                         row.get::<_, String>(1)?,
                         row.get::<_, String>(2)?,
                         row.get::<_, String>(3)?,
-                        row.get::<_, i64>(4)?,
+                        row.get::<_, Option<String>>(4)?,
                         row.get::<_, i64>(5)?,
                         row.get::<_, i64>(6)?,
-                        row.get::<_, Option<i64>>(7)?,
-                        row.get::<_, Option<f64>>(8)?,
-                        row.get::<_, Option<String>>(9)?,
-                        row.get::<_, Option<i64>>(10)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, Option<i64>>(8)?,
+                        row.get::<_, Option<f64>>(9)?,
+                        row.get::<_, Option<String>>(10)?,
                         row.get::<_, Option<i64>>(11)?,
                         row.get::<_, Option<i64>>(12)?,
-                        row.get::<_, String>(13)?,
-                        row.get::<_, Option<String>>(14)?,
+                        row.get::<_, Option<i64>>(13)?,
+                        row.get::<_, String>(14)?,
                         row.get::<_, Option<String>>(15)?,
                         row.get::<_, Option<String>>(16)?,
                         row.get::<_, Option<String>>(17)?,
-                        row.get::<_, String>(18)?,
+                        row.get::<_, Option<String>>(18)?,
                         row.get::<_, String>(19)?,
+                        row.get::<_, String>(20)?,
                     ))
                 },
             )
@@ -709,7 +712,7 @@ impl SqliteDatabase {
             return Ok(None);
         };
 
-        let health_check = match (record.9, record.10, record.11, record.12) {
+        let health_check = match (record.10, record.11, record.12, record.13) {
             (Some(path), Some(interval), Some(timeout), Some(retries)) => Some(HealthCheck {
                 path,
                 interval_secs: parse_u32(interval, "health_check_interval_secs")?,
@@ -724,27 +727,30 @@ impl SqliteDatabase {
             app_id: parse_uuid(record.1)?,
             name: record.2,
             image: record.3,
-            port: parse_u16(record.4, "service port")?,
-            expose_http: int_to_bool(record.5),
+            service_type: record.4.map(decode_enum).transpose()?.unwrap_or_else(|| {
+                ContainerService::infer_service_type(int_to_bool(record.6), record.5 as u16)
+            }),
+            port: parse_u16(record.5, "service port")?,
+            expose_http: int_to_bool(record.6),
             additional_ports: self.load_service_additional_ports(conn, service_id)?,
-            replicas: parse_u32(record.6, "service replicas")?,
-            memory_limit: transpose_i64_to_u64(record.7, "service memory_limit")?,
-            cpu_limit: record.8,
+            replicas: parse_u32(record.7, "service replicas")?,
+            memory_limit: transpose_i64_to_u64(record.8, "service memory_limit")?,
+            cpu_limit: record.9,
             depends_on: self.load_service_dependencies(conn, service_id)?,
             env_vars: self.load_service_env_vars(conn, service_id)?,
-            build_context: record.14,
-            dockerfile_path: record.15,
-            build_target: record.16,
+            build_context: record.15,
+            dockerfile_path: record.16,
+            build_target: record.17,
             build_args: self.load_service_build_args(conn, service_id)?,
             command: self.load_service_args(conn, SERVICE_COMMAND_ARGS_TABLE, service_id)?,
             entrypoint: self.load_service_args(conn, SERVICE_ENTRYPOINT_ARGS_TABLE, service_id)?,
-            working_dir: record.17,
+            working_dir: record.18,
             registry_auth: self.load_service_registry_auth(conn, service_id)?,
             mounts: self.load_service_mounts(conn, service_id)?,
             health_check,
-            restart_policy: decode_enum(record.13)?,
-            created_at: parse_datetime(record.18)?,
-            updated_at: parse_datetime(record.19)?,
+            restart_policy: decode_enum(record.14)?,
+            created_at: parse_datetime(record.19)?,
+            updated_at: parse_datetime(record.20)?,
         }))
     }
 
@@ -1342,19 +1348,20 @@ impl SqliteDatabase {
         tx.execute(
             &format!(
                 "insert into {SERVICES_TABLE} (
-                    id, app_id, name, image, port, expose_http, replicas, memory_limit,
+                    id, app_id, name, image, service_type, port, expose_http, replicas, memory_limit,
                     cpu_limit, health_check_path, health_check_interval_secs,
                     health_check_timeout_secs, health_check_retries, restart_policy,
                     build_context, dockerfile_path, build_target, working_dir, created_at,
                     updated_at
                 ) values (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                    ?17, ?18, ?19, ?20
+                    ?17, ?18, ?19, ?20, ?21
                 )
                 on conflict(id) do update set
                     app_id = excluded.app_id,
                     name = excluded.name,
                     image = excluded.image,
+                    service_type = excluded.service_type,
                     port = excluded.port,
                     expose_http = excluded.expose_http,
                     replicas = excluded.replicas,
@@ -1377,6 +1384,7 @@ impl SqliteDatabase {
                 service.app_id.to_string(),
                 &service.name,
                 &service.image,
+                encode_enum(&service.service_type)?,
                 i64::from(service.port),
                 bool_to_int(service.expose_http),
                 i64::from(service.replicas),

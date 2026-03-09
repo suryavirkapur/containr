@@ -1733,6 +1733,8 @@ export interface components {
             replicas?: number | null;
             /** @description restart policy */
             restart_policy?: string | null;
+            /** @description render-style service category */
+            service_type?: string | null;
             /** @description working directory override */
             working_dir?: string | null;
         };
@@ -1790,6 +1792,8 @@ export interface components {
             replicas: number;
             /** @description restart policy */
             restart_policy: string;
+            /** @description render-style service category */
+            service_type: string;
             /** @description working directory override */
             working_dir?: string | null;
         };

@@ -289,28 +289,32 @@ impl DeploymentWorker {
 
                 // merge shared env vars with service-specific PORT
                 let mut env_vars = shared_env_vars.clone();
-                env_vars.insert("PORT".to_string(), service.port.to_string());
                 env_vars.insert("SERVICE_NAME".to_string(), service.name.clone());
                 env_vars.insert("REPLICA_INDEX".to_string(), replica_idx.to_string());
+                if service.port > 0 {
+                    env_vars.insert("PORT".to_string(), service.port.to_string());
+                }
                 for env_var in &service.env_vars {
                     env_vars.insert(env_var.key.clone(), env_var.value.clone());
                 }
 
                 // convert health check if configured
-                let health_check =
-                    service
-                        .health_check
-                        .as_ref()
-                        .map(|hc| crate::docker::HealthCheckCommand {
-                            cmd: vec![
-                                "curl".to_string(),
-                                "-f".to_string(),
-                                format!("http://localhost:{}{}", service.port, hc.path),
-                            ],
-                            interval_secs: hc.interval_secs,
-                            timeout_secs: hc.timeout_secs,
-                            retries: hc.retries,
-                        });
+                let health_check = service.health_check.as_ref().and_then(|hc| {
+                    if service.port == 0 {
+                        return None;
+                    }
+
+                    Some(crate::docker::HealthCheckCommand {
+                        cmd: vec![
+                            "curl".to_string(),
+                            "-f".to_string(),
+                            format!("http://localhost:{}{}", service.port, hc.path),
+                        ],
+                        interval_secs: hc.interval_secs,
+                        timeout_secs: hc.timeout_secs,
+                        retries: hc.retries,
+                    })
+                });
 
                 // convert restart policy
                 let restart_policy = match service.restart_policy {

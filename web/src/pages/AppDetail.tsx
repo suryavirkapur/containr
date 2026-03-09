@@ -10,7 +10,12 @@ import {
 } from "solid-js";
 import { useParams, useNavigate } from "@solidjs/router";
 import EnvVarEditor from "../components/EnvVarEditor";
-import ServiceForm, { Service } from "../components/ServiceForm";
+import ServiceForm, {
+	Service,
+	ServiceType,
+	createServiceForType,
+	serviceTypeLabel,
+} from "../components/ServiceForm";
 import { parseAnsi } from "../utils/ansi";
 import ContainerMonitor from "../components/ContainerMonitor";
 import { api, components } from "../api";
@@ -25,6 +30,37 @@ type Project = components["schemas"]["AppResponse"];
 type Deployment = components["schemas"]["DeploymentResponse"];
 type CertificateStatus = components["schemas"]["CertificateResponse"];
 type ContainerListItem = components["schemas"]["ContainerListItem"];
+
+const serviceTypeOptions: ServiceType[] = [
+	"web_service",
+	"private_service",
+	"background_worker",
+];
+
+function nextServiceName(
+	services: Service[],
+	serviceType: ServiceType,
+): string {
+	const baseName =
+		serviceType === "web_service"
+			? "web"
+			: serviceType === "private_service"
+				? "private"
+				: "worker";
+
+	if (!services.some((service) => service.name === baseName)) {
+		return baseName;
+	}
+
+	let counter = 2;
+	while (
+		services.some((service) => service.name === `${baseName}-${counter}`)
+	) {
+		counter += 1;
+	}
+
+	return `${baseName}-${counter}`;
+}
 
 /**
  * fetches project details
@@ -343,24 +379,15 @@ const AppDetail: Component = () => {
 
 	const domainsToText = (domains: string[]) => domains.join("\n");
 
-	const selectPublicServiceIndex = (currentApp: Project) => {
-		if (!currentApp.services || currentApp.services.length === 0) {
-			return -1;
-		}
-
-		return currentApp.services.findIndex((service) => service.expose_http);
-	};
-
-	const isPublicService = (currentApp: Project, serviceId: string) => {
-		const publicServiceIndex = selectPublicServiceIndex(currentApp);
-		if (publicServiceIndex < 0) {
-			return false;
-		}
-
-		return currentApp.services[publicServiceIndex]?.id === serviceId;
-	};
-
 	const formatServicePorts = (service: Project["services"][number]) => {
+		if (service.service_type === "background_worker" || service.port === 0) {
+			if (service.additional_ports.length === 0) {
+				return "no inbound port";
+			}
+
+			return `no inbound port + ${service.additional_ports.join(", ")}`;
+		}
+
 		if (service.additional_ports.length === 0) {
 			return `:${service.port}`;
 		}
@@ -369,6 +396,10 @@ const AppDetail: Component = () => {
 	};
 
 	const formatServiceHealth = (service: Project["services"][number]) => {
+		if (service.service_type === "background_worker") {
+			return service.health_check ? "custom" : "not used";
+		}
+
 		if (!service.health_check) {
 			return "none";
 		}
@@ -377,6 +408,12 @@ const AppDetail: Component = () => {
 	};
 
 	const formatServiceHealthDetail = (service: Project["services"][number]) => {
+		if (service.service_type === "background_worker") {
+			return service.health_check
+				? "custom worker health check"
+				: "not used for worker services";
+		}
+
 		if (!service.health_check) {
 			return "none";
 		}
@@ -399,8 +436,17 @@ const AppDetail: Component = () => {
 	};
 
 	const formatPublicUrlStatus = (service: Project["services"][number]) => {
-		if (!service.expose_http) {
+		if (service.service_type !== "web_service") {
 			return "none";
+		}
+
+		const primaryPublicService =
+			projectServices().find(
+				(entry) => entry.service_type === "web_service" && entry.name === "web",
+			) ||
+			projectServices().find((entry) => entry.service_type === "web_service");
+		if (primaryPublicService && primaryPublicService.id !== service.id) {
+			return "service subdomain";
 		}
 
 		const customDomainCount = appDomains().length;
@@ -426,6 +472,19 @@ const AppDetail: Component = () => {
 	});
 
 	const certificateList = createMemo(() => certificate() || []);
+	const serviceTypeCounts = createMemo(() => {
+		const services = projectServices();
+		return {
+			web: services.filter((service) => service.service_type === "web_service")
+				.length,
+			private: services.filter(
+				(service) => service.service_type === "private_service",
+			).length,
+			workers: services.filter(
+				(service) => service.service_type === "background_worker",
+			).length,
+		};
+	});
 
 	const certificateStatusLabel = (status: CertificateStatus["status"]) => {
 		switch (status) {
@@ -496,19 +555,10 @@ const AppDetail: Component = () => {
 		}
 	};
 
-	const addEditService = () => {
+	const addEditService = (serviceType: ServiceType) => {
 		setEditForm((previous) => {
-			const nextService = createPrimaryService();
-			let counter = previous.services.length + 1;
-			let name = `service-${counter}`;
-			while (previous.services.some((service) => service.name === name)) {
-				counter += 1;
-				name = `service-${counter}`;
-			}
-			nextService.name = name;
-			nextService.expose_http = !previous.services.some(
-				(service) => service.expose_http,
-			);
+			const nextService = createServiceForType(serviceType);
+			nextService.name = nextServiceName(previous.services, serviceType);
 
 			return {
 				...previous,
@@ -1007,11 +1057,13 @@ const AppDetail: Component = () => {
 							</div>
 							<div class="flex flex-wrap gap-2 text-xs text-neutral-500">
 								<span class="border border-neutral-200 px-2 py-1">
-									public{" "}
-									{
-										projectServices().filter((service) => service.expose_http)
-											.length
-									}
+									web {serviceTypeCounts().web}
+								</span>
+								<span class="border border-neutral-200 px-2 py-1">
+									private {serviceTypeCounts().private}
+								</span>
+								<span class="border border-neutral-200 px-2 py-1">
+									workers {serviceTypeCounts().workers}
 								</span>
 								<span class="border border-neutral-200 px-2 py-1">
 									with mounts{" "}
@@ -1039,17 +1091,15 @@ const AppDetail: Component = () => {
 										>
 											<div class="flex items-center justify-between gap-3">
 												<span class="text-sm font-medium">{service.name}</span>
-												<Show when={isPublicService(app()!, service.id)}>
-													<span
-														class={`text-[10px] uppercase tracking-wide ${
-															selectedProjectService()?.id === service.id
-																? "text-neutral-200"
-																: "text-neutral-500"
-														}`}
-													>
-														public
-													</span>
-												</Show>
+												<span
+													class={`text-[10px] uppercase tracking-wide ${
+														selectedProjectService()?.id === service.id
+															? "text-neutral-200"
+															: "text-neutral-500"
+													}`}
+												>
+													{serviceTypeLabel(service.service_type)}
+												</span>
 											</div>
 											<div
 												class={`mt-2 flex items-center justify-between text-xs ${
@@ -1078,16 +1128,9 @@ const AppDetail: Component = () => {
 														<h3 class="text-xl font-serif text-black">
 															{service().name}
 														</h3>
-														<Show when={isPublicService(app()!, service().id)}>
-															<span class="border border-black px-2 py-1 text-[10px] uppercase tracking-wide text-black">
-																public http
-															</span>
-														</Show>
-														<Show when={!service().expose_http}>
-															<span class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-500">
-																private only
-															</span>
-														</Show>
+														<span class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
+															{serviceTypeLabel(service().service_type)}
+														</span>
 													</div>
 													<p class="mt-2 text-sm text-neutral-500 font-mono">
 														{service().image || "built from repository"}
@@ -1151,7 +1194,9 @@ const AppDetail: Component = () => {
 														public routing
 													</p>
 													<p class="mt-1">
-														{service().expose_http ? "enabled" : "disabled"}
+														{service().service_type === "web_service"
+															? "enabled"
+															: "disabled"}
 													</p>
 												</div>
 												<div>
@@ -1459,7 +1504,7 @@ const AppDetail: Component = () => {
 			{/* edit modal */}
 			<Show when={editing()}>
 				<div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">
-					<div class="bg-white border border-neutral-300 w-full max-w-2xl max-h-[90vh] flex flex-col">
+					<div class="bg-white border border-neutral-300 w-full max-w-6xl max-h-[90vh] flex flex-col">
 						<div class="border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
 							<h2 class="text-lg font-serif text-black">project settings</h2>
 							<button
@@ -1548,7 +1593,8 @@ const AppDetail: Component = () => {
 									/>
 								</div>
 								<p class="text-xs text-neutral-400 mt-2">
-									point your domains' dns to this server, then list them above
+									point your domains' dns to this server, then list them above.
+									custom domains route to the primary web service.
 								</p>
 							</section>
 
@@ -1612,16 +1658,41 @@ const AppDetail: Component = () => {
 											services
 										</h3>
 										<p class="text-xs text-neutral-400 mt-2">
-											define one or more runtime services for this project
+											define render-style service types for this project
 										</p>
 									</div>
-									<button
-										type="button"
-										onClick={addEditService}
-										class="px-3 py-1 text-xs border border-neutral-300 text-neutral-700 hover:border-neutral-400"
-									>
-										add service
-									</button>
+									<div class="flex flex-wrap gap-2">
+										<For each={serviceTypeOptions}>
+											{(serviceType) => (
+												<button
+													type="button"
+													onClick={() => addEditService(serviceType)}
+													class="px-3 py-1 text-xs border border-neutral-300 text-neutral-700 hover:border-neutral-400"
+												>
+													add {serviceTypeLabel(serviceType)}
+												</button>
+											)}
+										</For>
+									</div>
+								</div>
+
+								<div class="mb-4 grid gap-3 md:grid-cols-3">
+									<For each={serviceTypeOptions}>
+										{(serviceType) => (
+											<div class="border border-neutral-200 bg-neutral-50 px-3 py-3">
+												<p class="text-xs uppercase tracking-wide text-neutral-500">
+													{serviceTypeLabel(serviceType)}
+												</p>
+												<p class="mt-2 text-xs leading-relaxed text-neutral-500">
+													{serviceType === "web_service"
+														? "public url, http routing, and optional custom domains"
+														: serviceType === "private_service"
+															? "internal-only service that other project services can reach"
+															: "no inbound port, built for queues, cron jobs, and workers"}
+												</p>
+											</div>
+										)}
+									</For>
 								</div>
 
 								<For each={editForm().services}>

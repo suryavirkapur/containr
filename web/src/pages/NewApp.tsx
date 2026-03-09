@@ -1,17 +1,26 @@
-import { Component, createSignal, createResource, For, Show } from "solid-js";
+import { Component, createResource, createSignal, For, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
+
+import { api, components } from "../api";
+import EnvVarEditor from "../components/EnvVarEditor";
 import ServiceForm, {
 	Service,
-	createEmptyService,
+	ServiceType,
+	createServiceForType,
+	serviceTypeDescription,
+	serviceTypeLabel,
 } from "../components/ServiceForm";
-import EnvVarEditor from "../components/EnvVarEditor";
-import { api, components } from "../api";
 import { EditableEnvVar, mapServiceToRequest } from "../utils/projectEditor";
 
 type GithubAppStatus = components["schemas"]["GithubAppStatusResponse"];
 type RepoInfo = components["schemas"]["RepoInfo"];
 
-// fetch github app status
+const serviceTypeOptions: ServiceType[] = [
+	"web_service",
+	"private_service",
+	"background_worker",
+];
+
 const fetchGithubApp = async (): Promise<GithubAppStatus> => {
 	try {
 		const { data, error } = await api.GET("/api/github/app");
@@ -22,7 +31,6 @@ const fetchGithubApp = async (): Promise<GithubAppStatus> => {
 	}
 };
 
-// fetch github app repos
 const fetchGithubRepos = async (): Promise<RepoInfo[]> => {
 	try {
 		const { data, error } = await api.GET("/api/github/app/repos");
@@ -33,26 +41,54 @@ const fetchGithubRepos = async (): Promise<RepoInfo[]> => {
 	}
 };
 
+function inferProjectName(sourceUrl: string) {
+	const trimmed = sourceUrl.trim();
+	if (!trimmed) {
+		return "";
+	}
+
+	const cleaned = trimmed.replace(/\.git$/i, "").replace(/\/+$/, "");
+	const segments = cleaned.split(/[/:]/).filter(Boolean);
+	return segments[segments.length - 1] || "";
+}
+
+function nextServiceName(services: Service[], serviceType: ServiceType) {
+	const baseName =
+		serviceType === "web_service"
+			? "web"
+			: serviceType === "private_service"
+				? "private"
+				: "worker";
+
+	if (!services.some((service) => service.name === baseName)) {
+		return baseName;
+	}
+
+	let counter = 2;
+	while (
+		services.some((service) => service.name === `${baseName}-${counter}`)
+	) {
+		counter += 1;
+	}
+
+	return `${baseName}-${counter}`;
+}
+
 /**
- * new project creation page with multi-service support
+ * render-style project creation flow
  */
 const NewApp: Component = () => {
+	const navigate = useNavigate();
 	const [name, setName] = createSignal("");
 	const [githubUrl, setGithubUrl] = createSignal("");
 	const [branch, setBranch] = createSignal("main");
 	const [domainsText, setDomainsText] = createSignal("");
-	const [useMultiService, setUseMultiService] = createSignal(false);
-	const [port, setPort] = createSignal("8080");
-	const [singleContainerReplicas, setSingleContainerReplicas] =
-		createSignal("1");
-	const [singleContainerPublic, setSingleContainerPublic] = createSignal(true);
 	const [services, setServices] = createSignal<Service[]>([]);
 	const [envVars, setEnvVars] = createSignal<EditableEnvVar[]>([]);
 	const [error, setError] = createSignal("");
 	const [loading, setLoading] = createSignal(false);
 	const [useRepoPicker, setUseRepoPicker] = createSignal(true);
 	const [repoFilter, setRepoFilter] = createSignal("");
-	const navigate = useNavigate();
 
 	const parseDomains = (value: string) => {
 		const entries = value
@@ -62,41 +98,42 @@ const NewApp: Component = () => {
 		return Array.from(new Set(entries));
 	};
 
-	// github resources
+	const applyRepoSelection = (repoUrl: string, defaultBranch?: string) => {
+		setGithubUrl(repoUrl);
+		if (defaultBranch) {
+			setBranch(defaultBranch);
+		}
+		if (!name().trim()) {
+			setName(inferProjectName(repoUrl));
+		}
+	};
+
 	const [githubApp] = createResource(fetchGithubApp);
 	const [githubRepos] = createResource(fetchGithubRepos);
 
-	// check if github app has installations
 	const hasGithubAccess = () => {
 		const app = githubApp();
 		return app?.configured && (app?.installations?.length ?? 0) > 0;
 	};
 
-	// filter repos
 	const filteredRepos = () => {
 		const repos = githubRepos() || [];
 		const filter = repoFilter().toLowerCase();
-		if (!filter) return repos;
+		if (!filter) {
+			return repos;
+		}
+
 		return repos.filter(
-			(r) =>
-				r.name.toLowerCase().includes(filter) ||
-				r.full_name.toLowerCase().includes(filter),
+			(repo) =>
+				repo.name.toLowerCase().includes(filter) ||
+				repo.full_name.toLowerCase().includes(filter),
 		);
 	};
 
-	// handle repo selection
-	const selectRepo = (repo: RepoInfo) => {
-		setGithubUrl(repo.clone_url);
-		setBranch(repo.default_branch);
-	};
-
-	const addService = () => {
-		const currentServices = services();
-		const service = createEmptyService();
-		if (currentServices.length === 0) {
-			service.expose_http = true;
-		}
-		setServices([...currentServices, service]);
+	const addService = (serviceType: ServiceType) => {
+		const nextService = createServiceForType(serviceType);
+		nextService.name = nextServiceName(services(), serviceType);
+		setServices([...services(), nextService]);
 	};
 
 	const updateService = (index: number, service: Service) => {
@@ -106,153 +143,135 @@ const NewApp: Component = () => {
 	};
 
 	const removeService = (index: number) => {
-		setServices(services().filter((_, i) => i !== index));
+		setServices(services().filter((_, serviceIndex) => serviceIndex !== index));
 	};
 
-	const handleSubmit = async (e: Event) => {
-		e.preventDefault();
+	const handleSubmit = async (event: Event) => {
+		event.preventDefault();
 		setError("");
 		setLoading(true);
 
 		try {
 			const domains = parseDomains(domainsText());
-			const parsedPort = parseInt(port()) || 8080;
-			const parsedReplicas = Math.max(
-				1,
-				parseInt(singleContainerReplicas()) || 1,
-			);
-			// build request body
-			const body: any = {
-				name: name(),
-				github_url: githubUrl(),
-				branch: branch() || "main",
-				domains,
-				domain: domains[0] || null,
-			};
-			if (envVars().length > 0) {
-				body.env_vars = envVars();
-			}
-
-			if (useMultiService()) {
-				if (services().length === 0) {
-					throw new Error("add at least one service");
-				}
-				body.services = services().map(mapServiceToRequest);
-			} else {
-				body.services = [
-					{
-						name: "web",
-						image: null,
-						port: parsedPort,
-						expose_http: singleContainerPublic(),
-						additional_ports: null,
-						replicas: parsedReplicas,
-						memory_limit_mb: null,
-						cpu_limit: null,
-						depends_on: null,
-						health_check: null,
-						restart_policy: "always",
-						registry_auth: null,
-						env_vars: null,
-						build_context: null,
-						dockerfile_path: null,
-						build_target: null,
-						build_args: null,
-						command: null,
-						entrypoint: null,
-						working_dir: null,
-						mounts: null,
-					},
-				];
+			if (services().length === 0) {
+				throw new Error("add at least one service");
 			}
 
 			const { data, error: apiError } = await api.POST("/api/projects", {
-				body,
+				body: {
+					name: name().trim(),
+					github_url: githubUrl().trim(),
+					branch: branch().trim() || "main",
+					domains,
+					domain: domains[0] || null,
+					env_vars: envVars().length > 0 ? envVars() : null,
+					services: services().map(mapServiceToRequest),
+				},
 			});
-			if (apiError) throw new Error("failed to create project");
+
+			if (apiError) {
+				throw apiError;
+			}
+
 			navigate(`/projects/${data.id}`);
 		} catch (err: any) {
-			setError(err.message);
+			setError(err?.error || err?.message || "failed to create project");
 		} finally {
 			setLoading(false);
 		}
 	};
 
 	return (
-		<div class="max-w-2xl mx-auto">
-			{/* header */}
+		<div class="mx-auto max-w-5xl">
 			<div class="mb-10">
-				<h1 class="text-2xl font-serif text-black">create new project</h1>
-				<p class="text-neutral-500 mt-1 text-sm">
-					connect a repository and define the services that belong to this
-					project
+				<h1 class="text-2xl font-serif text-black">new project</h1>
+				<p class="mt-1 text-sm text-neutral-500">
+					create a render-style project from a repository, choose service types,
+					and deploy immediately
 				</p>
 			</div>
 
-			{/* form */}
-			<div class="border border-neutral-200 p-8">
-				{error() && (
-					<div class="border border-neutral-300 bg-neutral-50 text-neutral-700 px-4 py-3 mb-6 text-sm">
-						{error()}
-					</div>
-				)}
+			<Show when={error()}>
+				<div class="mb-6 border border-neutral-300 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+					{error()}
+				</div>
+			</Show>
 
-				<form onSubmit={handleSubmit} class="space-y-6">
-					{/* project name */}
-					<div>
-						<label class="block text-neutral-600 text-sm mb-2">
-							project name
-						</label>
-						<input
-							type="text"
-							value={name()}
-							onInput={(e) => setName(e.currentTarget.value)}
-							class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-							placeholder="my-awesome-project"
-							required
-						/>
-						<p class="mt-1.5 text-xs text-neutral-400">
-							lowercase letters, numbers, and hyphens only
-						</p>
+			<form onSubmit={handleSubmit} class="space-y-8">
+				<section class="border border-neutral-200 bg-white p-6">
+					<div class="mb-6 flex flex-wrap items-start justify-between gap-4">
+						<div>
+							<h2 class="text-sm font-serif text-black">source</h2>
+							<p class="mt-1 text-xs text-neutral-500">
+								point the project at a repository and branch, then containr
+								builds and deploys it on create
+							</p>
+						</div>
+						<Show when={hasGithubAccess()}>
+							<button
+								type="button"
+								onClick={() => setUseRepoPicker(!useRepoPicker())}
+								class="border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-neutral-400"
+							>
+								{useRepoPicker() ? "enter url manually" : "pick from github"}
+							</button>
+						</Show>
 					</div>
 
-					{/* repository source */}
-					<div>
-						<div class="flex items-center justify-between mb-2">
-							<label class="text-neutral-600 text-sm">repository</label>
-							<Show when={hasGithubAccess()}>
-								<button
-									type="button"
-									onClick={() => setUseRepoPicker(!useRepoPicker())}
-									class="text-xs text-neutral-500 hover:text-black"
-								>
-									{useRepoPicker() ? "enter url manually" : "pick from github"}
-								</button>
-							</Show>
+					<div class="grid gap-4 md:grid-cols-2">
+						<div>
+							<label class="mb-2 block text-sm text-neutral-600">
+								project name
+							</label>
+							<input
+								type="text"
+								value={name()}
+								onInput={(event) => setName(event.currentTarget.value)}
+								class="w-full border border-neutral-300 bg-white px-3 py-2.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
+								placeholder="acme-platform"
+								required
+							/>
 						</div>
 
-						{/* repo picker mode */}
+						<div>
+							<label class="mb-2 block text-sm text-neutral-600">branch</label>
+							<input
+								type="text"
+								value={branch()}
+								onInput={(event) => setBranch(event.currentTarget.value)}
+								class="w-full border border-neutral-300 bg-white px-3 py-2.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
+								placeholder="main"
+							/>
+						</div>
+					</div>
+
+					<div class="mt-4">
+						<label class="mb-2 block text-sm text-neutral-600">
+							repository
+						</label>
 						<Show when={hasGithubAccess() && useRepoPicker()}>
 							<div class="border border-neutral-300">
-								<div class="p-2 border-b border-neutral-200">
+								<div class="border-b border-neutral-200 p-2">
 									<input
 										type="text"
 										value={repoFilter()}
-										onInput={(e) => setRepoFilter(e.currentTarget.value)}
+										onInput={(event) =>
+											setRepoFilter(event.currentTarget.value)
+										}
 										placeholder="search repositories..."
-										class="w-full px-2 py-1.5 text-sm border border-neutral-200 focus:outline-none focus:border-neutral-400"
+										class="w-full border border-neutral-200 px-2 py-1.5 text-sm focus:border-neutral-400 focus:outline-none"
 									/>
 								</div>
-								<div class="max-h-48 overflow-y-auto">
+								<div class="max-h-56 overflow-y-auto">
 									<Show when={githubRepos.loading}>
-										<div class="p-4 text-center text-neutral-400 text-sm">
+										<div class="p-4 text-center text-sm text-neutral-400">
 											loading repos...
 										</div>
 									</Show>
 									<Show
 										when={!githubRepos.loading && filteredRepos().length === 0}
 									>
-										<div class="p-4 text-center text-neutral-400 text-sm">
+										<div class="p-4 text-center text-sm text-neutral-400">
 											no repos found
 										</div>
 									</Show>
@@ -260,17 +279,24 @@ const NewApp: Component = () => {
 										{(repo) => (
 											<button
 												type="button"
-												onClick={() => selectRepo(repo)}
-												class={`w-full px-3 py-2 text-left text-sm hover:bg-neutral-50 flex items-center justify-between border-b border-neutral-100 last:border-0 ${githubUrl() === repo.clone_url ? "bg-neutral-100" : ""}`}
+												onClick={() =>
+													applyRepoSelection(
+														repo.clone_url,
+														repo.default_branch,
+													)
+												}
+												class={`flex w-full items-center justify-between border-b border-neutral-100 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-neutral-50 ${
+													githubUrl() === repo.clone_url ? "bg-neutral-100" : ""
+												}`}
 											>
 												<div>
 													<span class="text-black">{repo.name}</span>
-													<span class="text-neutral-400 ml-2 text-xs">
+													<span class="ml-2 text-xs text-neutral-400">
 														{repo.default_branch}
 													</span>
 												</div>
 												<Show when={repo.private}>
-													<span class="text-xs px-1.5 py-0.5 bg-neutral-200 text-neutral-600">
+													<span class="bg-neutral-200 px-1.5 py-0.5 text-xs text-neutral-600">
 														private
 													</span>
 												</Show>
@@ -279,201 +305,139 @@ const NewApp: Component = () => {
 									</For>
 								</div>
 							</div>
-							<Show when={githubUrl()}>
-								<p class="text-xs text-neutral-500 mt-2 font-mono">
-									selected: {githubUrl()}
-								</p>
-							</Show>
 						</Show>
 
-						{/* manual url mode */}
 						<Show when={!hasGithubAccess() || !useRepoPicker()}>
 							<input
 								type="url"
 								value={githubUrl()}
-								onInput={(e) => setGithubUrl(e.currentTarget.value)}
-								class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-								placeholder="https://git.example.com/team/repo"
+								onInput={(event) =>
+									applyRepoSelection(event.currentTarget.value)
+								}
+								class="w-full border border-neutral-300 bg-white px-3 py-2.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
+								placeholder="https://github.com/acme/app"
 								required
 							/>
 							<Show when={!hasGithubAccess()}>
-								<p class="text-xs text-neutral-400 mt-1.5">
+								<p class="mt-1.5 text-xs text-neutral-400">
 									<a href="/settings" class="underline hover:text-black">
 										set up github app
 									</a>{" "}
-									to access private repos
+									to browse and deploy private repositories
 								</p>
 							</Show>
 						</Show>
 					</div>
+				</section>
 
-					{/* branch */}
-					<div>
-						<label class="block text-neutral-600 text-sm mb-2">branch</label>
-						<input
-							type="text"
-							value={branch()}
-							onInput={(e) => setBranch(e.currentTarget.value)}
-							class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-							placeholder="main"
-						/>
-					</div>
-
-					{/* domains */}
-					<div>
-						<label class="block text-neutral-600 text-sm mb-2">
-							custom domains <span class="text-neutral-400">(optional)</span>
-						</label>
-						<textarea
-							rows={3}
-							value={domainsText()}
-							onInput={(e) => setDomainsText(e.currentTarget.value)}
-							class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm font-mono"
-							placeholder="app.example.com&#10;www.app.example.com"
-						/>
-						<p class="mt-1.5 text-xs text-neutral-400">
-							one per line or comma-separated. tls is provisioned automatically
-							and http will be refused until ready
+				<section class="border border-neutral-200 bg-white p-6">
+					<div class="mb-6">
+						<h2 class="text-sm font-serif text-black">services</h2>
+						<p class="mt-1 text-xs text-neutral-500">
+							add one or more services the same way Render distinguishes web
+							services, private services, and background workers
 						</p>
 					</div>
 
-					<EnvVarEditor envVars={envVars()} onChange={setEnvVars} />
-
-					{/* multi-service toggle */}
-					<div class="border-t border-neutral-100 pt-6">
-						<label class="flex items-center gap-3 cursor-pointer">
-							<input
-								type="checkbox"
-								checked={useMultiService()}
-								onChange={(e) => {
-									setUseMultiService(e.currentTarget.checked);
-									if (e.currentTarget.checked && services().length === 0) {
-										addService();
-									}
-								}}
-								class="w-4 h-4"
-							/>
-							<div>
-								<span class="text-sm text-black">multi-service project</span>
-								<p class="text-xs text-neutral-400">
-									group multiple services with shared deploy settings
-								</p>
-							</div>
-						</label>
-					</div>
-
-					{/* single container mode */}
-					<Show when={!useMultiService()}>
-						<div>
-							<div class="grid grid-cols-2 gap-4">
-								<div>
-									<label class="block text-neutral-600 text-sm mb-2">
-										application port
-									</label>
-									<input
-										type="number"
-										value={port()}
-										onInput={(e) => setPort(e.currentTarget.value)}
-										class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-										placeholder="8080"
-									/>
-									<p class="mt-1.5 text-xs text-neutral-400">
-										the port your main service listens on inside the container
-									</p>
-								</div>
-								<div>
-									<label class="block text-neutral-600 text-sm mb-2">
-										instance count
-									</label>
-									<input
-										type="number"
-										min="1"
-										max="10"
-										value={singleContainerReplicas()}
-										onInput={(e) =>
-											setSingleContainerReplicas(e.currentTarget.value)
-										}
-										class="w-full px-3 py-2.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-										placeholder="1"
-									/>
-									<p class="mt-1.5 text-xs text-neutral-400">
-										values above 1 are deployed as a replicated `web` service.
-									</p>
-								</div>
-							</div>
-							<div class="mt-4 border border-neutral-200 bg-neutral-50 px-4 py-3">
-								<label class="flex items-center gap-2 text-xs text-neutral-600">
-									<input
-										type="checkbox"
-										checked={singleContainerPublic()}
-										onChange={(e) =>
-											setSingleContainerPublic(e.currentTarget.checked)
-										}
-										class="border border-neutral-300"
-									/>
-									public http service
-								</label>
-								<p class="mt-2 text-xs text-neutral-500">
-									disable this when the single service should run privately
-									without a routed project url.
-								</p>
-							</div>
-						</div>
-					</Show>
-
-					{/* multi-service mode */}
-					<Show when={useMultiService()}>
-						<div>
-							<div class="flex justify-between items-center mb-4">
-								<label class="text-sm text-neutral-600">services</label>
+					<div class="grid gap-3 md:grid-cols-3">
+						<For each={serviceTypeOptions}>
+							{(serviceType) => (
 								<button
 									type="button"
-									onClick={addService}
-									class="px-3 py-1 text-xs border border-neutral-300 text-neutral-700 hover:border-neutral-400"
+									onClick={() => addService(serviceType)}
+									class="border border-neutral-200 px-4 py-4 text-left transition-colors hover:border-black"
 								>
-									+ add service
+									<p class="text-xs uppercase tracking-wide text-neutral-500">
+										add {serviceTypeLabel(serviceType)}
+									</p>
+									<p class="mt-2 text-sm text-black">
+										{serviceTypeDescription(serviceType)}
+									</p>
 								</button>
-							</div>
+							)}
+						</For>
+					</div>
 
-							<For each={services()}>
-								{(service, index) => (
-									<ServiceForm
-										service={service}
-										index={index()}
-										allServices={services()}
-										onUpdate={updateService}
-										onRemove={removeService}
-									/>
-								)}
-							</For>
+					<p class="mt-3 text-xs text-neutral-400">
+						the primary web service gets the project url and custom domains.
+						additional web services get their own service subdomains.
+					</p>
 
-							<Show when={services().length === 0}>
-								<div class="text-center py-8 text-neutral-400 text-sm border border-dashed border-neutral-200">
-									no services added. click "add service" to start.
-								</div>
-							</Show>
+					<Show when={services().length === 0}>
+						<div class="mt-4 border border-dashed border-neutral-200 px-4 py-8 text-center text-sm text-neutral-400">
+							start by choosing a service type above
 						</div>
 					</Show>
 
-					{/* submit */}
-					<div class="flex gap-3 pt-2">
-						<button
-							type="submit"
-							disabled={loading()}
-							class="flex-1 px-4 py-2.5 bg-black text-white hover:bg-neutral-800 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-						>
-							{loading() ? "creating..." : "create project"}
-						</button>
-						<button
-							type="button"
-							onClick={() => navigate("/projects")}
-							class="px-4 py-2.5 border border-neutral-300 text-neutral-700 hover:text-black hover:border-neutral-400 transition-colors text-sm"
-						>
-							cancel
-						</button>
+					<div class="mt-4">
+						<For each={services()}>
+							{(service, index) => (
+								<ServiceForm
+									service={service}
+									index={index()}
+									allServices={services()}
+									onUpdate={updateService}
+									onRemove={removeService}
+								/>
+							)}
+						</For>
 					</div>
-				</form>
-			</div>
+				</section>
+
+				<section class="border border-neutral-200 bg-white p-6">
+					<div class="mb-6">
+						<h2 class="text-sm font-serif text-black">advanced</h2>
+						<p class="mt-1 text-xs text-neutral-500">
+							shared configuration applied across the project
+						</p>
+					</div>
+
+					<div class="space-y-6">
+						<div>
+							<label class="mb-2 block text-sm text-neutral-600">
+								custom domains <span class="text-neutral-400">(optional)</span>
+							</label>
+							<textarea
+								rows={3}
+								value={domainsText()}
+								onInput={(event) => setDomainsText(event.currentTarget.value)}
+								class="w-full border border-neutral-300 bg-white px-3 py-2.5 font-mono text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
+								placeholder="app.example.com&#10;api.example.com"
+							/>
+							<p class="mt-1.5 text-xs text-neutral-400">
+								one per line or comma-separated. leave blank to use the default
+								project subdomain only.
+							</p>
+						</div>
+
+						<EnvVarEditor
+							envVars={envVars()}
+							onChange={setEnvVars}
+							title="shared environment"
+							description="available to every service in the project"
+							emptyText="no shared environment variables configured"
+							addLabel="add shared variable"
+						/>
+					</div>
+				</section>
+
+				<div class="flex gap-3">
+					<button
+						type="submit"
+						disabled={loading()}
+						class="flex-1 bg-black px-4 py-2.5 text-sm text-white transition-colors hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						{loading() ? "creating and deploying..." : "create project"}
+					</button>
+					<button
+						type="button"
+						onClick={() => navigate("/projects")}
+						class="border border-neutral-300 px-4 py-2.5 text-sm text-neutral-700 transition-colors hover:border-neutral-400 hover:text-black"
+					>
+						cancel
+					</button>
+				</div>
+			</form>
 		</div>
 	);
 };
