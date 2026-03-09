@@ -47,6 +47,11 @@ current context:
 - container ownership checks now accept the persisted docker ids for managed
   services and latest deployments, so exec/log endpoints keep working even when
   the caller passes a raw docker id instead of a containr-style name
+- the project create flow now supports shared env vars, and the project edit
+  modal now uses the same full multi-service model as create instead of only
+  editing the primary service's port, replicas, and env var list
+- shared project env vars now go through a reusable editor with bulk `.env`
+  parsing, and existing secret keys keep their secret flag when bulk-edited
 - the app detail container monitor now refetches `/api/containers` while a deployment is live, so
   newly started or replaced app replicas show up without requiring a hard page reload
 - app container list entries now include replica ordinals when a service has more than one replica,
@@ -119,6 +124,8 @@ pending tasks:
 - add queue logs and health visibility in the ui
 - add pitr backup listing, retention, and remote archive shipping instead of only keeping the latest local base backup metadata
 - extend managed database proxying and recovery beyond the current postgres-only single-node implementation
+- add project-level deploy-time env var validation and better duplicate-key
+  handling in the shared env editor
 - consider adding server-side repo search or incremental loading for very large github installations
 - add automated coverage for deployment log websocket resume behavior and historical-log preload in the ui
 - make deployment jobs durable across restarts instead of relying on the in-memory queue

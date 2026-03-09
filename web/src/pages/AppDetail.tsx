@@ -9,9 +9,18 @@ import {
 	Show,
 } from "solid-js";
 import { useParams, useNavigate } from "@solidjs/router";
+import EnvVarEditor from "../components/EnvVarEditor";
+import ServiceForm, { Service } from "../components/ServiceForm";
 import { parseAnsi } from "../utils/ansi";
 import ContainerMonitor from "../components/ContainerMonitor";
 import { api, components } from "../api";
+import {
+	createPrimaryService,
+	EditableEnvVar,
+	ensureSinglePublicHttpService,
+	mapServiceResponseToForm,
+	mapServiceToRequest,
+} from "../utils/projectEditor";
 
 type Project = components["schemas"]["AppResponse"];
 type Deployment = components["schemas"]["DeploymentResponse"];
@@ -296,15 +305,13 @@ const AppDetail: Component = () => {
 	// Edit form state
 	const [editing, setEditing] = createSignal(false);
 	const [saving, setSaving] = createSignal(false);
-	const [bulkEditEnv, setBulkEditEnv] = createSignal(false);
-	const [bulkEnvText, setBulkEnvText] = createSignal("");
+	const [editError, setEditError] = createSignal("");
 	const [editForm, setEditForm] = createSignal({
 		domainsText: "",
-		port: 8080,
 		github_url: "",
 		branch: "main",
-		replicas: 1,
-		env_vars: [] as { key: string; value: string; secret: boolean }[],
+		env_vars: [] as EditableEnvVar[],
+		services: [] as Service[],
 	});
 
 	const parseDomainsText = (value: string) => {
@@ -402,149 +409,115 @@ const AppDetail: Component = () => {
 	const openEditModal = () => {
 		const currentApp = app();
 		if (currentApp) {
-			const primaryServiceIndex = selectPrimaryServiceIndex(currentApp);
-			const primaryService =
-				primaryServiceIndex >= 0
-					? currentApp.services?.[primaryServiceIndex]
-					: undefined;
 			const domains =
 				currentApp.domains && currentApp.domains.length > 0
 					? currentApp.domains
 					: currentApp.domain
 						? [currentApp.domain]
 						: [];
+			const services =
+				currentApp.services.length > 0
+					? ensureSinglePublicHttpService(
+							currentApp.services.map(mapServiceResponseToForm),
+						)
+					: [
+							{
+								...createPrimaryService(),
+								port: currentApp.port,
+							},
+						];
 			setEditForm({
 				domainsText: domainsToText(domains),
-				port: primaryService?.port || currentApp.port,
 				github_url: currentApp.github_url,
 				branch: currentApp.branch,
-				replicas: primaryService?.replicas || 1,
 				env_vars: currentApp.env_vars
 					? currentApp.env_vars.map((e) => ({ ...e }))
 					: [],
+				services,
 			});
-			setBulkEditEnv(false);
+			setEditError("");
 			setEditing(true);
 		}
 	};
 
-	// convert env vars to bulk text format
-	const envVarsToBulkText = (
-		vars: { key: string; value: string; secret: boolean }[],
-	) => {
-		return vars.map((v) => `${v.key}=${v.value}`).join("\n");
-	};
-
-	// convert bulk text to env vars array
-	const bulkTextToEnvVars = (text: string) => {
-		return text
-			.split("\n")
-			.filter((line) => line.trim() && line.includes("="))
-			.map((line) => {
-				const idx = line.indexOf("=");
-				return {
-					key: line.substring(0, idx).trim(),
-					value: line.substring(idx + 1).trim(),
-					secret: false,
-				};
-			});
-	};
-
-	// toggle bulk edit mode
-	const toggleBulkEdit = () => {
-		if (bulkEditEnv()) {
-			// switching from bulk to individual - parse the text
-			setEditForm((prev) => ({
-				...prev,
-				env_vars: bulkTextToEnvVars(bulkEnvText()),
-			}));
-		} else {
-			// switching to bulk - convert vars to text
-			setBulkEnvText(envVarsToBulkText(editForm().env_vars));
-		}
-		setBulkEditEnv(!bulkEditEnv());
-	};
-
-	const buildServiceUpdateBody = (currentApp: Project) => {
-		const form = editForm();
-
-		if (!currentApp.services || currentApp.services.length === 0) {
-			if (form.replicas <= 1) {
-				return undefined;
+	const addEditService = () => {
+		setEditForm((previous) => {
+			const nextService = createPrimaryService();
+			let counter = previous.services.length + 1;
+			let name = `service-${counter}`;
+			while (previous.services.some((service) => service.name === name)) {
+				counter += 1;
+				name = `service-${counter}`;
 			}
+			nextService.name = name;
+			nextService.expose_http = !previous.services.some(
+				(service) => service.expose_http,
+			);
 
-			return [
-				{
-					name: "web",
-					image: null,
-					port: form.port,
-					expose_http: true,
-					additional_ports: null,
-					replicas: form.replicas,
-					memory_limit_mb: null,
-					cpu_limit: null,
-					depends_on: null,
-					health_check: null,
-					restart_policy: "always",
-					mounts: null,
-				},
-			];
+			return {
+				...previous,
+				services: [...previous.services, nextService],
+			};
+		});
+	};
+
+	const updateEditService = (index: number, service: Service) => {
+		setEditForm((previous) => {
+			const services = [...previous.services];
+			services[index] = service;
+			return {
+				...previous,
+				services: ensureSinglePublicHttpService(services),
+			};
+		});
+	};
+
+	const removeEditService = (index: number) => {
+		setEditForm((previous) => ({
+			...previous,
+			services: ensureSinglePublicHttpService(
+				previous.services.filter((_, serviceIndex) => serviceIndex !== index),
+			),
+		}));
+	};
+
+	const readErrorMessage = (error: unknown) => {
+		if (
+			typeof error === "object" &&
+			error !== null &&
+			"error" in error &&
+			typeof error.error === "string"
+		) {
+			return error.error;
 		}
 
-		const primaryServiceIndex = selectPrimaryServiceIndex(currentApp);
+		if (error instanceof Error && error.message) {
+			return error.message;
+		}
 
-		return currentApp.services.map((service, index) => ({
-			name: service.name,
-			image: service.image || null,
-			port: index === primaryServiceIndex ? form.port : service.port,
-			expose_http: service.expose_http,
-			additional_ports:
-				service.additional_ports.length > 0 ? service.additional_ports : null,
-			replicas:
-				index === primaryServiceIndex ? form.replicas : service.replicas,
-			memory_limit_mb: service.memory_limit_mb,
-			cpu_limit: service.cpu_limit,
-			depends_on: service.depends_on.length > 0 ? service.depends_on : null,
-			health_check: service.health_check
-				? {
-						path: service.health_check.path,
-						interval_secs: service.health_check.interval_secs,
-						timeout_secs: service.health_check.timeout_secs,
-						retries: service.health_check.retries,
-					}
-				: null,
-			restart_policy: service.restart_policy,
-			mounts:
-				service.mounts.length > 0
-					? service.mounts.map((mount) => ({
-							name: mount.name,
-							target: mount.target,
-							read_only: mount.read_only,
-						}))
-					: null,
-		}));
+		return "failed to update project";
 	};
 
 	const updateApp = async () => {
 		setSaving(true);
+		setEditError("");
 		try {
-			const currentApp = app();
-			if (!currentApp) return;
-
 			const form = editForm();
 			const domains = parseDomainsText(form.domainsText);
+			const services = ensureSinglePublicHttpService(form.services);
+			if (services.length === 0) {
+				throw new Error("add at least one service");
+			}
+
 			const { error } = await api.PUT("/api/projects/{id}", {
 				params: { path: { id: params.id! } },
 				body: {
 					domains,
 					domain: domains[0] || null,
-					port: form.port,
 					github_url: form.github_url,
 					branch: form.branch,
-					env_vars: bulkEditEnv()
-						? bulkTextToEnvVars(bulkEnvText())
-						: form.env_vars,
-					services: buildServiceUpdateBody(currentApp),
+					env_vars: form.env_vars,
+					services: services.map(mapServiceToRequest),
 				},
 			});
 			if (error) throw error;
@@ -554,7 +527,7 @@ const AppDetail: Component = () => {
 			refetchCertificate();
 			refetchContainers();
 		} catch (err) {
-			console.error(err);
+			setEditError(readErrorMessage(err));
 		} finally {
 			setSaving(false);
 		}
@@ -1383,178 +1356,63 @@ const AppDetail: Component = () => {
 								</div>
 							</section>
 
-							{/* environment variables */}
+							<EnvVarEditor
+								envVars={editForm().env_vars}
+								theme="dark"
+								onChange={(envVars) =>
+									setEditForm((previous) => ({
+										...previous,
+										env_vars: envVars,
+									}))
+								}
+							/>
+
 							<section class="border border-neutral-200 p-4">
 								<div class="flex justify-between items-center mb-4">
-									<h3 class="text-xs text-neutral-500 uppercase tracking-wider">
-										environment variables
-									</h3>
-									<div class="flex items-center gap-3">
-										<label class="flex items-center gap-2 cursor-pointer text-xs text-neutral-500">
-											<span>bulk edit</span>
-											<button
-												type="button"
-												onClick={toggleBulkEdit}
-												class={`relative w-8 h-4 transition-colors ${bulkEditEnv() ? "bg-blue-600" : "bg-neutral-300"}`}
-											>
-												<span
-													class={`absolute top-0.5 w-3 h-3 bg-white transition-transform ${bulkEditEnv() ? "translate-x-4" : "translate-x-0.5"}`}
-												/>
-											</button>
-										</label>
-									</div>
-								</div>
-
-								<Show when={bulkEditEnv()}>
-									<textarea
-										value={bulkEnvText()}
-										onInput={(e) => setBulkEnvText(e.currentTarget.value)}
-										placeholder="KEY=value&#10;ANOTHER_KEY=another_value"
-										class="w-full h-32 px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono resize-none"
-									/>
-									<p class="text-xs text-neutral-400 mt-2">
-										one variable per line, format: KEY=value
-									</p>
-								</Show>
-
-								<Show when={!bulkEditEnv()}>
-									<div class="space-y-2">
-										<For each={editForm().env_vars}>
-											{(env, i) => (
-												<div class="flex gap-2">
-													<input
-														type="text"
-														placeholder="key"
-														value={env.key}
-														onInput={(e) => {
-															const newVars = [...editForm().env_vars];
-															newVars[i()] = {
-																...newVars[i()],
-																key: e.currentTarget.value,
-															};
-															setEditForm((prev) => ({
-																...prev,
-																env_vars: newVars,
-															}));
-														}}
-														class="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 text-white text-sm focus:border-neutral-400 focus:outline-none font-mono"
-													/>
-													<input
-														type={env.secret ? "password" : "text"}
-														placeholder="value"
-														value={env.value}
-														onInput={(e) => {
-															const newVars = [...editForm().env_vars];
-															newVars[i()] = {
-																...newVars[i()],
-																value: e.currentTarget.value,
-															};
-															setEditForm((prev) => ({
-																...prev,
-																env_vars: newVars,
-															}));
-														}}
-														class="flex-[2] px-3 py-2 bg-neutral-900 border border-neutral-700 text-white text-sm focus:border-neutral-400 focus:outline-none font-mono"
-													/>
-													<button
-														type="button"
-														onClick={() => {
-															const newVars = [...editForm().env_vars];
-															newVars[i()] = {
-																...newVars[i()],
-																secret: !newVars[i()].secret,
-															};
-															setEditForm((prev) => ({
-																...prev,
-																env_vars: newVars,
-															}));
-														}}
-														class={`px-2 py-1 text-xs border ${env.secret ? "border-blue-500 text-blue-500" : "border-neutral-600 text-neutral-500"}`}
-														title="toggle secret"
-													>
-														🔒
-													</button>
-													<button
-														type="button"
-														onClick={() => {
-															const newVars = [...editForm().env_vars];
-															newVars.splice(i(), 1);
-															setEditForm((prev) => ({
-																...prev,
-																env_vars: newVars,
-															}));
-														}}
-														class="px-2 py-1 text-neutral-500 hover:text-black border border-neutral-600"
-													>
-														×
-													</button>
-												</div>
-											)}
-										</For>
+									<div>
+										<h3 class="text-xs text-neutral-500 uppercase tracking-wider">
+											services
+										</h3>
+										<p class="text-xs text-neutral-400 mt-2">
+											define one or more runtime services for this project
+										</p>
 									</div>
 									<button
 										type="button"
-										onClick={() =>
-											setEditForm((prev) => ({
-												...prev,
-												env_vars: [
-													...prev.env_vars,
-													{ key: "", value: "", secret: false },
-												],
-											}))
-										}
-										class="mt-3 px-3 py-1.5 border border-neutral-300 text-neutral-700 hover:border-black hover:text-black text-xs"
+										onClick={addEditService}
+										class="px-3 py-1 text-xs border border-neutral-300 text-neutral-700 hover:border-neutral-400"
 									>
-										add key/value pair
+										add service
 									</button>
-								</Show>
-							</section>
-
-							{/* project config */}
-							<section class="border border-neutral-200 p-4">
-								<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-4">
-									project config
-								</h3>
-
-								<div class="grid grid-cols-2 gap-4">
-									<div>
-										<label class="block text-xs text-neutral-500 mb-2">
-											container port
-										</label>
-										<input
-											type="number"
-											value={editForm().port}
-											onInput={(e) =>
-												setEditForm((prev) => ({
-													...prev,
-													port: parseInt(e.currentTarget.value) || 8080,
-												}))
-											}
-											class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
-										/>
-									</div>
-									<div>
-										<label class="block text-xs text-neutral-500 mb-2">
-											instance count
-										</label>
-										<input
-											type="number"
-											min="1"
-											max="10"
-											value={editForm().replicas}
-											onInput={(e) =>
-												setEditForm((prev) => ({
-													...prev,
-													replicas: parseInt(e.currentTarget.value) || 1,
-												}))
-											}
-											class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
-										/>
-									</div>
 								</div>
+
+								<For each={editForm().services}>
+									{(service, index) => (
+										<ServiceForm
+											service={service}
+											index={index()}
+											allServices={editForm().services}
+											onUpdate={updateEditService}
+											onRemove={removeEditService}
+										/>
+									)}
+								</For>
+
+								<Show when={editForm().services.length === 0}>
+									<div class="text-center py-8 text-neutral-400 text-sm border border-dashed border-neutral-200">
+										no services configured
+									</div>
+								</Show>
 							</section>
 						</div>
 
+						<Show when={editError()}>
+							<div class="border-t border-neutral-200 px-6 py-4">
+								<div class="border border-neutral-300 bg-neutral-50 text-neutral-700 px-4 py-2 text-sm">
+									{editError()}
+								</div>
+							</div>
+						</Show>
 						<div class="border-t border-neutral-200 px-6 py-4 flex gap-2">
 							<button
 								onClick={() => setEditing(false)}

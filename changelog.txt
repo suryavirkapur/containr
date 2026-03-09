@@ -42,6 +42,9 @@ changelog
   when passing `--config` and `--users` arguments to the container
 - accept stored docker container ids during container ownership checks so
   terminal and other container endpoints work for managed databases and queues
+- add a shared project env-var editor, expose shared env vars on project
+  creation, and upgrade project editing to manage full multi-service
+  definitions instead of only the primary service's port and replica count
 
 0.1.9-alpha - 2026-03-07
 - fix the app detail container monitor for multi-replica apps by refreshing the container list while deployments are live and labeling replicas distinctly in the api as `service #n`
