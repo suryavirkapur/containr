@@ -1,6 +1,10 @@
 changelog
 =========
 
+0.1.11-alpha - 2026-03-09
+- redesign the project service editor into overview, runtime, and storage tabs with denser service summaries, responsive layouts, and clearer grouping for multi-service configuration
+- replace the project detail page's flat service list with a tabbed service browser that surfaces per-service network, runtime, and storage details along with mount backup and restore actions
+
 0.1.10-alpha - 2026-03-08
 - start managed database containers during database creation and persist failed provisioning attempts as failed database resources
 - redesign the database detail page into overview/connect/access/recovery/backups/container tabs with a denser service summary and quick-connect panel

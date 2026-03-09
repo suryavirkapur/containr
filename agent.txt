@@ -52,6 +52,12 @@ current context:
   editing the primary service's port, replicas, and env var list
 - shared project env vars now go through a reusable editor with bulk `.env`
   parsing, and existing secret keys keep their secret flag when bulk-edited
+- the project service editor now uses overview, runtime, and storage tabs with
+  a denser header summary, so multi-service projects are easier to scan and
+  edit without one long advanced-options form
+- the project detail page now shows services through a tabbed browser with
+  quick service summaries and dedicated network, runtime, and storage panels
+  instead of a single flat service list
 - the app detail container monitor now refetches `/api/containers` while a deployment is live, so
   newly started or replaced app replicas show up without requiring a hard page reload
 - app container list entries now include replica ordinals when a service has more than one replica,
@@ -117,7 +123,8 @@ current context:
   service through tar archive endpoints rooted at the host-side mount path
 
 pending tasks:
-- decide whether to rename the git remote/repository slug from `znskr-paas` to `containr`
+- make deployment queueing durable across process restarts instead of relying on
+  an in-memory worker channel
 - add true per-bucket rustfs credentials and policies instead of exposing the current shared
   storage principal through the bucket connection endpoint
 - migrate app api field names from github_url to a generic source_url/source model without breaking clients

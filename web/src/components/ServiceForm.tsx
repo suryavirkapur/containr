@@ -76,7 +76,9 @@ interface ServiceFormProps {
  * form for configuring a single container service
  */
 const ServiceForm: Component<ServiceFormProps> = (props) => {
-	const [showAdvanced, setShowAdvanced] = createSignal(false);
+	const [activeTab, setActiveTab] = createSignal<
+		"overview" | "runtime" | "storage"
+	>("overview");
 
 	const argsToText = (value: string[]) => value.join("\n");
 
@@ -171,12 +173,40 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 		});
 	};
 
+	const tabClass = (tab: "overview" | "runtime" | "storage") =>
+		activeTab() === tab
+			? "border-black bg-black text-white"
+			: "border-neutral-300 text-neutral-600 hover:border-neutral-400";
+
 	return (
-		<div class="border border-neutral-200 p-4 mb-4">
-			<div class="flex justify-between items-center mb-4">
-				<span class="text-sm font-medium text-black">
-					service {props.index + 1}
-				</span>
+		<div class="border border-neutral-200 mb-4">
+			<div class="border-b border-neutral-200 px-4 py-3 flex flex-wrap items-start justify-between gap-3 bg-neutral-50">
+				<div>
+					<div class="flex items-center gap-3">
+						<span class="text-sm font-medium text-black">
+							{props.service.name || `service ${props.index + 1}`}
+						</span>
+						<Show when={props.service.expose_http}>
+							<span class="border border-black px-2 py-1 text-[10px] uppercase tracking-wide text-black">
+								public http
+							</span>
+						</Show>
+					</div>
+					<div class="mt-2 flex flex-wrap gap-2 text-xs text-neutral-500">
+						<span class="border border-neutral-200 px-2 py-1 font-mono">
+							:{props.service.port}
+						</span>
+						<span class="border border-neutral-200 px-2 py-1">
+							{props.service.replicas} replica
+							{props.service.replicas === 1 ? "" : "s"}
+						</span>
+						<Show when={props.service.image}>
+							<span class="border border-neutral-200 px-2 py-1 font-mono">
+								{props.service.image}
+							</span>
+						</Show>
+					</div>
+				</div>
 				<button
 					type="button"
 					onClick={() => props.onRemove(props.index)}
@@ -186,396 +216,421 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 				</button>
 			</div>
 
-			<div class="grid grid-cols-2 gap-4">
-				{/* service name */}
-				<div>
-					<label class="block text-neutral-600 text-xs mb-1">name</label>
-					<input
-						type="text"
-						value={props.service.name}
-						onInput={(e) => updateField("name", e.currentTarget.value)}
-						class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-						placeholder="web"
-						required
-					/>
-				</div>
-
-				{/* port */}
-				<div>
-					<label class="block text-neutral-600 text-xs mb-1">port</label>
-					<input
-						type="number"
-						value={props.service.port}
-						onInput={(e) =>
-							updateField("port", parseInt(e.currentTarget.value) || 8080)
-						}
-						class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-						placeholder="8080"
-					/>
-				</div>
-
-				<div class="col-span-2">
-					<label class="flex items-center gap-2 text-xs text-neutral-600">
-						<input
-							type="checkbox"
-							checked={props.service.expose_http}
-							onChange={(e) =>
-								updateField("expose_http", e.currentTarget.checked)
-							}
-							class="border border-neutral-300"
-						/>
-						public http service
-					</label>
-					<p class="mt-1 text-xs text-neutral-400">
-						this service receives routed dashboard and custom-domain traffic.
-					</p>
-				</div>
-
-				<div>
-					<label class="block text-neutral-600 text-xs mb-1">
-						additional ports
-					</label>
-					<textarea
-						value={portsToText(props.service.additional_ports)}
-						onInput={(e) =>
-							updateField(
-								"additional_ports",
-								textToPorts(e.currentTarget.value),
-							)
-						}
-						rows="3"
-						class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm font-mono"
-						placeholder={"9000\n9001"}
-					/>
-					<p class="mt-1 text-xs text-neutral-400">
-						optional extra container ports for internal network access.
-					</p>
-				</div>
-
-				{/* image */}
-				<div class="col-span-2">
-					<label class="block text-neutral-600 text-xs mb-1">
-						docker image{" "}
-						<span class="text-neutral-400">
-							(leave empty to use built image)
-						</span>
-					</label>
-					<input
-						type="text"
-						value={props.service.image}
-						onInput={(e) => updateField("image", e.currentTarget.value)}
-						class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-						placeholder="postgres:15 or leave empty"
-					/>
-				</div>
-
-				{/* replicas */}
-				<div>
-					<label class="block text-neutral-600 text-xs mb-1">replicas</label>
-					<input
-						type="number"
-						value={props.service.replicas}
-						onInput={(e) =>
-							updateField("replicas", parseInt(e.currentTarget.value) || 1)
-						}
-						min="1"
-						max="10"
-						class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-					/>
-				</div>
-
-				{/* dependencies */}
-				<div>
-					<label class="block text-neutral-600 text-xs mb-1">depends on</label>
-					<Show
-						when={availableDependencies().length > 0}
-						fallback={
-							<span class="text-xs text-neutral-400">no other services</span>
-						}
+			<div class="px-4 py-3 border-b border-neutral-100">
+				<div class="flex flex-wrap gap-2">
+					<button
+						type="button"
+						onClick={() => setActiveTab("overview")}
+						class={`border px-3 py-1 text-xs transition-colors ${tabClass("overview")}`}
 					>
-						<div class="flex flex-wrap gap-1">
-							<For each={availableDependencies()}>
-								{(dep) => (
-									<button
-										type="button"
-										onClick={() => toggleDependency(dep)}
-										class={`px-2 py-0.5 text-xs border ${
-											props.service.depends_on.includes(dep)
-												? "bg-black text-white border-black"
-												: "bg-white text-neutral-600 border-neutral-300 hover:border-neutral-400"
-										}`}
-									>
-										{dep}
-									</button>
-								)}
-							</For>
-						</div>
-					</Show>
+						overview
+					</button>
+					<button
+						type="button"
+						onClick={() => setActiveTab("runtime")}
+						class={`border px-3 py-1 text-xs transition-colors ${tabClass("runtime")}`}
+					>
+						runtime
+					</button>
+					<button
+						type="button"
+						onClick={() => setActiveTab("storage")}
+						class={`border px-3 py-1 text-xs transition-colors ${tabClass("storage")}`}
+					>
+						storage
+					</button>
 				</div>
 			</div>
 
-			{/* advanced toggle */}
-			<button
-				type="button"
-				onClick={() => setShowAdvanced(!showAdvanced())}
-				class="mt-3 text-xs text-neutral-500 hover:text-neutral-700"
-			>
-				{showAdvanced() ? "▼ hide advanced" : "▶ show advanced"}
-			</button>
+			<div class="p-4">
+				<Show when={activeTab() === "overview"}>
+					<div class="grid gap-4 md:grid-cols-2">
+						<div>
+							<label class="block text-neutral-600 text-xs mb-1">name</label>
+							<input
+								type="text"
+								value={props.service.name}
+								onInput={(e) => updateField("name", e.currentTarget.value)}
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+								placeholder="web"
+								required
+							/>
+						</div>
 
-			{/* advanced options */}
-			<Show when={showAdvanced()}>
-				<div class="mt-3 pt-3 border-t border-neutral-100 grid grid-cols-2 gap-4">
-					{/* memory limit */}
-					<div>
-						<label class="block text-neutral-600 text-xs mb-1">
-							memory (mb)
-						</label>
-						<input
-							type="number"
-							value={props.service.memory_limit_mb || ""}
-							onInput={(e) => {
-								const val = e.currentTarget.value;
-								updateField("memory_limit_mb", val ? parseInt(val) : null);
-							}}
-							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-							placeholder="512"
-						/>
-					</div>
+						<div>
+							<label class="block text-neutral-600 text-xs mb-1">port</label>
+							<input
+								type="number"
+								value={props.service.port}
+								onInput={(e) =>
+									updateField("port", parseInt(e.currentTarget.value) || 8080)
+								}
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+								placeholder="8080"
+							/>
+						</div>
 
-					{/* cpu limit */}
-					<div>
-						<label class="block text-neutral-600 text-xs mb-1">cpu cores</label>
-						<input
-							type="number"
-							value={props.service.cpu_limit || ""}
-							onInput={(e) => {
-								const val = e.currentTarget.value;
-								updateField("cpu_limit", val ? parseFloat(val) : null);
-							}}
-							step="0.1"
-							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-							placeholder="1.0"
-						/>
-					</div>
-
-					{/* health check path */}
-					<div>
-						<label class="block text-neutral-600 text-xs mb-1">
-							health check path
-						</label>
-						<input
-							type="text"
-							value={props.service.health_check_path}
-							onInput={(e) =>
-								updateField("health_check_path", e.currentTarget.value)
-							}
-							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-							placeholder="/health"
-						/>
-					</div>
-
-					<div>
-						<label class="block text-neutral-600 text-xs mb-1">
-							health interval (s)
-						</label>
-						<input
-							type="number"
-							min="1"
-							value={props.service.health_check_interval_secs}
-							onInput={(e) =>
-								updateField(
-									"health_check_interval_secs",
-									parseInt(e.currentTarget.value, 10) || 30,
-								)
-							}
-							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-						/>
-					</div>
-
-					<div>
-						<label class="block text-neutral-600 text-xs mb-1">
-							health timeout (s)
-						</label>
-						<input
-							type="number"
-							min="1"
-							value={props.service.health_check_timeout_secs}
-							onInput={(e) =>
-								updateField(
-									"health_check_timeout_secs",
-									parseInt(e.currentTarget.value, 10) || 5,
-								)
-							}
-							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-						/>
-					</div>
-
-					<div>
-						<label class="block text-neutral-600 text-xs mb-1">
-							health retries
-						</label>
-						<input
-							type="number"
-							min="1"
-							value={props.service.health_check_retries}
-							onInput={(e) =>
-								updateField(
-									"health_check_retries",
-									parseInt(e.currentTarget.value, 10) || 3,
-								)
-							}
-							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-						/>
-					</div>
-
-					{/* restart policy */}
-					<div>
-						<label class="block text-neutral-600 text-xs mb-1">
-							restart policy
-						</label>
-						<select
-							value={props.service.restart_policy}
-							onChange={(e) =>
-								updateField("restart_policy", e.currentTarget.value)
-							}
-							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black focus:outline-none focus:border-black text-sm"
-						>
-							<option value="always">always</option>
-							<option value="on-failure">on failure</option>
-							<option value="never">never</option>
-						</select>
-					</div>
-
-					<div class="col-span-2">
-						<label class="block text-neutral-600 text-xs mb-1">
-							command args
-						</label>
-						<textarea
-							value={argsToText(props.service.command)}
-							onInput={(e) =>
-								updateField("command", textToArgs(e.currentTarget.value))
-							}
-							rows="3"
-							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm font-mono"
-							placeholder={"npm\nrun\nstart"}
-						/>
-						<p class="mt-1 text-xs text-neutral-400">
-							one argument per line. leave empty to use the image default.
-						</p>
-					</div>
-
-					<div class="col-span-2">
-						<label class="block text-neutral-600 text-xs mb-1">
-							entrypoint
-						</label>
-						<textarea
-							value={argsToText(props.service.entrypoint)}
-							onInput={(e) =>
-								updateField("entrypoint", textToArgs(e.currentTarget.value))
-							}
-							rows="2"
-							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm font-mono"
-							placeholder={"/usr/bin/env"}
-						/>
-					</div>
-
-					<div class="col-span-2">
-						<label class="block text-neutral-600 text-xs mb-1">
-							working directory
-						</label>
-						<input
-							type="text"
-							value={props.service.working_dir}
-							onInput={(e) => updateField("working_dir", e.currentTarget.value)}
-							class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm font-mono"
-							placeholder="/workspace"
-						/>
-					</div>
-
-					<div class="col-span-2 border-t border-neutral-100 pt-3">
-						<div class="flex items-center justify-between mb-3">
-							<label class="block text-neutral-600 text-xs">
-								private registry auth
+						<div class="col-span-2">
+							<label class="block text-neutral-600 text-xs mb-1">
+								docker image
 							</label>
+							<input
+								type="text"
+								value={props.service.image}
+								onInput={(e) => updateField("image", e.currentTarget.value)}
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+								placeholder="postgres:15 or leave empty"
+							/>
+							<p class="mt-1 text-xs text-neutral-400">
+								leave empty to use the image built from the repository source.
+							</p>
+						</div>
+
+						<div class="col-span-2">
+							<label class="flex items-center gap-2 text-xs text-neutral-600">
+								<input
+									type="checkbox"
+									checked={props.service.expose_http}
+									onChange={(e) =>
+										updateField("expose_http", e.currentTarget.checked)
+									}
+									class="border border-neutral-300"
+								/>
+								public http service
+							</label>
+							<p class="mt-1 text-xs text-neutral-400">
+								this service receives routed dashboard and custom-domain
+								traffic.
+							</p>
+						</div>
+
+						<div>
+							<label class="block text-neutral-600 text-xs mb-1">
+								additional ports
+							</label>
+							<textarea
+								value={portsToText(props.service.additional_ports)}
+								onInput={(e) =>
+									updateField(
+										"additional_ports",
+										textToPorts(e.currentTarget.value),
+									)
+								}
+								rows="3"
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm font-mono"
+								placeholder={"9000\n9001"}
+							/>
+							<p class="mt-1 text-xs text-neutral-400">
+								optional extra container ports for internal network access.
+							</p>
+						</div>
+
+						<div>
+							<label class="block text-neutral-600 text-xs mb-1">
+								replicas
+							</label>
+							<input
+								type="number"
+								value={props.service.replicas}
+								onInput={(e) =>
+									updateField("replicas", parseInt(e.currentTarget.value) || 1)
+								}
+								min="1"
+								max="10"
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+							/>
+						</div>
+
+						<div class="col-span-2">
+							<label class="block text-neutral-600 text-xs mb-1">
+								depends on
+							</label>
+							<Show
+								when={availableDependencies().length > 0}
+								fallback={
+									<span class="text-xs text-neutral-400">
+										no other services
+									</span>
+								}
+							>
+								<div class="flex flex-wrap gap-1">
+									<For each={availableDependencies()}>
+										{(dep) => (
+											<button
+												type="button"
+												onClick={() => toggleDependency(dep)}
+												class={`px-2 py-0.5 text-xs border ${
+													props.service.depends_on.includes(dep)
+														? "bg-black text-white border-black"
+														: "bg-white text-neutral-600 border-neutral-300 hover:border-neutral-400"
+												}`}
+											>
+												{dep}
+											</button>
+										)}
+									</For>
+								</div>
+							</Show>
+						</div>
+					</div>
+				</Show>
+
+				<Show when={activeTab() === "runtime"}>
+					<div class="grid gap-4 md:grid-cols-2">
+						<div>
+							<label class="block text-neutral-600 text-xs mb-1">
+								memory (mb)
+							</label>
+							<input
+								type="number"
+								value={props.service.memory_limit_mb || ""}
+								onInput={(e) => {
+									const val = e.currentTarget.value;
+									updateField("memory_limit_mb", val ? parseInt(val) : null);
+								}}
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+								placeholder="512"
+							/>
+						</div>
+
+						<div>
+							<label class="block text-neutral-600 text-xs mb-1">
+								cpu cores
+							</label>
+							<input
+								type="number"
+								value={props.service.cpu_limit || ""}
+								onInput={(e) => {
+									const val = e.currentTarget.value;
+									updateField("cpu_limit", val ? parseFloat(val) : null);
+								}}
+								step="0.1"
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+								placeholder="1.0"
+							/>
+						</div>
+
+						<div>
+							<label class="block text-neutral-600 text-xs mb-1">
+								health check path
+							</label>
+							<input
+								type="text"
+								value={props.service.health_check_path}
+								onInput={(e) =>
+									updateField("health_check_path", e.currentTarget.value)
+								}
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+								placeholder="/health"
+							/>
+						</div>
+
+						<div>
+							<label class="block text-neutral-600 text-xs mb-1">
+								health interval (s)
+							</label>
+							<input
+								type="number"
+								min="1"
+								value={props.service.health_check_interval_secs}
+								onInput={(e) =>
+									updateField(
+										"health_check_interval_secs",
+										parseInt(e.currentTarget.value, 10) || 30,
+									)
+								}
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+							/>
+						</div>
+
+						<div>
+							<label class="block text-neutral-600 text-xs mb-1">
+								health timeout (s)
+							</label>
+							<input
+								type="number"
+								min="1"
+								value={props.service.health_check_timeout_secs}
+								onInput={(e) =>
+									updateField(
+										"health_check_timeout_secs",
+										parseInt(e.currentTarget.value, 10) || 5,
+									)
+								}
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+							/>
+						</div>
+
+						<div>
+							<label class="block text-neutral-600 text-xs mb-1">
+								health retries
+							</label>
+							<input
+								type="number"
+								min="1"
+								value={props.service.health_check_retries}
+								onInput={(e) =>
+									updateField(
+										"health_check_retries",
+										parseInt(e.currentTarget.value, 10) || 3,
+									)
+								}
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+							/>
+						</div>
+
+						<div>
+							<label class="block text-neutral-600 text-xs mb-1">
+								restart policy
+							</label>
+							<select
+								value={props.service.restart_policy}
+								onChange={(e) =>
+									updateField("restart_policy", e.currentTarget.value)
+								}
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black focus:outline-none focus:border-black text-sm"
+							>
+								<option value="always">always</option>
+								<option value="on-failure">on failure</option>
+								<option value="never">never</option>
+							</select>
+						</div>
+
+						<div class="col-span-2">
+							<label class="block text-neutral-600 text-xs mb-1">
+								command args
+							</label>
+							<textarea
+								value={argsToText(props.service.command)}
+								onInput={(e) =>
+									updateField("command", textToArgs(e.currentTarget.value))
+								}
+								rows="3"
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm font-mono"
+								placeholder={"npm\nrun\nstart"}
+							/>
+							<p class="mt-1 text-xs text-neutral-400">
+								one argument per line. leave empty to use the image default.
+							</p>
+						</div>
+
+						<div class="col-span-2">
+							<label class="block text-neutral-600 text-xs mb-1">
+								entrypoint
+							</label>
+							<textarea
+								value={argsToText(props.service.entrypoint)}
+								onInput={(e) =>
+									updateField("entrypoint", textToArgs(e.currentTarget.value))
+								}
+								rows="2"
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm font-mono"
+								placeholder={"/usr/bin/env"}
+							/>
+						</div>
+
+						<div class="col-span-2">
+							<label class="block text-neutral-600 text-xs mb-1">
+								working directory
+							</label>
+							<input
+								type="text"
+								value={props.service.working_dir}
+								onInput={(e) =>
+									updateField("working_dir", e.currentTarget.value)
+								}
+								class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm font-mono"
+								placeholder="/workspace"
+							/>
+						</div>
+
+						<div class="col-span-2 border-t border-neutral-100 pt-3">
+							<div class="flex items-center justify-between mb-3">
+								<label class="block text-neutral-600 text-xs">
+									private registry auth
+								</label>
+								<Show
+									when={props.service.registry_auth}
+									fallback={
+										<button
+											type="button"
+											onClick={enableRegistryAuth}
+											class="px-2 py-1 text-xs border border-neutral-300 text-neutral-600 hover:border-neutral-400"
+										>
+											configure auth
+										</button>
+									}
+								>
+									<button
+										type="button"
+										onClick={() => updateField("registry_auth", null)}
+										class="text-xs text-neutral-500 hover:text-black"
+									>
+										clear auth
+									</button>
+								</Show>
+							</div>
+
 							<Show
 								when={props.service.registry_auth}
 								fallback={
-									<button
-										type="button"
-										onClick={enableRegistryAuth}
-										class="px-2 py-1 text-xs border border-neutral-300 text-neutral-600 hover:border-neutral-400"
-									>
-										configure auth
-									</button>
+									<p class="text-xs text-neutral-400">
+										use this when the service image comes from a private
+										registry
+									</p>
 								}
 							>
-								<button
-									type="button"
-									onClick={() => updateField("registry_auth", null)}
-									class="text-xs text-neutral-500 hover:text-black"
-								>
-									clear auth
-								</button>
+								<div class="grid gap-3 lg:grid-cols-3">
+									<div>
+										<label class="block text-neutral-600 text-xs mb-1">
+											registry server
+										</label>
+										<input
+											type="text"
+											value={props.service.registry_auth?.server || ""}
+											onInput={(e) =>
+												updateRegistryAuth("server", e.currentTarget.value)
+											}
+											class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+											placeholder="ghcr.io"
+										/>
+									</div>
+									<div>
+										<label class="block text-neutral-600 text-xs mb-1">
+											username
+										</label>
+										<input
+											type="text"
+											value={props.service.registry_auth?.username || ""}
+											onInput={(e) =>
+												updateRegistryAuth("username", e.currentTarget.value)
+											}
+											class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+											placeholder="registry user"
+										/>
+									</div>
+									<div>
+										<label class="block text-neutral-600 text-xs mb-1">
+											password
+										</label>
+										<input
+											type="password"
+											value={props.service.registry_auth?.password || ""}
+											onInput={(e) =>
+												updateRegistryAuth("password", e.currentTarget.value)
+											}
+											class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
+											placeholder="password"
+										/>
+									</div>
+								</div>
 							</Show>
 						</div>
-
-						<Show
-							when={props.service.registry_auth}
-							fallback={
-								<p class="text-xs text-neutral-400">
-									use this when the service image comes from a private registry
-								</p>
-							}
-						>
-							<div class="grid grid-cols-3 gap-3">
-								<div>
-									<label class="block text-neutral-600 text-xs mb-1">
-										registry server
-									</label>
-									<input
-										type="text"
-										value={props.service.registry_auth?.server || ""}
-										onInput={(e) =>
-											updateRegistryAuth("server", e.currentTarget.value)
-										}
-										class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-										placeholder="ghcr.io"
-									/>
-								</div>
-								<div>
-									<label class="block text-neutral-600 text-xs mb-1">
-										username
-									</label>
-									<input
-										type="text"
-										value={props.service.registry_auth?.username || ""}
-										onInput={(e) =>
-											updateRegistryAuth("username", e.currentTarget.value)
-										}
-										class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-										placeholder="registry user"
-									/>
-								</div>
-								<div>
-									<label class="block text-neutral-600 text-xs mb-1">
-										password
-									</label>
-									<input
-										type="password"
-										value={props.service.registry_auth?.password || ""}
-										onInput={(e) =>
-											updateRegistryAuth("password", e.currentTarget.value)
-										}
-										class="w-full px-2 py-1.5 bg-white border border-neutral-300 text-black placeholder-neutral-400 focus:outline-none focus:border-black text-sm"
-										placeholder="password"
-									/>
-								</div>
-							</div>
-						</Show>
 					</div>
+				</Show>
 
-					<div class="col-span-2 border-t border-neutral-100 pt-3">
+				<Show when={activeTab() === "storage"}>
+					<div class="border-t border-neutral-100 pt-3">
 						<div class="flex items-center justify-between mb-3">
 							<label class="block text-neutral-600 text-xs">
 								persistent mounts
@@ -599,7 +654,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 								<For each={props.service.mounts}>
 									{(mount, mountIndex) => (
 										<div class="border border-neutral-200 p-3">
-											<div class="grid grid-cols-3 gap-3">
+											<div class="grid gap-3 md:grid-cols-3">
 												<div>
 													<label class="block text-neutral-600 text-xs mb-1">
 														name
@@ -667,8 +722,8 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 							</div>
 						</Show>
 					</div>
-				</div>
-			</Show>
+				</Show>
+			</div>
 		</div>
 	);
 };
