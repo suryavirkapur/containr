@@ -23,7 +23,7 @@
 }
 
 body {
-  @apply bg-white text-black min-h-screen;
+  @apply bg-[#0a0a0f] text-neutral-200 min-h-screen;
 }
 
 * {
@@ -44,18 +44,18 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-white;
+  @apply bg-[#0a0a0f];
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-neutral-300;
+  @apply bg-neutral-700;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-neutral-400;
+  @apply bg-neutral-600;
 }
 
 /* selection */
 ::selection {
-  @apply bg-black text-white;
+  @apply bg-purple-600 text-white;
 }
