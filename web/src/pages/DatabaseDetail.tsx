@@ -83,6 +83,14 @@ const stopDatabase = async (id: string): Promise<DatabaseResponse> => {
 	return data;
 };
 
+const restartDatabase = async (id: string): Promise<DatabaseResponse> => {
+	const { data, error } = await api.POST("/api/databases/{id}/restart", {
+		params: { path: { id } },
+	});
+	if (error) throw error;
+	return data;
+};
+
 const toggleExternalAccess = async (
 	id: string,
 	enabled: boolean,
@@ -329,7 +337,9 @@ const DatabaseDetail: Component = () => {
 		Record<string, boolean>
 	>({});
 	const [copiedField, setCopiedField] = createSignal("");
-	const [powerAction, setPowerAction] = createSignal<"" | "start" | "stop">("");
+	const [powerAction, setPowerAction] = createSignal<
+		"" | "start" | "stop" | "restart"
+	>("");
 	const [serviceMessage, setServiceMessage] = createSignal("");
 	const [exposing, setExposing] = createSignal(false);
 	const [togglingPitr, setTogglingPitr] = createSignal(false);
@@ -394,6 +404,7 @@ const DatabaseDetail: Component = () => {
 	const powerButtonLabel = createMemo(() => {
 		if (powerAction() === "start") return "starting...";
 		if (powerAction() === "stop") return "stopping...";
+		if (powerAction() === "restart") return "restarting...";
 
 		const status = database()?.status;
 		if (status === "running") return "stop database";
@@ -509,6 +520,23 @@ const DatabaseDetail: Component = () => {
 				await stopDatabase(db.id);
 			}
 
+			await refetch();
+		} catch (error) {
+			setServiceMessage(describeError(error));
+		} finally {
+			setPowerAction("");
+		}
+	};
+
+	const handleRestart = async () => {
+		const db = database();
+		if (!db || db.status !== "running" || powerAction() !== "") return;
+
+		setPowerAction("restart");
+		setServiceMessage("");
+
+		try {
+			await restartDatabase(db.id);
 			await refetch();
 		} catch (error) {
 			setServiceMessage(describeError(error));
@@ -809,6 +837,18 @@ const DatabaseDetail: Component = () => {
 												}
 											>
 												{powerButtonLabel()}
+											</button>
+											<button
+												type="button"
+												onClick={() => void handleRestart()}
+												disabled={
+													powerAction() !== "" || db.status !== "running"
+												}
+												class={secondaryButtonClass}
+											>
+												{powerAction() === "restart"
+													? "restarting..."
+													: "restart"}
 											</button>
 											<button
 												type="button"

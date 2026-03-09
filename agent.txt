@@ -38,6 +38,9 @@ current context:
 - the dashboard frontend is now intended to live only in `containr-api`; the
   proxy still forwards the base hostname to the api, but the old proxy-side
   embedded frontend/build path is being removed as dead duplicate code
+- the managed database detail header now includes a dedicated restart control
+  backed by `POST /api/databases/{id}/restart`, which performs a server-side
+  stop/start cycle and persists the resulting database state
 - container ownership checks now accept the persisted docker ids for managed
   services and latest deployments, so exec/log endpoints keep working even when
   the caller passes a raw docker id instead of a containr-style name
@@ -166,6 +169,9 @@ important decisions:
 - keep the dashboard bundle embedded only in `containr-api`, since the base
   dashboard hostname already proxies straight to the api and the proxy-side
   rust-embed copy only duplicated build time and binary size
+- implement database restart as a dedicated backend operation instead of making
+  the frontend issue separate stop and start requests, so failed restarts still
+  persist the updated managed service state cleanly
 - bootstrap the oldest existing user to admin on upgrade instead of leaving the
   global settings surface writable by any authenticated account
 - isolate local database backup browsing and downloads by database id and

@@ -614,6 +614,74 @@ pub async fn stop_database(
     Ok(Json(DatabaseResponse::from(&db)))
 }
 
+/// restart a database
+#[utoipa::path(
+    post,
+    path = "/api/databases/{id}/restart",
+    tag = "databases",
+    params(("id" = Uuid, Path, description = "database id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "database restarted", body = DatabaseResponse),
+        (status = 400, description = "database is not running", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse),
+        (status = 404, description = "not found", body = ErrorResponse)
+    )
+)]
+pub async fn restart_database(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<DatabaseResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+
+    let mut db = state
+        .db
+        .get_managed_database(id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "database not found".to_string(),
+                }),
+            )
+        })?;
+
+    if db.owner_id != user_id {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "access denied".to_string(),
+            }),
+        ));
+    }
+
+    if !should_restart_service(db.status, &db.container_id) {
+        return Err(bad_request("database is not running"));
+    }
+
+    let db_manager = DatabaseManager::new();
+    db_manager
+        .stop_database(&mut db)
+        .await
+        .map_err(|error| database_manager_error("restart database", error))?;
+
+    if let Err(error) = db_manager.start_database(&mut db).await {
+        let _ = state.db.save_managed_database(&db);
+        return Err(database_manager_error("restart database", error));
+    }
+
+    state
+        .db
+        .save_managed_database(&db)
+        .map_err(internal_error)?;
+
+    Ok(Json(DatabaseResponse::from(&db)))
+}
+
 /// logs query params
 #[derive(Debug, Deserialize)]
 pub struct LogsQuery {
