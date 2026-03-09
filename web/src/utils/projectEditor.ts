@@ -1,5 +1,9 @@
 import { components } from "../api";
-import { Service, createEmptyService } from "../components/ServiceForm";
+import {
+	Service,
+	createServiceForType,
+	normalizeServiceType,
+} from "../components/ServiceForm";
 import { EditableKeyValueEntry } from "./keyValueEntries";
 
 export const secretMask = "********";
@@ -9,9 +13,8 @@ type ServiceResponse = components["schemas"]["ServiceResponse"];
 export type EditableEnvVar = EditableKeyValueEntry;
 
 export function createPrimaryService(): Service {
-	const service = createEmptyService();
+	const service = createServiceForType("web_service");
 	service.name = "web";
-	service.expose_http = true;
 	return service;
 }
 
@@ -19,6 +22,7 @@ export function mapServiceResponseToForm(service: ServiceResponse): Service {
 	return {
 		name: service.name,
 		image: service.image,
+		service_type: normalizeServiceType(service.service_type),
 		port: service.port,
 		expose_http: service.expose_http,
 		additional_ports: [...service.additional_ports],
@@ -76,6 +80,7 @@ export function mapServiceToRequest(service: Service) {
 	return {
 		name: service.name.trim(),
 		image: image || null,
+		service_type: service.service_type,
 		port: service.port,
 		expose_http: service.expose_http,
 		additional_ports:

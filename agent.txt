@@ -39,6 +39,9 @@ current context:
 - projects now persist per-service env vars plus docker build settings
   (`build_context`, `dockerfile_path`, `build_target`, and `build_args`) in
   the shared model, sqlite, the api, and the deployment worker
+- projects now persist an explicit render-style `service_type` for each
+  service, with `web_service`, `private_service`, and `background_worker`
+  available across the model, sqlite, api, generated client, worker, and ui
 - project creation now queues its initial deployment immediately, so create is
   also the first deploy unless source resolution or queue submission fails
 - services can now stay fully private: the ui no longer forces a public http
@@ -46,6 +49,12 @@ current context:
 - the service editor now has dedicated overview/build/runtime/storage tabs and
   reuses the shared key/value editor pattern for project env vars, service env
   vars, and build arguments
+- the project create flow is now source-first and render-like, with explicit
+  add-web/add-private/add-worker cards and the same service editor used during
+  project editing
+- projects can now expose more than one web service: the primary web service
+  keeps the project subdomain plus custom domains, while each public web
+  service also gets its own `service.project.base_domain` route
 - the dashboard frontend is now intended to live only in `containr-api`; the
   proxy still forwards the base hostname to the api, but the old proxy-side
   embedded frontend/build path is being removed as dead duplicate code
@@ -138,13 +147,19 @@ pending tasks:
   1. expose initial deployment state better after create:
      - return or surface the queued deployment id/status directly from create
      - consider navigating straight to the first deployment log stream
-  2. harden startup replay coverage:
+  2. surface public service urls explicitly:
+     - add generated service subdomains to the api response
+     - show copy/open actions for the primary project url and each web service url
+  3. decide whether custom domains should stay project-level:
+     - current custom domains attach to the primary web service
+     - full render parity likely wants service-level domain ownership
+  4. harden startup replay coverage:
      - add regression tests for replayed deployment reconstruction
      - add a route-refresh test for the zero-public-service case
-  3. decide whether deployment-row replay is enough durability:
+  5. decide whether deployment-row replay is enough durability:
      - current deploys survive restarts through persisted deployment rows
      - decide if a separate queue table is still worth the complexity
-  4. keep pushing the product model forward:
+  6. keep pushing the product model forward:
      - migrate `github_url` api naming toward a generic source model
      - add queue logs and health visibility in the ui
      - improve env/build validation and duplicate-key feedback
@@ -208,6 +223,12 @@ important decisions:
 - keep the dashboard bundle embedded only in `containr-api`, since the base
   dashboard hostname already proxies straight to the api and the proxy-side
   rust-embed copy only duplicated build time and binary size
+- use an explicit `service_type` enum instead of inferring everything from
+  `expose_http`, and model background workers as services with no inbound port
+- prefer the service named `web` as the primary public route when a project has
+  multiple web services; if no `web` service exists, fall back to the first
+  public web service and still assign every public web service its own
+  `service.project.base_domain` route
 - implement database restart as a dedicated backend operation instead of making
   the frontend issue separate stop and start requests, so failed restarts still
   persist the updated managed service state cleanly

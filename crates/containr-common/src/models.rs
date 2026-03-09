@@ -85,6 +85,7 @@ impl Project {
             app_id: self.id,
             name: "web".to_string(),
             image: String::new(),
+            service_type: ServiceType::WebService,
             port: self.port,
             expose_http: true,
             additional_ports: Vec::new(),
@@ -225,6 +226,19 @@ pub struct ServiceRegistryAuth {
     pub password: String,
 }
 
+/// render-style service category
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceType {
+    /// routed public http service
+    WebService,
+    /// internal-only network service
+    #[default]
+    PrivateService,
+    /// worker with no expected inbound traffic
+    BackgroundWorker,
+}
+
 /// container service definition for multi-container apps
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContainerService {
@@ -232,6 +246,8 @@ pub struct ContainerService {
     pub app_id: Uuid,
     pub name: String,
     pub image: String,
+    #[serde(default)]
+    pub service_type: ServiceType,
     pub port: u16,
     #[serde(default)]
     pub expose_http: bool,
@@ -286,6 +302,7 @@ impl ContainerService {
             app_id,
             name,
             image,
+            service_type: ServiceType::PrivateService,
             port,
             expose_http: false,
             additional_ports: Vec::new(),
@@ -307,6 +324,27 @@ impl ContainerService {
             mounts: Vec::new(),
             created_at: now,
             updated_at: now,
+        }
+    }
+
+    /// returns true when the service expects an inbound port
+    pub fn expects_inbound_port(&self) -> bool {
+        !matches!(self.service_type, ServiceType::BackgroundWorker)
+    }
+
+    /// returns true when the service should be routed publicly
+    pub fn is_public_http(&self) -> bool {
+        matches!(self.service_type, ServiceType::WebService)
+    }
+
+    /// infers a service type from legacy fields
+    pub fn infer_service_type(expose_http: bool, port: u16) -> ServiceType {
+        if expose_http {
+            ServiceType::WebService
+        } else if port == 0 {
+            ServiceType::BackgroundWorker
+        } else {
+            ServiceType::PrivateService
         }
     }
 }

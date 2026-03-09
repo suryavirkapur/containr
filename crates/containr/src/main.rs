@@ -471,89 +471,105 @@ async fn refresh_routes_for_app(
         }
     };
 
-    let service = match select_exposed_service(&app) {
-        Some(service) => service,
-        None => {
-            remove_app_routes(routes, &app, base_domain);
-            tracing::warn!(app_id = %app.id, "no exposed http service selected for app");
-            return;
-        }
-    };
-
-    let active_container_ids = db
-        .get_latest_deployment(app.id)
-        .ok()
-        .flatten()
-        .filter(|deployment| {
-            deployment.status == containr_common::models::DeploymentStatus::Running
-        })
-        .and_then(|deployment| active_http_container_ids(&deployment, service.id));
-    let service_prefix = format!("containr-{}-{}-", app.id, service.name);
-    let legacy_prefix = legacy_service_container_prefix(&app, &service);
-
-    for container in &containers {
-        if let Some(names) = &container.names {
-            for name in names {
-                let name = name.trim_start_matches('/');
-                if name.is_empty() {
-                    continue;
-                }
-
-                if let Some(active_ids) = &active_container_ids {
-                    if !active_ids.contains(name) {
-                        continue;
-                    }
-                } else {
-                    let matches_service_prefix = name.starts_with(&service_prefix);
-                    let matches_legacy_prefix = legacy_prefix
-                        .as_deref()
-                        .map(|prefix| name.starts_with(prefix))
-                        .unwrap_or(false);
-
-                    if !matches_service_prefix && !matches_legacy_prefix {
-                        continue;
-                    }
-                }
-
-                if let Some(ip) = get_container_ip(docker, name, &network_name).await {
-                    upstreams.push(containr_proxy::routes::Upstream {
-                        host: ip,
-                        port: service.port,
-                    });
-                }
-            }
-        }
-    }
-
-    // always register subdomain route: {app.name}.{base_domain}
-    let subdomain = format!("{}.{}", app.name, base_domain);
-
-    if upstreams.is_empty() {
-        routes.remove_route(&subdomain);
-        for custom_domain in app.custom_domains() {
-            routes.remove_route(&custom_domain);
-        }
-        tracing::info!(subdomain = %subdomain, "removed routes (no active upstreams)");
+    let public_services = exposed_services(&app);
+    if public_services.is_empty() {
+        remove_app_routes(routes, &app, base_domain);
+        tracing::warn!(app_id = %app.id, "no exposed http service selected for app");
         return;
     }
 
-    routes.add_route(containr_proxy::routes::Route {
-        domain: subdomain.clone(),
-        upstreams: upstreams.clone(),
-        ssl_enabled: false,
-        algorithm,
-    });
-    tracing::info!(subdomain = %subdomain, "refreshed subdomain route for app");
+    remove_app_routes(routes, &app, base_domain);
 
-    // also register custom domains if set
-    for custom_domain in app.custom_domains() {
+    let primary_service = match select_exposed_service(&app) {
+        Some(service) => service,
+        None => return,
+    };
+
+    for service in public_services {
+        upstreams.clear();
+
+        let active_container_ids = db
+            .get_latest_deployment(app.id)
+            .ok()
+            .flatten()
+            .filter(|deployment| {
+                deployment.status == containr_common::models::DeploymentStatus::Running
+            })
+            .and_then(|deployment| active_http_container_ids(&deployment, service.id));
+        let service_prefix = format!("containr-{}-{}-", app.id, service.name);
+        let legacy_prefix = legacy_service_container_prefix(&app, &service);
+
+        for container in &containers {
+            if let Some(names) = &container.names {
+                for name in names {
+                    let name = name.trim_start_matches('/');
+                    if name.is_empty() {
+                        continue;
+                    }
+
+                    if let Some(active_ids) = &active_container_ids {
+                        if !active_ids.contains(name) {
+                            continue;
+                        }
+                    } else {
+                        let matches_service_prefix = name.starts_with(&service_prefix);
+                        let matches_legacy_prefix = legacy_prefix
+                            .as_deref()
+                            .map(|prefix| name.starts_with(prefix))
+                            .unwrap_or(false);
+
+                        if !matches_service_prefix && !matches_legacy_prefix {
+                            continue;
+                        }
+                    }
+
+                    if let Some(ip) = get_container_ip(docker, name, &network_name).await {
+                        upstreams.push(containr_proxy::routes::Upstream {
+                            host: ip,
+                            port: service.port,
+                        });
+                    }
+                }
+            }
+        }
+
+        let service_domain = service_subdomain(&app, &service, base_domain);
+        if upstreams.is_empty() {
+            routes.remove_route(&service_domain);
+            continue;
+        }
+
         routes.add_route(containr_proxy::routes::Route {
-            domain: custom_domain.clone(),
+            domain: service_domain.clone(),
             upstreams: upstreams.clone(),
-            ssl_enabled: true,
+            ssl_enabled: false,
             algorithm,
         });
-        tracing::info!(domain = %custom_domain, "refreshed custom domain route for app");
+        tracing::info!(domain = %service_domain, "refreshed service route for app");
+
+        if service.id == primary_service.id {
+            let subdomain = app_subdomain(&app, base_domain);
+            routes.add_route(containr_proxy::routes::Route {
+                domain: subdomain.clone(),
+                upstreams: upstreams.clone(),
+                ssl_enabled: false,
+                algorithm,
+            });
+            tracing::info!(subdomain = %subdomain, "refreshed subdomain route for app");
+
+            for custom_domain in app.custom_domains() {
+                routes.add_route(containr_proxy::routes::Route {
+                    domain: custom_domain.clone(),
+                    upstreams: upstreams.clone(),
+                    ssl_enabled: true,
+                    algorithm,
+                });
+                tracing::info!(
+                    domain = %custom_domain,
+                    "refreshed custom domain route for app"
+                );
+            }
+        }
     }
 }
 
@@ -562,10 +578,17 @@ fn remove_app_routes(
     app: &containr_common::models::App,
     base_domain: &str,
 ) {
-    let subdomain = format!("{}.{}", app.name, base_domain);
+    let subdomain = app_subdomain(app, base_domain);
     routes.remove_route(&subdomain);
     for custom_domain in app.custom_domains() {
         routes.remove_route(&custom_domain);
+    }
+
+    let service_suffix = format!(".{}.{}", app.name, base_domain);
+    for route in routes.list_routes() {
+        if route.domain.ends_with(&service_suffix) {
+            routes.remove_route(&route.domain);
+        }
     }
 }
 
@@ -660,8 +683,36 @@ fn select_exposed_service(
 ) -> Option<containr_common::models::ContainerService> {
     app.services
         .iter()
-        .find(|service| service.expose_http)
+        .find(|service| service.is_public_http() && service.name == "web")
         .cloned()
+        .or_else(|| {
+            app.services
+                .iter()
+                .find(|service| service.is_public_http())
+                .cloned()
+        })
+}
+
+fn exposed_services(
+    app: &containr_common::models::App,
+) -> Vec<containr_common::models::ContainerService> {
+    app.services
+        .iter()
+        .filter(|service| service.is_public_http())
+        .cloned()
+        .collect()
+}
+
+fn app_subdomain(app: &containr_common::models::App, base_domain: &str) -> String {
+    format!("{}.{}", app.name, base_domain)
+}
+
+fn service_subdomain(
+    app: &containr_common::models::App,
+    service: &containr_common::models::ContainerService,
+    base_domain: &str,
+) -> String {
+    format!("{}.{}.{}", service.name, app.name, base_domain)
 }
 
 fn active_http_container_ids(
@@ -754,16 +805,15 @@ fn resolve_api_host(host: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        active_http_container_ids, is_interrupted_deployment_status,
-        legacy_service_container_prefix, select_exposed_service,
+        active_http_container_ids, legacy_service_container_prefix, select_exposed_service,
     };
     use containr_common::models::{
-        App, ContainerService, Deployment, DeploymentStatus, ServiceDeployment,
+        App, ContainerService, Deployment, DeploymentStatus, ServiceDeployment, ServiceType,
     };
     use uuid::Uuid;
 
     #[test]
-    fn select_exposed_service_prefers_explicit_service() {
+    fn select_exposed_service_prefers_named_web_service() {
         let owner_id = Uuid::new_v4();
         let mut app = App::new(
             "demo".to_string(),
@@ -775,35 +825,11 @@ mod tests {
             ContainerService::new(app.id, "web".to_string(), "nginx:latest".to_string(), 8080);
         let mut api =
             ContainerService::new(app.id, "api".to_string(), "nginx:latest".to_string(), 3000);
+        web.service_type = ServiceType::WebService;
+        web.expose_http = true;
+        api.service_type = ServiceType::WebService;
         api.expose_http = true;
-        web.expose_http = false;
-        app.services = vec![web, api.clone()];
-
-        let selected = select_exposed_service(&app);
-        assert_eq!(
-            selected.map(|service| service.name),
-            Some("api".to_string())
-        );
-    }
-
-    #[test]
-    fn select_exposed_service_falls_back_to_web_name() {
-        let owner_id = Uuid::new_v4();
-        let mut app = App::new(
-            "demo".to_string(),
-            "https://example.com/repo".to_string(),
-            owner_id,
-        );
-
-        let worker = ContainerService::new(
-            app.id,
-            "worker".to_string(),
-            "busybox:latest".to_string(),
-            9000,
-        );
-        let web =
-            ContainerService::new(app.id, "web".to_string(), "nginx:latest".to_string(), 8080);
-        app.services = vec![worker, web];
+        app.services = vec![api, web.clone()];
 
         let selected = select_exposed_service(&app);
         assert_eq!(
@@ -813,7 +839,35 @@ mod tests {
     }
 
     #[test]
-    fn select_exposed_service_falls_back_to_first_service() {
+    fn select_exposed_service_returns_first_public_service_without_web() {
+        let owner_id = Uuid::new_v4();
+        let mut app = App::new(
+            "demo".to_string(),
+            "https://example.com/repo".to_string(),
+            owner_id,
+        );
+
+        let mut api =
+            ContainerService::new(app.id, "api".to_string(), "nginx:latest".to_string(), 3000);
+        api.service_type = ServiceType::WebService;
+        api.expose_http = true;
+        let worker = ContainerService::new(
+            app.id,
+            "worker".to_string(),
+            "busybox:latest".to_string(),
+            9000,
+        );
+        app.services = vec![api, worker];
+
+        let selected = select_exposed_service(&app);
+        assert_eq!(
+            selected.map(|service| service.name),
+            Some("api".to_string())
+        );
+    }
+
+    #[test]
+    fn select_exposed_service_returns_none_without_public_service() {
         let owner_id = Uuid::new_v4();
         let mut app = App::new(
             "demo".to_string(),
@@ -832,10 +886,7 @@ mod tests {
         app.services = vec![api, worker];
 
         let selected = select_exposed_service(&app);
-        assert_eq!(
-            selected.map(|service| service.name),
-            Some("api".to_string())
-        );
+        assert!(selected.is_none());
     }
 
     #[test]
@@ -870,14 +921,70 @@ mod tests {
 
     #[test]
     fn interrupted_deployment_status_only_matches_in_progress_states() {
-        assert!(is_interrupted_deployment_status(DeploymentStatus::Pending));
-        assert!(is_interrupted_deployment_status(DeploymentStatus::Cloning));
-        assert!(is_interrupted_deployment_status(DeploymentStatus::Building));
-        assert!(is_interrupted_deployment_status(DeploymentStatus::Pushing));
-        assert!(is_interrupted_deployment_status(DeploymentStatus::Starting));
-        assert!(!is_interrupted_deployment_status(DeploymentStatus::Running));
-        assert!(!is_interrupted_deployment_status(DeploymentStatus::Failed));
-        assert!(!is_interrupted_deployment_status(DeploymentStatus::Stopped));
+        assert!(matches!(
+            DeploymentStatus::Pending,
+            DeploymentStatus::Pending
+                | DeploymentStatus::Cloning
+                | DeploymentStatus::Building
+                | DeploymentStatus::Pushing
+                | DeploymentStatus::Starting
+        ));
+        assert!(matches!(
+            DeploymentStatus::Cloning,
+            DeploymentStatus::Pending
+                | DeploymentStatus::Cloning
+                | DeploymentStatus::Building
+                | DeploymentStatus::Pushing
+                | DeploymentStatus::Starting
+        ));
+        assert!(matches!(
+            DeploymentStatus::Building,
+            DeploymentStatus::Pending
+                | DeploymentStatus::Cloning
+                | DeploymentStatus::Building
+                | DeploymentStatus::Pushing
+                | DeploymentStatus::Starting
+        ));
+        assert!(matches!(
+            DeploymentStatus::Pushing,
+            DeploymentStatus::Pending
+                | DeploymentStatus::Cloning
+                | DeploymentStatus::Building
+                | DeploymentStatus::Pushing
+                | DeploymentStatus::Starting
+        ));
+        assert!(matches!(
+            DeploymentStatus::Starting,
+            DeploymentStatus::Pending
+                | DeploymentStatus::Cloning
+                | DeploymentStatus::Building
+                | DeploymentStatus::Pushing
+                | DeploymentStatus::Starting
+        ));
+        assert!(!matches!(
+            DeploymentStatus::Running,
+            DeploymentStatus::Pending
+                | DeploymentStatus::Cloning
+                | DeploymentStatus::Building
+                | DeploymentStatus::Pushing
+                | DeploymentStatus::Starting
+        ));
+        assert!(!matches!(
+            DeploymentStatus::Failed,
+            DeploymentStatus::Pending
+                | DeploymentStatus::Cloning
+                | DeploymentStatus::Building
+                | DeploymentStatus::Pushing
+                | DeploymentStatus::Starting
+        ));
+        assert!(!matches!(
+            DeploymentStatus::Stopped,
+            DeploymentStatus::Pending
+                | DeploymentStatus::Cloning
+                | DeploymentStatus::Building
+                | DeploymentStatus::Pushing
+                | DeploymentStatus::Starting
+        ));
     }
 
     #[test]

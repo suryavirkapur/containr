@@ -7241,6 +7241,13 @@
             ],
             "description": "restart policy"
           },
+          "service_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "render-style service category"
+          },
           "working_dir": {
             "type": [
               "string",
@@ -7257,6 +7264,7 @@
           "id",
           "name",
           "image",
+          "service_type",
           "port",
           "expose_http",
           "additional_ports",
@@ -7412,6 +7420,10 @@
           "restart_policy": {
             "type": "string",
             "description": "restart policy"
+          },
+          "service_type": {
+            "type": "string",
+            "description": "render-style service category"
           },
           "working_dir": {
             "type": [

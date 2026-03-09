@@ -3,12 +3,31 @@ import { Component, createMemo, createSignal, For, Show } from "solid-js";
 import EnvVarEditor from "./EnvVarEditor";
 import { EditableKeyValueEntry } from "../utils/keyValueEntries";
 
+export type ServiceType =
+	| "web_service"
+	| "private_service"
+	| "background_worker";
+
+export function normalizeServiceType(
+	serviceType: string | null | undefined,
+): ServiceType {
+	switch (serviceType) {
+		case "web_service":
+		case "private_service":
+		case "background_worker":
+			return serviceType;
+		default:
+			return "private_service";
+	}
+}
+
 /**
  * service configuration for multi-container apps
  */
 export interface Service {
 	name: string;
 	image: string;
+	service_type: ServiceType;
 	port: number;
 	expose_http: boolean;
 	additional_ports: number[];
@@ -52,6 +71,7 @@ export function createEmptyService(): Service {
 	return {
 		name: "",
 		image: "",
+		service_type: "private_service",
 		port: 8080,
 		expose_http: false,
 		additional_ports: [],
@@ -77,6 +97,52 @@ export function createEmptyService(): Service {
 	};
 }
 
+export function serviceTypeLabel(serviceType: string | null | undefined) {
+	switch (normalizeServiceType(serviceType)) {
+		case "web_service":
+			return "web service";
+		case "private_service":
+			return "private service";
+		case "background_worker":
+			return "background worker";
+	}
+}
+
+export function serviceTypeDescription(serviceType: string | null | undefined) {
+	switch (normalizeServiceType(serviceType)) {
+		case "web_service":
+			return "public url, routed http traffic, and optional custom domains";
+		case "private_service":
+			return "internal-only service with a stable network address inside the project";
+		case "background_worker":
+			return "no inbound traffic, intended for queues, jobs, and long-running workers";
+	}
+}
+
+export function applyServiceType(
+	service: Service,
+	serviceType: ServiceType,
+): Service {
+	const next: Service = {
+		...service,
+		service_type: serviceType,
+		expose_http: serviceType === "web_service",
+	};
+
+	if (serviceType === "background_worker") {
+		next.port = 0;
+		next.health_check_path = "";
+	} else if (next.port === 0) {
+		next.port = 8080;
+	}
+
+	return next;
+}
+
+export function createServiceForType(serviceType: ServiceType): Service {
+	return applyServiceType(createEmptyService(), serviceType);
+}
+
 interface ServiceFormProps {
 	service: Service;
 	index: number;
@@ -95,6 +161,9 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 
 	const isRepositoryBuild = createMemo(
 		() => props.service.image.trim().length === 0,
+	);
+	const expectsInboundPort = createMemo(
+		() => props.service.service_type !== "background_worker",
 	);
 
 	const argsToText = (value: string[]) => value.join("\n");
@@ -198,6 +267,10 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 	const modeLabel = () =>
 		isRepositoryBuild() ? "repo build" : "prebuilt image";
 
+	const selectServiceType = (serviceType: ServiceType) => {
+		props.onUpdate(props.index, applyServiceType(props.service, serviceType));
+	};
+
 	return (
 		<div class="mb-4 border border-neutral-200">
 			<div class="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-200 bg-neutral-50 px-4 py-3">
@@ -207,7 +280,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 							{props.service.name || `service ${props.index + 1}`}
 						</span>
 						<span class="border border-neutral-200 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
-							{props.service.expose_http ? "public http" : "private"}
+							{serviceTypeLabel(props.service.service_type)}
 						</span>
 						<span class="border border-neutral-200 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
 							{modeLabel()}
@@ -215,7 +288,9 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 					</div>
 					<div class="mt-2 flex flex-wrap gap-2 text-xs text-neutral-500">
 						<span class="border border-neutral-200 px-2 py-1 font-mono">
-							:{props.service.port}
+							{expectsInboundPort()
+								? `:${props.service.port}`
+								: "no inbound port"}
 						</span>
 						<span class="border border-neutral-200 px-2 py-1">
 							{props.service.replicas} replica
@@ -277,6 +352,48 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 			<div class="p-4">
 				<Show when={activeTab() === "overview"}>
 					<div class="grid gap-4 md:grid-cols-2">
+						<div class="md:col-span-2">
+							<label class="mb-2 block text-xs text-neutral-600">
+								service type
+							</label>
+							<div class="grid gap-2 md:grid-cols-3">
+								<For
+									each={
+										[
+											"web_service",
+											"private_service",
+											"background_worker",
+										] as ServiceType[]
+									}
+								>
+									{(serviceType) => (
+										<button
+											type="button"
+											onClick={() => selectServiceType(serviceType)}
+											class={`border px-3 py-3 text-left transition-colors ${
+												props.service.service_type === serviceType
+													? "border-black bg-black text-white"
+													: "border-neutral-200 bg-white text-black hover:border-neutral-400"
+											}`}
+										>
+											<p class="text-xs uppercase tracking-wide">
+												{serviceTypeLabel(serviceType)}
+											</p>
+											<p
+												class={`mt-2 text-xs leading-relaxed ${
+													props.service.service_type === serviceType
+														? "text-neutral-200"
+														: "text-neutral-500"
+												}`}
+											>
+												{serviceTypeDescription(serviceType)}
+											</p>
+										</button>
+									)}
+								</For>
+							</div>
+						</div>
+
 						<div>
 							<label class="mb-1 block text-xs text-neutral-600">name</label>
 							<input
@@ -291,38 +408,31 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 							/>
 						</div>
 
-						<div>
-							<label class="mb-1 block text-xs text-neutral-600">port</label>
-							<input
-								type="number"
-								value={props.service.port}
-								onInput={(event) =>
-									updateField(
-										"port",
-										parseInt(event.currentTarget.value, 10) || 8080,
-									)
-								}
-								class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
-								placeholder="8080"
-							/>
-						</div>
+						<Show when={expectsInboundPort()}>
+							<div>
+								<label class="mb-1 block text-xs text-neutral-600">port</label>
+								<input
+									type="number"
+									value={props.service.port}
+									onInput={(event) =>
+										updateField(
+											"port",
+											parseInt(event.currentTarget.value, 10) || 8080,
+										)
+									}
+									class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
+									placeholder="8080"
+								/>
+							</div>
+						</Show>
 
 						<div class="md:col-span-2 border border-neutral-200 bg-neutral-50 px-3 py-3">
-							<label class="flex items-center gap-2 text-xs text-neutral-600">
-								<input
-									type="checkbox"
-									checked={props.service.expose_http}
-									onChange={(event) =>
-										updateField("expose_http", event.currentTarget.checked)
-									}
-									class="border border-neutral-300"
-								/>
-								public http service
-							</label>
-							<p class="mt-2 text-xs text-neutral-500">
-								enable this only when the service should receive routed traffic
-								and a public project url. leave it off for workers, cron
-								processes, and internal-only services.
+							<p class="text-xs text-neutral-600">
+								{props.service.service_type === "web_service"
+									? "rendered like a public web service with a routed project url."
+									: props.service.service_type === "private_service"
+										? "internal-only service with no public url but a stable project network address."
+										: "background worker with no inbound traffic and no routed url."}
 							</p>
 						</div>
 
@@ -536,74 +646,88 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 								/>
 							</div>
 
-							<div>
-								<label class="mb-1 block text-xs text-neutral-600">
-									health check path
-								</label>
-								<input
-									type="text"
-									value={props.service.health_check_path}
-									onInput={(event) =>
-										updateField("health_check_path", event.currentTarget.value)
-									}
-									class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
-									placeholder="/health"
-								/>
-							</div>
+							<Show when={expectsInboundPort()}>
+								<>
+									<div>
+										<label class="mb-1 block text-xs text-neutral-600">
+											health check path
+										</label>
+										<input
+											type="text"
+											value={props.service.health_check_path}
+											onInput={(event) =>
+												updateField(
+													"health_check_path",
+													event.currentTarget.value,
+												)
+											}
+											class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
+											placeholder="/health"
+										/>
+									</div>
 
-							<div>
-								<label class="mb-1 block text-xs text-neutral-600">
-									health interval (s)
-								</label>
-								<input
-									type="number"
-									min="1"
-									value={props.service.health_check_interval_secs}
-									onInput={(event) =>
-										updateField(
-											"health_check_interval_secs",
-											parseInt(event.currentTarget.value, 10) || 30,
-										)
-									}
-									class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
-								/>
-							</div>
+									<div>
+										<label class="mb-1 block text-xs text-neutral-600">
+											health interval (s)
+										</label>
+										<input
+											type="number"
+											min="1"
+											value={props.service.health_check_interval_secs}
+											onInput={(event) =>
+												updateField(
+													"health_check_interval_secs",
+													parseInt(event.currentTarget.value, 10) || 30,
+												)
+											}
+											class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
+										/>
+									</div>
 
-							<div>
-								<label class="mb-1 block text-xs text-neutral-600">
-									health timeout (s)
-								</label>
-								<input
-									type="number"
-									min="1"
-									value={props.service.health_check_timeout_secs}
-									onInput={(event) =>
-										updateField(
-											"health_check_timeout_secs",
-											parseInt(event.currentTarget.value, 10) || 5,
-										)
-									}
-									class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
-								/>
-							</div>
+									<div>
+										<label class="mb-1 block text-xs text-neutral-600">
+											health timeout (s)
+										</label>
+										<input
+											type="number"
+											min="1"
+											value={props.service.health_check_timeout_secs}
+											onInput={(event) =>
+												updateField(
+													"health_check_timeout_secs",
+													parseInt(event.currentTarget.value, 10) || 5,
+												)
+											}
+											class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
+										/>
+									</div>
 
-							<div>
-								<label class="mb-1 block text-xs text-neutral-600">
-									health retries
-								</label>
-								<input
-									type="number"
-									min="1"
-									value={props.service.health_check_retries}
-									onInput={(event) =>
-										updateField(
-											"health_check_retries",
-											parseInt(event.currentTarget.value, 10) || 3,
-										)
-									}
-									class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
-								/>
-							</div>
+									<div>
+										<label class="mb-1 block text-xs text-neutral-600">
+											health retries
+										</label>
+										<input
+											type="number"
+											min="1"
+											value={props.service.health_check_retries}
+											onInput={(event) =>
+												updateField(
+													"health_check_retries",
+													parseInt(event.currentTarget.value, 10) || 3,
+												)
+											}
+											class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
+										/>
+									</div>
+								</>
+							</Show>
+
+							<Show when={!expectsInboundPort()}>
+								<div class="md:col-span-2 border border-neutral-200 bg-neutral-50 px-3 py-3 text-xs text-neutral-500">
+									background workers do not use http health checks unless you
+									switch them to a web or private service.
+								</div>
+							</Show>
 
 							<div>
 								<label class="mb-1 block text-xs text-neutral-600">

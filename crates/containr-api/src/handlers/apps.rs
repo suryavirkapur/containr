@@ -28,7 +28,7 @@ use crate::security::encrypt_value;
 use crate::state::AppState;
 use containr_common::models::{
     App, BuildArg, ContainerService, EnvVar, HealthCheck, RestartPolicy, RolloutStrategy,
-    ServiceMount, ServiceRegistryAuth,
+    ServiceMount, ServiceRegistryAuth, ServiceType,
 };
 use containr_common::Config;
 use containr_runtime::DockerContainerManager;
@@ -153,6 +153,8 @@ pub struct ServiceRequest {
     pub name: String,
     /// docker image (empty = use built image)
     pub image: Option<String>,
+    /// render-style service category
+    pub service_type: Option<String>,
     /// container port
     pub port: u16,
     /// whether this service receives public http traffic
@@ -202,6 +204,8 @@ pub struct ServiceResponse {
     pub name: String,
     /// docker image
     pub image: String,
+    /// render-style service category
+    pub service_type: String,
     /// container port
     pub port: u16,
     /// whether this service receives public http traffic
@@ -342,8 +346,13 @@ impl From<&App> for AppResponse {
                     id: s.id.to_string(),
                     name: s.name.clone(),
                     image: s.image.clone(),
+                    service_type: match s.service_type {
+                        ServiceType::WebService => "web_service".to_string(),
+                        ServiceType::PrivateService => "private_service".to_string(),
+                        ServiceType::BackgroundWorker => "background_worker".to_string(),
+                    },
                     port: s.port,
-                    expose_http: s.expose_http,
+                    expose_http: s.is_public_http(),
                     additional_ports: s.additional_ports.clone(),
                     replicas: s.replicas,
                     memory_limit_mb: s.memory_limit.map(|m| m / (1024 * 1024)),
@@ -423,6 +432,55 @@ fn parse_restart_policy(value: Option<&str>) -> RestartPolicy {
         "onfailure" | "on-failure" => RestartPolicy::OnFailure,
         _ => RestartPolicy::Always,
     }
+}
+
+fn parse_service_type(value: &str) -> Option<ServiceType> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "web_service" | "web-service" | "webservice" | "web" => Some(ServiceType::WebService),
+        "private_service" | "private-service" | "privateservice" | "private" => {
+            Some(ServiceType::PrivateService)
+        }
+        "background_worker" | "background-worker" | "backgroundworker" | "worker"
+        | "background" => Some(ServiceType::BackgroundWorker),
+        _ => None,
+    }
+}
+
+fn resolve_service_type(
+    request: &ServiceRequest,
+    existing: Option<&ContainerService>,
+) -> Result<ServiceType, (StatusCode, Json<ErrorResponse>)> {
+    if let Some(service_type) = request.service_type.as_deref() {
+        return parse_service_type(service_type).ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error:
+                        "invalid service type. use web_service, private_service, or background_worker"
+                            .to_string(),
+                }),
+            )
+        });
+    }
+
+    if request.expose_http == Some(true) {
+        return Ok(ServiceType::WebService);
+    }
+
+    if request.expose_http == Some(false) {
+        if request.port == 0 {
+            return Ok(ServiceType::BackgroundWorker);
+        }
+        return Ok(ServiceType::PrivateService);
+    }
+
+    if request.port == 0 {
+        return Ok(ServiceType::BackgroundWorker);
+    }
+
+    Ok(existing
+        .map(|service| service.service_type)
+        .unwrap_or(ServiceType::PrivateService))
 }
 
 fn validate_mount_name(name: &str) -> bool {
@@ -860,12 +918,45 @@ fn build_services(
                     request.port,
                 )
             });
+        let service_type = resolve_service_type(&request, Some(&service))?;
+        let port = request.port;
+        if matches!(service_type, ServiceType::BackgroundWorker) {
+            if request.expose_http == Some(true) {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "background workers cannot receive public http traffic".to_string(),
+                    }),
+                ));
+            }
+        } else if port == 0 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "web and private services require a container port".to_string(),
+                }),
+            ));
+        }
+
+        if matches!(service_type, ServiceType::BackgroundWorker)
+            && port == 0
+            && request.health_check.is_some()
+        {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "background workers need a port before enabling http health checks"
+                        .to_string(),
+                }),
+            ));
+        }
 
         service.app_id = app_id;
         service.name = service_name;
         service.image = request.image.unwrap_or_default();
-        service.port = request.port;
-        service.expose_http = request.expose_http.unwrap_or(service.expose_http);
+        service.service_type = service_type;
+        service.port = port;
+        service.expose_http = service.is_public_http();
         service.additional_ports = normalize_additional_ports(
             request.additional_ports,
             &service.additional_ports,
@@ -911,19 +1002,6 @@ fn build_services(
         service.restart_policy = parse_restart_policy(request.restart_policy.as_deref());
         service.updated_at = chrono::Utc::now();
         services.push(service);
-    }
-
-    let exposed_service_count = services
-        .iter()
-        .filter(|service| service.expose_http)
-        .count();
-    if exposed_service_count > 1 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "only one service can receive public http traffic".to_string(),
-            }),
-        ));
     }
 
     Ok(services)
@@ -1968,6 +2046,7 @@ mod tests {
             vec![ServiceRequest {
                 name: "web".to_string(),
                 image: Some("ghcr.io/example/web:2".to_string()),
+                service_type: None,
                 port: 9090,
                 expose_http: Some(true),
                 additional_ports: Some(vec![9091, 9092]),
@@ -2098,7 +2177,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_multiple_public_http_services() {
+    fn allows_multiple_public_http_services() {
         let app_id = Uuid::new_v4();
         let config = Config::default();
 
@@ -2110,6 +2189,7 @@ mod tests {
                 ServiceRequest {
                     name: "api".to_string(),
                     image: Some("ghcr.io/example/api:1".to_string()),
+                    service_type: None,
                     port: 8080,
                     expose_http: Some(true),
                     additional_ports: None,
@@ -2133,6 +2213,7 @@ mod tests {
                 ServiceRequest {
                     name: "worker".to_string(),
                     image: Some("ghcr.io/example/worker:1".to_string()),
+                    service_type: None,
                     port: 9000,
                     expose_http: Some(true),
                     additional_ports: None,
@@ -2157,14 +2238,11 @@ mod tests {
         );
 
         match result {
-            Ok(_) => panic!("expected multiple public services to be rejected"),
-            Err((status, body)) => {
-                assert_eq!(status, StatusCode::BAD_REQUEST);
-                assert_eq!(
-                    body.0.error,
-                    "only one service can receive public http traffic"
-                );
+            Ok(services) => {
+                assert_eq!(services.len(), 2);
+                assert!(services.iter().all(|service| service.expose_http));
             }
+            Err(_) => panic!("expected multiple public services to be accepted"),
         }
     }
 
