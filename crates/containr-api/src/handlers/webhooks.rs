@@ -283,6 +283,7 @@ mod tests {
             db,
             deployment_tx,
             None,
+            None,
         );
 
         Ok(TestFixture { state, config, app })

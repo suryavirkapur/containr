@@ -35,6 +35,7 @@ pub async fn run_server(
     config_path: PathBuf,
     data_dir: PathBuf,
     db: Database,
+    proxy_update_tx: Option<mpsc::Sender<containr_runtime::ProxyRouteUpdate>>,
     cert_request_tx: Option<mpsc::Sender<String>>,
 ) -> Result<mpsc::Receiver<DeploymentJob>> {
     // create deployment queue channel
@@ -47,6 +48,7 @@ pub async fn run_server(
         data_dir,
         db,
         tx,
+        proxy_update_tx,
         cert_request_tx,
     );
     let replay_state = state.clone();
