@@ -250,7 +250,7 @@ const AppDetail: Component = () => {
 			) {
 				return body.error;
 			}
-		} catch {}
+		} catch { }
 		return "operation failed";
 	};
 
@@ -408,9 +408,8 @@ const AppDetail: Component = () => {
 		}
 
 		const healthCheck = service.health_check;
-		return `${healthCheck.path} / ${healthCheck.interval_secs}s / ${
-			healthCheck.timeout_secs
-		}s / ${healthCheck.retries} retries`;
+		return `${healthCheck.path} / ${healthCheck.interval_secs}s / ${healthCheck.timeout_secs
+			}s / ${healthCheck.retries} retries`;
 	};
 
 	const formatServiceRegistry = (service: Project["services"][number]) => {
@@ -433,9 +432,8 @@ const AppDetail: Component = () => {
 			return "service subdomain";
 		}
 
-		return `service subdomain + ${service.domains.length} custom domain${
-			service.domains.length === 1 ? "" : "s"
-		}`;
+		return `service subdomain + ${service.domains.length} custom domain${service.domains.length === 1 ? "" : "s"
+			}`;
 	};
 
 	const appDomains = createMemo(() => {
@@ -511,11 +509,11 @@ const AppDetail: Component = () => {
 				currentApp.services.length > 0
 					? currentApp.services.map(mapServiceResponseToForm)
 					: [
-							{
-								...createPrimaryService(),
-								port: currentApp.port,
-							},
-						];
+						{
+							...createPrimaryService(),
+							port: currentApp.port,
+						},
+					];
 			setEditForm({
 				github_url: currentApp.github_url,
 				branch: currentApp.branch,
@@ -843,31 +841,42 @@ const AppDetail: Component = () => {
 	const statusIndicator = (status: string) => {
 		switch (status) {
 			case "running":
-				return "bg-black";
+				return "bg-emerald-400";
 			case "pending":
 			case "cloning":
 			case "building":
 			case "starting":
-				return "bg-neutral-400 animate-pulse";
+				return "bg-yellow-400 animate-pulse";
 			case "failed":
-				return "bg-neutral-300";
+				return "bg-red-400";
 			case "stopped":
-				return "bg-neutral-200";
+				return "bg-neutral-500";
 			default:
-				return "bg-neutral-200";
+				return "bg-neutral-500";
 		}
 	};
+
+	const [activeSection, setActiveSection] = createSignal("overview");
+
+	const sidebarItems = [
+		{ id: "overview", label: "overview", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
+		{ id: "services", label: "services", icon: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" },
+		{ id: "logs", label: "logs", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
+		{ id: "monitor", label: "monitor", icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" },
+		{ id: "deployments", label: "deployments", icon: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" },
+		{ id: "settings", label: "settings", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" },
+	];
 
 	return (
 		<div>
 			{/* loading */}
 			<Show when={app.loading}>
 				<div class="animate-pulse">
-					<div class="h-7 bg-neutral-100 w-1/4 mb-3"></div>
-					<div class="h-4 bg-neutral-50 w-1/2 mb-10"></div>
-					<div class="border border-neutral-200 p-8">
-						<div class="h-5 bg-neutral-100 w-full mb-4"></div>
-						<div class="h-5 bg-neutral-50 w-3/4"></div>
+					<div class="h-7 bg-neutral-800 w-1/4 mb-3"></div>
+					<div class="h-4 bg-neutral-800/50 w-1/2 mb-10"></div>
+					<div class="border border-neutral-800 p-8">
+						<div class="h-5 bg-neutral-800 w-full mb-4"></div>
+						<div class="h-5 bg-neutral-800/50 w-3/4"></div>
 					</div>
 				</div>
 			</Show>
@@ -875,659 +884,650 @@ const AppDetail: Component = () => {
 			{/* content */}
 			<Show when={!app.loading && app()}>
 				{/* header */}
-				<div class="flex justify-between items-start mb-10">
+				<div class="flex justify-between items-start mb-6">
 					<div>
-						<h1 class="text-2xl font-serif text-black">{app()!.name}</h1>
-						<p class="text-neutral-500 mt-1 text-sm font-mono">
+						<div class="flex items-center gap-3">
+							<h1 class="text-2xl font-semibold text-white">{app()!.name}</h1>
+							<Badge variant="default">docker</Badge>
+						</div>
+						<p class="text-neutral-500 mt-1.5 text-sm font-mono">
 							{app()!.github_url}
 						</p>
+						<div class="flex items-center gap-3 mt-2">
+							<span class="flex items-center gap-1.5 text-xs text-neutral-400">
+								<span class="w-1.5 h-1.5 bg-emerald-400"></span>
+								running
+							</span>
+							<span class="text-neutral-600">·</span>
+							<span class="text-xs text-neutral-400 font-mono">{app()!.branch}</span>
+						</div>
 					</div>
 					<div class="flex gap-2">
 						<button
-							onClick={openEditModal}
-							class="px-3 py-1.5 border border-neutral-300 text-neutral-700 hover:text-black hover:border-neutral-400 transition-colors text-sm"
-						>
-							settings
-						</button>
-						<button
-							onClick={toggleLogs}
-							class={`px-3 py-1.5 border transition-colors text-sm ${showLogs() ? "border-black text-black" : "border-neutral-300 text-neutral-700 hover:text-black hover:border-neutral-400"}`}
-						>
-							{showLogs() ? "hide logs" : "logs"}
-						</button>
-						<button
 							onClick={triggerDeploy}
 							disabled={deploying()}
-							class="px-3 py-1.5 bg-black text-white hover:bg-neutral-800 disabled:opacity-50 transition-colors text-sm"
+							class="px-4 py-1.5 bg-white text-black hover:bg-neutral-200 disabled:opacity-50 transition-colors text-sm font-medium cursor-pointer"
 						>
-							{deploying() ? "deploying..." : "deploy"}
-						</button>
-						<button
-							onClick={deleteApp}
-							disabled={deleting()}
-							class="px-3 py-1.5 border border-neutral-300 text-neutral-500 hover:text-black hover:border-neutral-400 disabled:opacity-50 transition-colors text-sm"
-						>
-							{deleting() ? "deleting..." : "delete"}
+							{deploying() ? "deploying..." : "manual deploy"}
 						</button>
 					</div>
 				</div>
 
 				<Show when={deployError()}>
-					<div class="mb-6 border border-neutral-300 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+					<div class="mb-6 border border-red-800/50 bg-red-900/20 px-4 py-3 text-sm text-red-400">
 						{deployError()}
 					</div>
 				</Show>
 
-				{/* info grid */}
-				<div class="grid grid-cols-4 gap-px bg-neutral-200 mb-8">
-					{/* status */}
-					<div class="bg-white p-5">
-						<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-							status
-						</h3>
-						<div class="flex items-center gap-2">
-							<span class="w-2 h-2 bg-black"></span>
-							<span class="text-black text-sm">running</span>
-						</div>
-					</div>
+				{/* sidebar + content layout */}
+				<div class="flex gap-6">
 
-					{/* custom domains */}
-					<div class="bg-white p-5">
-						<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-							custom domains
-						</h3>
-						<Show
-							when={appDomains().length > 0}
-							fallback={<span class="text-neutral-400 text-sm">n/a</span>}
-						>
-							<div class="space-y-1">
-								<For each={appDomains().slice(0, 2)}>
-									{(domain) => (
-										<a
-											href={`https://${domain}`}
-											target="_blank"
-											class="block text-black text-sm hover:underline"
-										>
-											{domain}
-										</a>
-									)}
-								</For>
-								<Show when={appDomains().length > 2}>
-									<span class="text-xs text-neutral-400">
-										+{appDomains().length - 2} more
-									</span>
-								</Show>
+					{/* info grid */}
+					<div class="grid grid-cols-4 gap-px bg-neutral-200 mb-8">
+						{/* status */}
+						<div class="bg-white p-5">
+							<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+								status
+							</h3>
+							<div class="flex items-center gap-2">
+								<span class="w-2 h-2 bg-black"></span>
+								<span class="text-black text-sm">running</span>
 							</div>
-						</Show>
-					</div>
+						</div>
 
-					{/* branch */}
-					<div class="bg-white p-5">
-						<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-							branch
-						</h3>
-						<span class="text-black text-sm font-mono">{app()!.branch}</span>
-					</div>
-
-					{/* certificate */}
-					<div class="bg-white p-5">
-						<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-							ssl
-						</h3>
-						<Show when={certificate.loading}>
-							<span class="text-neutral-400 text-sm">loading...</span>
-						</Show>
-						<Show when={!certificate.loading}>
+						{/* custom domains */}
+						<div class="bg-white p-5">
+							<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+								custom domains
+							</h3>
 							<Show
-								when={certificateList().length > 0}
+								when={appDomains().length > 0}
 								fallback={<span class="text-neutral-400 text-sm">n/a</span>}
 							>
-								<div class="space-y-2">
-									<For each={certificateList().slice(0, 2)}>
-										{(cert) => (
-											<div class="flex items-center justify-between">
-												<div class="flex items-center gap-2">
-													<span
-														class={`w-2 h-2 ${certificateDotClass(cert.status)}`}
-													></span>
-													<span class="text-neutral-600 text-xs">
-														{cert.domain}
-													</span>
-												</div>
-												<span class="text-xs text-neutral-500">
-													{certificateStatusLabel(cert.status)}
-												</span>
-											</div>
+								<div class="space-y-1">
+									<For each={appDomains().slice(0, 2)}>
+										{(domain) => (
+											<a
+												href={`https://${domain}`}
+												target="_blank"
+												class="block text-black text-sm hover:underline"
+											>
+												{domain}
+											</a>
 										)}
 									</For>
-									<Show when={certificateList().length > 2}>
+									<Show when={appDomains().length > 2}>
 										<span class="text-xs text-neutral-400">
-											+{certificateList().length - 2} more
+											+{appDomains().length - 2} more
 										</span>
 									</Show>
 								</div>
 							</Show>
-						</Show>
-					</div>
-				</div>
-
-				<Show when={projectServices().length > 0}>
-					<div class="border border-neutral-200 mb-8">
-						<div class="border-b border-neutral-200 px-5 py-4 flex flex-wrap items-start justify-between gap-4">
-							<div>
-								<h2 class="text-sm font-serif text-black">services</h2>
-								<p class="mt-1 text-xs text-neutral-500">
-									{projectServices().length} configured service
-									{projectServices().length === 1 ? "" : "s"} with{" "}
-									{projectServices().reduce(
-										(total, service) => total + service.replicas,
-										0,
-									)}{" "}
-									total running slots
-								</p>
-							</div>
-							<div class="flex flex-wrap gap-2 text-xs text-neutral-500">
-								<span class="border border-neutral-200 px-2 py-1">
-									web {serviceTypeCounts().web}
-								</span>
-								<span class="border border-neutral-200 px-2 py-1">
-									private {serviceTypeCounts().private}
-								</span>
-								<span class="border border-neutral-200 px-2 py-1">
-									workers {serviceTypeCounts().workers}
-								</span>
-								<span class="border border-neutral-200 px-2 py-1">
-									with mounts{" "}
-									{
-										projectServices().filter(
-											(service) => service.mounts.length > 0,
-										).length
-									}
-								</span>
-							</div>
 						</div>
 
-						<div class="border-b border-neutral-200 px-5 py-3 overflow-x-auto">
-							<div class="flex gap-2 min-w-max">
-								<For each={projectServices()}>
-									{(service) => (
-										<button
-											type="button"
-											onClick={() => setSelectedServiceId(service.id)}
-											class={`border px-3 py-2 text-left min-w-[220px] transition-colors ${
-												selectedProjectService()?.id === service.id
-													? "border-black bg-black text-white"
-													: "border-neutral-200 text-black hover:border-neutral-400"
-											}`}
-										>
-											<div class="flex items-center justify-between gap-3">
-												<span class="text-sm font-medium">{service.name}</span>
-												<span
-													class={`text-[10px] uppercase tracking-wide ${
-														selectedProjectService()?.id === service.id
-															? "text-neutral-200"
-															: "text-neutral-500"
-													}`}
-												>
-													{serviceTypeLabel(service.service_type)}
-												</span>
-											</div>
-											<div
-												class={`mt-2 flex items-center justify-between text-xs ${
-													selectedProjectService()?.id === service.id
-														? "text-neutral-200"
-														: "text-neutral-500"
-												}`}
-											>
-												<span>{formatServicePorts(service)}</span>
-												<span>
-													{service.replicas}x
-													{service.domains?.length
-														? ` · ${service.domains.length}d`
-														: ""}
-												</span>
-											</div>
-										</button>
-									)}
-								</For>
-							</div>
+						{/* branch */}
+						<div class="bg-white p-5">
+							<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+								branch
+							</h3>
+							<span class="text-black text-sm font-mono">{app()!.branch}</span>
 						</div>
 
-						<Show when={selectedProjectService()}>
-							{(service) => (
-								<div class="px-5 py-5 space-y-4">
-									<div class="grid lg:grid-cols-[1.6fr_1fr] gap-4">
-										<div class="border border-neutral-200 bg-neutral-50 p-4">
-											<div class="flex flex-wrap items-start justify-between gap-4">
-												<div>
-													<div class="flex items-center gap-3">
-														<h3 class="text-xl font-serif text-black">
-															{service().name}
-														</h3>
-														<span class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
-															{serviceTypeLabel(service().service_type)}
+						{/* certificate */}
+						<div class="bg-white p-5">
+							<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+								ssl
+							</h3>
+							<Show when={certificate.loading}>
+								<span class="text-neutral-400 text-sm">loading...</span>
+							</Show>
+							<Show when={!certificate.loading}>
+								<Show
+									when={certificateList().length > 0}
+									fallback={<span class="text-neutral-400 text-sm">n/a</span>}
+								>
+									<div class="space-y-2">
+										<For each={certificateList().slice(0, 2)}>
+											{(cert) => (
+												<div class="flex items-center justify-between">
+													<div class="flex items-center gap-2">
+														<span
+															class={`w-2 h-2 ${certificateDotClass(cert.status)}`}
+														></span>
+														<span class="text-neutral-600 text-xs">
+															{cert.domain}
 														</span>
 													</div>
-													<p class="mt-2 text-sm text-neutral-500 font-mono">
-														{service().image || "built from repository"}
-													</p>
+													<span class="text-xs text-neutral-500">
+														{certificateStatusLabel(cert.status)}
+													</span>
 												</div>
-												<div class="text-xs text-neutral-500 space-y-1">
-													<p>restart {service().restart_policy}</p>
-													<p>health {formatServiceHealth(service())}</p>
-												</div>
-											</div>
-										</div>
-
-										<div class="grid grid-cols-2 gap-3">
-											<div class="border border-neutral-200 p-3">
-												<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-													listen
-												</p>
-												<p class="mt-2 text-sm font-mono text-black">
-													{formatServicePorts(service())}
-												</p>
-											</div>
-											<div class="border border-neutral-200 p-3">
-												<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-													replicas
-												</p>
-												<p class="mt-2 text-sm font-mono text-black">
-													{service().replicas}
-												</p>
-											</div>
-											<div class="border border-neutral-200 p-3">
-												<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-													memory
-												</p>
-												<p class="mt-2 text-sm font-mono text-black">
-													{service().memory_limit_mb
-														? `${service().memory_limit_mb}mb`
-														: "auto"}
-												</p>
-											</div>
-											<div class="border border-neutral-200 p-3">
-												<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-													cpu
-												</p>
-												<p class="mt-2 text-sm font-mono text-black">
-													{service().cpu_limit
-														? `${service().cpu_limit}`
-														: "auto"}
-												</p>
-											</div>
-										</div>
+											)}
+										</For>
+										<Show when={certificateList().length > 2}>
+											<span class="text-xs text-neutral-400">
+												+{certificateList().length - 2} more
+											</span>
+										</Show>
 									</div>
-
-									<div class="grid lg:grid-cols-3 gap-4">
-										<section class="border border-neutral-200 p-4">
-											<h4 class="text-xs uppercase tracking-wide text-neutral-400">
-												network
-											</h4>
-											<div class="mt-4 space-y-3 text-sm text-neutral-600">
-												<div>
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														public routing
-													</p>
-													<p class="mt-1">
-														{service().service_type === "web_service"
-															? "enabled"
-															: "disabled"}
-													</p>
-												</div>
-												<div>
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														default route
-													</p>
-													<p class="mt-1">{formatPublicUrlStatus(service())}</p>
-												</div>
-												<div>
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														custom domains
-													</p>
-													<Show
-														when={service().domains.length > 0}
-														fallback={<p class="mt-1">none</p>}
-													>
-														<div class="mt-2 space-y-2">
-															<For each={service().domains}>
-																{(domain) => {
-																	const cert = certificateList().find(
-																		(entry) => entry.domain === domain,
-																	);
-																	const status = cert?.status || "none";
-																	return (
-																		<div class="flex items-center justify-between gap-2 border border-neutral-200 bg-white px-2 py-2 text-xs">
-																			<div class="flex items-center gap-2 overflow-hidden">
-																				<span
-																					class={`h-2 w-2 ${certificateDotClass(status)}`}
-																				></span>
-																				<a
-																					href={`https://${domain}`}
-																					target="_blank"
-																					class="truncate font-mono text-black hover:underline"
-																				>
-																					{domain}
-																				</a>
-																			</div>
-																			<div class="flex items-center gap-2 text-neutral-500">
-																				<span>
-																					{certificateStatusLabel(status)}
-																				</span>
-																				<Show when={status !== "pending"}>
-																					<button
-																						type="button"
-																						onClick={() =>
-																							reissueCertificate(domain)
-																						}
-																						disabled={reissuing()}
-																						class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600 hover:border-black hover:text-black disabled:opacity-50"
-																					>
-																						{reissuing() ? "..." : "reissue"}
-																					</button>
-																				</Show>
-																			</div>
-																		</div>
-																	);
-																}}
-															</For>
-														</div>
-													</Show>
-												</div>
-												<div>
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														ports
-													</p>
-													<p class="mt-1 font-mono text-black">
-														{formatServicePorts(service())}
-													</p>
-												</div>
-												<div>
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														depends on
-													</p>
-													<p class="mt-1">
-														{service().depends_on.length > 0
-															? service().depends_on.join(", ")
-															: "none"}
-													</p>
-												</div>
-											</div>
-										</section>
-
-										<section class="border border-neutral-200 p-4">
-											<h4 class="text-xs uppercase tracking-wide text-neutral-400">
-												runtime
-											</h4>
-											<div class="mt-4 space-y-3 text-sm text-neutral-600">
-												<div>
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														health check
-													</p>
-													<p class="mt-1">
-														{formatServiceHealthDetail(service())}
-													</p>
-												</div>
-												<div>
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														working dir
-													</p>
-													<p class="mt-1 font-mono text-black">
-														{service().working_dir || "default"}
-													</p>
-												</div>
-												<div>
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														registry
-													</p>
-													<p class="mt-1">{formatServiceRegistry(service())}</p>
-												</div>
-												<Show
-													when={
-														service().entrypoint.length > 0 ||
-														service().command.length > 0
-													}
-												>
-													<div class="space-y-2 text-xs text-neutral-500 font-mono">
-														<Show when={service().entrypoint.length > 0}>
-															<p>entrypoint {service().entrypoint.join(" ")}</p>
-														</Show>
-														<Show when={service().command.length > 0}>
-															<p>cmd {service().command.join(" ")}</p>
-														</Show>
-													</div>
-												</Show>
-											</div>
-										</section>
-
-										<section class="border border-neutral-200 p-4">
-											<h4 class="text-xs uppercase tracking-wide text-neutral-400">
-												storage
-											</h4>
-											<Show
-												when={service().mounts.length > 0}
-												fallback={
-													<p class="mt-4 text-sm text-neutral-500">
-														no persistent mounts configured
-													</p>
-												}
-											>
-												<div class="mt-4 space-y-3">
-													<div class="flex flex-wrap gap-2 text-xs">
-														<For each={service().mounts}>
-															{(mount) => (
-																<span class="border border-neutral-200 px-2 py-1 text-neutral-600 font-mono">
-																	{mount.name}:{mount.target}
-																	{mount.read_only ? ":ro" : ""}
-																</span>
-															)}
-														</For>
-													</div>
-													<div class="flex flex-wrap items-center gap-2 text-xs">
-														<button
-															onClick={() =>
-																void downloadServiceMounts(service().name)
-															}
-															disabled={
-																serviceMountAction()?.service === service().name
-															}
-															class="border border-neutral-300 px-2 py-1 text-neutral-700 hover:border-neutral-400 disabled:opacity-50"
-														>
-															{serviceMountAction()?.service ===
-																service().name &&
-															serviceMountAction()?.kind === "backup"
-																? "backing up..."
-																: "backup mounts"}
-														</button>
-														<label
-															class={`border px-2 py-1 ${
-																serviceMountAction()?.service === service().name
-																	? "border-neutral-200 text-neutral-300 cursor-not-allowed"
-																	: "border-neutral-300 text-neutral-700 hover:border-neutral-400 cursor-pointer"
-															}`}
-														>
-															{serviceMountAction()?.service ===
-																service().name &&
-															serviceMountAction()?.kind === "restore"
-																? "restoring..."
-																: "restore mounts"}
-															<input
-																type="file"
-																accept=".tar,application/x-tar"
-																class="hidden"
-																disabled={
-																	serviceMountAction()?.service ===
-																	service().name
-																}
-																onChange={(event) => {
-																	const input = event.currentTarget;
-																	void restoreServiceMounts(
-																		service().name,
-																		input.files,
-																	).finally(() => {
-																		input.value = "";
-																	});
-																}}
-															/>
-														</label>
-													</div>
-													<Show
-														when={
-															serviceMountActionError()?.service ===
-															service().name
-														}
-													>
-														<p class="text-xs text-neutral-500">
-															{serviceMountActionError()?.message}
-														</p>
-													</Show>
-												</div>
-											</Show>
-										</section>
-									</div>
-								</div>
-							)}
-						</Show>
+								</Show>
+							</Show>
+						</div>
 					</div>
-				</Show>
 
-				{/* logs panel */}
-				<Show when={showLogs()}>
-					<div class="border border-neutral-200 mb-8">
-						<div class="border-b border-neutral-200 px-5 py-3 flex justify-between items-center">
-							<div class="flex items-center gap-3">
-								<h2 class="text-sm font-serif text-black">container logs</h2>
-								<div class="flex items-center gap-2">
-									<span
-										class={`w-1.5 h-1.5 ${logsConnected() ? "bg-black" : "bg-neutral-300"}`}
-									></span>
-									<span class="text-xs text-neutral-500">
-										{logsConnected() ? "live" : "disconnected"}
+					<Show when={projectServices().length > 0}>
+						<div class="border border-neutral-200 mb-8">
+							<div class="border-b border-neutral-200 px-5 py-4 flex flex-wrap items-start justify-between gap-4">
+								<div>
+									<h2 class="text-sm font-serif text-black">services</h2>
+									<p class="mt-1 text-xs text-neutral-500">
+										{projectServices().length} configured service
+										{projectServices().length === 1 ? "" : "s"} with{" "}
+										{projectServices().reduce(
+											(total, service) => total + service.replicas,
+											0,
+										)}{" "}
+										total running slots
+									</p>
+								</div>
+								<div class="flex flex-wrap gap-2 text-xs text-neutral-500">
+									<span class="border border-neutral-200 px-2 py-1">
+										web {serviceTypeCounts().web}
+									</span>
+									<span class="border border-neutral-200 px-2 py-1">
+										private {serviceTypeCounts().private}
+									</span>
+									<span class="border border-neutral-200 px-2 py-1">
+										workers {serviceTypeCounts().workers}
+									</span>
+									<span class="border border-neutral-200 px-2 py-1">
+										with mounts{" "}
+										{
+											projectServices().filter(
+												(service) => service.mounts.length > 0,
+											).length
+										}
 									</span>
 								</div>
 							</div>
-							<button
-								onClick={() => setLogs([])}
-								class="text-xs text-neutral-500 hover:text-black"
-							>
-								clear
-							</button>
-						</div>
-						<div
-							ref={logsRef}
-							class="p-4 h-72 overflow-y-auto font-mono text-xs bg-neutral-50"
-						>
-							<Show when={logs().length === 0}>
-								<p class="text-neutral-400">
-									{logsConnected() ? "waiting for logs..." : "connecting..."}
-								</p>
-							</Show>
-							<For each={logs()}>
-								{(line) => (
-									<div
-										class="text-neutral-700 leading-relaxed whitespace-pre-wrap break-all"
-										innerHTML={parseAnsi(line)}
-									></div>
-								)}
-							</For>
-						</div>
-					</div>
-				</Show>
 
-				{/* container monitor */}
-				<div class="border border-neutral-200 mb-8">
-					<div class="border-b border-neutral-200 px-5 py-3 flex items-center justify-between">
-						<div>
-							<h2 class="text-sm font-serif text-black">container monitor</h2>
-							<p class="text-xs text-neutral-500 mt-1">
-								health, metrics, logs, volumes
-							</p>
-						</div>
-						<Show when={appContainers().length > 0}>
-							<select
-								value={selectedContainer()}
-								onChange={(e) => setSelectedContainer(e.currentTarget.value)}
-								class="px-2 py-1.5 border border-neutral-300 text-xs text-neutral-700"
-							>
-								<For each={appContainers()}>
-									{(container) => (
-										<option value={container.id}>{container.name}</option>
-									)}
-								</For>
-							</select>
-						</Show>
-					</div>
-					<div class="p-5">
-						<Show when={appContainers().length > 0}>
-							<ContainerMonitor containerId={selectedContainer()} />
-						</Show>
-						<Show when={appContainers().length === 0}>
-							<div class="border border-dashed border-neutral-200 p-8 text-center text-neutral-400 text-sm">
-								no running containers for this group
+							<div class="border-b border-neutral-200 px-5 py-3 overflow-x-auto">
+								<div class="flex gap-2 min-w-max">
+									<For each={projectServices()}>
+										{(service) => (
+											<button
+												type="button"
+												onClick={() => setSelectedServiceId(service.id)}
+												class={`border px-3 py-2 text-left min-w-[220px] transition-colors ${selectedProjectService()?.id === service.id
+														? "border-black bg-black text-white"
+														: "border-neutral-200 text-black hover:border-neutral-400"
+													}`}
+											>
+												<div class="flex items-center justify-between gap-3">
+													<span class="text-sm font-medium">{service.name}</span>
+													<span
+														class={`text-[10px] uppercase tracking-wide ${selectedProjectService()?.id === service.id
+																? "text-neutral-200"
+																: "text-neutral-500"
+															}`}
+													>
+														{serviceTypeLabel(service.service_type)}
+													</span>
+												</div>
+												<div
+													class={`mt-2 flex items-center justify-between text-xs ${selectedProjectService()?.id === service.id
+															? "text-neutral-200"
+															: "text-neutral-500"
+														}`}
+												>
+													<span>{formatServicePorts(service)}</span>
+													<span>
+														{service.replicas}x
+														{service.domains?.length
+															? ` · ${service.domains.length}d`
+															: ""}
+													</span>
+												</div>
+											</button>
+										)}
+									</For>
+								</div>
 							</div>
-						</Show>
-					</div>
-				</div>
 
-				{/* deployments */}
-				<div class="border border-neutral-200">
-					<div class="border-b border-neutral-200 px-5 py-3">
-						<h2 class="text-sm font-serif text-black">deployments</h2>
-					</div>
+							<Show when={selectedProjectService()}>
+								{(service) => (
+									<div class="px-5 py-5 space-y-4">
+										<div class="grid lg:grid-cols-[1.6fr_1fr] gap-4">
+											<div class="border border-neutral-200 bg-neutral-50 p-4">
+												<div class="flex flex-wrap items-start justify-between gap-4">
+													<div>
+														<div class="flex items-center gap-3">
+															<h3 class="text-xl font-serif text-black">
+																{service().name}
+															</h3>
+															<span class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
+																{serviceTypeLabel(service().service_type)}
+															</span>
+														</div>
+														<p class="mt-2 text-sm text-neutral-500 font-mono">
+															{service().image || "built from repository"}
+														</p>
+													</div>
+													<div class="text-xs text-neutral-500 space-y-1">
+														<p>restart {service().restart_policy}</p>
+														<p>health {formatServiceHealth(service())}</p>
+													</div>
+												</div>
+											</div>
 
-					<Show when={deployments.loading}>
-						<div class="p-5 animate-pulse space-y-3">
-							<div class="h-10 bg-neutral-50"></div>
-							<div class="h-10 bg-neutral-50"></div>
-						</div>
-					</Show>
-
-					<Show when={!deployments.loading && deployments()?.length === 0}>
-						<div class="p-8 text-center text-neutral-400 text-sm">
-							no deployments yet
-						</div>
-					</Show>
-
-					<Show
-						when={
-							!deployments.loading && deployments() && deployments()!.length > 0
-						}
-					>
-						<div class="divide-y divide-neutral-200">
-							<For each={deployments()}>
-								{(deployment) => (
-									<div class="px-5 py-4 flex items-center justify-between">
-										<div class="flex items-center gap-4">
-											<span
-												class={`w-2 h-2 ${statusIndicator(deployment.status)}`}
-											></span>
-											<div>
-												<p class="text-black font-mono text-sm">
-													{deployment.commit_sha.substring(0, 8)}
-												</p>
-												<p class="text-neutral-500 text-xs mt-0.5 truncate max-w-md">
-													{deployment.commit_message || "no message"}
-												</p>
+											<div class="grid grid-cols-2 gap-3">
+												<div class="border border-neutral-200 p-3">
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														listen
+													</p>
+													<p class="mt-2 text-sm font-mono text-black">
+														{formatServicePorts(service())}
+													</p>
+												</div>
+												<div class="border border-neutral-200 p-3">
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														replicas
+													</p>
+													<p class="mt-2 text-sm font-mono text-black">
+														{service().replicas}
+													</p>
+												</div>
+												<div class="border border-neutral-200 p-3">
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														memory
+													</p>
+													<p class="mt-2 text-sm font-mono text-black">
+														{service().memory_limit_mb
+															? `${service().memory_limit_mb}mb`
+															: "auto"}
+													</p>
+												</div>
+												<div class="border border-neutral-200 p-3">
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														cpu
+													</p>
+													<p class="mt-2 text-sm font-mono text-black">
+														{service().cpu_limit
+															? `${service().cpu_limit}`
+															: "auto"}
+													</p>
+												</div>
 											</div>
 										</div>
-										<div class="flex items-center gap-4 text-xs">
-											<span class="text-neutral-500">{deployment.status}</span>
-											<span class="text-neutral-400">
-												{new Date(deployment.created_at).toLocaleString()}
-											</span>
-											<button
-												onClick={() => openDeploymentLogs(deployment)}
-												class="px-2 py-1 border border-neutral-300 text-neutral-600 hover:text-black hover:border-neutral-400 transition-colors"
-											>
-												logs
-											</button>
+
+										<div class="grid lg:grid-cols-3 gap-4">
+											<section class="border border-neutral-200 p-4">
+												<h4 class="text-xs uppercase tracking-wide text-neutral-400">
+													network
+												</h4>
+												<div class="mt-4 space-y-3 text-sm text-neutral-600">
+													<div>
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															public routing
+														</p>
+														<p class="mt-1">
+															{service().service_type === "web_service"
+																? "enabled"
+																: "disabled"}
+														</p>
+													</div>
+													<div>
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															default route
+														</p>
+														<p class="mt-1">{formatPublicUrlStatus(service())}</p>
+													</div>
+													<div>
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															custom domains
+														</p>
+														<Show
+															when={service().domains.length > 0}
+															fallback={<p class="mt-1">none</p>}
+														>
+															<div class="mt-2 space-y-2">
+																<For each={service().domains}>
+																	{(domain) => {
+																		const cert = certificateList().find(
+																			(entry) => entry.domain === domain,
+																		);
+																		const status = cert?.status || "none";
+																		return (
+																			<div class="flex items-center justify-between gap-2 border border-neutral-200 bg-white px-2 py-2 text-xs">
+																				<div class="flex items-center gap-2 overflow-hidden">
+																					<span
+																						class={`h-2 w-2 ${certificateDotClass(status)}`}
+																					></span>
+																					<a
+																						href={`https://${domain}`}
+																						target="_blank"
+																						class="truncate font-mono text-black hover:underline"
+																					>
+																						{domain}
+																					</a>
+																				</div>
+																				<div class="flex items-center gap-2 text-neutral-500">
+																					<span>
+																						{certificateStatusLabel(status)}
+																					</span>
+																					<Show when={status !== "pending"}>
+																						<button
+																							type="button"
+																							onClick={() =>
+																								reissueCertificate(domain)
+																							}
+																							disabled={reissuing()}
+																							class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600 hover:border-black hover:text-black disabled:opacity-50"
+																						>
+																							{reissuing() ? "..." : "reissue"}
+																						</button>
+																					</Show>
+																				</div>
+																			</div>
+																		);
+																	}}
+																</For>
+															</div>
+														</Show>
+													</div>
+													<div>
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															ports
+														</p>
+														<p class="mt-1 font-mono text-black">
+															{formatServicePorts(service())}
+														</p>
+													</div>
+													<div>
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															depends on
+														</p>
+														<p class="mt-1">
+															{service().depends_on.length > 0
+																? service().depends_on.join(", ")
+																: "none"}
+														</p>
+													</div>
+												</div>
+											</section>
+
+											<section class="border border-neutral-200 p-4">
+												<h4 class="text-xs uppercase tracking-wide text-neutral-400">
+													runtime
+												</h4>
+												<div class="mt-4 space-y-3 text-sm text-neutral-600">
+													<div>
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															health check
+														</p>
+														<p class="mt-1">
+															{formatServiceHealthDetail(service())}
+														</p>
+													</div>
+													<div>
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															working dir
+														</p>
+														<p class="mt-1 font-mono text-black">
+															{service().working_dir || "default"}
+														</p>
+													</div>
+													<div>
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															registry
+														</p>
+														<p class="mt-1">{formatServiceRegistry(service())}</p>
+													</div>
+													<Show
+														when={
+															service().entrypoint.length > 0 ||
+															service().command.length > 0
+														}
+													>
+														<div class="space-y-2 text-xs text-neutral-500 font-mono">
+															<Show when={service().entrypoint.length > 0}>
+																<p>entrypoint {service().entrypoint.join(" ")}</p>
+															</Show>
+															<Show when={service().command.length > 0}>
+																<p>cmd {service().command.join(" ")}</p>
+															</Show>
+														</div>
+													</Show>
+												</div>
+											</section>
+
+											<section class="border border-neutral-200 p-4">
+												<h4 class="text-xs uppercase tracking-wide text-neutral-400">
+													storage
+												</h4>
+												<Show
+													when={service().mounts.length > 0}
+													fallback={
+														<p class="mt-4 text-sm text-neutral-500">
+															no persistent mounts configured
+														</p>
+													}
+												>
+													<div class="mt-4 space-y-3">
+														<div class="flex flex-wrap gap-2 text-xs">
+															<For each={service().mounts}>
+																{(mount) => (
+																	<span class="border border-neutral-200 px-2 py-1 text-neutral-600 font-mono">
+																		{mount.name}:{mount.target}
+																		{mount.read_only ? ":ro" : ""}
+																	</span>
+																)}
+															</For>
+														</div>
+														<div class="flex flex-wrap items-center gap-2 text-xs">
+															<button
+																onClick={() =>
+																	void downloadServiceMounts(service().name)
+																}
+																disabled={
+																	serviceMountAction()?.service === service().name
+																}
+																class="border border-neutral-300 px-2 py-1 text-neutral-700 hover:border-neutral-400 disabled:opacity-50"
+															>
+																{serviceMountAction()?.service ===
+																	service().name &&
+																	serviceMountAction()?.kind === "backup"
+																	? "backing up..."
+																	: "backup mounts"}
+															</button>
+															<label
+																class={`border px-2 py-1 ${serviceMountAction()?.service === service().name
+																		? "border-neutral-200 text-neutral-300 cursor-not-allowed"
+																		: "border-neutral-300 text-neutral-700 hover:border-neutral-400 cursor-pointer"
+																	}`}
+															>
+																{serviceMountAction()?.service ===
+																	service().name &&
+																	serviceMountAction()?.kind === "restore"
+																	? "restoring..."
+																	: "restore mounts"}
+																<input
+																	type="file"
+																	accept=".tar,application/x-tar"
+																	class="hidden"
+																	disabled={
+																		serviceMountAction()?.service ===
+																		service().name
+																	}
+																	onChange={(event) => {
+																		const input = event.currentTarget;
+																		void restoreServiceMounts(
+																			service().name,
+																			input.files,
+																		).finally(() => {
+																			input.value = "";
+																		});
+																	}}
+																/>
+															</label>
+														</div>
+														<Show
+															when={
+																serviceMountActionError()?.service ===
+																service().name
+															}
+														>
+															<p class="text-xs text-neutral-500">
+																{serviceMountActionError()?.message}
+															</p>
+														</Show>
+													</div>
+												</Show>
+											</section>
 										</div>
 									</div>
 								)}
-							</For>
+							</Show>
 						</div>
 					</Show>
-				</div>
+
+					{/* logs panel */}
+					<Show when={showLogs()}>
+						<div class="border border-neutral-200 mb-8">
+							<div class="border-b border-neutral-200 px-5 py-3 flex justify-between items-center">
+								<div class="flex items-center gap-3">
+									<h2 class="text-sm font-serif text-black">container logs</h2>
+									<div class="flex items-center gap-2">
+										<span
+											class={`w-1.5 h-1.5 ${logsConnected() ? "bg-black" : "bg-neutral-300"}`}
+										></span>
+										<span class="text-xs text-neutral-500">
+											{logsConnected() ? "live" : "disconnected"}
+										</span>
+									</div>
+								</div>
+								<button
+									onClick={() => setLogs([])}
+									class="text-xs text-neutral-500 hover:text-black"
+								>
+									clear
+								</button>
+							</div>
+							<div
+								ref={logsRef}
+								class="p-4 h-72 overflow-y-auto font-mono text-xs bg-neutral-50"
+							>
+								<Show when={logs().length === 0}>
+									<p class="text-neutral-400">
+										{logsConnected() ? "waiting for logs..." : "connecting..."}
+									</p>
+								</Show>
+								<For each={logs()}>
+									{(line) => (
+										<div
+											class="text-neutral-700 leading-relaxed whitespace-pre-wrap break-all"
+											innerHTML={parseAnsi(line)}
+										></div>
+									)}
+								</For>
+							</div>
+						</div>
+					</Show>
+
+					{/* container monitor */}
+					<div class="border border-neutral-200 mb-8">
+						<div class="border-b border-neutral-200 px-5 py-3 flex items-center justify-between">
+							<div>
+								<h2 class="text-sm font-serif text-black">container monitor</h2>
+								<p class="text-xs text-neutral-500 mt-1">
+									health, metrics, logs, volumes
+								</p>
+							</div>
+							<Show when={appContainers().length > 0}>
+								<select
+									value={selectedContainer()}
+									onChange={(e) => setSelectedContainer(e.currentTarget.value)}
+									class="px-2 py-1.5 border border-neutral-300 text-xs text-neutral-700"
+								>
+									<For each={appContainers()}>
+										{(container) => (
+											<option value={container.id}>{container.name}</option>
+										)}
+									</For>
+								</select>
+							</Show>
+						</div>
+						<div class="p-5">
+							<Show when={appContainers().length > 0}>
+								<ContainerMonitor containerId={selectedContainer()} />
+							</Show>
+							<Show when={appContainers().length === 0}>
+								<div class="border border-dashed border-neutral-200 p-8 text-center text-neutral-400 text-sm">
+									no running containers for this group
+								</div>
+							</Show>
+						</div>
+					</div>
+
+					{/* deployments */}
+					<div class="border border-neutral-200">
+						<div class="border-b border-neutral-200 px-5 py-3">
+							<h2 class="text-sm font-serif text-black">deployments</h2>
+						</div>
+
+						<Show when={deployments.loading}>
+							<div class="p-5 animate-pulse space-y-3">
+								<div class="h-10 bg-neutral-50"></div>
+								<div class="h-10 bg-neutral-50"></div>
+							</div>
+						</Show>
+
+						<Show when={!deployments.loading && deployments()?.length === 0}>
+							<div class="p-8 text-center text-neutral-400 text-sm">
+								no deployments yet
+							</div>
+						</Show>
+
+						<Show
+							when={
+								!deployments.loading && deployments() && deployments()!.length > 0
+							}
+						>
+							<div class="divide-y divide-neutral-200">
+								<For each={deployments()}>
+									{(deployment) => (
+										<div class="px-5 py-4 flex items-center justify-between">
+											<div class="flex items-center gap-4">
+												<span
+													class={`w-2 h-2 ${statusIndicator(deployment.status)}`}
+												></span>
+												<div>
+													<p class="text-black font-mono text-sm">
+														{deployment.commit_sha.substring(0, 8)}
+													</p>
+													<p class="text-neutral-500 text-xs mt-0.5 truncate max-w-md">
+														{deployment.commit_message || "no message"}
+													</p>
+												</div>
+											</div>
+											<div class="flex items-center gap-4 text-xs">
+												<span class="text-neutral-500">{deployment.status}</span>
+												<span class="text-neutral-400">
+													{new Date(deployment.created_at).toLocaleString()}
+												</span>
+												<button
+													onClick={() => openDeploymentLogs(deployment)}
+													class="px-2 py-1 border border-neutral-300 text-neutral-600 hover:text-black hover:border-neutral-400 transition-colors"
+												>
+													logs
+												</button>
+											</div>
+										</div>
+									)}
+								</For>
+							</div>
+						</Show>
+					</div>
 			</Show>
 
 			{/* edit modal */}

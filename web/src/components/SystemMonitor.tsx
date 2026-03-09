@@ -40,11 +40,13 @@ const ProgressBar: Component<{
 	max?: number;
 	color?: string;
 }> = (props) => {
-	const percent = () => Math.min((props.value / (props.max || 100)) * 100, 100);
+	const percent = () =>
+		Math.min((props.value / (props.max || 100)) * 100, 100);
 	return (
-		<div class="h-1.5 bg-neutral-200 w-full">
+		<div class="h-1.5 bg-neutral-800 w-full">
 			<div
-				class={`h-full transition-all duration-300 ${props.color || "bg-black"}`}
+				class={`h-full transition-all duration-300 ${props.color || "bg-purple-500"
+					}`}
 				style={{ width: `${percent()}%` }}
 			/>
 		</div>
@@ -98,22 +100,22 @@ const SystemMonitor: Component = () => {
 		const cpu = stats()?.cpu_percent || 0;
 		if (cpu > 80) return "bg-red-500";
 		if (cpu > 50) return "bg-yellow-500";
-		return "bg-black";
+		return "bg-purple-500";
 	};
 
 	const memColor = () => {
 		const mem = memPercent();
 		if (mem > 80) return "bg-red-500";
 		if (mem > 50) return "bg-yellow-500";
-		return "bg-black";
+		return "bg-purple-500";
 	};
 
 	return (
-		<div class="border border-neutral-200 p-5 mb-8">
+		<div class="border border-neutral-800 bg-[#12121a] p-5 mb-8">
 			<div class="flex items-center justify-between mb-4">
-				<h2 class="text-sm font-medium text-black">system</h2>
+				<h2 class="text-sm font-medium text-neutral-200">system</h2>
 				<Show when={stats()}>
-					<span class="text-xs text-neutral-400">
+					<span class="text-xs text-neutral-500">
 						up {formatUptime(stats()!.uptime_seconds)}
 					</span>
 				</Show>
@@ -123,8 +125,8 @@ const SystemMonitor: Component = () => {
 				when={stats()}
 				fallback={
 					<div class="animate-pulse space-y-3">
-						<div class="h-8 bg-neutral-100" />
-						<div class="h-8 bg-neutral-100" />
+						<div class="h-8 bg-neutral-800" />
+						<div class="h-8 bg-neutral-800" />
 					</div>
 				}
 			>
@@ -132,12 +134,15 @@ const SystemMonitor: Component = () => {
 					<div>
 						<div class="flex items-center justify-between mb-1">
 							<span class="text-xs text-neutral-500">cpu</span>
-							<span class="text-xs font-mono text-neutral-800">
+							<span class="text-xs font-mono text-neutral-300">
 								{stats()!.cpu_percent.toFixed(1)}%
 							</span>
 						</div>
-						<ProgressBar value={stats()!.cpu_percent} color={cpuColor()} />
-						<div class="text-xs text-neutral-400 mt-1">
+						<ProgressBar
+							value={stats()!.cpu_percent}
+							color={cpuColor()}
+						/>
+						<div class="text-xs text-neutral-500 mt-1">
 							load: {stats()!.load_avg[0].toFixed(2)},{" "}
 							{stats()!.load_avg[1].toFixed(2)},{" "}
 							{stats()!.load_avg[2].toFixed(2)}
@@ -147,12 +152,12 @@ const SystemMonitor: Component = () => {
 					<div>
 						<div class="flex items-center justify-between mb-1">
 							<span class="text-xs text-neutral-500">memory</span>
-							<span class="text-xs font-mono text-neutral-800">
+							<span class="text-xs font-mono text-neutral-300">
 								{memPercent().toFixed(1)}%
 							</span>
 						</div>
 						<ProgressBar value={memPercent()} color={memColor()} />
-						<div class="text-xs text-neutral-400 mt-1">
+						<div class="text-xs text-neutral-500 mt-1">
 							{formatBytes(stats()!.memory_used_bytes)} /{" "}
 							{formatBytes(stats()!.memory_total_bytes)}
 						</div>
@@ -160,24 +165,28 @@ const SystemMonitor: Component = () => {
 
 					<div>
 						<div class="flex items-center justify-between mb-1">
-							<span class="text-xs text-neutral-500">network rx</span>
-							<span class="text-xs font-mono text-neutral-800">
+							<span class="text-xs text-neutral-500">
+								network rx
+							</span>
+							<span class="text-xs font-mono text-neutral-300">
 								{formatBytes(networkSpeed().rx)}/s
 							</span>
 						</div>
-						<div class="text-xs text-neutral-400 mt-1">
+						<div class="text-xs text-neutral-500 mt-1">
 							total: {formatBytes(stats()!.network_rx_bytes)}
 						</div>
 					</div>
 
 					<div>
 						<div class="flex items-center justify-between mb-1">
-							<span class="text-xs text-neutral-500">network tx</span>
-							<span class="text-xs font-mono text-neutral-800">
+							<span class="text-xs text-neutral-500">
+								network tx
+							</span>
+							<span class="text-xs font-mono text-neutral-300">
 								{formatBytes(networkSpeed().tx)}/s
 							</span>
 						</div>
-						<div class="text-xs text-neutral-400 mt-1">
+						<div class="text-xs text-neutral-500 mt-1">
 							total: {formatBytes(stats()!.network_tx_bytes)}
 						</div>
 					</div>

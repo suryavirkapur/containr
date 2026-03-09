@@ -9,9 +9,7 @@ interface ButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
     isLoading?: boolean;
 }
 
-/**
- * reusable button component with sharp edges and high contrast
- */
+/// reusable button component
 export const Button: Component<ButtonProps> = (props) => {
     const [local, others] = splitProps(props, [
         'variant',
@@ -23,15 +21,22 @@ export const Button: Component<ButtonProps> = (props) => {
     ]);
 
     const baseClass =
-        'inline-flex items-center justify-center font-medium transition-colors focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed border';
+        'inline-flex items-center justify-center font-medium transition-colors'
+        + ' focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed'
+        + ' border cursor-pointer';
 
     const variants: Record<ButtonVariant, string> = {
         primary:
-            'bg-black text-white border-black hover:bg-white hover:text-black',
+            'bg-white text-black border-white hover:bg-neutral-200',
         outline:
-            'bg-white text-black border-neutral-200 hover:border-black hover:bg-neutral-50',
-        ghost: 'bg-transparent text-black border-transparent hover:bg-neutral-100',
-        danger: 'bg-red-600 text-white border-red-600 hover:bg-red-700 hover:border-red-700',
+            'bg-transparent text-neutral-300 border-neutral-600'
+            + ' hover:border-neutral-400 hover:text-white',
+        ghost:
+            'bg-transparent text-neutral-300 border-transparent'
+            + ' hover:bg-neutral-800 hover:text-white',
+        danger:
+            'bg-red-600 text-white border-red-600'
+            + ' hover:bg-red-700 hover:border-red-700',
     };
 
     const sizes: Record<ButtonSize, string> = {
