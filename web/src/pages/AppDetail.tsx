@@ -19,6 +19,7 @@ import ServiceForm, {
 } from "../components/ServiceForm";
 import { parseAnsi } from "../utils/ansi";
 import ContainerMonitor from "../components/ContainerMonitor";
+import { Badge } from "../components/ui";
 import { api, components } from "../api";
 import {
 	createPrimaryService,
