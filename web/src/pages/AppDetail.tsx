@@ -9,7 +9,7 @@ import {
 	onCleanup,
 	Show,
 } from "solid-js";
-import { useParams, useNavigate } from "@solidjs/router";
+import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import EnvVarEditor from "../components/EnvVarEditor";
 import ServiceForm, {
 	Service,
@@ -19,7 +19,19 @@ import ServiceForm, {
 } from "../components/ServiceForm";
 import { parseAnsi } from "../utils/ansi";
 import ContainerMonitor from "../components/ContainerMonitor";
-import { Badge } from "../components/ui";
+import {
+	Badge,
+	Button,
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+	Tabs,
+	TabsContent,
+	TabsList,
+	TabsTrigger,
+} from "../components/ui";
 import { api, components } from "../api";
 import {
 	createPrimaryService,
@@ -62,6 +74,19 @@ const serviceTypeOptions: ServiceType[] = [
 	"background_worker",
 	"cron_job",
 ];
+
+type DetailTab = "overview" | "services" | "activity";
+
+const normalizeDetailTab = (value?: string | null): DetailTab => {
+	switch (value) {
+		case "services":
+		case "activity":
+			return value;
+		case "overview":
+		default:
+			return "overview";
+	}
+};
 
 function nextServiceName(
 	services: Service[],
@@ -186,6 +211,7 @@ const fetchServices = async (): Promise<ServiceInventoryItem[]> => {
 const AppDetail: Component = () => {
 	const params = useParams();
 	const navigate = useNavigate();
+	const [searchParams, setSearchParams] = useSearchParams();
 	const [deploying, setDeploying] = createSignal(false);
 	const [deployError, setDeployError] = createSignal("");
 	const [deleting, setDeleting] = createSignal(false);
@@ -223,6 +249,9 @@ const AppDetail: Component = () => {
 		createResource(fetchContainers);
 	const [selectedContainer, setSelectedContainer] = createSignal("");
 	const [selectedServiceId, setSelectedServiceId] = createSignal("");
+	const activeTab = createMemo<DetailTab>(() =>
+		normalizeDetailTab(searchParams.tab),
+	);
 
 	const appContainers = createMemo(() =>
 		(containers() || []).filter(
@@ -252,28 +281,48 @@ const AppDetail: Component = () => {
 	const latestDeployment = createMemo(() => deployments()?.[0] || null);
 
 	createEffect(() => {
-		if (
-			selectedContainer() &&
-			!appContainers().some((container) => container.id === selectedContainer())
-		) {
-			setSelectedContainer("");
-		}
+		const requestedTab = searchParams.tab;
+		const normalizedTab = normalizeDetailTab(requestedTab);
 
-		if (!selectedContainer() && appContainers().length > 0) {
-			setSelectedContainer(appContainers()[0].id);
+		if (requestedTab !== normalizedTab) {
+			setSearchParams({ tab: normalizedTab }, { replace: true });
 		}
 	});
 
 	createEffect(() => {
-		if (
-			selectedServiceId() &&
-			!projectServices().some((service) => service.id === selectedServiceId())
-		) {
-			setSelectedServiceId("");
+		const requestedContainerId = searchParams.container;
+		const nextContainerId = appContainers().some(
+			(container) => container.id === requestedContainerId,
+		)
+			? requestedContainerId!
+			: appContainers()[0]?.id || "";
+
+		if (selectedContainer() !== nextContainerId) {
+			setSelectedContainer(nextContainerId);
 		}
 
-		if (!selectedServiceId() && projectServices().length > 0) {
-			setSelectedServiceId(projectServices()[0].id);
+		if ((requestedContainerId || "") !== nextContainerId) {
+			setSearchParams(
+				{ container: nextContainerId || null },
+				{ replace: true },
+			);
+		}
+	});
+
+	createEffect(() => {
+		const requestedServiceId = searchParams.service;
+		const nextServiceId = projectServices().some(
+			(service) => service.id === requestedServiceId,
+		)
+			? requestedServiceId!
+			: projectServices()[0]?.id || "";
+
+		if (selectedServiceId() !== nextServiceId) {
+			setSelectedServiceId(nextServiceId);
+		}
+
+		if ((requestedServiceId || "") !== nextServiceId) {
+			setSearchParams({ service: nextServiceId || null }, { replace: true });
 		}
 	});
 
@@ -865,7 +914,6 @@ const AppDetail: Component = () => {
 	// Logs state
 	const [logs, setLogs] = createSignal<string[]>([]);
 	const [logsConnected, setLogsConnected] = createSignal(false);
-	const [showLogs, setShowLogs] = createSignal(false);
 	let logsSocket: WebSocket | null = null;
 	let logsRef: HTMLDivElement | undefined;
 
@@ -922,15 +970,15 @@ const AppDetail: Component = () => {
 		setLogsConnected(false);
 	};
 
-	const toggleLogs = () => {
-		if (showLogs()) {
+	createEffect(() => {
+		if (activeTab() !== "activity") {
 			disconnectLogs();
-			setShowLogs(false);
-		} else {
-			setShowLogs(true);
-			connectLogs();
+			return;
 		}
-	};
+
+		connectLogs();
+		onCleanup(() => disconnectLogs());
+	});
 
 	// fetch historical deployment logs
 	const fetchDeploymentLogs = async (deploymentId: string, reset = false) => {
@@ -1042,6 +1090,15 @@ const AppDetail: Component = () => {
 		setDeploymentLogsConnected(false);
 	};
 
+	onCleanup(() => {
+		disconnectLogs();
+
+		if (deploymentLogsSocket) {
+			deploymentLogsSocket.close();
+			deploymentLogsSocket = null;
+		}
+	});
+
 	const triggerDeploy = async () => {
 		setDeploying(true);
 		setDeployError("");
@@ -1110,41 +1167,19 @@ const AppDetail: Component = () => {
 				return "bg-neutral-500";
 		}
 	};
+	const changeDetailTab = (value: string) => {
+		setSearchParams({ tab: normalizeDetailTab(value) });
+	};
 
-	const [activeSection, setActiveSection] = createSignal("overview");
+	const selectService = (serviceId: string) => {
+		setSelectedServiceId(serviceId);
+		setSearchParams({ service: serviceId }, { replace: true });
+	};
 
-	const sidebarItems = [
-		{
-			id: "overview",
-			label: "overview",
-			icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
-		},
-		{
-			id: "services",
-			label: "services",
-			icon: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10",
-		},
-		{
-			id: "logs",
-			label: "logs",
-			icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
-		},
-		{
-			id: "monitor",
-			label: "monitor",
-			icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
-		},
-		{
-			id: "deployments",
-			label: "deployments",
-			icon: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15",
-		},
-		{
-			id: "settings",
-			label: "settings",
-			icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z",
-		},
-	];
+	const selectContainer = (containerId: string) => {
+		setSelectedContainer(containerId);
+		setSearchParams({ container: containerId }, { replace: true });
+	};
 
 	return (
 		<ErrorBoundary
@@ -1175,15 +1210,14 @@ const AppDetail: Component = () => {
 
 				{/* content */}
 				<Show when={app()}>
-					{/* header */}
-					<div class="flex justify-between items-start mb-6">
+					<div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 						<div>
 							<div class="flex items-center gap-3">
 								<h1 class="text-2xl font-semibold text-white">{app()!.name}</h1>
-								<Badge variant="default">docker</Badge>
+								<Badge variant="default">group</Badge>
 							</div>
 							<p class="text-neutral-500 mt-1.5 text-sm font-mono">
-								{app()!.github_url}
+								{app()!.github_url || "manual image or direct deploy"}
 							</p>
 							<div class="flex items-center gap-3 mt-2">
 								<span class="flex items-center gap-1.5 text-xs text-neutral-400">
@@ -1204,14 +1238,21 @@ const AppDetail: Component = () => {
 								</span>
 							</div>
 						</div>
-						<div class="flex gap-2">
-							<button
-								onClick={triggerDeploy}
-								disabled={deploying()}
-								class="px-4 py-1.5 bg-white text-black hover:bg-neutral-200 disabled:opacity-50 transition-colors text-sm font-medium cursor-pointer"
+						<div class="flex flex-wrap gap-2">
+							<Button variant="outline" size="sm" onClick={openEditModal}>
+								edit group
+							</Button>
+							<Button
+								variant="danger"
+								size="sm"
+								onClick={deleteApp}
+								disabled={deleting()}
 							>
+								{deleting() ? "deleting..." : "delete"}
+							</Button>
+							<Button size="sm" onClick={triggerDeploy} disabled={deploying()}>
 								{deploying() ? "deploying..." : "manual deploy"}
-							</button>
+							</Button>
 						</div>
 					</div>
 
@@ -1221,116 +1262,219 @@ const AppDetail: Component = () => {
 						</div>
 					</Show>
 
-					{/* sidebar + content layout */}
-					<div class="flex gap-6">
-						{/* info grid */}
-						<div class="grid grid-cols-4 gap-px bg-neutral-200 mb-8">
-							{/* status */}
-							<div class="bg-white p-5">
-								<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-									status
-								</h3>
-								<div class="flex items-center gap-2">
-									<span
-										class={`w-2 h-2 ${runtimeStatusDotClass(
-											projectRuntimeStatus(),
-										)}`}
-									></span>
-									<span class="text-black text-sm">{projectRuntimeText()}</span>
-								</div>
-								<p class="mt-2 text-xs text-neutral-500">
-									{projectRuntimeDetail()}
-								</p>
-							</div>
-
-							{/* custom domains */}
-							<div class="bg-white p-5">
-								<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-									custom domains
-								</h3>
-								<Show
-									when={appDomains().length > 0}
-									fallback={<span class="text-neutral-400 text-sm">n/a</span>}
-								>
-									<div class="space-y-1">
-										<For each={appDomains().slice(0, 2)}>
-											{(domain) => (
-												<a
-													href={`https://${domain}`}
-													target="_blank"
-													class="block text-black text-sm hover:underline"
-												>
-													{domain}
-												</a>
-											)}
-										</For>
-										<Show when={appDomains().length > 2}>
-											<span class="text-xs text-neutral-400">
-												+{appDomains().length - 2} more
-											</span>
-										</Show>
-									</div>
-								</Show>
-							</div>
-
-							{/* branch */}
-							<div class="bg-white p-5">
-								<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-									branch
-								</h3>
-								<span class="text-black text-sm font-mono">
-									{app()!.branch}
+					<Tabs
+						value={activeTab()}
+						onValueChange={changeDetailTab}
+						class="space-y-6"
+					>
+						<TabsList class="w-full justify-start">
+							<TabsTrigger value="overview">overview</TabsTrigger>
+							<TabsTrigger value="services">
+								services
+								<span class="text-[10px] font-mono">
+									{projectServices().length}
 								</span>
+							</TabsTrigger>
+							<TabsTrigger value="activity">activity</TabsTrigger>
+						</TabsList>
+
+						<TabsContent value="overview" class="space-y-4">
+							<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+								<Card variant="muted">
+									<CardContent class="space-y-3">
+										<p class="text-xs uppercase tracking-wider text-neutral-500">
+											status
+										</p>
+										<div class="flex items-center gap-2">
+											<span
+												class={`h-2 w-2 ${runtimeStatusDotClass(
+													projectRuntimeStatus(),
+												)}`}
+											></span>
+											<span class="text-sm text-black">
+												{projectRuntimeText()}
+											</span>
+										</div>
+										<p class="text-xs text-neutral-500">
+											{projectRuntimeDetail()}
+										</p>
+									</CardContent>
+								</Card>
+
+								<Card variant="muted">
+									<CardContent class="space-y-3">
+										<p class="text-xs uppercase tracking-wider text-neutral-500">
+											custom domains
+										</p>
+										<Show
+											when={appDomains().length > 0}
+											fallback={
+												<span class="text-sm text-neutral-400">n/a</span>
+											}
+										>
+											<div class="space-y-1">
+												<For each={appDomains().slice(0, 2)}>
+													{(domain) => (
+														<a
+															href={`https://${domain}`}
+															target="_blank"
+															class="block text-sm text-black hover:underline"
+														>
+															{domain}
+														</a>
+													)}
+												</For>
+												<Show when={appDomains().length > 2}>
+													<span class="text-xs text-neutral-400">
+														+{appDomains().length - 2} more
+													</span>
+												</Show>
+											</div>
+										</Show>
+									</CardContent>
+								</Card>
+
+								<Card variant="muted">
+									<CardContent class="space-y-3">
+										<p class="text-xs uppercase tracking-wider text-neutral-500">
+											branch
+										</p>
+										<p class="text-sm font-mono text-black">{app()!.branch}</p>
+										<p class="text-xs text-neutral-500">
+											{appContainers().length} running container
+											{appContainers().length === 1 ? "" : "s"}
+										</p>
+									</CardContent>
+								</Card>
+
+								<Card variant="muted">
+									<CardContent class="space-y-3">
+										<p class="text-xs uppercase tracking-wider text-neutral-500">
+											ssl
+										</p>
+										<Show when={certificate.loading}>
+											<span class="text-sm text-neutral-400">loading...</span>
+										</Show>
+										<Show when={!certificate.loading}>
+											<Show
+												when={certificateList().length > 0}
+												fallback={
+													<span class="text-sm text-neutral-400">n/a</span>
+												}
+											>
+												<div class="space-y-2">
+													<For each={certificateList().slice(0, 2)}>
+														{(cert) => (
+															<div class="flex items-center justify-between gap-2">
+																<div class="flex items-center gap-2">
+																	<span
+																		class={`h-2 w-2 ${certificateDotClass(
+																			cert.status,
+																		)}`}
+																	></span>
+																	<span class="text-xs text-neutral-600">
+																		{cert.domain}
+																	</span>
+																</div>
+																<span class="text-xs text-neutral-500">
+																	{certificateStatusLabel(cert.status)}
+																</span>
+															</div>
+														)}
+													</For>
+													<Show when={certificateList().length > 2}>
+														<span class="text-xs text-neutral-400">
+															+{certificateList().length - 2} more
+														</span>
+													</Show>
+												</div>
+											</Show>
+										</Show>
+									</CardContent>
+								</Card>
 							</div>
 
-							{/* certificate */}
-							<div class="bg-white p-5">
-								<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-									ssl
-								</h3>
-								<Show when={certificate.loading}>
-									<span class="text-neutral-400 text-sm">loading...</span>
-								</Show>
-								<Show when={!certificate.loading}>
-									<Show
-										when={certificateList().length > 0}
-										fallback={<span class="text-neutral-400 text-sm">n/a</span>}
-									>
-										<div class="space-y-2">
-											<For each={certificateList().slice(0, 2)}>
-												{(cert) => (
-													<div class="flex items-center justify-between">
-														<div class="flex items-center gap-2">
-															<span
-																class={`w-2 h-2 ${certificateDotClass(cert.status)}`}
-															></span>
-															<span class="text-neutral-600 text-xs">
-																{cert.domain}
-															</span>
-														</div>
-														<span class="text-xs text-neutral-500">
-															{certificateStatusLabel(cert.status)}
-														</span>
-													</div>
-												)}
-											</For>
-											<Show when={certificateList().length > 2}>
-												<span class="text-xs text-neutral-400">
-													+{certificateList().length - 2} more
-												</span>
+							<div class="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+								<Card>
+									<CardHeader>
+										<CardTitle>source and rollout</CardTitle>
+										<CardDescription>
+											current source, latest deployment, and branch
+										</CardDescription>
+									</CardHeader>
+									<CardContent class="grid gap-4 md:grid-cols-2">
+										<div>
+											<p class="text-xs uppercase tracking-wider text-neutral-500">
+												source
+											</p>
+											<p class="mt-2 text-sm font-mono text-black break-all">
+												{app()!.github_url || "manual image or direct deploy"}
+											</p>
+										</div>
+										<div>
+											<p class="text-xs uppercase tracking-wider text-neutral-500">
+												latest deployment
+											</p>
+											<Show
+												when={latestDeployment()}
+												fallback={
+													<p class="mt-2 text-sm text-neutral-500">
+														no deployment recorded
+													</p>
+												}
+											>
+												<p class="mt-2 text-sm text-black">
+													{latestDeployment()!.status}
+												</p>
+												<p class="mt-1 text-xs text-neutral-500">
+													{new Date(
+														latestDeployment()!.created_at,
+													).toLocaleString()}
+												</p>
 											</Show>
 										</div>
-									</Show>
-								</Show>
-							</div>
-						</div>
+										<div>
+											<p class="text-xs uppercase tracking-wider text-neutral-500">
+												branch
+											</p>
+											<p class="mt-2 text-sm font-mono text-black">
+												{app()!.branch}
+											</p>
+										</div>
+										<div>
+											<p class="text-xs uppercase tracking-wider text-neutral-500">
+												runtime
+											</p>
+											<p class="mt-2 text-sm text-black">
+												{projectRuntimeDetail()}
+											</p>
+										</div>
+									</CardContent>
+								</Card>
 
-						<Show when={projectServices().length > 0}>
-							<div class="border border-neutral-200 mb-8">
-								<div class="border-b border-neutral-200 px-5 py-4 flex flex-wrap items-start justify-between gap-4">
-									<div>
-										<h2 class="text-sm font-serif text-black">services</h2>
-										<p class="mt-1 text-xs text-neutral-500">
+								<Card>
+									<CardHeader>
+										<CardTitle>service mix</CardTitle>
+										<CardDescription>
+											current shape of the group runtime
+										</CardDescription>
+									</CardHeader>
+									<CardContent class="space-y-4">
+										<div class="flex flex-wrap gap-2 text-xs text-neutral-500">
+											<span class="border border-neutral-200 px-2 py-1">
+												web {serviceTypeCounts().web}
+											</span>
+											<span class="border border-neutral-200 px-2 py-1">
+												private {serviceTypeCounts().private}
+											</span>
+											<span class="border border-neutral-200 px-2 py-1">
+												workers {serviceTypeCounts().workers}
+											</span>
+											<span class="border border-neutral-200 px-2 py-1">
+												cron {serviceTypeCounts().cron}
+											</span>
+										</div>
+										<p class="text-sm text-neutral-600">
 											{projectServices().length} configured service
 											{projectServices().length === 1 ? "" : "s"} with{" "}
 											{projectServices().reduce(
@@ -1339,464 +1483,508 @@ const AppDetail: Component = () => {
 											)}{" "}
 											total desired slots
 										</p>
-									</div>
-									<div class="flex flex-wrap gap-2 text-xs text-neutral-500">
-										<span class="border border-neutral-200 px-2 py-1">
-											web {serviceTypeCounts().web}
-										</span>
-										<span class="border border-neutral-200 px-2 py-1">
-											private {serviceTypeCounts().private}
-										</span>
-										<span class="border border-neutral-200 px-2 py-1">
-											workers {serviceTypeCounts().workers}
-										</span>
-										<span class="border border-neutral-200 px-2 py-1">
-											cron {serviceTypeCounts().cron}
-										</span>
-										<span class="border border-neutral-200 px-2 py-1">
-											with mounts{" "}
-											{
-												projectServices().filter(
-													(service) => service.mounts.length > 0,
-												).length
-											}
-										</span>
-									</div>
-								</div>
+									</CardContent>
+								</Card>
+							</div>
+						</TabsContent>
 
-								<div class="border-b border-neutral-200 px-5 py-3 overflow-x-auto">
-									<div class="flex gap-2 min-w-max">
-										<For each={projectServices()}>
-											{(service) => (
-												<button
-													type="button"
-													onClick={() => setSelectedServiceId(service.id)}
-													class={`border px-3 py-2 text-left min-w-[220px] transition-colors ${
-														selectedProjectService()?.id === service.id
-															? "border-black bg-black text-white"
-															: "border-neutral-200 text-black hover:border-neutral-400"
-													}`}
-												>
-													<div class="flex items-center justify-between gap-3">
-														<span class="text-sm font-medium">
-															{service.name}
-														</span>
-														<span
-															class={`text-[10px] uppercase tracking-wide ${
+						<TabsContent value="services" class="space-y-4">
+							<Show
+								when={projectServices().length > 0}
+								fallback={
+									<Card>
+										<CardContent class="py-10 text-center text-sm text-neutral-500">
+											no services configured
+										</CardContent>
+									</Card>
+								}
+							>
+								<Card>
+									<CardHeader class="flex flex-wrap items-start justify-between gap-4">
+										<div>
+											<CardTitle>services</CardTitle>
+											<CardDescription>
+												select a service to inspect its runtime, network, and
+												storage details
+											</CardDescription>
+										</div>
+										<div class="flex flex-wrap gap-2 text-xs text-neutral-500">
+											<span class="border border-neutral-200 px-2 py-1">
+												web {serviceTypeCounts().web}
+											</span>
+											<span class="border border-neutral-200 px-2 py-1">
+												private {serviceTypeCounts().private}
+											</span>
+											<span class="border border-neutral-200 px-2 py-1">
+												workers {serviceTypeCounts().workers}
+											</span>
+											<span class="border border-neutral-200 px-2 py-1">
+												cron {serviceTypeCounts().cron}
+											</span>
+											<span class="border border-neutral-200 px-2 py-1">
+												with mounts{" "}
+												{
+													projectServices().filter(
+														(service) => service.mounts.length > 0,
+													).length
+												}
+											</span>
+										</div>
+									</CardHeader>
+									<CardContent class="space-y-4">
+										<div class="overflow-x-auto">
+											<div class="flex min-w-max gap-2">
+												<For each={projectServices()}>
+													{(service) => (
+														<button
+															type="button"
+															onClick={() => selectService(service.id)}
+															class={`min-w-[220px] border px-3 py-2 text-left transition-colors ${
 																selectedProjectService()?.id === service.id
-																	? "text-neutral-200"
-																	: "text-neutral-500"
+																	? "border-black bg-black text-white"
+																	: "border-neutral-200 text-black hover:border-neutral-400"
 															}`}
 														>
-															{serviceTypeLabel(service.service_type)}
-														</span>
-													</div>
-													<div
-														class={`mt-2 flex items-center gap-2 text-[11px] ${
-															selectedProjectService()?.id === service.id
-																? "text-neutral-200"
-																: "text-neutral-500"
-														}`}
-													>
-														<span
-															class={`h-2 w-2 ${runtimeStatusDotClass(
-																serviceRuntime(service.id)?.status || "pending",
-															)}`}
-														></span>
-														<span>
-															{serviceRuntime(service.id)?.status || "pending"}
-														</span>
-														<span>
-															{serviceRuntime(service.id)
-																? `${serviceRuntime(service.id)!.running_instances}/${serviceRuntime(service.id)!.desired_instances}`
-																: "0/0"}
-														</span>
-													</div>
-													<div
-														class={`mt-2 flex items-center justify-between text-xs ${
-															selectedProjectService()?.id === service.id
-																? "text-neutral-200"
-																: "text-neutral-500"
-														}`}
-													>
-														<span>{formatServicePorts(service)}</span>
-														<span>
-															{service.replicas}x
-															{service.domains?.length
-																? ` · ${service.domains.length}d`
-																: ""}
-														</span>
-													</div>
-												</button>
-											)}
-										</For>
-									</div>
-								</div>
-
-								<Show when={selectedProjectService()}>
-									{(service) => (
-										<div class="px-5 py-5 space-y-4">
-											<div class="grid lg:grid-cols-[1.6fr_1fr] gap-4">
-												<div class="border border-neutral-200 bg-neutral-50 p-4">
-													<div class="flex flex-wrap items-start justify-between gap-4">
-														<div>
-															<div class="flex items-center gap-3">
-																<h3 class="text-xl font-serif text-black">
-																	{service().name}
-																</h3>
-																<span class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
-																	{serviceTypeLabel(service().service_type)}
+															<div class="flex items-center justify-between gap-3">
+																<span class="text-sm font-medium">
+																	{service.name}
 																</span>
-																<span class="inline-flex items-center gap-2 border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
-																	<span
-																		class={`h-2 w-2 ${runtimeStatusDotClass(
-																			serviceRuntime(service().id)?.status ||
-																				"pending",
-																		)}`}
-																	></span>
-																	{serviceRuntime(service().id)?.status ||
-																		"pending"}
-																</span>
-															</div>
-															<p class="mt-2 text-sm text-neutral-500 font-mono">
-																{service().image || "built from repository"}
-															</p>
-														</div>
-														<div class="text-xs text-neutral-500 space-y-1">
-															<p>restart {service().restart_policy}</p>
-															<p>health {formatServiceHealth(service())}</p>
-														</div>
-													</div>
-												</div>
-
-												<div class="grid grid-cols-2 gap-3">
-													<div class="border border-neutral-200 p-3">
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															status
-														</p>
-														<p class="mt-2 text-sm font-mono text-black">
-															{serviceRuntime(service().id)?.status ||
-																"pending"}
-														</p>
-													</div>
-													<div class="border border-neutral-200 p-3">
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															instances
-														</p>
-														<p class="mt-2 text-sm font-mono text-black">
-															{serviceRuntime(service().id)
-																? `${serviceRuntime(service().id)!.running_instances}/${serviceRuntime(service().id)!.desired_instances}`
-																: "0/0"}
-														</p>
-													</div>
-													<div class="border border-neutral-200 p-3">
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															listen
-														</p>
-														<p class="mt-2 text-sm font-mono text-black">
-															{formatServicePorts(service())}
-														</p>
-													</div>
-													<div class="border border-neutral-200 p-3">
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															replicas
-														</p>
-														<p class="mt-2 text-sm font-mono text-black">
-															{service().replicas}
-														</p>
-													</div>
-													<div class="border border-neutral-200 p-3">
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															memory
-														</p>
-														<p class="mt-2 text-sm font-mono text-black">
-															{service().memory_limit_mb
-																? `${service().memory_limit_mb}mb`
-																: "auto"}
-														</p>
-													</div>
-													<div class="border border-neutral-200 p-3">
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															cpu
-														</p>
-														<p class="mt-2 text-sm font-mono text-black">
-															{service().cpu_limit
-																? `${service().cpu_limit}`
-																: "auto"}
-														</p>
-													</div>
-												</div>
-											</div>
-
-											<div class="grid lg:grid-cols-3 gap-4">
-												<section class="border border-neutral-200 p-4">
-													<h4 class="text-xs uppercase tracking-wide text-neutral-400">
-														network
-													</h4>
-													<div class="mt-4 space-y-3 text-sm text-neutral-600">
-														<div>
-															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-																public routing
-															</p>
-															<p class="mt-1">
-																{service().service_type === "web_service"
-																	? "enabled"
-																	: "disabled"}
-															</p>
-														</div>
-														<div>
-															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-																default route
-															</p>
-															<p class="mt-1">
-																{formatPublicUrlStatus(service())}
-															</p>
-														</div>
-														<div>
-															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-																custom domains
-															</p>
-															<Show
-																when={service().domains.length > 0}
-																fallback={<p class="mt-1">none</p>}
-															>
-																<div class="mt-2 space-y-2">
-																	<For each={service().domains}>
-																		{(domain) => {
-																			const cert = certificateList().find(
-																				(entry) => entry.domain === domain,
-																			);
-																			const status = cert?.status || "none";
-																			return (
-																				<div class="flex items-center justify-between gap-2 border border-neutral-200 bg-white px-2 py-2 text-xs">
-																					<div class="flex items-center gap-2 overflow-hidden">
-																						<span
-																							class={`h-2 w-2 ${certificateDotClass(status)}`}
-																						></span>
-																						<a
-																							href={`https://${domain}`}
-																							target="_blank"
-																							class="truncate font-mono text-black hover:underline"
-																						>
-																							{domain}
-																						</a>
-																					</div>
-																					<div class="flex items-center gap-2 text-neutral-500">
-																						<span>
-																							{certificateStatusLabel(status)}
-																						</span>
-																						<Show when={status !== "pending"}>
-																							<button
-																								type="button"
-																								onClick={() =>
-																									reissueCertificate(domain)
-																								}
-																								disabled={reissuing()}
-																								class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600 hover:border-black hover:text-black disabled:opacity-50"
-																							>
-																								{reissuing()
-																									? "..."
-																									: "reissue"}
-																							</button>
-																						</Show>
-																					</div>
-																				</div>
-																			);
-																		}}
-																	</For>
-																</div>
-															</Show>
-														</div>
-														<div>
-															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-																ports
-															</p>
-															<p class="mt-1 font-mono text-black">
-																{formatServicePorts(service())}
-															</p>
-														</div>
-														<div>
-															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-																depends on
-															</p>
-															<p class="mt-1">
-																{service().depends_on.length > 0
-																	? service().depends_on.join(", ")
-																	: "none"}
-															</p>
-														</div>
-													</div>
-												</section>
-
-												<section class="border border-neutral-200 p-4">
-													<h4 class="text-xs uppercase tracking-wide text-neutral-400">
-														runtime
-													</h4>
-													<div class="mt-4 space-y-3 text-sm text-neutral-600">
-														<div>
-															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-																health check
-															</p>
-															<p class="mt-1">
-																{formatServiceHealthDetail(service())}
-															</p>
-														</div>
-														<div>
-															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-																working dir
-															</p>
-															<p class="mt-1 font-mono text-black">
-																{service().working_dir || "default"}
-															</p>
-														</div>
-														<div>
-															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-																registry
-															</p>
-															<p class="mt-1">
-																{formatServiceRegistry(service())}
-															</p>
-														</div>
-														<Show
-															when={
-																service().entrypoint.length > 0 ||
-																service().command.length > 0
-															}
-														>
-															<div class="space-y-2 text-xs text-neutral-500 font-mono">
-																<Show when={service().entrypoint.length > 0}>
-																	<p>
-																		entrypoint {service().entrypoint.join(" ")}
-																	</p>
-																</Show>
-																<Show when={service().command.length > 0}>
-																	<p>cmd {service().command.join(" ")}</p>
-																</Show>
-															</div>
-														</Show>
-													</div>
-												</section>
-
-												<section class="border border-neutral-200 p-4">
-													<h4 class="text-xs uppercase tracking-wide text-neutral-400">
-														storage
-													</h4>
-													<Show
-														when={service().mounts.length > 0}
-														fallback={
-															<p class="mt-4 text-sm text-neutral-500">
-																no persistent mounts configured
-															</p>
-														}
-													>
-														<div class="mt-4 space-y-3">
-															<div class="flex flex-wrap gap-2 text-xs">
-																<For each={service().mounts}>
-																	{(mount) => (
-																		<span class="border border-neutral-200 px-2 py-1 text-neutral-600 font-mono">
-																			{mount.name}:{mount.target}
-																			{mount.read_only ? ":ro" : ""}
-																		</span>
-																	)}
-																</For>
-															</div>
-															<div class="flex flex-wrap items-center gap-2 text-xs">
-																<button
-																	onClick={() =>
-																		void downloadServiceMounts(service().name)
-																	}
-																	disabled={
-																		serviceMountAction()?.service ===
-																		service().name
-																	}
-																	class="border border-neutral-300 px-2 py-1 text-neutral-700 hover:border-neutral-400 disabled:opacity-50"
-																>
-																	{serviceMountAction()?.service ===
-																		service().name &&
-																	serviceMountAction()?.kind === "backup"
-																		? "backing up..."
-																		: "backup mounts"}
-																</button>
-																<label
-																	class={`border px-2 py-1 ${
-																		serviceMountAction()?.service ===
-																		service().name
-																			? "border-neutral-200 text-neutral-300 cursor-not-allowed"
-																			: "border-neutral-300 text-neutral-700 hover:border-neutral-400 cursor-pointer"
+																<span
+																	class={`text-[10px] uppercase tracking-wide ${
+																		selectedProjectService()?.id === service.id
+																			? "text-neutral-200"
+																			: "text-neutral-500"
 																	}`}
 																>
-																	{serviceMountAction()?.service ===
-																		service().name &&
-																	serviceMountAction()?.kind === "restore"
-																		? "restoring..."
-																		: "restore mounts"}
-																	<input
-																		type="file"
-																		accept=".tar,application/x-tar"
-																		class="hidden"
-																		disabled={
-																			serviceMountAction()?.service ===
-																			service().name
-																		}
-																		onChange={(event) => {
-																			const input = event.currentTarget;
-																			void restoreServiceMounts(
-																				service().name,
-																				input.files,
-																			).finally(() => {
-																				input.value = "";
-																			});
-																		}}
-																	/>
-																</label>
+																	{serviceTypeLabel(service.service_type)}
+																</span>
 															</div>
-															<Show
-																when={
-																	serviceMountActionError()?.service ===
-																	service().name
-																}
+															<div
+																class={`mt-2 flex items-center gap-2 text-[11px] ${
+																	selectedProjectService()?.id === service.id
+																		? "text-neutral-200"
+																		: "text-neutral-500"
+																}`}
 															>
-																<p class="text-xs text-neutral-500">
-																	{serviceMountActionError()?.message}
-																</p>
-															</Show>
-														</div>
-													</Show>
-												</section>
+																<span
+																	class={`h-2 w-2 ${runtimeStatusDotClass(
+																		serviceRuntime(service.id)?.status ||
+																			"pending",
+																	)}`}
+																></span>
+																<span>
+																	{serviceRuntime(service.id)?.status ||
+																		"pending"}
+																</span>
+																<span>
+																	{serviceRuntime(service.id)
+																		? `${serviceRuntime(service.id)!.running_instances}/${serviceRuntime(service.id)!.desired_instances}`
+																		: "0/0"}
+																</span>
+															</div>
+															<div
+																class={`mt-2 flex items-center justify-between text-xs ${
+																	selectedProjectService()?.id === service.id
+																		? "text-neutral-200"
+																		: "text-neutral-500"
+																}`}
+															>
+																<span>{formatServicePorts(service)}</span>
+																<span>
+																	{service.replicas}x
+																	{service.domains?.length
+																		? ` · ${service.domains.length}d`
+																		: ""}
+																</span>
+															</div>
+														</button>
+													)}
+												</For>
 											</div>
 										</div>
-									)}
-								</Show>
-							</div>
-						</Show>
 
-						{/* logs panel */}
-						<Show when={showLogs()}>
-							<div class="border border-neutral-200 mb-8">
-								<div class="border-b border-neutral-200 px-5 py-3 flex justify-between items-center">
-									<div class="flex items-center gap-3">
-										<h2 class="text-sm font-serif text-black">
-											container logs
-										</h2>
+										<Show when={selectedProjectService()}>
+											{(service) => (
+												<div class="space-y-4">
+													<div class="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+														<div class="border border-neutral-200 bg-neutral-50 p-4">
+															<div class="flex flex-wrap items-start justify-between gap-4">
+																<div>
+																	<div class="flex items-center gap-3">
+																		<h3 class="text-xl font-serif text-black">
+																			{service().name}
+																		</h3>
+																		<span class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
+																			{serviceTypeLabel(service().service_type)}
+																		</span>
+																		<span class="inline-flex items-center gap-2 border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
+																			<span
+																				class={`h-2 w-2 ${runtimeStatusDotClass(
+																					serviceRuntime(service().id)
+																						?.status || "pending",
+																				)}`}
+																			></span>
+																			{serviceRuntime(service().id)?.status ||
+																				"pending"}
+																		</span>
+																	</div>
+																	<p class="mt-2 text-sm font-mono text-neutral-500">
+																		{service().image || "built from repository"}
+																	</p>
+																</div>
+																<div class="space-y-1 text-xs text-neutral-500">
+																	<p>restart {service().restart_policy}</p>
+																	<p>health {formatServiceHealth(service())}</p>
+																</div>
+															</div>
+														</div>
+
+														<div class="grid grid-cols-2 gap-3">
+															<div class="border border-neutral-200 p-3">
+																<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																	status
+																</p>
+																<p class="mt-2 text-sm font-mono text-black">
+																	{serviceRuntime(service().id)?.status ||
+																		"pending"}
+																</p>
+															</div>
+															<div class="border border-neutral-200 p-3">
+																<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																	instances
+																</p>
+																<p class="mt-2 text-sm font-mono text-black">
+																	{serviceRuntime(service().id)
+																		? `${serviceRuntime(service().id)!.running_instances}/${serviceRuntime(service().id)!.desired_instances}`
+																		: "0/0"}
+																</p>
+															</div>
+															<div class="border border-neutral-200 p-3">
+																<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																	listen
+																</p>
+																<p class="mt-2 text-sm font-mono text-black">
+																	{formatServicePorts(service())}
+																</p>
+															</div>
+															<div class="border border-neutral-200 p-3">
+																<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																	replicas
+																</p>
+																<p class="mt-2 text-sm font-mono text-black">
+																	{service().replicas}
+																</p>
+															</div>
+															<div class="border border-neutral-200 p-3">
+																<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																	memory
+																</p>
+																<p class="mt-2 text-sm font-mono text-black">
+																	{service().memory_limit_mb
+																		? `${service().memory_limit_mb}mb`
+																		: "auto"}
+																</p>
+															</div>
+															<div class="border border-neutral-200 p-3">
+																<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																	cpu
+																</p>
+																<p class="mt-2 text-sm font-mono text-black">
+																	{service().cpu_limit
+																		? `${service().cpu_limit}`
+																		: "auto"}
+																</p>
+															</div>
+														</div>
+													</div>
+
+													<div class="grid gap-4 lg:grid-cols-3">
+														<section class="border border-neutral-200 p-4">
+															<h4 class="text-xs uppercase tracking-wide text-neutral-400">
+																network
+															</h4>
+															<div class="mt-4 space-y-3 text-sm text-neutral-600">
+																<div>
+																	<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																		public routing
+																	</p>
+																	<p class="mt-1">
+																		{service().service_type === "web_service"
+																			? "enabled"
+																			: "disabled"}
+																	</p>
+																</div>
+																<div>
+																	<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																		default route
+																	</p>
+																	<p class="mt-1">
+																		{formatPublicUrlStatus(service())}
+																	</p>
+																</div>
+																<div>
+																	<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																		custom domains
+																	</p>
+																	<Show
+																		when={service().domains.length > 0}
+																		fallback={<p class="mt-1">none</p>}
+																	>
+																		<div class="mt-2 space-y-2">
+																			<For each={service().domains}>
+																				{(domain) => {
+																					const cert = certificateList().find(
+																						(entry) => entry.domain === domain,
+																					);
+																					const status = cert?.status || "none";
+																					return (
+																						<div class="flex items-center justify-between gap-2 border border-neutral-200 bg-white px-2 py-2 text-xs">
+																							<div class="flex items-center gap-2 overflow-hidden">
+																								<span
+																									class={`h-2 w-2 ${certificateDotClass(
+																										status,
+																									)}`}
+																								></span>
+																								<a
+																									href={`https://${domain}`}
+																									target="_blank"
+																									class="truncate font-mono text-black hover:underline"
+																								>
+																									{domain}
+																								</a>
+																							</div>
+																							<div class="flex items-center gap-2 text-neutral-500">
+																								<span>
+																									{certificateStatusLabel(
+																										status,
+																									)}
+																								</span>
+																								<Show
+																									when={status !== "pending"}
+																								>
+																									<button
+																										type="button"
+																										onClick={() =>
+																											reissueCertificate(domain)
+																										}
+																										disabled={reissuing()}
+																										class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600 hover:border-black hover:text-black disabled:opacity-50"
+																									>
+																										{reissuing()
+																											? "..."
+																											: "reissue"}
+																									</button>
+																								</Show>
+																							</div>
+																						</div>
+																					);
+																				}}
+																			</For>
+																		</div>
+																	</Show>
+																</div>
+																<div>
+																	<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																		ports
+																	</p>
+																	<p class="mt-1 font-mono text-black">
+																		{formatServicePorts(service())}
+																	</p>
+																</div>
+																<div>
+																	<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																		depends on
+																	</p>
+																	<p class="mt-1">
+																		{service().depends_on.length > 0
+																			? service().depends_on.join(", ")
+																			: "none"}
+																	</p>
+																</div>
+															</div>
+														</section>
+
+														<section class="border border-neutral-200 p-4">
+															<h4 class="text-xs uppercase tracking-wide text-neutral-400">
+																runtime
+															</h4>
+															<div class="mt-4 space-y-3 text-sm text-neutral-600">
+																<div>
+																	<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																		health check
+																	</p>
+																	<p class="mt-1">
+																		{formatServiceHealthDetail(service())}
+																	</p>
+																</div>
+																<div>
+																	<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																		working dir
+																	</p>
+																	<p class="mt-1 font-mono text-black">
+																		{service().working_dir || "default"}
+																	</p>
+																</div>
+																<div>
+																	<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																		registry
+																	</p>
+																	<p class="mt-1">
+																		{formatServiceRegistry(service())}
+																	</p>
+																</div>
+																<Show
+																	when={
+																		service().entrypoint.length > 0 ||
+																		service().command.length > 0
+																	}
+																>
+																	<div class="space-y-2 font-mono text-xs text-neutral-500">
+																		<Show
+																			when={service().entrypoint.length > 0}
+																		>
+																			<p>
+																				entrypoint{" "}
+																				{service().entrypoint.join(" ")}
+																			</p>
+																		</Show>
+																		<Show when={service().command.length > 0}>
+																			<p>cmd {service().command.join(" ")}</p>
+																		</Show>
+																	</div>
+																</Show>
+															</div>
+														</section>
+
+														<section class="border border-neutral-200 p-4">
+															<h4 class="text-xs uppercase tracking-wide text-neutral-400">
+																storage
+															</h4>
+															<Show
+																when={service().mounts.length > 0}
+																fallback={
+																	<p class="mt-4 text-sm text-neutral-500">
+																		no persistent mounts configured
+																	</p>
+																}
+															>
+																<div class="mt-4 space-y-3">
+																	<div class="flex flex-wrap gap-2 text-xs">
+																		<For each={service().mounts}>
+																			{(mount) => (
+																				<span class="border border-neutral-200 px-2 py-1 font-mono text-neutral-600">
+																					{mount.name}:{mount.target}
+																					{mount.read_only ? ":ro" : ""}
+																				</span>
+																			)}
+																		</For>
+																	</div>
+																	<div class="flex flex-wrap items-center gap-2 text-xs">
+																		<button
+																			onClick={() =>
+																				void downloadServiceMounts(
+																					service().name,
+																				)
+																			}
+																			disabled={
+																				serviceMountAction()?.service ===
+																				service().name
+																			}
+																			class="border border-neutral-300 px-2 py-1 text-neutral-700 hover:border-neutral-400 disabled:opacity-50"
+																		>
+																			{serviceMountAction()?.service ===
+																				service().name &&
+																			serviceMountAction()?.kind === "backup"
+																				? "backing up..."
+																				: "backup mounts"}
+																		</button>
+																		<label
+																			class={`border px-2 py-1 ${
+																				serviceMountAction()?.service ===
+																				service().name
+																					? "cursor-not-allowed border-neutral-200 text-neutral-300"
+																					: "cursor-pointer border-neutral-300 text-neutral-700 hover:border-neutral-400"
+																			}`}
+																		>
+																			{serviceMountAction()?.service ===
+																				service().name &&
+																			serviceMountAction()?.kind === "restore"
+																				? "restoring..."
+																				: "restore mounts"}
+																			<input
+																				type="file"
+																				accept=".tar,application/x-tar"
+																				class="hidden"
+																				disabled={
+																					serviceMountAction()?.service ===
+																					service().name
+																				}
+																				onChange={(event) => {
+																					const input = event.currentTarget;
+																					void restoreServiceMounts(
+																						service().name,
+																						input.files,
+																					).finally(() => {
+																						input.value = "";
+																					});
+																				}}
+																			/>
+																		</label>
+																	</div>
+																	<Show
+																		when={
+																			serviceMountActionError()?.service ===
+																			service().name
+																		}
+																	>
+																		<p class="text-xs text-neutral-500">
+																			{serviceMountActionError()?.message}
+																		</p>
+																	</Show>
+																</div>
+															</Show>
+														</section>
+													</div>
+												</div>
+											)}
+										</Show>
+									</CardContent>
+								</Card>
+							</Show>
+						</TabsContent>
+
+						<TabsContent value="activity" class="space-y-4">
+							<Card>
+								<CardHeader class="flex items-center justify-between gap-4">
+									<div>
+										<CardTitle>live group logs</CardTitle>
+										<CardDescription>
+											live websocket stream for the whole group
+										</CardDescription>
+									</div>
+									<div class="flex items-center gap-4">
 										<div class="flex items-center gap-2">
 											<span
-												class={`w-1.5 h-1.5 ${logsConnected() ? "bg-black" : "bg-neutral-300"}`}
+												class={`h-1.5 w-1.5 ${
+													logsConnected() ? "bg-black" : "bg-neutral-300"
+												}`}
 											></span>
 											<span class="text-xs text-neutral-500">
 												{logsConnected() ? "live" : "disconnected"}
 											</span>
 										</div>
+										<Button
+											variant="ghost"
+											size="sm"
+											onClick={() => setLogs([])}
+										>
+											clear
+										</Button>
 									</div>
-									<button
-										onClick={() => setLogs([])}
-										class="text-xs text-neutral-500 hover:text-black"
-									>
-										clear
-									</button>
-								</div>
-								<div
+								</CardHeader>
+								<CardContent
 									ref={logsRef}
-									class="p-4 h-72 overflow-y-auto font-mono text-xs bg-neutral-50"
+									class="h-72 overflow-y-auto bg-neutral-50 font-mono text-xs"
 								>
 									<Show when={logs().length === 0}>
 										<p class="text-neutral-400">
@@ -1808,118 +1996,126 @@ const AppDetail: Component = () => {
 									<For each={logs()}>
 										{(line) => (
 											<div
-												class="text-neutral-700 leading-relaxed whitespace-pre-wrap break-all"
+												class="whitespace-pre-wrap break-all leading-relaxed text-neutral-700"
 												innerHTML={parseAnsi(line)}
 											></div>
 										)}
 									</For>
-								</div>
-							</div>
-						</Show>
+								</CardContent>
+							</Card>
 
-						{/* container monitor */}
-						<div class="border border-neutral-200 mb-8">
-							<div class="border-b border-neutral-200 px-5 py-3 flex items-center justify-between">
-								<div>
-									<h2 class="text-sm font-serif text-black">
-										container monitor
-									</h2>
-									<p class="text-xs text-neutral-500 mt-1">
-										health, metrics, logs, volumes
-									</p>
-								</div>
-								<Show when={appContainers().length > 0}>
-									<select
-										value={selectedContainer()}
-										onChange={(e) =>
-											setSelectedContainer(e.currentTarget.value)
-										}
-										class="px-2 py-1.5 border border-neutral-300 text-xs text-neutral-700"
-									>
-										<For each={appContainers()}>
-											{(container) => (
-												<option value={container.id}>{container.name}</option>
-											)}
-										</For>
-									</select>
-								</Show>
-							</div>
-							<div class="p-5">
-								<Show when={appContainers().length > 0}>
-									<ContainerMonitor containerId={selectedContainer()} />
-								</Show>
-								<Show when={appContainers().length === 0}>
-									<div class="border border-dashed border-neutral-200 p-8 text-center text-neutral-400 text-sm">
-										no running containers for this group
+							<Card>
+								<CardHeader class="flex items-center justify-between gap-4">
+									<div>
+										<CardTitle>container monitor</CardTitle>
+										<CardDescription>
+											health, metrics, logs, and volumes for the selected
+											container
+										</CardDescription>
 									</div>
-								</Show>
-							</div>
-						</div>
+									<Show when={appContainers().length > 0}>
+										<select
+											value={selectedContainer()}
+											onChange={(event) =>
+												selectContainer(event.currentTarget.value)
+											}
+											class="border border-neutral-300 px-2 py-1.5 text-xs text-neutral-700"
+										>
+											<For each={appContainers()}>
+												{(container) => (
+													<option value={container.id}>{container.name}</option>
+												)}
+											</For>
+										</select>
+									</Show>
+								</CardHeader>
+								<CardContent>
+									<Show when={appContainers().length > 0}>
+										<ContainerMonitor containerId={selectedContainer()} />
+									</Show>
+									<Show when={appContainers().length === 0}>
+										<div class="border border-dashed border-neutral-200 p-8 text-center text-sm text-neutral-400">
+											no running containers for this group
+										</div>
+									</Show>
+								</CardContent>
+							</Card>
 
-						{/* deployments */}
-						<div class="border border-neutral-200">
-							<div class="border-b border-neutral-200 px-5 py-3">
-								<h2 class="text-sm font-serif text-black">deployments</h2>
-							</div>
+							<Card>
+								<CardHeader>
+									<CardTitle>deployments</CardTitle>
+									<CardDescription>
+										recent deploy history for this group
+									</CardDescription>
+								</CardHeader>
+								<CardContent class="p-0">
+									<Show when={deployments.loading}>
+										<div class="space-y-3 p-5 animate-pulse">
+											<div class="h-10 bg-neutral-50"></div>
+											<div class="h-10 bg-neutral-50"></div>
+										</div>
+									</Show>
 
-							<Show when={deployments.loading}>
-								<div class="p-5 animate-pulse space-y-3">
-									<div class="h-10 bg-neutral-50"></div>
-									<div class="h-10 bg-neutral-50"></div>
-								</div>
-							</Show>
+									<Show
+										when={!deployments.loading && deployments()?.length === 0}
+									>
+										<div class="p-8 text-center text-sm text-neutral-400">
+											no deployments yet
+										</div>
+									</Show>
 
-							<Show when={!deployments.loading && deployments()?.length === 0}>
-								<div class="p-8 text-center text-neutral-400 text-sm">
-									no deployments yet
-								</div>
-							</Show>
-
-							<Show
-								when={
-									!deployments.loading &&
-									deployments() &&
-									deployments()!.length > 0
-								}
-							>
-								<div class="divide-y divide-neutral-200">
-									<For each={deployments()}>
-										{(deployment) => (
-											<div class="px-5 py-4 flex items-center justify-between">
-												<div class="flex items-center gap-4">
-													<span
-														class={`w-2 h-2 ${statusIndicator(deployment.status)}`}
-													></span>
-													<div>
-														<p class="text-black font-mono text-sm">
-															{deployment.commit_sha.substring(0, 8)}
-														</p>
-														<p class="text-neutral-500 text-xs mt-0.5 truncate max-w-md">
-															{deployment.commit_message || "no message"}
-														</p>
+									<Show
+										when={
+											!deployments.loading &&
+											deployments() &&
+											deployments()!.length > 0
+										}
+									>
+										<div class="divide-y divide-neutral-200">
+											<For each={deployments()}>
+												{(deployment) => (
+													<div class="flex items-center justify-between px-5 py-4">
+														<div class="flex items-center gap-4">
+															<span
+																class={`h-2 w-2 ${statusIndicator(
+																	deployment.status,
+																)}`}
+															></span>
+															<div>
+																<p class="font-mono text-sm text-black">
+																	{deployment.commit_sha.substring(0, 8)}
+																</p>
+																<p class="mt-0.5 max-w-md truncate text-xs text-neutral-500">
+																	{deployment.commit_message || "no message"}
+																</p>
+															</div>
+														</div>
+														<div class="flex items-center gap-4 text-xs">
+															<span class="text-neutral-500">
+																{deployment.status}
+															</span>
+															<span class="text-neutral-400">
+																{new Date(
+																	deployment.created_at,
+																).toLocaleString()}
+															</span>
+															<Button
+																variant="outline"
+																size="sm"
+																onClick={() => openDeploymentLogs(deployment)}
+															>
+																logs
+															</Button>
+														</div>
 													</div>
-												</div>
-												<div class="flex items-center gap-4 text-xs">
-													<span class="text-neutral-500">
-														{deployment.status}
-													</span>
-													<span class="text-neutral-400">
-														{new Date(deployment.created_at).toLocaleString()}
-													</span>
-													<button
-														onClick={() => openDeploymentLogs(deployment)}
-														class="px-2 py-1 border border-neutral-300 text-neutral-600 hover:text-black hover:border-neutral-400 transition-colors"
-													>
-														logs
-													</button>
-												</div>
-											</div>
-										)}
-									</For>
-								</div>
-							</Show>
-						</div>
-					</div>
+												)}
+											</For>
+										</div>
+									</Show>
+								</CardContent>
+							</Card>
+						</TabsContent>
+					</Tabs>
 				</Show>
 				{/* edit modal */}
 				<Show when={editing()}>
