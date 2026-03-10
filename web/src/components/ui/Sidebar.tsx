@@ -10,7 +10,7 @@ export const Sidebar: Component<JSX.HTMLAttributes<HTMLElement>> = (props) => {
 		<aside
 			class={cn(
 				"flex h-full w-[19rem] shrink-0 flex-col border-r",
-				"border-[var(--border)] bg-[rgba(10,12,18,0.92)]",
+				"border-[var(--border)] bg-[var(--card)]",
 				"text-[var(--foreground)] backdrop-blur",
 				local.class,
 			)}

@@ -1,4 +1,7 @@
 current context:
+- `web/src/components/ui/Sidebar.tsx` no longer hard-codes a dark rgba
+  background for the main sidebar surface; it now uses `--card`, which makes
+  the desktop and mobile sidebar shells follow the active light/dark palette
 - the sidebar no longer owns theme controls; appearance configuration now lives
   on `web/src/pages/Settings.tsx` and includes color mode, accent, and corner
   controls that apply immediately from the shared client theme context

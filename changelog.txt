@@ -2,6 +2,9 @@ changelog
 =========
 
 0.1.14-alpha - 2026-03-09
+- fix the shadcn sidebar primitives to use theme palette vars for the sidebar
+  surface instead of a hard-coded dark rgba background, so light mode now
+  actually renders a light sidebar
 - move the dashboard appearance controls out of the sidebar and into
   `web/src/pages/Settings.tsx`, and add explicit light/dark mode switching
   alongside accent and corner controls
