@@ -1,6 +1,14 @@
-import { Component, createResource, createSignal, For, Show } from "solid-js";
-import { A, useNavigate } from "@solidjs/router";
+import {
+	Component,
+	createEffect,
+	createResource,
+	createSignal,
+	For,
+	Show,
+} from "solid-js";
+import { A, useNavigate, useSearchParams } from "@solidjs/router";
 import { api, type components } from "../api";
+import { Alert, Button, PageHeader } from "../components/ui";
 
 type Database = components["schemas"]["DatabaseResponse"];
 
@@ -35,6 +43,7 @@ const describeError = (error: unknown) => {
  */
 const Databases: Component = () => {
 	const navigate = useNavigate();
+	const [searchParams] = useSearchParams();
 	const [databases, { refetch }] = createResource(fetchDatabases);
 	const [showCreate, setShowCreate] = createSignal(false);
 	const [creating, setCreating] = createSignal(false);
@@ -46,6 +55,32 @@ const Databases: Component = () => {
 	const [dbType, setDbType] = createSignal("postgresql");
 	const [memoryMb, setMemoryMb] = createSignal("512");
 	const [cpuLimit, setCpuLimit] = createSignal("1.0");
+
+	createEffect(() => {
+		if (searchParams.create === "1") {
+			setShowCreate(true);
+		}
+
+		switch (searchParams.type) {
+			case "postgres":
+			case "postgresql":
+				setDbType("postgresql");
+				break;
+			case "mariadb":
+			case "mysql":
+				setDbType("mariadb");
+				break;
+			case "redis":
+			case "valkey":
+				setDbType("redis");
+				break;
+			case "qdrant":
+				setDbType("qdrant");
+				break;
+			default:
+				break;
+		}
+	});
 
 	const handleCreate = async (e: Event) => {
 		e.preventDefault();
@@ -125,21 +160,14 @@ const Databases: Component = () => {
 
 	return (
 		<div>
-			{/* header */}
-			<div class="flex justify-between items-start mb-10">
-				<div>
-					<h1 class="text-2xl font-serif text-black">databases</h1>
-					<p class="text-neutral-500 mt-1 text-sm">
-						managed postgresql, mariadb, valkey, and qdrant instances
-					</p>
-				</div>
-				<button
-					onClick={() => setShowCreate(true)}
-					class="px-4 py-2 bg-black text-white hover:bg-neutral-800 text-sm"
-				>
-					create database
-				</button>
-			</div>
+			<PageHeader
+				title="databases"
+				description="managed postgres, mariadb, valkey, and qdrant
+instances"
+				actions={
+					<Button onClick={() => setShowCreate(true)}>create database</Button>
+				}
+			/>
 
 			{/* loading */}
 			<Show when={databases.loading}>
@@ -151,20 +179,17 @@ const Databases: Component = () => {
 
 			{/* empty */}
 			<Show when={!databases.loading && databases()?.length === 0}>
-				<div class="border border-dashed border-neutral-200 p-12 text-center">
+				<div class="mt-10 border border-dashed border-neutral-200 p-12 text-center">
 					<p class="text-neutral-400 text-sm">no databases yet</p>
-					<button
-						onClick={() => setShowCreate(true)}
-						class="mt-4 text-sm text-black hover:underline"
-					>
+					<Button variant="ghost" size="sm" onClick={() => setShowCreate(true)}>
 						create your first database
-					</button>
+					</Button>
 				</div>
 			</Show>
 
 			{/* list */}
 			<Show when={!databases.loading && databases() && databases()!.length > 0}>
-				<div class="space-y-4">
+				<div class="mt-10 space-y-4">
 					<For each={databases()}>
 						{(db) => (
 							<div class="border border-neutral-200 p-5">
@@ -239,9 +264,9 @@ const Databases: Component = () => {
 						<h2 class="text-lg font-serif text-black mb-6">create database</h2>
 
 						{error() && (
-							<div class="border border-neutral-300 bg-neutral-50 text-neutral-700 px-4 py-3 mb-4 text-sm">
+							<Alert variant="destructive" title="create failed">
 								{error()}
-							</div>
+							</Alert>
 						)}
 
 						<form onSubmit={handleCreate} class="space-y-5">
@@ -268,9 +293,9 @@ const Databases: Component = () => {
 									onChange={(e) => setDbType(e.currentTarget.value)}
 									class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
 								>
-									<option value="postgresql">postgresql</option>
+									<option value="postgresql">postgres</option>
 									<option value="mariadb">mariadb</option>
-									<option value="valkey">valkey (redis)</option>
+									<option value="redis">valkey (redis)</option>
 									<option value="qdrant">qdrant (vector)</option>
 								</select>
 							</div>
@@ -302,20 +327,17 @@ const Databases: Component = () => {
 							</div>
 
 							<div class="flex gap-2 pt-2">
-								<button
+								<Button
 									type="button"
+									variant="outline"
 									onClick={() => setShowCreate(false)}
-									class="flex-1 px-4 py-2 border border-neutral-300 text-neutral-700 hover:text-black hover:border-neutral-400 text-sm"
+									class="flex-1"
 								>
 									cancel
-								</button>
-								<button
-									type="submit"
-									disabled={creating()}
-									class="flex-1 px-4 py-2 bg-black text-white hover:bg-neutral-800 disabled:opacity-50 text-sm"
-								>
+								</Button>
+								<Button type="submit" disabled={creating()} class="flex-1">
 									{creating() ? "creating..." : "create"}
-								</button>
+								</Button>
 							</div>
 						</form>
 					</div>

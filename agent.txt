@@ -46,6 +46,12 @@ current context:
   `pg_wal` segment files into the mounted archive directory before stop and
   restore, and normalizes the copied wal permissions so recovery can read
   those files instead of failing with `permission denied`
+- postgres backup and recovery helpers now live in
+  `crates/containr-runtime/src/database_manager/pitr.rs`, which keeps the main
+  database manager module focused on container lifecycle and proxy setup
+- `crates/containr/src/client.rs` now routes repeated resource path handling
+  for services, databases, and queues through shared helpers so the cli
+  command matchers are shorter and less error-prone
 - a live docker-backed verification pass on 2026-03-09 proved:
   same-group valkey connectivity works, cross-group valkey access fails by dns
   isolation, qdrant public http access works, mariadb public tcp access works,
@@ -424,3 +430,23 @@ architectural notes:
   managed database, and managed queue tables instead of introducing a new
   canonical storage table in this pass; the unification is at the backend api
   model and lifecycle layer first
+- the dashboard homepage now consumes `/api/services` directly and acts as the
+  primary service inventory for app services plus managed services, instead of
+  only showing project-derived app rows
+- homepage service creation is now exposed through quick-create tiles on `/`
+  for web/private/worker/cron plus postgres/valkey/mariadb/qdrant/rabbitmq,
+  and those tiles deep-link into the existing create flows with query presets
+- `web/src/pages/NewApp.tsx` now accepts `?service_type=` presets including
+  `cron_job`, while `web/src/pages/Databases.tsx` and
+  `web/src/pages/Queues.tsx` accept `?create=1&type=...` presets for
+  dashboard-driven launches
+- the frontend create flow bug for valkey was fixed by sending `db_type =
+  redis`, and the stale unsupported `nats` queue option was removed from the
+  ui so homepage shortcuts only target working backend types
+- `web/src/pages/AppDetail.tsx` had a pre-existing broken jsx tree; the
+  missing outer container close plus matching `</Show>` were restored so the
+  solid/vite production build passes again
+- verified after the frontend/homepage pass:
+  `pnpm --dir web build`,
+  `cargo test -p containr-runtime`,
+  `cargo test -p containr --features openapi-only`

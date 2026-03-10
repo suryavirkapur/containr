@@ -722,58 +722,69 @@ async fn run_service_command(
 ) -> Result<()> {
     match command {
         ServiceCommand::List(args) => {
-            let path = args.group_id.map_or_else(
-                || "/api/services".to_string(),
-                |group_id| format!("/api/services?group_id={group_id}"),
-            );
-            run_get_json(config_path, selected_instance, &path, true).await
-        }
-        ServiceCommand::Get { id } => {
-            run_get_json(
+            run_resource_list(
                 config_path,
                 selected_instance,
-                &format!("/api/services/{}", id),
-                true,
+                "/api/services",
+                args.group_id.as_deref(),
+            )
+            .await
+        }
+        ServiceCommand::Get { id } => {
+            run_resource_get(
+                config_path,
+                selected_instance,
+                "/api/services",
+                &id,
             )
             .await
         }
         ServiceCommand::Logs(args) => {
-            run_logs_command(
+            run_resource_logs(
                 config_path,
                 selected_instance,
-                &format!("/api/services/{}/logs?tail={}", args.id, args.tail),
+                "/api/services",
+                &args.id,
+                args.tail,
             )
             .await
         }
         ServiceCommand::Start { id } => {
-            run_post_empty(
+            run_resource_action(
                 config_path,
                 selected_instance,
-                &format!("/api/services/{}/start", id),
+                "/api/services",
+                &id,
+                "start",
             )
             .await
         }
         ServiceCommand::Stop { id } => {
-            run_post_empty(
+            run_resource_action(
                 config_path,
                 selected_instance,
-                &format!("/api/services/{}/stop", id),
+                "/api/services",
+                &id,
+                "stop",
             )
             .await
         }
         ServiceCommand::Restart { id } => {
-            run_post_empty(
+            run_resource_action(
                 config_path,
                 selected_instance,
-                &format!("/api/services/{}/restart", id),
+                "/api/services",
+                &id,
+                "restart",
             )
             .await
         }
         ServiceCommand::Delete { id } => {
-            run_delete_json(
+            run_resource_delete(
                 config_path,
                 selected_instance,
-                &format!("/api/services/{}", id),
+                "/api/services",
+                &id,
             )
             .await
         }
@@ -787,11 +798,13 @@ async fn run_database_command(
 ) -> Result<()> {
     match command {
         DatabaseCommand::List(args) => {
-            let path = args.group_id.map_or_else(
-                || "/api/databases".to_string(),
-                |group_id| format!("/api/databases?group_id={group_id}"),
-            );
-            run_get_json(config_path, selected_instance, &path, true).await
+            run_resource_list(
+                config_path,
+                selected_instance,
+                "/api/databases",
+                args.group_id.as_deref(),
+            )
+            .await
         }
         DatabaseCommand::Create(args) => {
             let body = json!({
@@ -811,19 +824,21 @@ async fn run_database_command(
             .await
         }
         DatabaseCommand::Get { id } => {
-            run_get_json(
+            run_resource_get(
                 config_path,
                 selected_instance,
-                &format!("/api/databases/{}", id),
-                true,
+                "/api/databases",
+                &id,
             )
             .await
         }
         DatabaseCommand::Logs(args) => {
-            run_logs_command(
+            run_resource_logs(
                 config_path,
                 selected_instance,
-                &format!("/api/databases/{}/logs?tail={}", args.id, args.tail),
+                "/api/databases",
+                &args.id,
+                args.tail,
             )
             .await
         }
@@ -835,7 +850,7 @@ async fn run_database_command(
             run_post_json(
                 config_path,
                 selected_instance,
-                &format!("/api/databases/{}/expose", args.id),
+                &resource_action_path("/api/databases", &args.id, "expose"),
                 &body,
             )
             .await
@@ -845,7 +860,7 @@ async fn run_database_command(
             run_post_json(
                 config_path,
                 selected_instance,
-                &format!("/api/databases/{}/pitr", args.id),
+                &resource_action_path("/api/databases", &args.id, "pitr"),
                 &body,
             )
             .await
@@ -858,7 +873,7 @@ async fn run_database_command(
             run_post_json(
                 config_path,
                 selected_instance,
-                &format!("/api/databases/{}/proxy", args.id),
+                &resource_action_path("/api/databases", &args.id, "proxy"),
                 &body,
             )
             .await
@@ -870,7 +885,11 @@ async fn run_database_command(
             run_post_json(
                 config_path,
                 selected_instance,
-                &format!("/api/databases/{}/pitr/base-backup", args.id),
+                &resource_nested_action_path(
+                    "/api/databases",
+                    &args.id,
+                    &["pitr", "base-backup"],
+                ),
                 &body,
             )
             .await
@@ -882,7 +901,11 @@ async fn run_database_command(
             run_post_json(
                 config_path,
                 selected_instance,
-                &format!("/api/databases/{}/pitr/restore-point", args.id),
+                &resource_nested_action_path(
+                    "/api/databases",
+                    &args.id,
+                    &["pitr", "restore-point"],
+                ),
                 &body,
             )
             .await
@@ -901,40 +924,51 @@ async fn run_database_command(
             run_post_json(
                 config_path,
                 selected_instance,
-                &format!("/api/databases/{}/pitr/recover", args.id),
+                &resource_nested_action_path(
+                    "/api/databases",
+                    &args.id,
+                    &["pitr", "recover"],
+                ),
                 &body,
             )
             .await
         }
         DatabaseCommand::Start { id } => {
-            run_post_empty(
+            run_resource_action(
                 config_path,
                 selected_instance,
-                &format!("/api/databases/{}/start", id),
+                "/api/databases",
+                &id,
+                "start",
             )
             .await
         }
         DatabaseCommand::Stop { id } => {
-            run_post_empty(
+            run_resource_action(
                 config_path,
                 selected_instance,
-                &format!("/api/databases/{}/stop", id),
+                "/api/databases",
+                &id,
+                "stop",
             )
             .await
         }
         DatabaseCommand::Restart { id } => {
-            run_post_empty(
+            run_resource_action(
                 config_path,
                 selected_instance,
-                &format!("/api/databases/{}/restart", id),
+                "/api/databases",
+                &id,
+                "restart",
             )
             .await
         }
         DatabaseCommand::Delete { id } => {
-            run_delete_json(
+            run_resource_delete(
                 config_path,
                 selected_instance,
-                &format!("/api/databases/{}", id),
+                "/api/databases",
+                &id,
             )
             .await
         }
@@ -948,11 +982,13 @@ async fn run_queue_command(
 ) -> Result<()> {
     match command {
         QueueCommand::List(args) => {
-            let path = args.group_id.map_or_else(
-                || "/api/queues".to_string(),
-                |group_id| format!("/api/queues?group_id={group_id}"),
-            );
-            run_get_json(config_path, selected_instance, &path, true).await
+            run_resource_list(
+                config_path,
+                selected_instance,
+                "/api/queues",
+                args.group_id.as_deref(),
+            )
+            .await
         }
         QueueCommand::Create(args) => {
             let body = json!({
@@ -967,13 +1003,8 @@ async fn run_queue_command(
                 .await
         }
         QueueCommand::Get { id } => {
-            run_get_json(
-                config_path,
-                selected_instance,
-                &format!("/api/queues/{}", id),
-                true,
-            )
-            .await
+            run_resource_get(config_path, selected_instance, "/api/queues", &id)
+                .await
         }
         QueueCommand::Expose(args) => {
             let body = json!({
@@ -983,36 +1014,124 @@ async fn run_queue_command(
             run_post_json(
                 config_path,
                 selected_instance,
-                &format!("/api/queues/{}/expose", args.id),
+                &resource_action_path("/api/queues", &args.id, "expose"),
                 &body,
             )
             .await
         }
         QueueCommand::Start { id } => {
-            run_post_empty(
+            run_resource_action(
                 config_path,
                 selected_instance,
-                &format!("/api/queues/{}/start", id),
+                "/api/queues",
+                &id,
+                "start",
             )
             .await
         }
         QueueCommand::Stop { id } => {
-            run_post_empty(
+            run_resource_action(
                 config_path,
                 selected_instance,
-                &format!("/api/queues/{}/stop", id),
+                "/api/queues",
+                &id,
+                "stop",
             )
             .await
         }
         QueueCommand::Delete { id } => {
-            run_delete_json(
+            run_resource_delete(
                 config_path,
                 selected_instance,
-                &format!("/api/queues/{}", id),
+                "/api/queues",
+                &id,
             )
             .await
         }
     }
+}
+
+async fn run_resource_list(
+    config_path: Option<&Path>,
+    selected_instance: Option<&str>,
+    base_path: &str,
+    group_id: Option<&str>,
+) -> Result<()> {
+    let path = grouped_resource_path(base_path, group_id);
+    run_get_json(config_path, selected_instance, &path, true).await
+}
+
+async fn run_resource_get(
+    config_path: Option<&Path>,
+    selected_instance: Option<&str>,
+    base_path: &str,
+    id: &str,
+) -> Result<()> {
+    let path = resource_item_path(base_path, id);
+    run_get_json(config_path, selected_instance, &path, true).await
+}
+
+async fn run_resource_logs(
+    config_path: Option<&Path>,
+    selected_instance: Option<&str>,
+    base_path: &str,
+    id: &str,
+    tail: usize,
+) -> Result<()> {
+    let path = format!(
+        "{}?tail={tail}",
+        resource_action_path(base_path, id, "logs")
+    );
+    run_logs_command(config_path, selected_instance, &path).await
+}
+
+async fn run_resource_action(
+    config_path: Option<&Path>,
+    selected_instance: Option<&str>,
+    base_path: &str,
+    id: &str,
+    action: &str,
+) -> Result<()> {
+    let path = resource_action_path(base_path, id, action);
+    run_post_empty(config_path, selected_instance, &path).await
+}
+
+async fn run_resource_delete(
+    config_path: Option<&Path>,
+    selected_instance: Option<&str>,
+    base_path: &str,
+    id: &str,
+) -> Result<()> {
+    let path = resource_item_path(base_path, id);
+    run_delete_json(config_path, selected_instance, &path).await
+}
+
+fn grouped_resource_path(base_path: &str, group_id: Option<&str>) -> String {
+    match group_id {
+        Some(group_id) => format!("{base_path}?group_id={group_id}"),
+        None => base_path.to_string(),
+    }
+}
+
+fn resource_item_path(base_path: &str, id: &str) -> String {
+    format!("{base_path}/{id}")
+}
+
+fn resource_action_path(base_path: &str, id: &str, action: &str) -> String {
+    format!("{}/{}/{}", base_path, id, action)
+}
+
+fn resource_nested_action_path(
+    base_path: &str,
+    id: &str,
+    actions: &[&str],
+) -> String {
+    let mut path = resource_item_path(base_path, id);
+    for action in actions {
+        path.push('/');
+        path.push_str(action);
+    }
+    path
 }
 
 async fn run_get_json(
