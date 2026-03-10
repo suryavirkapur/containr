@@ -7,6 +7,7 @@ export * from "./Input";
 export * from "./Label";
 export * from "./PageHeader";
 export * from "./Separator";
+export * from "./Sidebar";
 export * from "./Skeleton";
 export * from "./Switch";
 export * from "./Tabs";

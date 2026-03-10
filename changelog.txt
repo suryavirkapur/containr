@@ -119,6 +119,28 @@ changelog
 - change `web/src/pages/Databases.tsx` and `web/src/pages/Queues.tsx` so they
   no longer own modal create flows; they now link creation into the shared
   `/projects/new` interface and expose restart actions from the list pages
+- fix `/projects/new` query presets so links like
+  `?kind=app&service_type=background_worker` only seed the initial selection
+  instead of locking the page and preventing the user from switching to a
+  different service type afterwards
+- activate the existing frontend theme context at the app root, switch the
+  default shell theme away from purple to a sharper blue preset, and expose a
+  top-left style control for sharp vs rounded corners plus accent selection
+- replace the old top navigation shell with a proper sidebar layout in
+  `web/src/components/Layout.tsx`, including active-route highlighting, a
+  mobile drawer, and a sidebar structure closer to shadcn-style app shells
+- make the shared frontend ui primitives respect the active radius token so the
+  shell style switch visibly changes cards, buttons, badges, inputs, alerts,
+  and tab controls instead of staying globally square
+- add reusable sidebar primitives in `web/src/components/ui/Sidebar.tsx` and
+  refactor the dashboard shell onto those components so the navigation layout
+  follows one clearer sidebar api instead of keeping the structure ad hoc
+- make `/projects/new` option cards, repository picker rows, and the managed
+  group selector respect the active radius token so the theme switch now
+  affects the actual service-creation flow instead of only the shared controls
+- add a global `select` and `textarea` radius bridge in `web/src/index.css`
+  so older pages with raw form controls also respond to the sharp vs rounded
+  theme switch
 
 0.1.13-alpha - 2026-03-09
 - add first-class `containr` subcommands for docker socket checks, long-lived api key generation, and systemd unit generation

@@ -465,3 +465,28 @@ architectural notes:
   same full-page interface pattern
 - verified after the grouped-inventory and unified-create pass:
   `pnpm --dir web build`
+- `/projects/new` query presets now act as initial defaults only; the preset
+  parser was wrapped so it tracks search params without re-tracking form state,
+  which stops service-type links like `background_worker` from locking the page
+- the frontend shell now uses the existing theme context globally from
+  `web/src/index.tsx`, with the default theme shifted to a sharp blue preset
+  and the active accent also driving the shared focus ring color
+- `web/src/components/Layout.tsx` is now a sidebar-based shell with active link
+  highlighting, mobile drawer support, and a top-left style panel for sharp vs
+  rounded corners plus accent selection
+- shared ui primitives in `web/src/components/ui/` now respect `--radius`,
+  so cards, buttons, badges, inputs, alerts, and tabs visibly change when the
+  shell style switch is used
+- the frontend shell now also has a reusable sidebar primitive layer in
+  `web/src/components/ui/Sidebar.tsx`, and `Layout.tsx` was refactored onto
+  those components instead of keeping the shadcn-style sidebar structure
+  embedded in one large file
+- `web/src/pages/NewApp.tsx` now routes its service-family cards, runtime
+  cards, repository picker list, and managed-group selector through shared
+  radius-aware classes so the sharp/rounded theme switch affects the create
+  flow itself and not just generic buttons/cards elsewhere
+- `web/src/index.css` now applies `--radius` to raw `select` and `textarea`
+  controls as a compatibility bridge for older pages that still use direct
+  form elements outside the shared ui primitives
+- verified after the shell/theme pass:
+  `pnpm --dir web build`
