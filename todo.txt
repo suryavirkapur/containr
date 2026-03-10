@@ -1,0 +1,28 @@
+caas vision: unified services
+
+our primary goal is running a container-as-a-service (caas). everything is fundamentally just a container/service. backend already serves a unified `/api/services` endpoint. to complete this vision, the frontend must merge all disconnected service types (databases, queues, projects) into a single "services" experience.
+
+frontend subtasks:
+- [ ] remove legacy sidebar tabs
+  - delete "databases", "queues", and "projects/app" navigation items from `web/src/components/layout.tsx`
+  - add a primary "services" tab as the default landing view
+- [ ] consolidate inventory list (`web/src/pages/services.tsx` or similar)
+  - render all `/api/services` output (web apps, background workers, cron jobs, managed databases, message queues) in a single massive list or table.
+  - add dynamic columns to indicate `service_type` (e.g. postgres, web, cron)
+- [ ] unify the creation flow (`web/src/pages/newapp.tsx`)
+  - redirect any old "new database" or "new queue" routes strictly to `/services/new`
+  - on `/services/new`, users select a source first: either a "git repository" (for apps) or a "template" (for databases/queues)
+  - strip out deep-linking logic tying them to internal backend concepts (e.g. `?kind=database`) and handle it via the template selection
+- [ ] unify settings and detail pages
+  - create a unified `/services/:id` detail view that deprecates `/databases/:id`, `/queues/:id`, and `/projects/:id`
+  - render connection strings and environment variables identically across all sub-types
+  - use the same unified log tailer for databases as for web services
+- [ ] refactor terminology
+  - replace all hardcoded text strings referencing "apps", "projects", "databases", or "groups" to explicitly say "services".
+
+backend routing subtasks:
+- [ ] deprecate fragmented api endpoints
+  - verify endpoints like `get /api/databases` are cleanly deprecated or rerouted to `/api/services` with respective filters
+  - simplify `post /api/databases` into a unified `post /api/services` payload structure that detects if the requested service is a template run or a repo run (if not already handled)
+- [ ] update test suites
+  - remove hardcoded e2e tests that expect specific database creation routes and migrate them to testing the unified service creation pipeline
