@@ -70,32 +70,43 @@ interface QuickAction {
 	type: string;
 }
 
+interface ServiceGroup {
+	key: string;
+	label: string;
+	project_id?: string | null;
+	network_name: string;
+	services: ServiceInventoryItem[];
+	is_standalone: boolean;
+	public_count: number;
+	updated_at: string;
+}
+
 const appQuickActions: QuickAction[] = [
 	{
 		title: "web service",
 		description: "public http and grpc entrypoint with default routing.",
-		href: "/projects/new?service_type=web_service",
+		href: "/projects/new?kind=app&service_type=web_service",
 		label: "new web service",
 		type: "web_service",
 	},
 	{
 		title: "private service",
 		description: "internal-only service for east-west traffic in a group.",
-		href: "/projects/new?service_type=private_service",
+		href: "/projects/new?kind=app&service_type=private_service",
 		label: "new private service",
 		type: "private_service",
 	},
 	{
 		title: "background worker",
 		description: "long-running job consumer without public ingress.",
-		href: "/projects/new?service_type=background_worker",
+		href: "/projects/new?kind=app&service_type=background_worker",
 		label: "new worker",
 		type: "background_worker",
 	},
 	{
 		title: "cron job",
 		description: "scheduled container for timed tasks and maintenance.",
-		href: "/projects/new?service_type=cron_job",
+		href: "/projects/new?kind=app&service_type=cron_job",
 		label: "new cron job",
 		type: "cron_job",
 	},
@@ -105,57 +116,81 @@ const managedQuickActions: QuickAction[] = [
 	{
 		title: "containr postgres",
 		description: "managed postgres with pgdog and optional pitr.",
-		href: "/databases?create=1&type=postgresql",
+		href: "/projects/new?kind=database&type=postgresql",
 		label: "create postgres",
 		type: "postgres",
 	},
 	{
 		title: "containr valkey",
 		description: "redis-compatible valkey for cache and queue workloads.",
-		href: "/databases?create=1&type=redis",
+		href: "/projects/new?kind=database&type=redis",
 		label: "create valkey",
 		type: "redis",
 	},
 	{
 		title: "containr mariadb",
 		description: "mysql-compatible mariadb with direct public port support.",
-		href: "/databases?create=1&type=mariadb",
+		href: "/projects/new?kind=database&type=mariadb",
 		label: "create mariadb",
 		type: "mariadb",
 	},
 	{
 		title: "containr qdrant",
 		description: "vector storage with direct http access when exposed.",
-		href: "/databases?create=1&type=qdrant",
+		href: "/projects/new?kind=database&type=qdrant",
 		label: "create qdrant",
 		type: "qdrant",
 	},
 	{
 		title: "rabbitmq",
 		description: "managed rabbitmq broker with direct connection details.",
-		href: "/queues?create=1&type=rabbitmq",
+		href: "/projects/new?kind=queue&type=rabbitmq",
 		label: "create rabbitmq",
 		type: "rabbitmq",
 	},
 ];
 
-const fetchServices = async (): Promise<ServiceInventoryItem[]> => {
-	const token = localStorage.getItem("containr_token");
+const buildAuthHeaders = (): Headers => {
 	const headers = new Headers();
+	const token = localStorage.getItem("containr_token");
 
 	if (token) {
 		headers.set("Authorization", `Bearer ${token}`);
 	}
 
-	const response = await fetch("/api/services", { headers });
-	if (response.status === 401) {
-		localStorage.removeItem("containr_token");
-		window.location.href = "/login";
-		throw new Error("unauthorized");
+	return headers;
+};
+
+const handleUnauthorized = (response: Response) => {
+	if (response.status !== 401) {
+		return;
 	}
 
+	localStorage.removeItem("containr_token");
+	window.location.href = "/login";
+};
+
+const readErrorMessage = async (response: Response): Promise<string> => {
+	try {
+		const data = (await response.json()) as { error?: string };
+		if (typeof data.error === "string" && data.error.trim()) {
+			return data.error;
+		}
+	} catch {
+		// ignore malformed json and use the fallback message below
+	}
+
+	return `request failed with status ${response.status}`;
+};
+
+const fetchServices = async (): Promise<ServiceInventoryItem[]> => {
+	const response = await fetch("/api/services", {
+		headers: buildAuthHeaders(),
+	});
+
+	handleUnauthorized(response);
 	if (!response.ok) {
-		throw new Error("failed to fetch services");
+		throw new Error(await readErrorMessage(response));
 	}
 
 	return (await response.json()) as ServiceInventoryItem[];
@@ -214,14 +249,6 @@ const serviceTypeLabel = (serviceType: string): string => {
 	}
 };
 
-const serviceScopeLabel = (service: ServiceInventoryItem): string => {
-	if (service.project_name) {
-		return `group ${service.project_name}`;
-	}
-
-	return `standalone network ${service.network_name}`;
-};
-
 const serviceDetailHref = (service: ServiceInventoryItem): string => {
 	if (service.resource_kind === "managed_database") {
 		return `/databases/${service.id}`;
@@ -260,7 +287,7 @@ const serviceEndpointLabel = (service: ServiceInventoryItem): string => {
 	}
 
 	if (service.schedule?.trim()) {
-		return `schedule ${service.schedule.trim()}`;
+		return service.schedule.trim();
 	}
 
 	return "internal only";
@@ -268,14 +295,14 @@ const serviceEndpointLabel = (service: ServiceInventoryItem): string => {
 
 const serviceActivityLabel = (service: ServiceInventoryItem): string => {
 	if (service.schedule?.trim()) {
-		return service.schedule.trim();
+		return `schedule ${service.schedule.trim()}`;
 	}
 
 	if (service.desired_instances <= 1) {
 		return service.running_instances > 0 ? "1 instance running" : "not running";
 	}
 
-	return `${service.running_instances}/${service.desired_instances} instances running`;
+	return `${service.running_instances}/${service.desired_instances} instances`;
 };
 
 const statusVariant = (
@@ -293,6 +320,19 @@ const statusVariant = (
 			return "outline";
 	}
 };
+
+const groupLabel = (service: ServiceInventoryItem): string => {
+	if (service.project_name?.trim()) {
+		return service.project_name.trim();
+	}
+
+	return `standalone ${service.name}`;
+};
+
+const groupKey = (service: ServiceInventoryItem): string =>
+	service.project_id ||
+	service.group_id ||
+	`standalone:${service.network_name}:${service.id}`;
 
 const ServiceIcon: Component<{ type: string }> = (props) => {
 	const iconPath = () => {
@@ -338,18 +378,17 @@ const ServiceIcon: Component<{ type: string }> = (props) => {
 };
 
 const Dashboard: Component = () => {
-	const [services] = createResource(fetchServices);
+	const [services, { refetch }] = createResource(fetchServices);
 	const [filter, setFilter] = createSignal<FilterTab>("all");
 	const [search, setSearch] = createSignal("");
+	const [pendingServiceId, setPendingServiceId] = createSignal<string | null>(
+		null,
+	);
+	const [actionError, setActionError] = createSignal("");
 
 	const summary = createMemo(() => {
 		const rows = services() || [];
-		const groupKeys = new Set(
-			rows.map(
-				(service) =>
-					service.project_id || service.group_id || service.network_name,
-			),
-		);
+		const groupKeys = new Set(rows.map(groupKey));
 
 		return {
 			all: rows.length,
@@ -357,7 +396,7 @@ const Dashboard: Component = () => {
 				.length,
 			managed: rows.filter(isManagedService).length,
 			public: rows.filter(hasPublicExposure).length,
-			networks: groupKeys.size,
+			groups: groupKeys.size,
 		};
 	});
 
@@ -398,36 +437,108 @@ const Dashboard: Component = () => {
 		});
 	});
 
+	const groupedServices = createMemo(() => {
+		const groups = new Map<string, ServiceGroup>();
+
+		for (const service of filteredServices()) {
+			const key = groupKey(service);
+			const existing = groups.get(key);
+			if (existing) {
+				existing.services.push(service);
+				existing.public_count += hasPublicExposure(service) ? 1 : 0;
+				if (
+					new Date(service.updated_at).getTime() >
+					new Date(existing.updated_at).getTime()
+				) {
+					existing.updated_at = service.updated_at;
+				}
+				continue;
+			}
+
+			groups.set(key, {
+				key,
+				label: groupLabel(service),
+				project_id: service.project_id,
+				network_name: service.network_name,
+				services: [service],
+				is_standalone: !service.project_id && !service.group_id,
+				public_count: hasPublicExposure(service) ? 1 : 0,
+				updated_at: service.updated_at,
+			});
+		}
+
+		return Array.from(groups.values())
+			.map((group) => ({
+				...group,
+				services: [...group.services].sort(
+					(left, right) =>
+						new Date(right.updated_at).getTime() -
+						new Date(left.updated_at).getTime(),
+				),
+			}))
+			.sort((left, right) => {
+				if (left.is_standalone !== right.is_standalone) {
+					return left.is_standalone ? 1 : -1;
+				}
+
+				return (
+					new Date(right.updated_at).getTime() -
+					new Date(left.updated_at).getTime()
+				);
+			});
+	});
+
+	const restartService = async (service: ServiceInventoryItem) => {
+		setPendingServiceId(service.id);
+		setActionError("");
+
+		try {
+			const response = await fetch(`/api/services/${service.id}/restart`, {
+				method: "POST",
+				headers: buildAuthHeaders(),
+			});
+
+			handleUnauthorized(response);
+			if (!response.ok) {
+				throw new Error(await readErrorMessage(response));
+			}
+
+			await refetch();
+		} catch (error) {
+			if (error instanceof Error) {
+				setActionError(error.message);
+			} else {
+				setActionError("failed to restart service");
+			}
+		} finally {
+			setPendingServiceId(null);
+		}
+	};
+
 	return (
 		<div class="space-y-8">
 			<PageHeader
 				eyebrow="control plane"
 				title="services"
-				description="create new services from the landing page and inspect every
-running app, worker, cron job, and managed service without diving into separate
-menus first."
+				description="create services from one screen, see them grouped by
+their network boundary, and restart any service directly from the inventory."
 				actions={
-					<>
-						<a href="#quick-create">
-							<Button variant="secondary">add service</Button>
-						</a>
-						<A href="/projects/new">
-							<Button>new app service</Button>
-						</A>
-					</>
+					<A href="/projects/new">
+						<Button>new service</Button>
+					</A>
 				}
 			/>
 
-			<Card id="quick-create">
+			<Card>
 				<CardHeader class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
 					<div>
 						<p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
 							launch
 						</p>
-						<CardTitle class="mt-2">add a service from home</CardTitle>
+						<CardTitle class="mt-2">create a service</CardTitle>
 						<CardDescription>
-							start the exact runtime you need without digging through dedicated
-							pages first.
+							every service type now starts from the same full-page creation
+							flow instead of separate modal screens.
 						</CardDescription>
 					</div>
 					<Badge variant="outline">{summary().all} services tracked</Badge>
@@ -440,7 +551,7 @@ menus first."
 									application services
 								</p>
 								<p class="mt-2 text-sm text-[var(--muted-foreground)]">
-									deploy from a repository into a grouped network boundary.
+									create a new group and its first runtime container.
 								</p>
 							</div>
 							<Badge variant="secondary">{summary().app}</Badge>
@@ -449,7 +560,7 @@ menus first."
 							<For each={appQuickActions}>
 								{(action) => (
 									<A href={action.href} class="block">
-										<Card variant="hover" class="h-full border-[var(--border)]">
+										<Card variant="hover" class="h-full">
 											<CardContent class="flex h-full flex-col justify-between gap-5">
 												<div class="space-y-4">
 													<div class="flex items-start justify-between gap-3">
@@ -465,14 +576,9 @@ menus first."
 														</p>
 													</div>
 												</div>
-												<div class="flex items-center justify-between border-t border-[var(--border)] pt-4">
-													<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
-														repository deploy
-													</span>
-													<span class="text-sm font-medium text-[var(--foreground)]">
-														{action.label}
-													</span>
-												</div>
+												<p class="text-sm font-medium text-[var(--foreground)]">
+													{action.label}
+												</p>
 											</CardContent>
 										</Card>
 									</A>
@@ -488,8 +594,8 @@ menus first."
 									managed services
 								</p>
 								<p class="mt-2 text-sm text-[var(--muted-foreground)]">
-									spin up stateful data services with the existing create flows
-									already wired into the backend.
+									use the same creation page and attach the service to an
+									existing group or keep it standalone.
 								</p>
 							</div>
 							<Badge variant="secondary">{summary().managed}</Badge>
@@ -498,7 +604,7 @@ menus first."
 							<For each={managedQuickActions}>
 								{(action) => (
 									<A href={action.href} class="block">
-										<Card variant="hover" class="h-full border-[var(--border)]">
+										<Card variant="hover" class="h-full">
 											<CardContent class="flex h-full flex-col justify-between gap-5">
 												<div class="space-y-4">
 													<div class="flex items-start justify-between gap-3">
@@ -514,14 +620,9 @@ menus first."
 														</p>
 													</div>
 												</div>
-												<div class="flex items-center justify-between border-t border-[var(--border)] pt-4">
-													<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
-														stateful service
-													</span>
-													<span class="text-sm font-medium text-[var(--foreground)]">
-														{action.label}
-													</span>
-												</div>
+												<p class="text-sm font-medium text-[var(--foreground)]">
+													{action.label}
+												</p>
 											</CardContent>
 										</Card>
 									</A>
@@ -542,7 +643,7 @@ menus first."
 							{summary().all}
 						</p>
 						<p class="text-sm text-[var(--muted-foreground)]">
-							every service inventory item across the instance
+							across {summary().groups} groups or standalone networks
 						</p>
 					</CardContent>
 				</Card>
@@ -575,13 +676,13 @@ menus first."
 				<Card>
 					<CardContent class="space-y-2">
 						<p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
-							public endpoints
+							public exposure
 						</p>
 						<p class="font-serif text-4xl text-[var(--foreground)]">
 							{summary().public}
 						</p>
 						<p class="text-sm text-[var(--muted-foreground)]">
-							across {summary().networks} groups or solo networks
+							services with a public url or public port
 						</p>
 					</CardContent>
 				</Card>
@@ -595,10 +696,10 @@ menus first."
 						<p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
 							inventory
 						</p>
-						<CardTitle class="mt-2">all services on one screen</CardTitle>
+						<CardTitle class="mt-2">services grouped by group</CardTitle>
 						<CardDescription>
-							use the unified service inventory instead of jumping between app,
-							database, and queue pages just to see what exists.
+							each section matches the group network boundary. standalone
+							services stay isolated in their own section.
 						</CardDescription>
 					</div>
 					<div class="flex w-full flex-col gap-4 xl:w-auto xl:flex-row xl:items-center">
@@ -625,12 +726,18 @@ menus first."
 							<Input
 								value={search()}
 								onInput={(event) => setSearch(event.currentTarget.value)}
-								placeholder="search by service, type, group, or host"
+								placeholder="search by service, group, host, or type"
 							/>
 						</div>
 					</div>
 				</CardHeader>
 				<CardContent class="space-y-6">
+					<Show when={actionError()}>
+						<Alert variant="destructive" title="service action failed">
+							{actionError()}
+						</Alert>
+					</Show>
+
 					<Show when={services.error}>
 						<Alert variant="destructive" title="failed to load services">
 							{services.error instanceof Error
@@ -640,8 +747,8 @@ menus first."
 					</Show>
 
 					<Show when={services.loading}>
-						<div class="grid gap-4 xl:grid-cols-2">
-							<For each={[1, 2, 3, 4, 5, 6]}>
+						<div class="grid gap-4">
+							<For each={[1, 2, 3, 4]}>
 								{() => <Skeleton class="h-64 w-full" />}
 							</For>
 						</div>
@@ -650,12 +757,12 @@ menus first."
 					<Show when={!services.loading && (services()?.length || 0) === 0}>
 						<EmptyState
 							title="no services yet"
-							description="launch a web service, worker, cron job, or managed
-data service directly from the quick-create tiles above."
+							description="create a service from the launch section above and
+it will appear here under its group automatically."
 							action={
-								<a href="#quick-create">
+								<A href="/projects/new">
 									<Button>add your first service</Button>
-								</a>
+								</A>
 							}
 							icon={
 								<svg
@@ -676,102 +783,136 @@ data service directly from the quick-create tiles above."
 					</Show>
 
 					<Show when={!services.loading && (services()?.length || 0) > 0}>
-						<div class="grid gap-4 xl:grid-cols-2">
-							<For each={filteredServices()}>
-								{(service) => (
-									<A href={serviceDetailHref(service)} class="block">
-										<Card variant="hover" class="h-full border-[var(--border)]">
-											<CardContent class="flex h-full flex-col justify-between gap-6">
-												<div class="space-y-5">
-													<div class="flex items-start justify-between gap-4">
-														<div class="flex min-w-0 items-start gap-3">
-															<ServiceIcon type={service.service_type} />
-															<div class="min-w-0">
-																<p class="truncate font-serif text-2xl text-[var(--foreground)]">
-																	{service.name}
-																</p>
-																<p class="mt-1 truncate text-[11px] uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
-																	{serviceScopeLabel(service)}
-																</p>
+						<div class="space-y-4">
+							<For each={groupedServices()}>
+								{(group) => (
+									<Card>
+										<CardHeader class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+											<div>
+												<p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
+													{group.is_standalone
+														? "standalone service"
+														: "service group"}
+												</p>
+												<CardTitle class="mt-2">{group.label}</CardTitle>
+												<CardDescription>
+													network {group.network_name} · {group.services.length}{" "}
+													service{group.services.length === 1 ? "" : "s"} ·{" "}
+													updated {timeAgo(group.updated_at)}
+												</CardDescription>
+											</div>
+											<div class="flex flex-wrap items-center gap-2">
+												<Badge variant="secondary">
+													{group.services.length} services
+												</Badge>
+												<Show when={group.public_count > 0}>
+													<Badge variant="outline">
+														{group.public_count} public
+													</Badge>
+												</Show>
+												<Show when={group.project_id}>
+													<A href={`/projects/${group.project_id}`}>
+														<Button variant="outline" size="sm">
+															open group
+														</Button>
+													</A>
+												</Show>
+											</div>
+										</CardHeader>
+										<CardContent class="p-0">
+											<div class="divide-y divide-[var(--border)]">
+												<For each={group.services}>
+													{(service) => (
+														<div class="flex flex-col gap-5 px-6 py-5 xl:flex-row xl:items-center xl:justify-between">
+															<div class="flex min-w-0 items-start gap-4">
+																<ServiceIcon type={service.service_type} />
+																<div class="min-w-0 space-y-3">
+																	<div>
+																		<p class="truncate font-serif text-2xl text-[var(--foreground)]">
+																			{service.name}
+																		</p>
+																		<p class="mt-1 text-sm text-[var(--muted-foreground)]">
+																			{serviceTypeLabel(service.service_type)}
+																		</p>
+																	</div>
+																	<div class="flex flex-wrap gap-2">
+																		<Badge
+																			variant={statusVariant(service.status)}
+																		>
+																			{service.status}
+																		</Badge>
+																		<Badge variant="outline">
+																			{service.resource_kind.replaceAll(
+																				"_",
+																				" ",
+																			)}
+																		</Badge>
+																		<Show when={hasPublicExposure(service)}>
+																			<Badge variant="outline">public</Badge>
+																		</Show>
+																		<Show when={service.pitr_enabled}>
+																			<Badge variant="outline">pitr</Badge>
+																		</Show>
+																		<Show when={service.proxy_enabled}>
+																			<Badge variant="outline">pgdog</Badge>
+																		</Show>
+																	</div>
+																</div>
+															</div>
+
+															<div class="grid gap-3 text-sm xl:min-w-[340px]">
+																<div class="flex items-start justify-between gap-4">
+																	<span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
+																		endpoint
+																	</span>
+																	<span class="max-w-[65%] truncate text-right font-mono text-[var(--foreground-subtle)]">
+																		{serviceEndpointLabel(service)}
+																	</span>
+																</div>
+																<div class="flex items-start justify-between gap-4">
+																	<span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
+																		activity
+																	</span>
+																	<span class="text-right text-[var(--foreground-subtle)]">
+																		{serviceActivityLabel(service)}
+																	</span>
+																</div>
+																<div class="flex items-start justify-between gap-4">
+																	<span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
+																		updated
+																	</span>
+																	<span class="text-right text-[var(--foreground-subtle)]">
+																		{timeAgo(service.updated_at)}
+																	</span>
+																</div>
+															</div>
+
+															<div class="flex flex-wrap items-center gap-3">
+																<Button
+																	variant="secondary"
+																	size="sm"
+																	isLoading={pendingServiceId() === service.id}
+																	onClick={() => void restartService(service)}
+																>
+																	restart
+																</Button>
+																<A href={serviceDetailHref(service)}>
+																	<Button variant="outline" size="sm">
+																		open
+																	</Button>
+																</A>
 															</div>
 														</div>
-														<Badge variant={statusVariant(service.status)}>
-															{service.status}
-														</Badge>
-													</div>
-
-													<div class="flex flex-wrap gap-2">
-														<Badge variant="secondary">
-															{serviceTypeLabel(service.service_type)}
-														</Badge>
-														<Badge variant="outline">
-															{isManagedService(service)
-																? "managed"
-																: "application"}
-														</Badge>
-														<Show when={hasPublicExposure(service)}>
-															<Badge variant="outline">public</Badge>
-														</Show>
-														<Show when={service.pitr_enabled}>
-															<Badge variant="outline">pitr</Badge>
-														</Show>
-														<Show when={service.proxy_enabled}>
-															<Badge variant="outline">pgdog</Badge>
-														</Show>
-													</div>
-
-													<div class="space-y-3 border-t border-[var(--border)] pt-4 text-sm">
-														<div class="flex items-start justify-between gap-4">
-															<span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
-																endpoint
-															</span>
-															<span class="max-w-[65%] truncate text-right font-mono text-[var(--foreground-subtle)]">
-																{serviceEndpointLabel(service)}
-															</span>
-														</div>
-														<div class="flex items-start justify-between gap-4">
-															<span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
-																activity
-															</span>
-															<span class="text-right text-[var(--foreground-subtle)]">
-																{serviceActivityLabel(service)}
-															</span>
-														</div>
-														<div class="flex items-start justify-between gap-4">
-															<span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
-																network
-															</span>
-															<span class="max-w-[65%] truncate text-right font-mono text-[var(--foreground-subtle)]">
-																{service.network_name}
-															</span>
-														</div>
-														<div class="flex items-start justify-between gap-4">
-															<span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
-																updated
-															</span>
-															<span class="text-right text-[var(--foreground-subtle)]">
-																{timeAgo(service.updated_at)}
-															</span>
-														</div>
-													</div>
-												</div>
-
-												<div class="flex items-center justify-between border-t border-[var(--border)] pt-4">
-													<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
-														{service.resource_kind.replaceAll("_", " ")}
-													</span>
-													<span class="text-sm font-medium text-[var(--foreground)]">
-														open service
-													</span>
-												</div>
-											</CardContent>
-										</Card>
-									</A>
+													)}
+												</For>
+											</div>
+										</CardContent>
+									</Card>
 								)}
 							</For>
 						</div>
 
-						<Show when={filteredServices().length === 0}>
+						<Show when={groupedServices().length === 0}>
 							<div class="border border-[var(--border)] bg-[var(--muted)] px-6 py-10 text-center text-sm text-[var(--muted-foreground)]">
 								no services match the current search or filter
 							</div>

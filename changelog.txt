@@ -104,6 +104,21 @@ changelog
   from the queue create ui
 - fix the existing `web/src/pages/AppDetail.tsx` jsx tree mismatch so the
   solid/vite frontend now builds successfully again
+- regroup the dashboard inventory by service group so `/` now renders services
+  inside their project/group boundary instead of one flat cross-instance list,
+  with standalone services isolated into their own sections
+- add frontend restart controls directly to the grouped service inventory on
+  the dashboard so operators can restart any listed service without opening a
+  detail page first
+- replace the old dashboard quick-create deep links to database/queue modals
+  with one unified full-page create flow at `/projects/new` for app services,
+  managed databases, and managed queues
+- extend `web/src/pages/NewApp.tsx` into a multi-mode service creator that can
+  create app services, managed databases, and rabbitmq queues, and lets
+  managed services attach to an existing group or stay standalone
+- change `web/src/pages/Databases.tsx` and `web/src/pages/Queues.tsx` so they
+  no longer own modal create flows; they now link creation into the shared
+  `/projects/new` interface and expose restart actions from the list pages
 
 0.1.13-alpha - 2026-03-09
 - add first-class `containr` subcommands for docker socket checks, long-lived api key generation, and systemd unit generation

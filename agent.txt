@@ -450,3 +450,18 @@ architectural notes:
   `pnpm --dir web build`,
   `cargo test -p containr-runtime`,
   `cargo test -p containr --features openapi-only`
+- the dashboard homepage now groups service inventory sections by group/project
+  boundary using `/api/services`, with standalone services rendered as their
+  own isolated sections instead of flattening everything into one list
+- frontend service restart is now available directly from the dashboard
+  inventory, and the database and queue list pages also expose restart actions
+- service creation on the frontend is now centralized in
+  `web/src/pages/NewApp.tsx`: the page supports `kind=app|database|queue`,
+  app-service runtime selection, managed database/queue runtime selection, and
+  optional managed-service attachment to an existing group
+- `web/src/pages/Databases.tsx` and `web/src/pages/Queues.tsx` no longer own
+  their previous modal create flows in the main ui path; creation is routed
+  into the shared `/projects/new` page so all service creation follows the
+  same full-page interface pattern
+- verified after the grouped-inventory and unified-create pass:
+  `pnpm --dir web build`
