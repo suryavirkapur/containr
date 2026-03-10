@@ -2,6 +2,13 @@ changelog
 =========
 
 0.1.14-alpha - 2026-03-09
+- fix app-service container startup failures that surfaced as
+  `sethostname: invalid argument` by sanitizing and truncating the Linux
+  hostname derived from the container id in
+  `crates/containr-runtime/src/docker.rs`
+- add a Docker-backed runtime regression test that starts a container whose id
+  is valid for Docker naming but invalid for Linux hostnames, proving the
+  sanitized-hostname path works against a real Docker daemon
 - refactor `web/src/pages/AppDetail.tsx` into three url-backed tabs
   (`overview`, `services`, `activity`) so the project detail page no longer
   renders as one long stack and tab selection survives reloads and deep links

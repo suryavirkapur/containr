@@ -375,7 +375,7 @@ impl DockerContainerManager {
 
         let container_config = ContainerCreateBody {
             image: Some(config.image.clone()),
-            hostname: Some(config.id.to_string()),
+            hostname: Some(build_container_hostname(&config.id)),
             env: Some(env),
             exposed_ports: if exposed_ports.is_empty() {
                 None
@@ -975,6 +975,39 @@ fn build_endpoint_settings(aliases: &[String]) -> EndpointSettings {
     }
 }
 
+fn build_container_hostname(id: &str) -> String {
+    let mut hostname = String::with_capacity(id.len().min(63));
+
+    for ch in id.chars() {
+        let normalized = if ch.is_ascii_alphanumeric() {
+            ch.to_ascii_lowercase()
+        } else {
+            '-'
+        };
+
+        if normalized == '-' && hostname.ends_with('-') {
+            continue;
+        }
+
+        hostname.push(normalized);
+
+        if hostname.len() >= 63 {
+            break;
+        }
+    }
+
+    while hostname.ends_with('-') {
+        hostname.pop();
+    }
+
+    let hostname = hostname.trim_start_matches('-').to_string();
+    if hostname.is_empty() {
+        "containr".to_string()
+    } else {
+        hostname
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -997,6 +1030,17 @@ mod tests {
         let state = manager.get_state("stub").await.unwrap();
         assert_eq!(state.status, "running");
         assert_eq!(state.health_status, Some("healthy".to_string()));
+    }
+
+    #[test]
+    fn build_container_hostname_sanitizes_and_truncates() {
+        let hostname = build_container_hostname(
+            "containr-12345678-service_WITH spaces-and-a-name-that-is-far-too-long-for-linux-hostnames",
+        );
+
+        assert!(hostname.starts_with("containr-12345678-service-with-spaces"));
+        assert!(hostname.len() <= 63);
+        assert!(!hostname.contains('_'));
     }
 }
 

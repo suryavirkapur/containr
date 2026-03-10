@@ -188,3 +188,52 @@ async fn test_real_docker_build_containerfile() {
     // cleanup (try to remove image via bollard)
     let _ = manager.remove_image(&image_name).await;
 }
+
+/// test that long container ids with hostname-invalid characters still start
+#[tokio::test]
+async fn test_real_container_start_sanitizes_hostname() {
+    if !is_docker_available().await {
+        eprintln!("SKIP: docker not available");
+        return;
+    }
+
+    let image_manager = ImageManager::new_headless();
+    let pull_result = image_manager.pull_image("alpine:3.20").await;
+    assert!(pull_result.is_ok(), "pull failed: {:?}", pull_result.err());
+
+    let manager = DockerContainerManager::new();
+    let container_id =
+        "containr-invalid_hostname-with-a-service-name-that-is-definitely-too-long-for-linux-hostnames-123456";
+
+    let config = DockerContainerConfig {
+        id: container_id.to_string(),
+        image: "alpine:3.20".to_string(),
+        env_vars: HashMap::new(),
+        port: 0,
+        additional_ports: Vec::new(),
+        command: Some(vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            "sleep 60".to_string(),
+        ]),
+        entrypoint: None,
+        working_dir: None,
+        memory_limit: None,
+        cpu_limit: None,
+        network: None,
+        mounts: Vec::new(),
+        additional_networks: Vec::new(),
+        health_check: None,
+        restart_policy: "no".to_string(),
+    };
+
+    let create_result = manager.create_container(config).await;
+    assert!(
+        create_result.is_ok(),
+        "container start failed: {:?}",
+        create_result.err()
+    );
+
+    let _ = manager.stop_container(container_id).await;
+    let _ = manager.remove_container(container_id).await;
+}
