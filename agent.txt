@@ -1,4 +1,10 @@
 current context:
+- `web/src/pages/AppDetail.tsx` now uses three explicit tabs:
+  `overview`, `services`, and `activity`, with `useSearchParams()` making the
+  selected tab, selected service, and selected container part of the route url
+- the project detail page no longer renders overview cards, service details,
+  live logs, container monitor, and deployments in one long column; the live
+  websocket log stream now only connects while the `activity` tab is open
 - the live project detail route had one follow-up frontend regression after the
   status refactor: `web/src/pages/AppDetail.tsx` still rendered `<Badge>` for
   the source pill but the import had been dropped, which crashed pages with
