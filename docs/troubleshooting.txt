@@ -9,13 +9,13 @@ startup issues
 
 problem: containr fails to start with "address already in use"
 
-    cause: another process is using port 80, 443, or 3000.
+    cause: another process is using port 80, 443, or 2077.
 
     solution:
         # find what's using the port
         ss -tlnp | grep :80
         ss -tlnp | grep :443
-        ss -tlnp | grep :3000
+        ss -tlnp | grep :2077
 
         # stop conflicting service
         systemctl stop nginx
@@ -377,7 +377,7 @@ getting help
    journalctl -u containr | tail -100
 
 2. search existing issues:
-   https://github.com/suryavirkapur/containr-paas/issues
+   https://github.com/suryavirkapur/containr/issues
 
 3. open new issue with:
    - containr version

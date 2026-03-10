@@ -29,17 +29,19 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             host: "0.0.0.0".to_string(),
-            port: 3000,
+            port: 2077,
         }
     }
 }
 
 /// supported metadata database backends
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum DatabaseBackendKind {
-    #[default]
     Sled,
+    #[default]
     Sqlite,
 }
 
@@ -54,7 +56,7 @@ pub struct DatabaseConfig {
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
-            backend: DatabaseBackendKind::Sled,
+            backend: DatabaseBackendKind::Sqlite,
             path: "./data/containr.db".to_string(),
         }
     }
@@ -85,7 +87,9 @@ impl Default for ProxyConfig {
 }
 
 /// load balancing algorithm for proxy upstream selection
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum LoadBalanceAlgorithm {
     #[default]
@@ -286,10 +290,10 @@ mod tests {
             r#"
 [server]
 host = "0.0.0.0"
-port = 3000
+port = 2077
 
 [database]
-backend = "sled"
+backend = "sqlite"
 path = "./data/containr.db"
 
 [proxy]
@@ -315,7 +319,7 @@ staging = true
         .unwrap();
 
         assert!(config.security.encryption_key.is_empty());
-        assert_eq!(config.database.backend, DatabaseBackendKind::Sled);
+        assert_eq!(config.database.backend, DatabaseBackendKind::Sqlite);
         assert!(config
             .security
             .cors_allowed_origins
@@ -353,7 +357,10 @@ staging = true
         );
         assert_eq!(storage.internal_endpoint(), "http://containr-storage:9000");
         assert_eq!(storage.public_endpoint(), None);
-        assert_eq!(storage.preferred_endpoint(), "http://containr-storage:9000");
+        assert_eq!(
+            storage.preferred_endpoint(),
+            "http://containr-storage:9000"
+        );
     }
 
     #[test]
@@ -367,7 +374,8 @@ staging = true
             Some("https://s3.example.com".to_string())
         );
 
-        storage.rustfs_public_hostname = Some("https://s3.example.com/".to_string());
+        storage.rustfs_public_hostname =
+            Some("https://s3.example.com/".to_string());
         assert_eq!(
             storage.public_endpoint(),
             Some("https://s3.example.com".to_string())
@@ -380,7 +388,7 @@ staging = true
             r#"
 [server]
 host = "0.0.0.0"
-port = 3000
+port = 2077
 
 [database]
 backend = "sqlite"

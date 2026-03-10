@@ -7,7 +7,7 @@ prerequisites
 -------------
 - linux server (ubuntu 22.04+ recommended)
 - macos is not supported for backend development or runtime testing
-- docker installed and running
+- docker installed and running (or use the vps install script below)
 - domain name pointing to your server
 - ports 80 and 443 open
 
@@ -16,13 +16,18 @@ step 1: install containr
 
 download and extract:
 
-    curl -fsSL https://github.com/suryavirkapur/containr-paas/releases/latest/download/containr-linux-amd64.tar.gz | tar xz
+    curl -fsSL https://github.com/suryavirkapur/containr/releases/latest/download/containr-install-vps.sh | sudo bash
+
+or download the release tarball manually:
+
+    curl -fsSL https://github.com/suryavirkapur/containr/releases/latest/download/containr-linux-amd64.tar.gz | tar xz
     sudo mv containr /usr/local/bin/
+    sudo mv containrctl /usr/local/bin/
 
 or build from source:
 
-    git clone https://github.com/suryavirkapur/containr-paas.git
-    cd containr-paas
+    git clone https://github.com/suryavirkapur/containr.git
+    cd containr
     cargo build --release
     sudo cp target/release/containr /usr/local/bin/
 
@@ -35,10 +40,10 @@ create configuration file:
     cat > /etc/containr/containr.toml << 'EOF'
     [server]
     host = "0.0.0.0"
-    port = 3000
+    port = 2077
 
     [database]
-    backend = "sled"
+    backend = "sqlite"
     path = "/var/lib/containr/containr.db"
 
     [proxy]
@@ -86,7 +91,7 @@ step 4: start containr
     containr --config /etc/containr/containr.toml
 
 containr starts three components:
-- api server on port 3000
+- api server on port 2077
 - http proxy on port 80
 - https proxy on port 443
 
@@ -95,7 +100,7 @@ step 5: create your account
 
 register via api:
 
-    curl -X POST http://localhost:3000/api/auth/register \
+    curl -X POST http://localhost:2077/api/auth/register \
       -H "content-type: application/json" \
       -d '{"email": "admin@example.com", "password": "your-password"}'
 
@@ -106,7 +111,7 @@ step 6: deploy your first app
 
 create an app:
 
-    curl -X POST http://localhost:3000/api/apps \
+    curl -X POST http://localhost:2077/api/apps \
       -H "content-type: application/json" \
       -H "authorization: bearer YOUR_JWT_TOKEN" \
       -d '{
@@ -120,12 +125,12 @@ create an app:
 
 trigger deployment:
 
-    curl -X POST http://localhost:3000/api/apps/APP_ID/deployments \
+    curl -X POST http://localhost:2077/api/apps/APP_ID/deployments \
       -H "authorization: bearer YOUR_JWT_TOKEN"
 
 your app is now deploying. check status:
 
-    curl http://localhost:3000/api/apps/APP_ID/deployments \
+    curl http://localhost:2077/api/apps/APP_ID/deployments \
       -H "authorization: bearer YOUR_JWT_TOKEN"
 
 step 7: access dashboard

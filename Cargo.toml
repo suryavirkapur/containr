@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.9-alpha"
+version = "0.1.14-alpha"
 edition = "2021"
 license = "MIT"
 authors = ["containr"]
@@ -77,6 +77,7 @@ rand = "0.9"
 base64 = "0.22"
 url = "2"
 trust-dns-resolver = { version = "0.23", default-features = false, features = ["tokio-runtime"] }
+croner = "3.0.1"
 
 # docker api
 bollard = "0.20"

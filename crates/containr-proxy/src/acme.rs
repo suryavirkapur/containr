@@ -4,8 +4,8 @@
 
 use chrono::{Duration, Utc};
 use instant_acme::{
-    Account, AuthorizationStatus, ChallengeType, Identifier, KeyAuthorization, LetsEncrypt,
-    NewAccount, NewOrder, OrderStatus,
+    Account, AuthorizationStatus, ChallengeType, Identifier, KeyAuthorization,
+    LetsEncrypt, NewAccount, NewOrder, OrderStatus,
 };
 use parking_lot::RwLock;
 use pingora_core::tls::x509::X509;
@@ -85,7 +85,10 @@ impl AcmeManager {
     }
 
     // ensures a certificate exists for a domain
-    pub async fn ensure_certificate(&self, domain: &str) -> anyhow::Result<Certificate> {
+    pub async fn ensure_certificate(
+        &self,
+        domain: &str,
+    ) -> anyhow::Result<Certificate> {
         // check if we have a valid certificate
         if let Some(mut cert) = self.db.get_certificate(domain)? {
             if let Ok(expires_at) = parse_certificate_expiry(&cert.cert_pem) {
@@ -95,8 +98,12 @@ impl AcmeManager {
                 }
             }
 
-            self.persist_certificate_files(&cert.domain, &cert.cert_pem, &cert.key_pem)
-                .await?;
+            self.persist_certificate_files(
+                &cert.domain,
+                &cert.cert_pem,
+                &cert.key_pem,
+            )
+            .await?;
 
             // check expiry (renew if less than 30 days left)
             let renewal_threshold = Utc::now() + Duration::days(30);
@@ -112,7 +119,10 @@ impl AcmeManager {
     }
 
     // requests a new certificate from let's encrypt
-    async fn request_certificate(&self, domain: &str) -> anyhow::Result<Certificate> {
+    async fn request_certificate(
+        &self,
+        domain: &str,
+    ) -> anyhow::Result<Certificate> {
         info!(domain = %domain, staging = %self.staging, "requesting certificate");
 
         // create/load acme account
@@ -135,9 +145,10 @@ impl AcmeManager {
             }
 
             // find http-01 challenge
-            let mut challenge = authz
-                .challenge(ChallengeType::Http01)
-                .ok_or_else(|| anyhow::anyhow!("http-01 challenge not found"))?;
+            let mut challenge =
+                authz.challenge(ChallengeType::Http01).ok_or_else(|| {
+                    anyhow::anyhow!("http-01 challenge not found")
+                })?;
 
             // store challenge response
             let key_auth: KeyAuthorization = challenge.key_authorization();
@@ -169,7 +180,9 @@ impl AcmeManager {
                 OrderStatus::Pending => {
                     attempts += 1;
                     if attempts > 30 {
-                        return Err(anyhow::anyhow!("order validation timeout"));
+                        return Err(anyhow::anyhow!(
+                            "order validation timeout"
+                        ));
                     }
                 }
                 _ => {}
@@ -193,7 +206,9 @@ impl AcmeManager {
                 _ => {
                     attempts += 1;
                     if attempts > 30 {
-                        return Err(anyhow::anyhow!("certificate issuance timeout"));
+                        return Err(anyhow::anyhow!(
+                            "certificate issuance timeout"
+                        ));
                     }
                 }
             }
@@ -262,8 +277,12 @@ impl AcmeManager {
     pub async fn sync_stored_certificates_to_disk(&self) -> anyhow::Result<()> {
         let certs = self.db.list_certificates()?;
         for cert in certs {
-            self.persist_certificate_files(&cert.domain, &cert.cert_pem, &cert.key_pem)
-                .await?;
+            self.persist_certificate_files(
+                &cert.domain,
+                &cert.cert_pem,
+                &cert.key_pem,
+            )
+            .await?;
         }
 
         Ok(())
@@ -284,9 +303,14 @@ impl AcmeManager {
         if account_creds_path.exists() {
             match fs::read_to_string(&account_creds_path).await {
                 Ok(json_str) => {
-                    match serde_json::from_str::<instant_acme::AccountCredentials>(&json_str) {
+                    match serde_json::from_str::<instant_acme::AccountCredentials>(
+                        &json_str,
+                    ) {
                         Ok(credentials) => match Account::builder() {
-                            Ok(builder) => match builder.from_credentials(credentials).await {
+                            Ok(builder) => match builder
+                                .from_credentials(credentials)
+                                .await
+                            {
                                 Ok(account) => {
                                     info!("restored acme account from saved credentials");
                                     return Ok(account);
@@ -338,18 +362,22 @@ impl AcmeManager {
     }
 }
 
-fn parse_certificate_expiry(cert_chain: &str) -> anyhow::Result<chrono::DateTime<Utc>> {
+fn parse_certificate_expiry(
+    cert_chain: &str,
+) -> anyhow::Result<chrono::DateTime<Utc>> {
     let mut certs = X509::stack_from_pem(cert_chain.as_bytes())?;
     let leaf = certs
         .drain(..)
         .next()
         .ok_or_else(|| anyhow::anyhow!("certificate chain is empty"))?;
     let not_after = leaf.not_after().to_string();
-    let not_after = not_after
-        .strip_suffix(" GMT")
-        .ok_or_else(|| anyhow::anyhow!("unexpected certificate expiry format"))?;
-    let expires_at = chrono::NaiveDateTime::parse_from_str(not_after, "%b %e %H:%M:%S %Y")?;
-    let expires_at = chrono::DateTime::<Utc>::from_naive_utc_and_offset(expires_at, Utc);
+    let not_after = not_after.strip_suffix(" GMT").ok_or_else(|| {
+        anyhow::anyhow!("unexpected certificate expiry format")
+    })?;
+    let expires_at =
+        chrono::NaiveDateTime::parse_from_str(not_after, "%b %e %H:%M:%S %Y")?;
+    let expires_at =
+        chrono::DateTime::<Utc>::from_naive_utc_and_offset(expires_at, Utc);
 
     Ok(expires_at)
 }

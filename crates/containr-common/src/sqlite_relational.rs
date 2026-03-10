@@ -2,6 +2,25 @@ use std::collections::HashSet;
 
 use super::*;
 
+struct SqliteMigration {
+    version: i64,
+    name: &'static str,
+    sql: &'static str,
+}
+
+const SQLITE_MIGRATIONS: &[SqliteMigration] = &[
+    SqliteMigration {
+        version: 1,
+        name: "001_core.sql",
+        sql: include_str!("../migrations/001_core.sql"),
+    },
+    SqliteMigration {
+        version: 2,
+        name: "002_platform_services.sql",
+        sql: include_str!("../migrations/002_platform_services.sql"),
+    },
+];
+
 pub(crate) struct SqliteDatabase {
     conn: Mutex<Connection>,
 }
@@ -9,7 +28,7 @@ pub(crate) struct SqliteDatabase {
 impl SqliteDatabase {
     pub(crate) fn open(path: &str) -> Result<Self> {
         ensure_parent_dir(path)?;
-        let connection = Connection::open(path)?;
+        let mut connection = Connection::open(path)?;
         connection.busy_timeout(StdDuration::from_secs(5))?;
         let legacy_tables = detect_legacy_json_tables(&connection)?;
         if !legacy_tables.is_empty() {
@@ -19,325 +38,13 @@ impl SqliteDatabase {
             )));
         }
 
-        connection.execute_batch(
-            r#"
-            pragma journal_mode = wal;
-            pragma synchronous = normal;
-            pragma foreign_keys = on;
-            pragma user_version = 8;
-
-            create table if not exists users (
-                id text primary key,
-                email text not null unique,
-                password_hash text,
-                github_id integer unique,
-                github_username text,
-                github_access_token text,
-                is_admin integer not null default 0,
-                created_at text not null,
-                updated_at text not null
-            );
-            create index if not exists users_github_id_idx on users (github_id);
-
-            create table if not exists apps (
-                id text primary key,
-                owner_id text not null,
-                name text not null,
-                github_url text not null,
-                branch text not null,
-                domain text,
-                port integer not null,
-                rollout_strategy text not null,
-                created_at text not null,
-                updated_at text not null
-            );
-            create index if not exists apps_owner_idx on apps (owner_id);
-            create index if not exists apps_source_idx on apps (github_url, branch);
-
-            create table if not exists app_domains (
-                app_id text not null,
-                domain text not null unique,
-                position integer not null,
-                primary key (app_id, domain),
-                foreign key (app_id) references apps(id) on delete cascade
-            );
-            create index if not exists app_domains_app_idx
-                on app_domains (app_id, position);
-
-            create table if not exists app_env_vars (
-                app_id text not null,
-                position integer not null,
-                key text not null,
-                value text not null,
-                secret integer not null,
-                primary key (app_id, position),
-                foreign key (app_id) references apps(id) on delete cascade
-            );
-
-            create table if not exists services (
-                id text primary key,
-                app_id text not null,
-                name text not null,
-                image text not null,
-                service_type text,
-                port integer not null,
-                expose_http integer not null default 0,
-                replicas integer not null,
-                memory_limit integer,
-                cpu_limit real,
-                health_check_path text,
-                health_check_interval_secs integer,
-                health_check_timeout_secs integer,
-                health_check_retries integer,
-                restart_policy text not null,
-                build_context text,
-                dockerfile_path text,
-                build_target text,
-                working_dir text,
-                created_at text not null,
-                updated_at text not null,
-                foreign key (app_id) references apps(id) on delete cascade
-            );
-            create unique index if not exists services_app_name_idx on services (app_id, name);
-            create index if not exists services_app_idx on services (app_id, name);
-
-            create table if not exists service_dependencies (
-                service_id text not null,
-                position integer not null,
-                dependency_name text not null,
-                primary key (service_id, position),
-                foreign key (service_id) references services(id) on delete cascade
-            );
-
-            create table if not exists service_additional_ports (
-                service_id text not null,
-                position integer not null,
-                port integer not null,
-                primary key (service_id, position),
-                foreign key (service_id) references services(id) on delete cascade
-            );
-
-            create table if not exists service_command_args (
-                service_id text not null,
-                position integer not null,
-                value text not null,
-                primary key (service_id, position),
-                foreign key (service_id) references services(id) on delete cascade
-            );
-
-            create table if not exists service_entrypoint_args (
-                service_id text not null,
-                position integer not null,
-                value text not null,
-                primary key (service_id, position),
-                foreign key (service_id) references services(id) on delete cascade
-            );
-
-            create table if not exists service_registry_auth (
-                service_id text primary key,
-                server text,
-                username text not null,
-                password text not null,
-                foreign key (service_id) references services(id) on delete cascade
-            );
-
-            create table if not exists service_env_vars (
-                service_id text not null,
-                position integer not null,
-                key text not null,
-                value text not null,
-                secret integer not null,
-                primary key (service_id, position),
-                foreign key (service_id) references services(id) on delete cascade
-            );
-
-            create table if not exists service_domains (
-                service_id text not null,
-                domain text not null unique,
-                position integer not null,
-                primary key (service_id, domain),
-                foreign key (service_id) references services(id) on delete cascade
-            );
-            create index if not exists service_domains_service_idx
-                on service_domains (service_id, position);
-
-            create table if not exists service_build_args (
-                service_id text not null,
-                position integer not null,
-                key text not null,
-                value text not null,
-                secret integer not null,
-                primary key (service_id, position),
-                foreign key (service_id) references services(id) on delete cascade
-            );
-
-            create table if not exists service_mounts (
-                service_id text not null,
-                position integer not null,
-                name text not null,
-                target text not null,
-                read_only integer not null,
-                primary key (service_id, position),
-                foreign key (service_id) references services(id) on delete cascade
-            );
-
-            create table if not exists deployments (
-                id text primary key,
-                app_id text not null,
-                commit_sha text not null,
-                commit_message text,
-                branch text not null default 'main',
-                source_url text,
-                rollout_strategy text not null default 'stop_first',
-                rollback_from_deployment_id text,
-                status text not null,
-                container_id text,
-                image_id text,
-                started_at text,
-                finished_at text,
-                created_at text not null
-            );
-            create index if not exists deployments_app_created_idx
-                on deployments (app_id, created_at desc);
-
-            create table if not exists deployment_logs (
-                deployment_id text not null,
-                idx integer not null,
-                line text not null,
-                primary key (deployment_id, idx),
-                foreign key (deployment_id) references deployments(id) on delete cascade
-            );
-            create index if not exists deployment_logs_deployment_idx
-                on deployment_logs (deployment_id, idx);
-
-            create table if not exists service_deployments (
-                id text primary key,
-                service_id text not null,
-                deployment_id text not null,
-                replica_index integer not null,
-                status text not null,
-                container_id text,
-                image_id text,
-                health text not null,
-                started_at text,
-                finished_at text,
-                created_at text not null,
-                foreign key (deployment_id) references deployments(id) on delete cascade
-            );
-            create index if not exists service_deployments_deployment_idx
-                on service_deployments (deployment_id, service_id, replica_index);
-            create index if not exists service_deployments_service_idx
-                on service_deployments (service_id, created_at desc);
-
-            create table if not exists service_deployment_logs (
-                service_deployment_id text not null,
-                idx integer not null,
-                line text not null,
-                primary key (service_deployment_id, idx),
-                foreign key (service_deployment_id) references service_deployments(id)
-                    on delete cascade
-            );
-
-            create table if not exists certificates (
-                domain text primary key,
-                id text not null unique,
-                cert_pem text not null,
-                key_pem text not null,
-                expires_at text not null,
-                created_at text not null
-            );
-
-            create table if not exists managed_databases (
-                id text primary key,
-                owner_id text not null,
-                name text not null,
-                db_type text not null,
-                version text not null,
-                container_id text,
-                volume_name text not null,
-                host_data_path text not null,
-                internal_host text not null,
-                port integer not null,
-                external_port integer,
-                pitr_enabled integer not null default 0,
-                pitr_last_base_backup_at text,
-                pitr_last_base_backup_label text,
-                proxy_enabled integer not null default 0,
-                proxy_external_port integer,
-                username text not null,
-                password text not null,
-                database_name text not null,
-                memory_limit integer not null,
-                cpu_limit real not null,
-                status text not null,
-                created_at text not null,
-                updated_at text not null
-            );
-            create index if not exists managed_databases_owner_created_idx
-                on managed_databases (owner_id, created_at desc);
-
-            create table if not exists managed_queues (
-                id text primary key,
-                owner_id text not null,
-                name text not null,
-                queue_type text not null,
-                version text not null,
-                container_id text,
-                volume_name text not null,
-                host_data_path text not null,
-                internal_host text not null,
-                port integer not null,
-                external_port integer,
-                username text not null,
-                password text not null,
-                memory_limit integer not null,
-                cpu_limit real not null,
-                status text not null,
-                created_at text not null,
-                updated_at text not null
-            );
-            create index if not exists managed_queues_owner_created_idx
-                on managed_queues (owner_id, created_at desc);
-
-            create table if not exists storage_buckets (
-                id text primary key,
-                owner_id text not null,
-                name text not null,
-                access_key text not null,
-                secret_key text not null,
-                size_bytes integer not null,
-                endpoint text not null,
-                created_at text not null
-            );
-            create index if not exists storage_buckets_owner_created_idx
-                on storage_buckets (owner_id, created_at desc);
-
-            create table if not exists github_apps (
-                owner_id text primary key,
-                id text not null unique,
-                app_id integer not null,
-                app_name text not null,
-                client_id text not null,
-                client_secret text not null,
-                private_key text not null,
-                webhook_secret text not null,
-                html_url text not null,
-                created_at text not null,
-                updated_at text not null
-            );
-            create index if not exists github_apps_app_id_idx on github_apps (app_id);
-
-            create table if not exists github_app_installations (
-                owner_id text not null,
-                installation_id integer not null,
-                account_login text not null,
-                account_type text not null,
-                repository_count integer,
-                created_at text not null,
-                primary key (owner_id, installation_id),
-                foreign key (owner_id) references github_apps(owner_id) on delete cascade
-            );
-            "#,
+        apply_sqlite_pragmas(&connection)?;
+        apply_sqlite_migrations(&mut connection)?;
+        ensure_column(
+            &connection,
+            MANAGED_DATABASES_TABLE,
+            "group_id",
+            "text",
         )?;
         ensure_column(
             &connection,
@@ -381,6 +88,7 @@ impl SqliteDatabase {
             "proxy_external_port",
             "integer",
         )?;
+        ensure_column(&connection, MANAGED_QUEUES_TABLE, "group_id", "text")?;
         ensure_column(
             &connection,
             MANAGED_QUEUES_TABLE,
@@ -398,6 +106,7 @@ impl SqliteDatabase {
         ensure_column(&connection, SERVICES_TABLE, "dockerfile_path", "text")?;
         ensure_column(&connection, SERVICES_TABLE, "build_target", "text")?;
         ensure_column(&connection, SERVICES_TABLE, "working_dir", "text")?;
+        ensure_column(&connection, SERVICES_TABLE, "schedule", "text")?;
         ensure_column(
             &connection,
             DEPLOYMENTS_TABLE,
@@ -417,19 +126,30 @@ impl SqliteDatabase {
             "rollback_from_deployment_id",
             "text",
         )?;
-        ensure_column(&connection, SERVICE_DEPLOYMENTS_TABLE, "image_id", "text")?;
+        ensure_column(
+            &connection,
+            SERVICE_DEPLOYMENTS_TABLE,
+            "image_id",
+            "text",
+        )?;
 
         Ok(Self {
             conn: Mutex::new(connection),
         })
     }
 
-    fn with_conn<T>(&self, op: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+    fn with_conn<T>(
+        &self,
+        op: impl FnOnce(&Connection) -> Result<T>,
+    ) -> Result<T> {
         let conn = self.conn.lock();
         op(&conn)
     }
 
-    fn with_tx<T>(&self, op: impl FnOnce(&Transaction<'_>) -> Result<T>) -> Result<T> {
+    fn with_tx<T>(
+        &self,
+        op: impl FnOnce(&Transaction<'_>) -> Result<T>,
+    ) -> Result<T> {
         let mut conn = self.conn.lock();
         let tx = conn.transaction()?;
         let value = op(&tx)?;
@@ -437,7 +157,11 @@ impl SqliteDatabase {
         Ok(value)
     }
 
-    fn load_user_by_id_text(&self, conn: &Connection, id: &str) -> Result<Option<User>> {
+    fn load_user_by_id_text(
+        &self,
+        conn: &Connection,
+        id: &str,
+    ) -> Result<Option<User>> {
         let record = conn
             .query_row(
                 &format!(
@@ -480,7 +204,11 @@ impl SqliteDatabase {
         }))
     }
 
-    fn load_app_domains(&self, conn: &Connection, app_id: &str) -> Result<Vec<String>> {
+    fn load_app_domains(
+        &self,
+        conn: &Connection,
+        app_id: &str,
+    ) -> Result<Vec<String>> {
         let mut statement = conn.prepare(&format!(
             "select domain from {APP_DOMAINS_TABLE}
              where app_id = ?1
@@ -496,7 +224,11 @@ impl SqliteDatabase {
         Ok(domains)
     }
 
-    fn load_app_env_vars(&self, conn: &Connection, app_id: &str) -> Result<Vec<EnvVar>> {
+    fn load_app_env_vars(
+        &self,
+        conn: &Connection,
+        app_id: &str,
+    ) -> Result<Vec<EnvVar>> {
         let mut statement = conn.prepare(&format!(
             "select key, value, secret from {APP_ENV_VARS_TABLE}
              where app_id = ?1
@@ -560,7 +292,11 @@ impl SqliteDatabase {
         Ok(mounts)
     }
 
-    fn load_service_env_vars(&self, conn: &Connection, service_id: &str) -> Result<Vec<EnvVar>> {
+    fn load_service_env_vars(
+        &self,
+        conn: &Connection,
+        service_id: &str,
+    ) -> Result<Vec<EnvVar>> {
         let mut statement = conn.prepare(&format!(
             "select key, value, secret from {SERVICE_ENV_VARS_TABLE}
              where service_id = ?1
@@ -580,7 +316,11 @@ impl SqliteDatabase {
         Ok(env_vars)
     }
 
-    fn load_service_domains(&self, conn: &Connection, service_id: &str) -> Result<Vec<String>> {
+    fn load_service_domains(
+        &self,
+        conn: &Connection,
+        service_id: &str,
+    ) -> Result<Vec<String>> {
         let mut statement = conn.prepare(&format!(
             "select domain from {SERVICE_DOMAINS_TABLE}
              where service_id = ?1
@@ -634,7 +374,10 @@ impl SqliteDatabase {
         let mut ports = Vec::new();
 
         while let Some(row) = rows.next()? {
-            ports.push(parse_u16(row.get::<_, i64>(0)?, "service additional port")?);
+            ports.push(parse_u16(
+                row.get::<_, i64>(0)?,
+                "service additional port",
+            )?);
         }
 
         Ok(ports)
@@ -700,8 +443,8 @@ impl SqliteDatabase {
                         memory_limit, cpu_limit,
                         health_check_path, health_check_interval_secs,
                         health_check_timeout_secs, health_check_retries, restart_policy,
-                        build_context, dockerfile_path, build_target, working_dir, created_at,
-                        updated_at
+                        build_context, dockerfile_path, build_target, working_dir, schedule,
+                        created_at, updated_at
                      from {SERVICES_TABLE}
                      where id = ?1"
                 ),
@@ -727,8 +470,9 @@ impl SqliteDatabase {
                         row.get::<_, Option<String>>(16)?,
                         row.get::<_, Option<String>>(17)?,
                         row.get::<_, Option<String>>(18)?,
-                        row.get::<_, String>(19)?,
+                        row.get::<_, Option<String>>(19)?,
                         row.get::<_, String>(20)?,
+                        row.get::<_, String>(21)?,
                     ))
                 },
             )
@@ -739,12 +483,20 @@ impl SqliteDatabase {
         };
 
         let health_check = match (record.10, record.11, record.12, record.13) {
-            (Some(path), Some(interval), Some(timeout), Some(retries)) => Some(HealthCheck {
-                path,
-                interval_secs: parse_u32(interval, "health_check_interval_secs")?,
-                timeout_secs: parse_u32(timeout, "health_check_timeout_secs")?,
-                retries: parse_u32(retries, "health_check_retries")?,
-            }),
+            (Some(path), Some(interval), Some(timeout), Some(retries)) => {
+                Some(HealthCheck {
+                    path,
+                    interval_secs: parse_u32(
+                        interval,
+                        "health_check_interval_secs",
+                    )?,
+                    timeout_secs: parse_u32(
+                        timeout,
+                        "health_check_timeout_secs",
+                    )?,
+                    retries: parse_u32(retries, "health_check_retries")?,
+                })
+            }
             _ => None,
         };
 
@@ -753,14 +505,25 @@ impl SqliteDatabase {
             app_id: parse_uuid(record.1)?,
             name: record.2,
             image: record.3,
-            service_type: record.4.map(decode_enum).transpose()?.unwrap_or_else(|| {
-                ContainerService::infer_service_type(int_to_bool(record.6), record.5 as u16)
-            }),
+            service_type: record
+                .4
+                .map(decode_enum)
+                .transpose()?
+                .unwrap_or_else(|| {
+                    ContainerService::infer_service_type(
+                        int_to_bool(record.6),
+                        record.5 as u16,
+                    )
+                }),
             port: parse_u16(record.5, "service port")?,
             expose_http: int_to_bool(record.6),
-            additional_ports: self.load_service_additional_ports(conn, service_id)?,
+            additional_ports: self
+                .load_service_additional_ports(conn, service_id)?,
             replicas: parse_u32(record.7, "service replicas")?,
-            memory_limit: transpose_i64_to_u64(record.8, "service memory_limit")?,
+            memory_limit: transpose_i64_to_u64(
+                record.8,
+                "service memory_limit",
+            )?,
             cpu_limit: record.9,
             depends_on: self.load_service_dependencies(conn, service_id)?,
             env_vars: self.load_service_env_vars(conn, service_id)?,
@@ -768,15 +531,24 @@ impl SqliteDatabase {
             dockerfile_path: record.16,
             build_target: record.17,
             build_args: self.load_service_build_args(conn, service_id)?,
-            command: self.load_service_args(conn, SERVICE_COMMAND_ARGS_TABLE, service_id)?,
-            entrypoint: self.load_service_args(conn, SERVICE_ENTRYPOINT_ARGS_TABLE, service_id)?,
+            command: self.load_service_args(
+                conn,
+                SERVICE_COMMAND_ARGS_TABLE,
+                service_id,
+            )?,
+            entrypoint: self.load_service_args(
+                conn,
+                SERVICE_ENTRYPOINT_ARGS_TABLE,
+                service_id,
+            )?,
             working_dir: record.18,
+            schedule: record.19,
             registry_auth: self.load_service_registry_auth(conn, service_id)?,
             mounts: self.load_service_mounts(conn, service_id)?,
             health_check,
             restart_policy: decode_enum(record.14)?,
-            created_at: parse_datetime(record.19)?,
-            updated_at: parse_datetime(record.20)?,
+            created_at: parse_datetime(record.20)?,
+            updated_at: parse_datetime(record.21)?,
             domains: self.load_service_domains(conn, service_id)?,
         }))
     }
@@ -800,7 +572,9 @@ impl SqliteDatabase {
 
         let mut services = Vec::new();
         for service_id in service_ids {
-            if let Some(service) = self.load_service_by_id_text(conn, &service_id)? {
+            if let Some(service) =
+                self.load_service_by_id_text(conn, &service_id)?
+            {
                 services.push(service);
             }
         }
@@ -808,7 +582,11 @@ impl SqliteDatabase {
         Ok(services)
     }
 
-    fn load_app_by_id_text(&self, conn: &Connection, app_id: &str) -> Result<Option<App>> {
+    fn load_app_by_id_text(
+        &self,
+        conn: &Connection,
+        app_id: &str,
+    ) -> Result<Option<App>> {
         let record = conn
             .query_row(
                 &format!(
@@ -916,12 +694,16 @@ impl SqliteDatabase {
             id: parse_uuid(record.0)?,
             service_id: parse_uuid(record.1)?,
             deployment_id: parse_uuid(record.2)?,
-            replica_index: parse_u32(record.3, "service deployment replica_index")?,
+            replica_index: parse_u32(
+                record.3,
+                "service deployment replica_index",
+            )?,
             status: decode_enum(record.4)?,
             container_id: record.5,
             image_id: record.6,
             health: decode_enum(record.7)?,
-            logs: self.load_service_deployment_logs(conn, service_deployment_id)?,
+            logs: self
+                .load_service_deployment_logs(conn, service_deployment_id)?,
             started_at: parse_optional_datetime(record.8)?,
             finished_at: parse_optional_datetime(record.9)?,
             created_at: parse_datetime(record.10)?,
@@ -947,7 +729,9 @@ impl SqliteDatabase {
 
         let mut deployments = Vec::new();
         for id in ids {
-            if let Some(deployment) = self.load_service_deployment_by_id_text(conn, &id)? {
+            if let Some(deployment) =
+                self.load_service_deployment_by_id_text(conn, &id)?
+            {
                 deployments.push(deployment);
             }
         }
@@ -974,7 +758,9 @@ impl SqliteDatabase {
 
         let mut deployments = Vec::new();
         for id in ids {
-            if let Some(deployment) = self.load_service_deployment_by_id_text(conn, &id)? {
+            if let Some(deployment) =
+                self.load_service_deployment_by_id_text(conn, &id)?
+            {
                 deployments.push(deployment);
             }
         }
@@ -1091,11 +877,12 @@ impl SqliteDatabase {
         let record = conn
             .query_row(
                 &format!(
-                    "select id, owner_id, name, db_type, version, container_id, volume_name,
-                        host_data_path, internal_host, port, external_port, pitr_enabled,
-                        pitr_last_base_backup_at, pitr_last_base_backup_label, proxy_enabled,
-                        proxy_external_port, username, password, database_name, memory_limit,
-                        cpu_limit, status, created_at, updated_at
+                    "select id, owner_id, group_id, name, db_type, version, container_id,
+                        volume_name, host_data_path, internal_host, port, external_port,
+                        pitr_enabled, pitr_last_base_backup_at,
+                        pitr_last_base_backup_label, proxy_enabled, proxy_external_port,
+                        username, password, database_name, memory_limit, cpu_limit, status,
+                        created_at, updated_at
                      from {MANAGED_DATABASES_TABLE}
                      where id = ?1"
                 ),
@@ -1104,28 +891,29 @@ impl SqliteDatabase {
                     Ok((
                         row.get::<_, String>(0)?,
                         row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(2)?,
                         row.get::<_, String>(3)?,
                         row.get::<_, String>(4)?,
-                        row.get::<_, Option<String>>(5)?,
-                        row.get::<_, String>(6)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, Option<String>>(6)?,
                         row.get::<_, String>(7)?,
                         row.get::<_, String>(8)?,
-                        row.get::<_, i64>(9)?,
-                        row.get::<_, Option<i64>>(10)?,
-                        row.get::<_, i64>(11)?,
-                        row.get::<_, Option<String>>(12)?,
+                        row.get::<_, String>(9)?,
+                        row.get::<_, i64>(10)?,
+                        row.get::<_, Option<i64>>(11)?,
+                        row.get::<_, i64>(12)?,
                         row.get::<_, Option<String>>(13)?,
-                        row.get::<_, i64>(14)?,
-                        row.get::<_, Option<i64>>(15)?,
-                        row.get::<_, String>(16)?,
+                        row.get::<_, Option<String>>(14)?,
+                        row.get::<_, i64>(15)?,
+                        row.get::<_, Option<i64>>(16)?,
                         row.get::<_, String>(17)?,
                         row.get::<_, String>(18)?,
-                        row.get::<_, i64>(19)?,
-                        row.get::<_, f64>(20)?,
-                        row.get::<_, String>(21)?,
+                        row.get::<_, String>(19)?,
+                        row.get::<_, i64>(20)?,
+                        row.get::<_, f64>(21)?,
                         row.get::<_, String>(22)?,
                         row.get::<_, String>(23)?,
+                        row.get::<_, String>(24)?,
                     ))
                 },
             )
@@ -1138,33 +926,40 @@ impl SqliteDatabase {
         Ok(Some(ManagedDatabase {
             id: parse_uuid(record.0)?,
             owner_id: parse_uuid(record.1)?,
-            name: record.2,
-            db_type: decode_enum(record.3)?,
-            version: record.4,
-            container_id: record.5,
-            volume_name: record.6,
-            host_data_path: record.7,
-            internal_host: record.8,
-            port: parse_u16(record.9, "managed database port")?,
-            external_port: transpose_i64_to_u16(record.10, "managed database external_port")?,
-            pitr_enabled: int_to_bool(record.11),
-            pitr_last_base_backup_at: parse_optional_datetime(record.12)?,
-            pitr_last_base_backup_label: record.13,
-            proxy_enabled: int_to_bool(record.14),
+            group_id: transpose_string_to_uuid(record.2)?,
+            name: record.3,
+            db_type: decode_enum(record.4)?,
+            version: record.5,
+            container_id: record.6,
+            volume_name: record.7,
+            host_data_path: record.8,
+            internal_host: record.9,
+            port: parse_u16(record.10, "managed database port")?,
+            external_port: transpose_i64_to_u16(
+                record.11,
+                "managed database external_port",
+            )?,
+            pitr_enabled: int_to_bool(record.12),
+            pitr_last_base_backup_at: parse_optional_datetime(record.13)?,
+            pitr_last_base_backup_label: record.14,
+            proxy_enabled: int_to_bool(record.15),
             proxy_external_port: transpose_i64_to_u16(
-                record.15,
+                record.16,
                 "managed database proxy_external_port",
             )?,
             credentials: crate::managed_services::DatabaseCredentials {
-                username: record.16,
-                password: record.17,
-                database_name: record.18,
+                username: record.17,
+                password: record.18,
+                database_name: record.19,
             },
-            memory_limit: parse_u64(record.19, "managed database memory_limit")?,
-            cpu_limit: record.20,
-            status: decode_enum(record.21)?,
-            created_at: parse_datetime(record.22)?,
-            updated_at: parse_datetime(record.23)?,
+            memory_limit: parse_u64(
+                record.20,
+                "managed database memory_limit",
+            )?,
+            cpu_limit: record.21,
+            status: decode_enum(record.22)?,
+            created_at: parse_datetime(record.23)?,
+            updated_at: parse_datetime(record.24)?,
         }))
     }
 
@@ -1176,9 +971,10 @@ impl SqliteDatabase {
         let record = conn
             .query_row(
                 &format!(
-                    "select id, owner_id, name, queue_type, version, container_id, volume_name,
-                        host_data_path, internal_host, port, external_port, username, password,
-                        memory_limit, cpu_limit, status, created_at, updated_at
+                    "select id, owner_id, group_id, name, queue_type, version, container_id,
+                        volume_name, host_data_path, internal_host, port, external_port,
+                        username, password, memory_limit, cpu_limit, status, created_at,
+                        updated_at
                      from {MANAGED_QUEUES_TABLE}
                      where id = ?1"
                 ),
@@ -1187,22 +983,23 @@ impl SqliteDatabase {
                     Ok((
                         row.get::<_, String>(0)?,
                         row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(2)?,
                         row.get::<_, String>(3)?,
                         row.get::<_, String>(4)?,
-                        row.get::<_, Option<String>>(5)?,
-                        row.get::<_, String>(6)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, Option<String>>(6)?,
                         row.get::<_, String>(7)?,
                         row.get::<_, String>(8)?,
-                        row.get::<_, i64>(9)?,
-                        row.get::<_, Option<i64>>(10)?,
-                        row.get::<_, String>(11)?,
+                        row.get::<_, String>(9)?,
+                        row.get::<_, i64>(10)?,
+                        row.get::<_, Option<i64>>(11)?,
                         row.get::<_, String>(12)?,
-                        row.get::<_, i64>(13)?,
-                        row.get::<_, f64>(14)?,
-                        row.get::<_, String>(15)?,
+                        row.get::<_, String>(13)?,
+                        row.get::<_, i64>(14)?,
+                        row.get::<_, f64>(15)?,
                         row.get::<_, String>(16)?,
                         row.get::<_, String>(17)?,
+                        row.get::<_, String>(18)?,
                     ))
                 },
             )
@@ -1215,24 +1012,28 @@ impl SqliteDatabase {
         Ok(Some(ManagedQueue {
             id: parse_uuid(record.0)?,
             owner_id: parse_uuid(record.1)?,
-            name: record.2,
-            queue_type: decode_enum(record.3)?,
-            version: record.4,
-            container_id: record.5,
-            volume_name: record.6,
-            host_data_path: record.7,
-            internal_host: record.8,
-            port: parse_u16(record.9, "managed queue port")?,
-            external_port: transpose_i64_to_u16(record.10, "managed queue external_port")?,
+            group_id: transpose_string_to_uuid(record.2)?,
+            name: record.3,
+            queue_type: decode_enum(record.4)?,
+            version: record.5,
+            container_id: record.6,
+            volume_name: record.7,
+            host_data_path: record.8,
+            internal_host: record.9,
+            port: parse_u16(record.10, "managed queue port")?,
+            external_port: transpose_i64_to_u16(
+                record.11,
+                "managed queue external_port",
+            )?,
             credentials: crate::managed_services::QueueCredentials {
-                username: record.11,
-                password: record.12,
+                username: record.12,
+                password: record.13,
             },
-            memory_limit: parse_u64(record.13, "managed queue memory_limit")?,
-            cpu_limit: record.14,
-            status: decode_enum(record.15)?,
-            created_at: parse_datetime(record.16)?,
-            updated_at: parse_datetime(record.17)?,
+            memory_limit: parse_u64(record.14, "managed queue memory_limit")?,
+            cpu_limit: record.15,
+            status: decode_enum(record.16)?,
+            created_at: parse_datetime(record.17)?,
+            updated_at: parse_datetime(record.18)?,
         }))
     }
 
@@ -1360,7 +1161,11 @@ impl SqliteDatabase {
         }))
     }
 
-    fn upsert_service_tx(&self, tx: &Transaction<'_>, service: &ContainerService) -> Result<()> {
+    fn upsert_service_tx(
+        &self,
+        tx: &Transaction<'_>,
+        service: &ContainerService,
+    ) -> Result<()> {
         let (health_path, health_interval, health_timeout, health_retries) =
             match &service.health_check {
                 Some(health_check) => (
@@ -1378,11 +1183,11 @@ impl SqliteDatabase {
                     id, app_id, name, image, service_type, port, expose_http, replicas, memory_limit,
                     cpu_limit, health_check_path, health_check_interval_secs,
                     health_check_timeout_secs, health_check_retries, restart_policy,
-                    build_context, dockerfile_path, build_target, working_dir, created_at,
-                    updated_at
+                    build_context, dockerfile_path, build_target, working_dir, schedule,
+                    created_at, updated_at
                 ) values (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                    ?17, ?18, ?19, ?20, ?21
+                    ?17, ?18, ?19, ?20, ?21, ?22
                 )
                 on conflict(id) do update set
                     app_id = excluded.app_id,
@@ -1403,6 +1208,7 @@ impl SqliteDatabase {
                     dockerfile_path = excluded.dockerfile_path,
                     build_target = excluded.build_target,
                     working_dir = excluded.working_dir,
+                    schedule = excluded.schedule,
                     created_at = excluded.created_at,
                     updated_at = excluded.updated_at"
             ),
@@ -1426,13 +1232,18 @@ impl SqliteDatabase {
                 service.dockerfile_path.as_deref(),
                 service.build_target.as_deref(),
                 service.working_dir.as_deref(),
+                service.schedule.as_deref(),
                 service.created_at.to_rfc3339(),
                 service.updated_at.to_rfc3339(),
             ],
         )?;
 
         self.replace_service_dependencies(tx, service.id, &service.depends_on)?;
-        self.replace_service_additional_ports(tx, service.id, &service.additional_ports)?;
+        self.replace_service_additional_ports(
+            tx,
+            service.id,
+            &service.additional_ports,
+        )?;
         self.replace_service_env_vars(tx, service.id, &service.env_vars)?;
         self.replace_service_domains(tx, service.id, &service.domains)?;
         self.replace_service_build_args(tx, service.id, &service.build_args)?;
@@ -1448,7 +1259,11 @@ impl SqliteDatabase {
             service.id,
             service.entrypoint.as_deref(),
         )?;
-        self.replace_service_registry_auth(tx, service.id, service.registry_auth.as_ref())?;
+        self.replace_service_registry_auth(
+            tx,
+            service.id,
+            service.registry_auth.as_ref(),
+        )?;
         self.replace_service_mounts(tx, service.id, &service.mounts)
     }
 
@@ -1460,7 +1275,9 @@ impl SqliteDatabase {
     ) -> Result<()> {
         let service_id = service_id.to_string();
         tx.execute(
-            &format!("delete from {SERVICE_ENV_VARS_TABLE} where service_id = ?1"),
+            &format!(
+                "delete from {SERVICE_ENV_VARS_TABLE} where service_id = ?1"
+            ),
             params![&service_id],
         )?;
 
@@ -1492,7 +1309,9 @@ impl SqliteDatabase {
     ) -> Result<()> {
         let service_id = service_id.to_string();
         tx.execute(
-            &format!("delete from {SERVICE_BUILD_ARGS_TABLE} where service_id = ?1"),
+            &format!(
+                "delete from {SERVICE_BUILD_ARGS_TABLE} where service_id = ?1"
+            ),
             params![&service_id],
         )?;
 
@@ -1524,7 +1343,9 @@ impl SqliteDatabase {
     ) -> Result<()> {
         let service_id = service_id.to_string();
         tx.execute(
-            &format!("delete from {SERVICE_DOMAINS_TABLE} where service_id = ?1"),
+            &format!(
+                "delete from {SERVICE_DOMAINS_TABLE} where service_id = ?1"
+            ),
             params![&service_id],
         )?;
 
@@ -1549,7 +1370,9 @@ impl SqliteDatabase {
     ) -> Result<()> {
         let service_id = service_id.to_string();
         tx.execute(
-            &format!("delete from {SERVICE_DEPENDENCIES_TABLE} where service_id = ?1"),
+            &format!(
+                "delete from {SERVICE_DEPENDENCIES_TABLE} where service_id = ?1"
+            ),
             params![&service_id],
         )?;
 
@@ -1601,7 +1424,9 @@ impl SqliteDatabase {
     ) -> Result<()> {
         let service_id = service_id.to_string();
         tx.execute(
-            &format!("delete from {SERVICE_MOUNTS_TABLE} where service_id = ?1"),
+            &format!(
+                "delete from {SERVICE_MOUNTS_TABLE} where service_id = ?1"
+            ),
             params![&service_id],
         )?;
 
@@ -1684,7 +1509,11 @@ impl SqliteDatabase {
         Ok(())
     }
 
-    fn replace_app_services(&self, tx: &Transaction<'_>, app: &App) -> Result<()> {
+    fn replace_app_services(
+        &self,
+        tx: &Transaction<'_>,
+        app: &App,
+    ) -> Result<()> {
         let mut statement = tx.prepare(&format!(
             "select id from {SERVICES_TABLE} where app_id = ?1"
         ))?;
@@ -1867,7 +1696,9 @@ impl DatabaseBackend for SqliteDatabase {
         self.with_conn(|conn| {
             let user_id = conn
                 .query_row(
-                    &format!("select id from {USERS_TABLE} where github_id = ?1"),
+                    &format!(
+                        "select id from {USERS_TABLE} where github_id = ?1"
+                    ),
                     params![github_id],
                     |row| row.get::<_, String>(0),
                 )
@@ -1958,7 +1789,8 @@ impl DatabaseBackend for SqliteDatabase {
 
     fn list_apps(&self) -> Result<Vec<App>> {
         self.with_conn(|conn| {
-            let mut statement = conn.prepare(&format!("select id from {APPS_TABLE}"))?;
+            let mut statement =
+                conn.prepare(&format!("select id from {APPS_TABLE}"))?;
             let mut rows = statement.query([])?;
             let mut ids = Vec::new();
 
@@ -1979,8 +1811,9 @@ impl DatabaseBackend for SqliteDatabase {
 
     fn list_apps_by_owner(&self, owner_id: Uuid) -> Result<Vec<App>> {
         self.with_conn(|conn| {
-            let mut statement =
-                conn.prepare(&format!("select id from {APPS_TABLE} where owner_id = ?1"))?;
+            let mut statement = conn.prepare(&format!(
+                "select id from {APPS_TABLE} where owner_id = ?1"
+            ))?;
             let mut rows = statement.query(params![owner_id.to_string()])?;
             let mut ids = Vec::new();
 
@@ -2036,7 +1869,11 @@ impl DatabaseBackend for SqliteDatabase {
         })
     }
 
-    fn get_app_by_github_url(&self, github_url: &str, branch: &str) -> Result<Option<App>> {
+    fn get_app_by_github_url(
+        &self,
+        github_url: &str,
+        branch: &str,
+    ) -> Result<Option<App>> {
         self.with_conn(|conn| {
             let normalized_url = github_url.trim_end_matches(".git");
             let git_url = format!("{}.git", normalized_url);
@@ -2064,11 +1901,18 @@ impl DatabaseBackend for SqliteDatabase {
     }
 
     fn get_service(&self, id: Uuid) -> Result<Option<ContainerService>> {
-        self.with_conn(|conn| self.load_service_by_id_text(conn, &id.to_string()))
+        self.with_conn(|conn| {
+            self.load_service_by_id_text(conn, &id.to_string())
+        })
     }
 
-    fn list_services_by_app(&self, app_id: Uuid) -> Result<Vec<ContainerService>> {
-        self.with_conn(|conn| self.load_services_by_app_id(conn, &app_id.to_string()))
+    fn list_services_by_app(
+        &self,
+        app_id: Uuid,
+    ) -> Result<Vec<ContainerService>> {
+        self.with_conn(|conn| {
+            self.load_services_by_app_id(conn, &app_id.to_string())
+        })
     }
 
     fn delete_service(&self, id: Uuid) -> Result<bool> {
@@ -2081,17 +1925,31 @@ impl DatabaseBackend for SqliteDatabase {
         })
     }
 
-    fn save_service_deployment(&self, deployment: &ServiceDeployment) -> Result<()> {
+    fn save_service_deployment(
+        &self,
+        deployment: &ServiceDeployment,
+    ) -> Result<()> {
         self.with_tx(|tx| self.upsert_service_deployment_tx(tx, deployment))
     }
 
-    fn get_service_deployment(&self, id: Uuid) -> Result<Option<ServiceDeployment>> {
-        self.with_conn(|conn| self.load_service_deployment_by_id_text(conn, &id.to_string()))
+    fn get_service_deployment(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<ServiceDeployment>> {
+        self.with_conn(|conn| {
+            self.load_service_deployment_by_id_text(conn, &id.to_string())
+        })
     }
 
-    fn list_service_deployments(&self, deployment_id: Uuid) -> Result<Vec<ServiceDeployment>> {
+    fn list_service_deployments(
+        &self,
+        deployment_id: Uuid,
+    ) -> Result<Vec<ServiceDeployment>> {
         self.with_conn(|conn| {
-            self.load_service_deployments_for_deployment(conn, &deployment_id.to_string())
+            self.load_service_deployments_for_deployment(
+                conn,
+                &deployment_id.to_string(),
+            )
         })
     }
 
@@ -2100,7 +1958,10 @@ impl DatabaseBackend for SqliteDatabase {
         service_id: Uuid,
     ) -> Result<Vec<ServiceDeployment>> {
         self.with_conn(|conn| {
-            self.load_service_deployments_for_service(conn, &service_id.to_string())
+            self.load_service_deployments_for_service(
+                conn,
+                &service_id.to_string(),
+            )
         })
     }
 
@@ -2181,7 +2042,9 @@ impl DatabaseBackend for SqliteDatabase {
     }
 
     fn get_deployment(&self, id: Uuid) -> Result<Option<Deployment>> {
-        self.with_conn(|conn| self.load_deployment_by_id_text(conn, &id.to_string()))
+        self.with_conn(|conn| {
+            self.load_deployment_by_id_text(conn, &id.to_string())
+        })
     }
 
     fn list_deployments_by_app(&self, app_id: Uuid) -> Result<Vec<Deployment>> {
@@ -2200,7 +2063,9 @@ impl DatabaseBackend for SqliteDatabase {
 
             let mut deployments = Vec::new();
             for id in ids {
-                if let Some(deployment) = self.load_deployment_by_id_text(conn, &id)? {
+                if let Some(deployment) =
+                    self.load_deployment_by_id_text(conn, &id)?
+                {
                     deployments.push(deployment);
                 }
             }
@@ -2219,7 +2084,11 @@ impl DatabaseBackend for SqliteDatabase {
         })
     }
 
-    fn append_deployment_log(&self, deployment_id: Uuid, log_line: &str) -> Result<()> {
+    fn append_deployment_log(
+        &self,
+        deployment_id: Uuid,
+        log_line: &str,
+    ) -> Result<()> {
         self.with_tx(|tx| {
             let deployment_id = deployment_id.to_string();
             let next_index: i64 = tx.query_row(
@@ -2314,7 +2183,9 @@ impl DatabaseBackend for SqliteDatabase {
 
             let mut certificates = Vec::new();
             for domain in domains {
-                if let Some(certificate) = self.load_certificate_by_domain(conn, &domain)? {
+                if let Some(certificate) =
+                    self.load_certificate_by_domain(conn, &domain)?
+                {
                     certificates.push(certificate);
                 }
             }
@@ -2338,15 +2209,17 @@ impl DatabaseBackend for SqliteDatabase {
             tx.execute(
                 &format!(
                     "insert into {MANAGED_DATABASES_TABLE} (
-                        id, owner_id, name, db_type, version, container_id, volume_name,
-                        host_data_path, internal_host, port, external_port, pitr_enabled,
-                        pitr_last_base_backup_at, pitr_last_base_backup_label, proxy_enabled,
-                        proxy_external_port, username, password, database_name, memory_limit,
-                        cpu_limit, status, created_at, updated_at
+                        id, owner_id, group_id, name, db_type, version, container_id,
+                        volume_name, host_data_path, internal_host, port, external_port,
+                        pitr_enabled, pitr_last_base_backup_at,
+                        pitr_last_base_backup_label, proxy_enabled,
+                        proxy_external_port, username, password, database_name,
+                        memory_limit, cpu_limit, status, created_at, updated_at
                     ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                        ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
+                        ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
                     on conflict(id) do update set
                         owner_id = excluded.owner_id,
+                        group_id = excluded.group_id,
                         name = excluded.name,
                         db_type = excluded.db_type,
                         version = excluded.version,
@@ -2373,6 +2246,7 @@ impl DatabaseBackend for SqliteDatabase {
                 params![
                     db.id.to_string(),
                     db.owner_id.to_string(),
+                    db.group_id.map(|group_id| group_id.to_string()),
                     &db.name,
                     encode_enum(&db.db_type)?,
                     &db.version,
@@ -2401,11 +2275,19 @@ impl DatabaseBackend for SqliteDatabase {
         })
     }
 
-    fn get_managed_database(&self, id: Uuid) -> Result<Option<ManagedDatabase>> {
-        self.with_conn(|conn| self.load_managed_database_by_id_text(conn, &id.to_string()))
+    fn get_managed_database(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<ManagedDatabase>> {
+        self.with_conn(|conn| {
+            self.load_managed_database_by_id_text(conn, &id.to_string())
+        })
     }
 
-    fn list_managed_databases_by_owner(&self, owner_id: Uuid) -> Result<Vec<ManagedDatabase>> {
+    fn list_managed_databases_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ManagedDatabase>> {
         self.with_conn(|conn| {
             let mut statement = conn.prepare(&format!(
                 "select id from {MANAGED_DATABASES_TABLE}
@@ -2421,7 +2303,9 @@ impl DatabaseBackend for SqliteDatabase {
 
             let mut databases = Vec::new();
             for id in ids {
-                if let Some(database) = self.load_managed_database_by_id_text(conn, &id)? {
+                if let Some(database) =
+                    self.load_managed_database_by_id_text(conn, &id)?
+                {
                     databases.push(database);
                 }
             }
@@ -2445,13 +2329,15 @@ impl DatabaseBackend for SqliteDatabase {
             tx.execute(
                 &format!(
                     "insert into {MANAGED_QUEUES_TABLE} (
-                        id, owner_id, name, queue_type, version, container_id, volume_name,
-                        host_data_path, internal_host, port, external_port, username, password,
-                        memory_limit, cpu_limit, status, created_at, updated_at
+                        id, owner_id, group_id, name, queue_type, version, container_id,
+                        volume_name, host_data_path, internal_host, port, external_port,
+                        username, password, memory_limit, cpu_limit, status,
+                        created_at, updated_at
                     ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                        ?15, ?16, ?17, ?18)
+                        ?15, ?16, ?17, ?18, ?19)
                     on conflict(id) do update set
                         owner_id = excluded.owner_id,
+                        group_id = excluded.group_id,
                         name = excluded.name,
                         queue_type = excluded.queue_type,
                         version = excluded.version,
@@ -2472,6 +2358,7 @@ impl DatabaseBackend for SqliteDatabase {
                 params![
                     queue.id.to_string(),
                     queue.owner_id.to_string(),
+                    queue.group_id.map(|group_id| group_id.to_string()),
                     &queue.name,
                     encode_enum(&queue.queue_type)?,
                     &queue.version,
@@ -2495,10 +2382,15 @@ impl DatabaseBackend for SqliteDatabase {
     }
 
     fn get_managed_queue(&self, id: Uuid) -> Result<Option<ManagedQueue>> {
-        self.with_conn(|conn| self.load_managed_queue_by_id_text(conn, &id.to_string()))
+        self.with_conn(|conn| {
+            self.load_managed_queue_by_id_text(conn, &id.to_string())
+        })
     }
 
-    fn list_managed_queues_by_owner(&self, owner_id: Uuid) -> Result<Vec<ManagedQueue>> {
+    fn list_managed_queues_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ManagedQueue>> {
         self.with_conn(|conn| {
             let mut statement = conn.prepare(&format!(
                 "select id from {MANAGED_QUEUES_TABLE}
@@ -2514,7 +2406,9 @@ impl DatabaseBackend for SqliteDatabase {
 
             let mut queues = Vec::new();
             for id in ids {
-                if let Some(queue) = self.load_managed_queue_by_id_text(conn, &id)? {
+                if let Some(queue) =
+                    self.load_managed_queue_by_id_text(conn, &id)?
+                {
                     queues.push(queue);
                 }
             }
@@ -2566,10 +2460,15 @@ impl DatabaseBackend for SqliteDatabase {
     }
 
     fn get_storage_bucket(&self, id: Uuid) -> Result<Option<StorageBucket>> {
-        self.with_conn(|conn| self.load_storage_bucket_by_id_text(conn, &id.to_string()))
+        self.with_conn(|conn| {
+            self.load_storage_bucket_by_id_text(conn, &id.to_string())
+        })
     }
 
-    fn list_storage_buckets_by_owner(&self, owner_id: Uuid) -> Result<Vec<StorageBucket>> {
+    fn list_storage_buckets_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<StorageBucket>> {
         self.with_conn(|conn| {
             let mut statement = conn.prepare(&format!(
                 "select id from {STORAGE_BUCKETS_TABLE}
@@ -2585,7 +2484,9 @@ impl DatabaseBackend for SqliteDatabase {
 
             let mut buckets = Vec::new();
             for id in ids {
-                if let Some(bucket) = self.load_storage_bucket_by_id_text(conn, &id)? {
+                if let Some(bucket) =
+                    self.load_storage_bucket_by_id_text(conn, &id)?
+                {
                     buckets.push(bucket);
                 }
             }
@@ -2667,8 +2568,13 @@ impl DatabaseBackend for SqliteDatabase {
         })
     }
 
-    fn get_github_app(&self, owner_id: Uuid) -> Result<Option<GithubAppConfig>> {
-        self.with_conn(|conn| self.load_github_app_by_owner_text(conn, &owner_id.to_string()))
+    fn get_github_app(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Option<GithubAppConfig>> {
+        self.with_conn(|conn| {
+            self.load_github_app_by_owner_text(conn, &owner_id.to_string())
+        })
     }
 
     fn delete_github_app(&self, owner_id: Uuid) -> Result<bool> {
@@ -2696,41 +2602,61 @@ fn decode_enum<T: DeserializeOwned>(value: String) -> Result<T> {
 }
 
 fn parse_uuid(value: String) -> Result<Uuid> {
-    Uuid::parse_str(&value)
-        .map_err(|error| Error::Database(format!("invalid uuid '{}': {}", value, error)))
+    Uuid::parse_str(&value).map_err(|error| {
+        Error::Database(format!("invalid uuid '{}': {}", value, error))
+    })
 }
 
 fn parse_datetime(value: String) -> Result<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(&value)
         .map(|value| value.with_timezone(&Utc))
-        .map_err(|error| Error::Database(format!("invalid datetime '{}': {}", value, error)))
+        .map_err(|error| {
+            Error::Database(format!("invalid datetime '{}': {}", value, error))
+        })
 }
 
-fn parse_optional_datetime(value: Option<String>) -> Result<Option<DateTime<Utc>>> {
+fn parse_optional_datetime(
+    value: Option<String>,
+) -> Result<Option<DateTime<Utc>>> {
     value.map(parse_datetime).transpose()
 }
 
 fn parse_u16(value: i64, field: &str) -> Result<u16> {
-    u16::try_from(value).map_err(|_| Error::Database(format!("invalid {} value: {}", field, value)))
+    u16::try_from(value).map_err(|_| {
+        Error::Database(format!("invalid {} value: {}", field, value))
+    })
 }
 
 fn parse_u32(value: i64, field: &str) -> Result<u32> {
-    u32::try_from(value).map_err(|_| Error::Database(format!("invalid {} value: {}", field, value)))
+    u32::try_from(value).map_err(|_| {
+        Error::Database(format!("invalid {} value: {}", field, value))
+    })
 }
 
 fn parse_u64(value: i64, field: &str) -> Result<u64> {
-    u64::try_from(value).map_err(|_| Error::Database(format!("invalid {} value: {}", field, value)))
+    u64::try_from(value).map_err(|_| {
+        Error::Database(format!("invalid {} value: {}", field, value))
+    })
 }
 
-fn transpose_i64_to_u16(value: Option<i64>, field: &str) -> Result<Option<u16>> {
+fn transpose_i64_to_u16(
+    value: Option<i64>,
+    field: &str,
+) -> Result<Option<u16>> {
     value.map(|value| parse_u16(value, field)).transpose()
 }
 
-fn transpose_i64_to_u64(value: Option<i64>, field: &str) -> Result<Option<u64>> {
+fn transpose_i64_to_u64(
+    value: Option<i64>,
+    field: &str,
+) -> Result<Option<u64>> {
     value.map(|value| parse_u64(value, field)).transpose()
 }
 
-fn transpose_u64_to_i64(value: Option<u64>, field: &str) -> Result<Option<i64>> {
+fn transpose_u64_to_i64(
+    value: Option<u64>,
+    field: &str,
+) -> Result<Option<i64>> {
     value.map(|value| u64_to_i64(value, field)).transpose()
 }
 
@@ -2739,7 +2665,9 @@ fn transpose_string_to_uuid(value: Option<String>) -> Result<Option<Uuid>> {
 }
 
 fn u64_to_i64(value: u64, field: &str) -> Result<i64> {
-    i64::try_from(value).map_err(|_| Error::Database(format!("invalid {} value: {}", field, value)))
+    i64::try_from(value).map_err(|_| {
+        Error::Database(format!("invalid {} value: {}", field, value))
+    })
 }
 
 fn bool_to_int(value: bool) -> i64 {
@@ -2752,6 +2680,66 @@ fn bool_to_int(value: bool) -> i64 {
 
 fn int_to_bool(value: i64) -> bool {
     value != 0
+}
+
+fn apply_sqlite_pragmas(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        pragma journal_mode = wal;
+        pragma synchronous = normal;
+        pragma foreign_keys = on;
+        "#,
+    )?;
+    Ok(())
+}
+
+fn apply_sqlite_migrations(conn: &mut Connection) -> Result<()> {
+    initialize_schema_migrations(conn)?;
+    let applied_versions = load_applied_migration_versions(conn)?;
+
+    for migration in SQLITE_MIGRATIONS {
+        if applied_versions.contains(&migration.version) {
+            continue;
+        }
+
+        let tx = conn.transaction()?;
+        tx.execute_batch(migration.sql)?;
+        tx.execute(
+            "insert into schema_migrations (version, name, applied_at)
+             values (?1, ?2, ?3)",
+            params![migration.version, migration.name, Utc::now().to_rfc3339()],
+        )?;
+        tx.execute_batch(&format!(
+            "pragma user_version = {};",
+            migration.version
+        ))?;
+        tx.commit()?;
+    }
+
+    Ok(())
+}
+
+fn initialize_schema_migrations(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        create table if not exists schema_migrations (
+            version integer primary key,
+            name text not null,
+            applied_at text not null
+        );
+        "#,
+    )?;
+    Ok(())
+}
+
+fn load_applied_migration_versions(conn: &Connection) -> Result<HashSet<i64>> {
+    let mut statement = conn.prepare(
+        "select version from schema_migrations order by version asc",
+    )?;
+    let versions = statement
+        .query_map([], |row| row.get::<_, i64>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(versions.into_iter().collect())
 }
 
 fn detect_legacy_json_tables(conn: &Connection) -> Result<Vec<&'static str>> {
@@ -2787,7 +2775,12 @@ fn is_legacy_json_table(conn: &Connection, table: &str) -> Result<bool> {
     Ok(columns == vec!["key".to_string(), "value".to_string()])
 }
 
-fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<()> {
+fn ensure_column(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<()> {
     if has_column(conn, table, column)? {
         return Ok(());
     }

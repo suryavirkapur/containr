@@ -53,13 +53,18 @@ pub struct GithubUser {
 }
 
 /// verifies the github webhook signature
-pub fn verify_webhook_signature(payload: &[u8], signature: &str, secret: &str) -> Result<bool> {
-    let sig = signature
-        .strip_prefix("sha256=")
-        .ok_or_else(|| Error::Validation("invalid signature format".to_string()))?;
+pub fn verify_webhook_signature(
+    payload: &[u8],
+    signature: &str,
+    secret: &str,
+) -> Result<bool> {
+    let sig = signature.strip_prefix("sha256=").ok_or_else(|| {
+        Error::Validation("invalid signature format".to_string())
+    })?;
 
-    let sig_bytes =
-        hex::decode(sig).map_err(|e| Error::Validation(format!("invalid signature hex: {}", e)))?;
+    let sig_bytes = hex::decode(sig).map_err(|e| {
+        Error::Validation(format!("invalid signature hex: {}", e))
+    })?;
 
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
         .map_err(|e| Error::Internal(format!("hmac error: {}", e)))?;
@@ -92,7 +97,9 @@ pub async fn exchange_code_for_token(
         ])
         .send()
         .await
-        .map_err(|e| Error::Github(format!("failed to exchange code: {}", e)))?;
+        .map_err(|e| {
+            Error::Github(format!("failed to exchange code: {}", e))
+        })?;
 
     if !response.status().is_success() {
         return Err(Error::Github(format!(
@@ -101,10 +108,10 @@ pub async fn exchange_code_for_token(
         )));
     }
 
-    let token_response: OAuthTokenResponse = response
-        .json()
-        .await
-        .map_err(|e| Error::Github(format!("failed to parse token response: {}", e)))?;
+    let token_response: OAuthTokenResponse =
+        response.json().await.map_err(|e| {
+            Error::Github(format!("failed to parse token response: {}", e))
+        })?;
 
     Ok(token_response)
 }
@@ -280,7 +287,9 @@ pub async fn get_installation_token(
         .header("X-GitHub-Api-Version", "2022-11-28")
         .send()
         .await
-        .map_err(|e| Error::Github(format!("failed to get installation token: {}", e)))?;
+        .map_err(|e| {
+            Error::Github(format!("failed to get installation token: {}", e))
+        })?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -300,7 +309,9 @@ pub async fn get_installation_token(
 }
 
 /// lists all installations for a github app
-pub async fn list_app_installations(jwt: &str) -> Result<Vec<InstallationInfo>> {
+pub async fn list_app_installations(
+    jwt: &str,
+) -> Result<Vec<InstallationInfo>> {
     let client = reqwest::Client::new();
     let mut installations = Vec::new();
     let mut page = 1;
@@ -318,7 +329,9 @@ pub async fn list_app_installations(jwt: &str) -> Result<Vec<InstallationInfo>> 
             .header("X-GitHub-Api-Version", "2022-11-28")
             .send()
             .await
-            .map_err(|e| Error::Github(format!("failed to list installations: {}", e)))?;
+            .map_err(|e| {
+                Error::Github(format!("failed to list installations: {}", e))
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -329,10 +342,10 @@ pub async fn list_app_installations(jwt: &str) -> Result<Vec<InstallationInfo>> 
             )));
         }
 
-        let mut page_installations: Vec<InstallationInfo> = response
-            .json()
-            .await
-            .map_err(|e| Error::Github(format!("failed to parse installations: {}", e)))?;
+        let mut page_installations: Vec<InstallationInfo> =
+            response.json().await.map_err(|e| {
+                Error::Github(format!("failed to parse installations: {}", e))
+            })?;
         let page_len = page_installations.len();
         installations.append(&mut page_installations);
 
@@ -347,7 +360,9 @@ pub async fn list_app_installations(jwt: &str) -> Result<Vec<InstallationInfo>> 
 }
 
 /// fetches repos accessible to an installation
-pub async fn get_installation_repos(installation_token: &str) -> Result<Vec<GithubRepo>> {
+pub async fn get_installation_repos(
+    installation_token: &str,
+) -> Result<Vec<GithubRepo>> {
     let client = reqwest::Client::new();
     let mut repositories = Vec::new();
     let mut page = 1;
@@ -370,7 +385,9 @@ pub async fn get_installation_repos(installation_token: &str) -> Result<Vec<Gith
             .header("X-GitHub-Api-Version", "2022-11-28")
             .send()
             .await
-            .map_err(|e| Error::Github(format!("failed to get repos: {}", e)))?;
+            .map_err(|e| {
+                Error::Github(format!("failed to get repos: {}", e))
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -381,10 +398,9 @@ pub async fn get_installation_repos(installation_token: &str) -> Result<Vec<Gith
             )));
         }
 
-        let data: ReposResponse = response
-            .json()
-            .await
-            .map_err(|e| Error::Github(format!("failed to parse repos: {}", e)))?;
+        let data: ReposResponse = response.json().await.map_err(|e| {
+            Error::Github(format!("failed to parse repos: {}", e))
+        })?;
         let page_len = data.repositories.len();
         repositories.extend(data.repositories);
 
@@ -402,7 +418,8 @@ pub async fn get_installation_repos(installation_token: &str) -> Result<Vec<Gith
 pub async fn convert_manifest_code(code: &str) -> Result<AppManifestResponse> {
     let client = reqwest::Client::new();
 
-    let url = format!("https://api.github.com/app-manifests/{}/conversions", code);
+    let url =
+        format!("https://api.github.com/app-manifests/{}/conversions", code);
 
     let response = client
         .post(&url)
@@ -411,7 +428,9 @@ pub async fn convert_manifest_code(code: &str) -> Result<AppManifestResponse> {
         .header("X-GitHub-Api-Version", "2022-11-28")
         .send()
         .await
-        .map_err(|e| Error::Github(format!("failed to convert manifest: {}", e)))?;
+        .map_err(|e| {
+            Error::Github(format!("failed to convert manifest: {}", e))
+        })?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -440,7 +459,9 @@ pub async fn get_repo_installation_token(
 
     let jwt = generate_app_jwt(app_config.app_id, private_key_pem)?;
 
-    let fresh_installation_ids: Vec<i64> = match list_app_installations(&jwt).await {
+    let fresh_installation_ids: Vec<i64> = match list_app_installations(&jwt)
+        .await
+    {
         Ok(installations) => installations
             .into_iter()
             .map(|installation| installation.id)
@@ -456,7 +477,8 @@ pub async fn get_repo_installation_token(
     };
 
     for installation_id in fresh_installation_ids {
-        let token_response = get_installation_token(&jwt, installation_id).await?;
+        let token_response =
+            get_installation_token(&jwt, installation_id).await?;
         let repos = get_installation_repos(&token_response.token).await?;
 
         if repos.iter().any(|repo| {

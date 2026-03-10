@@ -6,11 +6,11 @@
 # api server bind address
 host = "0.0.0.0"
 # api server port
-port = 3000
+port = 2077
 
 [database]
 # metadata database backend: sled or sqlite
-backend = "sled"
+backend = "sqlite"
 # path to the configured metadata database
 path = "./data/containr.db"
 
@@ -19,7 +19,7 @@ path = "./data/containr.db"
 http_port = 80
 # https proxy port (requires root for port 443)
 https_port = 443
-# base domain for apps (apps accessible at appname.base_domain)
+# dashboard lives at this domain; default app/service routes use this wildcard
 base_domain = "example.com"
 # server public ip for dns validation (optional, required for custom domains)
 public_ip = ""

@@ -6,6 +6,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::models::{ContainerService, ServiceType};
+
 pub const POSTGRES_PROXY_PORT: u16 = 6432;
 
 fn normalize_internal_host(host: &str) -> String {
@@ -23,6 +25,26 @@ pub enum DatabaseType {
 }
 
 impl DatabaseType {
+    /// returns the public api name for this database type
+    pub fn api_name(&self) -> &'static str {
+        match self {
+            DatabaseType::Postgresql => "postgres",
+            DatabaseType::Mariadb => "mariadb",
+            DatabaseType::Valkey => "redis",
+            DatabaseType::Qdrant => "qdrant",
+        }
+    }
+
+    /// returns the normalized service type for this database
+    pub fn service_type(&self) -> ServiceType {
+        match self {
+            DatabaseType::Postgresql => ServiceType::Postgres,
+            DatabaseType::Mariadb => ServiceType::Mariadb,
+            DatabaseType::Valkey => ServiceType::Redis,
+            DatabaseType::Qdrant => ServiceType::Qdrant,
+        }
+    }
+
     /// returns the docker image for this database type
     pub fn docker_image(&self, version: &str) -> String {
         match self {
@@ -84,7 +106,10 @@ impl DatabaseType {
     }
 
     /// returns environment variables for container startup
-    pub fn env_vars(&self, creds: &DatabaseCredentials) -> Vec<(String, String)> {
+    pub fn env_vars(
+        &self,
+        creds: &DatabaseCredentials,
+    ) -> Vec<(String, String)> {
         match self {
             DatabaseType::Postgresql => vec![
                 ("POSTGRES_USER".into(), creds.username.clone()),
@@ -97,16 +122,23 @@ impl DatabaseType {
                 ("MARIADB_DATABASE".into(), creds.database_name.clone()),
                 ("MARIADB_ROOT_PASSWORD".into(), creds.password.clone()),
             ],
-            DatabaseType::Valkey => vec![("VALKEY_PASSWORD".into(), creds.password.clone())],
+            DatabaseType::Valkey => {
+                vec![("VALKEY_PASSWORD".into(), creds.password.clone())]
+            }
             DatabaseType::Qdrant => {
-                vec![("QDRANT__SERVICE__API_KEY".into(), creds.password.clone())]
+                vec![(
+                    "QDRANT__SERVICE__API_KEY".into(),
+                    creds.password.clone(),
+                )]
             }
         }
     }
 }
 
 /// service status for managed services
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum ServiceStatus {
     #[default]
@@ -126,6 +158,22 @@ pub enum QueueType {
 }
 
 impl QueueType {
+    /// returns the public api name for this queue type
+    pub fn api_name(&self) -> &'static str {
+        match self {
+            QueueType::Rabbitmq => "rabbitmq",
+            QueueType::Nats => "nats",
+        }
+    }
+
+    /// returns the normalized service type for this queue
+    pub fn service_type(&self) -> ServiceType {
+        match self {
+            QueueType::Rabbitmq => ServiceType::RabbitMq,
+            QueueType::Nats => ServiceType::PrivateService,
+        }
+    }
+
     /// returns the docker image for this queue type
     pub fn docker_image(&self, version: &str) -> String {
         match self {
@@ -225,7 +273,8 @@ impl DatabaseCredentials {
 /// generates a random alphanumeric password
 fn generate_random_password(len: usize) -> String {
     use rand::Rng;
-    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const CHARSET: &[u8] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     let mut rng = rand::rng();
     (0..len)
         .map(|_| {
@@ -240,6 +289,8 @@ fn generate_random_password(len: usize) -> String {
 pub struct ManagedDatabase {
     pub id: Uuid,
     pub owner_id: Uuid,
+    #[serde(default)]
+    pub group_id: Option<Uuid>,
     pub name: String,
     pub db_type: DatabaseType,
     pub version: String,
@@ -278,6 +329,7 @@ impl ManagedDatabase {
         Self {
             id,
             owner_id,
+            group_id: None,
             name: name.clone(),
             db_type,
             version: db_type.default_version().to_string(),
@@ -321,6 +373,14 @@ impl ManagedDatabase {
     /// returns the bind mount argument for docker (host:container)
     pub fn bind_mount_arg(&self) -> String {
         format!("{}:{}", self.host_data_path, self.db_type.volume_path())
+    }
+
+    /// returns the docker network name used by this service
+    pub fn network_name(&self) -> String {
+        match self.group_id {
+            Some(group_id) => format!("containr-{}", group_id),
+            None => format!("containr-svc-{}", self.id),
+        }
     }
 
     /// returns the normalized hostname exposed on the shared internal network
@@ -372,6 +432,11 @@ impl ManagedDatabase {
         self.db_type.docker_image(&self.version)
     }
 
+    /// returns the normalized service type name
+    pub fn service_type_name(&self) -> &'static str {
+        ContainerService::service_type_name(self.db_type.service_type())
+    }
+
     /// returns the database root directory on the host
     pub fn root_path(&self) -> PathBuf {
         Path::new(&self.host_data_path)
@@ -413,7 +478,9 @@ impl ManagedDatabase {
     /// returns the internal proxy port for postgres frontends
     pub fn proxy_port(&self) -> Option<u16> {
         match self.db_type {
-            DatabaseType::Postgresql if self.proxy_enabled => Some(POSTGRES_PROXY_PORT),
+            DatabaseType::Postgresql if self.proxy_enabled => {
+                Some(POSTGRES_PROXY_PORT)
+            }
             _ => None,
         }
     }
@@ -438,6 +505,8 @@ impl ManagedDatabase {
 pub struct ManagedQueue {
     pub id: Uuid,
     pub owner_id: Uuid,
+    #[serde(default)]
+    pub group_id: Option<Uuid>,
     pub name: String,
     pub queue_type: QueueType,
     pub version: String,
@@ -466,6 +535,7 @@ impl ManagedQueue {
         Self {
             id,
             owner_id,
+            group_id: None,
             name,
             queue_type,
             version: queue_type.default_version().to_string(),
@@ -506,6 +576,14 @@ impl ManagedQueue {
         format!("{}:{}", self.host_data_path, self.queue_type.volume_path())
     }
 
+    /// returns the docker network name used by this service
+    pub fn network_name(&self) -> String {
+        match self.group_id {
+            Some(group_id) => format!("containr-{}", group_id),
+            None => format!("containr-svc-{}", self.id),
+        }
+    }
+
     /// returns the normalized hostname exposed on the shared internal network
     pub fn normalized_internal_host(&self) -> String {
         normalize_internal_host(&self.internal_host)
@@ -528,11 +606,17 @@ impl ManagedQueue {
         match self.queue_type {
             QueueType::Rabbitmq => format!(
                 "amqp://{}:{}@{}:{}",
-                self.credentials.username, self.credentials.password, host, self.port
+                self.credentials.username,
+                self.credentials.password,
+                host,
+                self.port
             ),
             QueueType::Nats => format!(
                 "nats://{}:{}@{}:{}",
-                self.credentials.username, self.credentials.password, host, self.port
+                self.credentials.username,
+                self.credentials.password,
+                host,
+                self.port
             ),
         }
     }
@@ -540,6 +624,19 @@ impl ManagedQueue {
     /// returns docker image for this queue
     pub fn docker_image(&self) -> String {
         self.queue_type.docker_image(&self.version)
+    }
+
+    /// returns the normalized service type name
+    pub fn service_type_name(&self) -> &'static str {
+        ContainerService::service_type_name(self.queue_type.service_type())
+    }
+
+    /// returns the queue root directory on the host
+    pub fn root_path(&self) -> PathBuf {
+        Path::new(&self.host_data_path)
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from(&self.host_data_path))
     }
 }
 

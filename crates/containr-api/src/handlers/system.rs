@@ -279,7 +279,9 @@ fn get_user_id(
     Ok(claims.sub)
 }
 
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    e: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", e);
     (
         StatusCode::INTERNAL_SERVER_ERROR,

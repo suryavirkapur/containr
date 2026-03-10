@@ -1,6 +1,92 @@
 changelog
 =========
 
+0.1.14-alpha - 2026-03-09
+- add a canonical `/api/services` surface that lists app services, managed
+  databases, and managed queues through one backend inventory model with
+  shared status, network, grouping, and lifecycle metadata
+- add unified service lifecycle handlers plus `containrctl services` commands
+  for list/get/logs/start/stop/restart/delete, including app-service runtime
+  control without forcing a full project redeploy
+- add `crates/containr-runtime/src/app_service_manager.rs` so single deployed
+  app services can be started, stopped, restarted, and tailed through the same
+  docker runtime logic outside the deployment worker
+- add `scripts/e2e-services.sh`, a checked-in docker-backed backend harness
+  that validates deploy, wildcard routing, unified service inventory, app and
+  managed-service lifecycle, public ports, grouped valkey reachability, and
+  teardown cleanup end to end
+- change the default `containrctl` instance url to `http://127.0.0.1:2077`
+  and update readme/install/configuration/quickstart docs to match the current
+  service-centric cli and api defaults
+- make the service group the docker network boundary for backend runtime:
+  grouped managed services now join the project network, ungrouped managed
+  services get their own private `containr-svc-*` network, and group deletion
+  now tears down grouped managed services before removing the project network
+- promote qdrant and mariadb to first-class managed database types in the api
+  and cli, and expose normalized `service_type`, `group_id`, `network_name`,
+  `public_ip`, and public connection metadata in managed service responses
+- add embedded sqlite migration files plus an in-binary migration runner so
+  schema creation no longer lives in a single inline sql batch
+- add `containrctl` support for `groups` as a projects alias, managed-service
+  group filters, database public exposure, postgres pitr toggling, postgres
+  pgdog toggling, and queue public exposure
+- add `containrctl databases base-backup`, `restore-point`, and `recover`
+  commands so postgres pitr flows can be exercised without dropping to raw
+  http calls
+- extend `scripts/e2e-services.sh` with live postgres and pgdog coverage for
+  direct access, proxy access, base backups, restore points, recovery, public
+  postgres ports, and the invariant that each postgres service keeps exactly
+  one pgdog frontend across restarts
+- fix postgres pitr recovery after live testing by normalizing base-backup
+  permissions so the host-side recovery flow can read container-created backup
+  directories instead of failing with `permission denied`
+- fix postgres restore-point recovery by forcing a wal switch and copying the
+  live `pg_wal` segment files into the mounted local archive before stop and
+  restore, and normalize the copied wal permissions so recovery can actually
+  read those files instead of failing with `permission denied`
+- raise the default `containrctl` request timeout to 180 seconds so postgres
+  recovery and other long-running control-plane actions do not fail client-side
+  while the server is still doing valid work
+- change the default api port from `3000` to `2077`, expose dashboard/base
+  domain details through settings, and update the example config, install
+  script, install docs, and readme for the new defaults and wildcard routing
+- fix qdrant provisioning by removing the broken image health probe that left
+  healthy qdrant containers stuck in failed create flows
+- live-test the new backend model against real docker: same-group valkey
+  access succeeded with `PONG`, cross-group access failed by dns isolation,
+  qdrant public http access worked, mariadb public tcp access worked, postgres
+  pgdog access worked, and wildcard service subdomains routed through the proxy
+- note one remaining rough edge: `containrctl databases list --group-id ...`
+  returns `404` after the referenced group has been deleted because the filter
+  validates that the target group still exists
+- add image-only project deployments via `deployment_source = none`, plus
+  rust cron-job scheduling for `cron_job` services without source checkout
+- narrow the first-class managed service surface to postgres, redis, and
+  rabbitmq in the api and cli
+- expand `containrctl` with toml-based project apply/deploy/rollback/delete
+  flows plus managed database and queue lifecycle commands
+- fix rollback for multi-service image deployments by accepting per-service
+  image artifacts instead of requiring a single top-level deployment image id
+- mark superseded deployments as `stopped` after successful rollouts so
+  deployment history matches the actual docker state
+- enforce redis passwords in valkey containers with an explicit
+  `valkey-server --requirepass ...` startup command
+- make managed database logs return bounded output instead of hanging forever
+  by accidentally following the docker log stream
+- update database roundtrip tests to assert the current service-first routing
+  model instead of deprecated project-level domain behavior
+- make sqlite the default metadata backend in generated config, examples, and docs while keeping sled available as an opt-in backend
+- add a dedicated vps install script that installs docker from the official apt repository, downloads the latest containr release, writes production config, and installs the systemd service
+- add a `gh` release script that builds release assets, packages `containr` and `containrctl`, and publishes a prerelease from the current version
+- update the readme and deployment docs to use the current `suryavirkapur/containr` repository, release assets, and client cli workflow
+
+0.1.13-alpha - 2026-03-09
+- add first-class `containr` subcommands for docker socket checks, long-lived api key generation, and systemd unit generation
+- add a separate `containrctl` rust client binary with persisted instance config under `$HOME/.containr/config.toml`
+- store remote client settings as toml with active instance selection, instance id, url, token/api key, timeout, and tls verification
+- make generated api keys reusable as bearer credentials in the client cli, and document the sled lock requirement when generating keys offline
+- add rust tests for client config persistence, systemd unit rendering, and api key token generation
+
 0.1.12-alpha - 2026-03-09
 - redesign the project creation flow into a render-style single-service-first page with pre-selected web service type, explicit "expose to web" checkbox, collapsed advanced settings, and a simplified "create and deploy" action
 - rename user-facing "group" terminology to "services" across the dashboard header, navigation, empty state, and creation page

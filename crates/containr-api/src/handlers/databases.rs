@@ -8,13 +8,15 @@ use axum::{
 use chrono::{DateTime, Utc};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
-use containr_common::managed_services::{DatabaseType, ManagedDatabase, ServiceStatus};
+use containr_common::managed_services::{
+    DatabaseType, ManagedDatabase, ServiceStatus,
+};
 use containr_runtime::{DatabaseManager, StorageManager};
 
 /// database creation request
@@ -30,6 +32,8 @@ pub struct CreateDatabaseRequest {
     pub memory_limit_mb: Option<u64>,
     /// cpu limit (optional)
     pub cpu_limit: Option<f64>,
+    /// attach this service to a project group
+    pub group_id: Option<String>,
 }
 
 /// database response
@@ -38,6 +42,9 @@ pub struct DatabaseResponse {
     pub id: String,
     pub name: String,
     pub db_type: String,
+    pub service_type: String,
+    pub group_id: Option<String>,
+    pub network_name: String,
     pub version: String,
     pub status: String,
     pub internal_host: String,
@@ -50,6 +57,9 @@ pub struct DatabaseResponse {
     pub proxy_port: Option<u16>,
     pub proxy_external_port: Option<u16>,
     pub proxy_connection_string: Option<String>,
+    pub public_ip: Option<String>,
+    pub public_connection_string: Option<String>,
+    pub public_proxy_connection_string: Option<String>,
     pub connection_string: String,
     pub username: String,
     pub password: String,
@@ -61,22 +71,44 @@ pub struct DatabaseResponse {
 
 impl From<&ManagedDatabase> for DatabaseResponse {
     fn from(db: &ManagedDatabase) -> Self {
+        Self::from_database(db, None)
+    }
+}
+
+impl DatabaseResponse {
+    fn from_database(db: &ManagedDatabase, public_ip: Option<&str>) -> Self {
         Self {
             id: db.id.to_string(),
             name: db.name.clone(),
-            db_type: format!("{:?}", db.db_type).to_lowercase(),
+            db_type: db.db_type.api_name().to_string(),
+            service_type: db.service_type_name().to_string(),
+            group_id: db.group_id.map(|value| value.to_string()),
+            network_name: db.network_name(),
             version: db.version.clone(),
             status: format!("{:?}", db.status).to_lowercase(),
             internal_host: db.normalized_internal_host(),
             port: db.port,
             external_port: db.external_port,
             pitr_enabled: db.pitr_enabled,
-            pitr_last_base_backup_at: db.pitr_last_base_backup_at.map(|value| value.to_rfc3339()),
+            pitr_last_base_backup_at: db
+                .pitr_last_base_backup_at
+                .map(|value| value.to_rfc3339()),
             pitr_last_base_backup_label: db.pitr_last_base_backup_label.clone(),
             proxy_enabled: db.proxy_enabled,
             proxy_port: db.proxy_port(),
             proxy_external_port: db.proxy_external_port,
             proxy_connection_string: db.proxy_connection_string(),
+            public_ip: public_ip.map(|value| value.to_string()),
+            public_connection_string: db.external_port.and_then(|port| {
+                build_public_database_connection_string(db, public_ip, port)
+            }),
+            public_proxy_connection_string: db.proxy_external_port.and_then(
+                |port| {
+                    build_public_database_proxy_connection_string(
+                        db, public_ip, port,
+                    )
+                },
+            ),
             connection_string: db.connection_string(),
             username: db.credentials.username.clone(),
             password: db.credentials.password.clone(),
@@ -127,7 +159,9 @@ fn get_user_id(
 }
 
 /// helper for internal errors
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    e: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", e);
     (
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -137,7 +171,14 @@ fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse
     )
 }
 
-fn bad_request(message: impl Into<String>) -> (StatusCode, Json<ErrorResponse>) {
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct ListDatabasesQuery {
+    pub group_id: Option<String>,
+}
+
+fn bad_request(
+    message: impl Into<String>,
+) -> (StatusCode, Json<ErrorResponse>) {
     (
         StatusCode::BAD_REQUEST,
         Json(ErrorResponse {
@@ -154,7 +195,8 @@ fn allocate_public_port(
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: "external_port must be between 1024 and 65535".to_string(),
+                    error: "external_port must be between 1024 and 65535"
+                        .to_string(),
                 }),
             ));
         }
@@ -187,8 +229,12 @@ fn allocate_public_port(
     ))
 }
 
-fn should_restart_service(status: ServiceStatus, container_id: &Option<String>) -> bool {
-    container_id.is_some() || matches!(status, ServiceStatus::Running | ServiceStatus::Starting)
+fn should_restart_service(
+    status: ServiceStatus,
+    container_id: &Option<String>,
+) -> bool {
+    container_id.is_some()
+        || matches!(status, ServiceStatus::Running | ServiceStatus::Starting)
 }
 
 fn ensure_postgresql_database(
@@ -210,7 +256,9 @@ fn parse_recovery_target_time(
 ) -> Result<DateTime<Utc>, (StatusCode, Json<ErrorResponse>)> {
     DateTime::parse_from_rfc3339(value)
         .map(|parsed| parsed.with_timezone(&Utc))
-        .map_err(|_| bad_request("target_time must be a valid rfc3339 timestamp"))
+        .map_err(|_| {
+            bad_request("target_time must be a valid rfc3339 timestamp")
+        })
 }
 
 fn is_client_database_operation_error(message: &str) -> bool {
@@ -247,7 +295,11 @@ fn database_manager_error(
     )
 }
 
-fn build_backup_object_key(db_id: Uuid, filename: &str, prefix: Option<&str>) -> String {
+fn build_backup_object_key(
+    db_id: Uuid,
+    filename: &str,
+    prefix: Option<&str>,
+) -> String {
     let normalized = prefix
         .map(|value| value.trim_matches('/'))
         .filter(|value| !value.is_empty());
@@ -258,11 +310,105 @@ fn build_backup_object_key(db_id: Uuid, filename: &str, prefix: Option<&str>) ->
     }
 }
 
+fn resolve_group_id(
+    state: &AppState,
+    user_id: Uuid,
+    group_id: Option<&str>,
+) -> Result<Option<Uuid>, (StatusCode, Json<ErrorResponse>)> {
+    let Some(group_id) =
+        group_id.map(str::trim).filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+
+    let group_id = Uuid::parse_str(group_id)
+        .map_err(|_| bad_request("group_id must be a valid uuid"))?;
+    let group = state
+        .db
+        .get_app(group_id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "group not found".to_string(),
+                }),
+            )
+        })?;
+
+    if group.owner_id != user_id {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "access denied".to_string(),
+            }),
+        ));
+    }
+
+    Ok(Some(group_id))
+}
+
+fn build_public_database_connection_string(
+    db: &ManagedDatabase,
+    public_ip: Option<&str>,
+    port: u16,
+) -> Option<String> {
+    let public_ip = public_ip?.trim();
+    if public_ip.is_empty() {
+        return None;
+    }
+
+    Some(match db.db_type {
+        DatabaseType::Postgresql => format!(
+            "postgresql://{}:{}@{}:{}/{}",
+            db.credentials.username,
+            db.credentials.password,
+            public_ip,
+            port,
+            db.credentials.database_name
+        ),
+        DatabaseType::Mariadb => format!(
+            "mysql://{}:{}@{}:{}/{}",
+            db.credentials.username,
+            db.credentials.password,
+            public_ip,
+            port,
+            db.credentials.database_name
+        ),
+        DatabaseType::Valkey => format!(
+            "redis://:{}@{}:{}",
+            db.credentials.password, public_ip, port
+        ),
+        DatabaseType::Qdrant => format!("http://{}:{}", public_ip, port),
+    })
+}
+
+fn build_public_database_proxy_connection_string(
+    db: &ManagedDatabase,
+    public_ip: Option<&str>,
+    port: u16,
+) -> Option<String> {
+    let public_ip = public_ip?.trim();
+    if public_ip.is_empty() || db.db_type != DatabaseType::Postgresql {
+        return None;
+    }
+
+    Some(format!(
+        "postgresql://{}:{}@{}:{}/{}",
+        db.credentials.username,
+        db.credentials.password,
+        public_ip,
+        port,
+        db.credentials.database_name
+    ))
+}
+
 /// list all databases for the authenticated user
 #[utoipa::path(
     get,
     path = "/api/databases",
     tag = "databases",
+    params(ListDatabasesQuery),
     security(("bearer" = [])),
     responses(
         (status = 200, description = "list of databases", body = Vec<DatabaseResponse>),
@@ -272,16 +418,32 @@ fn build_backup_object_key(db_id: Uuid, filename: &str, prefix: Option<&str>) ->
 pub async fn list_databases(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<ListDatabasesQuery>,
 ) -> Result<Json<Vec<DatabaseResponse>>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+    let public_ip = config.proxy.public_ip.clone();
+    drop(config);
+    let group_id =
+        resolve_group_id(&state, user_id, query.group_id.as_deref())?;
 
     let databases = state
         .db
         .list_managed_databases_by_owner(user_id)
-        .map_err(internal_error)?;
+        .map_err(internal_error)?
+        .into_iter()
+        .filter(|database| match group_id {
+            Some(group_id) => database.group_id == Some(group_id),
+            None => true,
+        })
+        .collect::<Vec<_>>();
 
-    let responses: Vec<DatabaseResponse> = databases.iter().map(DatabaseResponse::from).collect();
+    let responses = databases
+        .iter()
+        .map(|database| {
+            DatabaseResponse::from_database(database, public_ip.as_deref())
+        })
+        .collect::<Vec<_>>();
     Ok(Json(responses))
 }
 
@@ -302,7 +464,10 @@ pub async fn create_database(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(req): Json<CreateDatabaseRequest>,
-) -> Result<(StatusCode, Json<DatabaseResponse>), (StatusCode, Json<ErrorResponse>)> {
+) -> Result<
+    (StatusCode, Json<DatabaseResponse>),
+    (StatusCode, Json<ErrorResponse>),
+> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
@@ -320,22 +485,27 @@ pub async fn create_database(
     let db_type = match req.db_type.to_lowercase().as_str() {
         "postgresql" | "postgres" => DatabaseType::Postgresql,
         "mariadb" | "mysql" => DatabaseType::Mariadb,
-        "valkey" | "redis" => DatabaseType::Valkey,
+        "redis" => DatabaseType::Valkey,
         "qdrant" => DatabaseType::Qdrant,
         _ => {
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: "invalid db_type. supported: postgresql, mariadb, valkey, qdrant"
-                        .to_string(),
+                    error:
+                        "invalid db_type. supported: postgres, mariadb, redis, qdrant"
+                            .to_string(),
                 }),
             ));
         }
     };
 
     // create database
-    let mut db =
-        ManagedDatabase::new_with_path(user_id, req.name, db_type, &config.storage.data_dir);
+    let mut db = ManagedDatabase::new_with_path(
+        user_id,
+        req.name,
+        db_type,
+        &config.storage.data_dir,
+    );
 
     if let Some(version) = req.version {
         db.version = version;
@@ -346,6 +516,7 @@ pub async fn create_database(
     if let Some(cpu) = req.cpu_limit {
         db.cpu_limit = cpu;
     }
+    db.group_id = resolve_group_id(&state, user_id, req.group_id.as_deref())?;
 
     state
         .db
@@ -372,7 +543,13 @@ pub async fn create_database(
         .save_managed_database(&db)
         .map_err(internal_error)?;
 
-    Ok((StatusCode::CREATED, Json(DatabaseResponse::from(&db))))
+    Ok((
+        StatusCode::CREATED,
+        Json(DatabaseResponse::from_database(
+            &db,
+            config.proxy.public_ip.as_deref(),
+        )),
+    ))
 }
 
 /// get a single database by id
@@ -420,7 +597,10 @@ pub async fn get_database(
         ));
     }
 
-    Ok(Json(DatabaseResponse::from(&db)))
+    Ok(Json(DatabaseResponse::from_database(
+        &db,
+        config.proxy.public_ip.as_deref(),
+    )))
 }
 
 /// delete a managed database
@@ -547,7 +727,10 @@ pub async fn start_database(
         .save_managed_database(&db)
         .map_err(internal_error)?;
 
-    Ok(Json(DatabaseResponse::from(&db)))
+    Ok(Json(DatabaseResponse::from_database(
+        &db,
+        config.proxy.public_ip.as_deref(),
+    )))
 }
 
 /// stop a database
@@ -611,7 +794,10 @@ pub async fn stop_database(
         .save_managed_database(&db)
         .map_err(internal_error)?;
 
-    Ok(Json(DatabaseResponse::from(&db)))
+    Ok(Json(DatabaseResponse::from_database(
+        &db,
+        config.proxy.public_ip.as_deref(),
+    )))
 }
 
 /// restart a database
@@ -679,7 +865,10 @@ pub async fn restart_database(
         .save_managed_database(&db)
         .map_err(internal_error)?;
 
-    Ok(Json(DatabaseResponse::from(&db)))
+    Ok(Json(DatabaseResponse::from_database(
+        &db,
+        config.proxy.public_ip.as_deref(),
+    )))
 }
 
 /// logs query params
@@ -852,7 +1041,10 @@ pub async fn expose_database(
         .save_managed_database(&db)
         .map_err(internal_error)?;
 
-    Ok(Json(DatabaseResponse::from(&db)))
+    Ok(Json(DatabaseResponse::from_database(
+        &db,
+        config.proxy.public_ip.as_deref(),
+    )))
 }
 
 /// pitr configuration request
@@ -982,7 +1174,10 @@ pub async fn configure_pitr(
         .save_managed_database(&db)
         .map_err(internal_error)?;
 
-    Ok(Json(DatabaseResponse::from(&db)))
+    Ok(Json(DatabaseResponse::from_database(
+        &db,
+        config.proxy.public_ip.as_deref(),
+    )))
 }
 
 /// configure postgres proxy frontend
@@ -1042,7 +1237,10 @@ pub async fn configure_proxy(
     if req.enabled {
         db.proxy_enabled = true;
         db.proxy_external_port = match req.external_port {
-            Some(port) if was_proxy_enabled && existing_proxy_external_port == Some(port) => {
+            Some(port)
+                if was_proxy_enabled
+                    && existing_proxy_external_port == Some(port) =>
+            {
                 Some(port)
             }
             Some(port) => Some(allocate_public_port(Some(port))?),
@@ -1072,7 +1270,10 @@ pub async fn configure_proxy(
         .save_managed_database(&db)
         .map_err(internal_error)?;
 
-    Ok(Json(DatabaseResponse::from(&db)))
+    Ok(Json(DatabaseResponse::from_database(
+        &db,
+        config.proxy.public_ip.as_deref(),
+    )))
 }
 
 /// create a postgres base backup for pitr
@@ -1282,7 +1483,11 @@ pub async fn recover_database(
 
     let db_manager = DatabaseManager::new();
     db_manager
-        .recover_postgres_to_target(&mut db, req.restore_point.as_deref(), target_time)
+        .recover_postgres_to_target(
+            &mut db,
+            req.restore_point.as_deref(),
+            target_time,
+        )
         .await
         .map_err(|e| database_manager_error("recover database", e))?;
 
@@ -1411,39 +1616,45 @@ pub async fn export_database(
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: "storage service credentials are not configured".to_string(),
+                    error: "storage service credentials are not configured"
+                        .to_string(),
                 }),
             ));
         }
 
-        let storage_mgr =
-            StorageManager::new(&rustfs_endpoint, &rustfs_access_key, &rustfs_secret_key)
-                .await
-                .map_err(|e| {
-                    tracing::error!("failed to connect to rustfs: {}", e);
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: format!("storage service unavailable: {}", e),
-                        }),
-                    )
-                })?;
-
-        let bucket_exists = storage_mgr.bucket_exists(&bucket.name).await.map_err(|e| {
-            tracing::error!("failed to verify bucket: {}", e);
+        let storage_mgr = StorageManager::new(
+            &rustfs_endpoint,
+            &rustfs_access_key,
+            &rustfs_secret_key,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("failed to connect to rustfs: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: format!("failed to verify bucket: {}", e),
+                    error: format!("storage service unavailable: {}", e),
                 }),
             )
         })?;
+
+        let bucket_exists =
+            storage_mgr.bucket_exists(&bucket.name).await.map_err(|e| {
+                tracing::error!("failed to verify bucket: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: format!("failed to verify bucket: {}", e),
+                    }),
+                )
+            })?;
 
         if !bucket_exists {
             return Err((
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse {
-                    error: "bucket does not exist in storage service".to_string(),
+                    error: "bucket does not exist in storage service"
+                        .to_string(),
                 }),
             ));
         }
@@ -1460,8 +1671,11 @@ pub async fn export_database(
                 )
             })?;
 
-        let upload_key =
-            build_backup_object_key(db.id, filename, request.object_key_prefix.as_deref());
+        let upload_key = build_backup_object_key(
+            db.id,
+            filename,
+            request.object_key_prefix.as_deref(),
+        );
 
         storage_mgr
             .upload_file(
@@ -1488,7 +1702,10 @@ pub async fn export_database(
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {
-                        error: format!("failed to verify uploaded backup: {}", e),
+                        error: format!(
+                            "failed to verify uploaded backup: {}",
+                            e
+                        ),
                     }),
                 )
             })?;
@@ -1597,13 +1814,23 @@ pub async fn list_backups(
                     let created_at = meta
                         .modified()
                         .ok()
-                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                        .and_then(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0))
+                        .and_then(|t| {
+                            t.duration_since(std::time::UNIX_EPOCH).ok()
+                        })
+                        .and_then(|d| {
+                            chrono::DateTime::from_timestamp(
+                                d.as_secs() as i64,
+                                0,
+                            )
+                        })
                         .map(|dt| dt.to_rfc3339())
                         .unwrap_or_default();
 
                     backups.push(BackupInfo {
-                        filename: entry.file_name().to_string_lossy().to_string(),
+                        filename: entry
+                            .file_name()
+                            .to_string_lossy()
+                            .to_string(),
                         size_bytes: meta.len(),
                         created_at,
                     });

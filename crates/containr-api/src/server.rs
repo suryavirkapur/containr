@@ -21,8 +21,9 @@ use utoipa_scalar::{Scalar, Servable};
 use crate::deployment_source::resolve_source_deployment_source;
 use crate::github::DeploymentJob;
 use crate::handlers::{
-    apps, auth, certificates, containers, databases, deployments, github_app, github_repos, health,
-    projects, queues, settings, storage, system, webhooks, websocket,
+    apps, auth, certificates, containers, databases, deployments, github_app,
+    github_repos, health, projects, queues, services, settings, storage,
+    system, webhooks, websocket,
 };
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
@@ -327,6 +328,17 @@ pub async fn run_server(
         .route("/api/queues/{id}/start", post(queues::start_queue))
         .route("/api/queues/{id}/stop", post(queues::stop_queue))
         .route("/api/queues/{id}/expose", post(queues::expose_queue))
+        // unified services
+        .route("/api/services", get(services::list_services))
+        .route("/api/services/{id}", get(services::get_service))
+        .route("/api/services/{id}", delete(services::delete_service))
+        .route("/api/services/{id}/logs", get(services::get_service_logs))
+        .route("/api/services/{id}/start", post(services::start_service))
+        .route("/api/services/{id}/stop", post(services::stop_service))
+        .route(
+            "/api/services/{id}/restart",
+            post(services::restart_service),
+        )
         // storage buckets
         .route("/api/buckets", get(storage::list_buckets))
         .route("/api/buckets", post(storage::create_bucket))
@@ -389,19 +401,27 @@ async fn replay_interrupted_deployments(state: AppState) {
     );
 
     for (app, deployment) in interrupted {
-        if let Err(error) = replay_deployment_job(&state, &app, &deployment).await {
+        if let Err(error) =
+            replay_deployment_job(&state, &app, &deployment).await
+        {
             tracing::warn!(
                 app_id = %app.id,
                 deployment_id = %deployment.id,
                 error = %error,
                 "failed to replay interrupted deployment"
             );
-            mark_replayed_deployment_failed(&state.db, deployment.id, &error.to_string());
+            mark_replayed_deployment_failed(
+                &state.db,
+                deployment.id,
+                &error.to_string(),
+            );
         }
     }
 }
 
-fn collect_interrupted_deployments(db: &Database) -> Result<Vec<(App, Deployment)>> {
+fn collect_interrupted_deployments(
+    db: &Database,
+) -> Result<Vec<(App, Deployment)>> {
     let mut interrupted = Vec::new();
 
     for app in db.list_apps()? {
@@ -428,19 +448,21 @@ async fn replay_deployment_job(
         .source_url
         .clone()
         .unwrap_or_else(|| app.github_url.clone());
-    let source = resolve_source_deployment_source(state, app.owner_id, &source_url)
-        .await
-        .map_err(|(status, error)| {
-            anyhow::anyhow!(
-                "source recovery failed with status {}: {}",
-                status,
-                error.error
-            )
-        })?;
+    let source =
+        resolve_source_deployment_source(state, app.owner_id, &source_url)
+            .await
+            .map_err(|(status, error)| {
+                anyhow::anyhow!(
+                    "source recovery failed with status {}: {}",
+                    status,
+                    error.error
+                )
+            })?;
 
-    state
-        .db
-        .append_deployment_log(deployment.id, "deployment requeued after containr restart")?;
+    state.db.append_deployment_log(
+        deployment.id,
+        "deployment requeued after containr restart",
+    )?;
 
     let job = DeploymentJob {
         deployment_id: deployment.id,
@@ -453,16 +475,18 @@ async fn replay_deployment_job(
         rollback_from_deployment_id: deployment.rollback_from_deployment_id,
     };
 
-    state
-        .deployment_tx
-        .send(job)
-        .await
-        .map_err(|error| anyhow::anyhow!("failed to requeue deployment: {}", error))?;
+    state.deployment_tx.send(job).await.map_err(|error| {
+        anyhow::anyhow!("failed to requeue deployment: {}", error)
+    })?;
 
     Ok(())
 }
 
-fn mark_replayed_deployment_failed(db: &Database, deployment_id: uuid::Uuid, message: &str) {
+fn mark_replayed_deployment_failed(
+    db: &Database,
+    deployment_id: uuid::Uuid,
+    message: &str,
+) {
     let Ok(Some(mut deployment)) = db.get_deployment(deployment_id) else {
         return;
     };

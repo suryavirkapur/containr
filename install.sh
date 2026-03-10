@@ -22,16 +22,17 @@ cat > "$CONFIG_PATH" <<EOF
 
 [server]
 host = "0.0.0.0"
-port = 3000
+port = 2077
 
 [database]
-backend = "sled"
+backend = "sqlite"
 path = "./data/containr.db"
 
 [proxy]
 http_port = 80
 https_port = 443
 base_domain = "svk77.com"
+public_ip = ""
 load_balance = "round_robin"
 
 [github]

@@ -35,8 +35,8 @@ pub fn encrypt(plaintext: &str, key: &[u8]) -> Result<String> {
         return Err(EncryptionError::InvalidKeyLength);
     }
 
-    let cipher =
-        Aes256Gcm::new_from_slice(key).map_err(|e| EncryptionError::Encryption(e.to_string()))?;
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|e| EncryptionError::Encryption(e.to_string()))?;
 
     // generate random nonce
     let mut nonce_bytes = [0u8; NONCE_SIZE];
@@ -70,14 +70,15 @@ pub fn decrypt(encrypted: &str, key: &[u8]) -> Result<String> {
     let (nonce_bytes, ciphertext) = combined.split_at(NONCE_SIZE);
     let nonce = Nonce::from_slice(nonce_bytes);
 
-    let cipher =
-        Aes256Gcm::new_from_slice(key).map_err(|e| EncryptionError::Decryption(e.to_string()))?;
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|e| EncryptionError::Decryption(e.to_string()))?;
 
     let plaintext = cipher
         .decrypt(nonce, ciphertext)
         .map_err(|e| EncryptionError::Decryption(e.to_string()))?;
 
-    String::from_utf8(plaintext).map_err(|e| EncryptionError::Decryption(e.to_string()))
+    String::from_utf8(plaintext)
+        .map_err(|e| EncryptionError::Decryption(e.to_string()))
 }
 
 /// derives a 256-bit key from a secret string using sha256

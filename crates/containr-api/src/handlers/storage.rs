@@ -54,7 +54,10 @@ pub struct BucketConnectionResponse {
     pub note: String,
 }
 
-fn bucket_response(bucket: &StorageBucket, storage: &StorageConfig) -> BucketResponse {
+fn bucket_response(
+    bucket: &StorageBucket,
+    storage: &StorageConfig,
+) -> BucketResponse {
     let internal_endpoint = storage.internal_endpoint();
     let public_endpoint = storage.public_endpoint();
 
@@ -94,7 +97,9 @@ fn bucket_connection_response(
         access_key: storage.rustfs_access_key.clone(),
         secret_key: storage.rustfs_secret_key.clone(),
         uses_shared_credentials: true,
-        note: "uses the shared containr rustfs credentials for s3 compatibility".to_string(),
+        note:
+            "uses the shared containr rustfs credentials for s3 compatibility"
+                .to_string(),
     }
 }
 
@@ -137,7 +142,9 @@ fn get_user_id(
 }
 
 /// helper for internal errors
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    e: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", e);
     (
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -156,7 +163,8 @@ async fn storage_manager_from_parts(
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
-                error: "storage service credentials are not configured".to_string(),
+                error: "storage service credentials are not configured"
+                    .to_string(),
             }),
         ));
     }
@@ -179,7 +187,9 @@ async fn maybe_refresh_bucket_sizes(
     buckets: &mut [StorageBucket],
     storage: &StorageConfig,
 ) {
-    if storage.rustfs_access_key.is_empty() || storage.rustfs_secret_key.is_empty() {
+    if storage.rustfs_access_key.is_empty()
+        || storage.rustfs_secret_key.is_empty()
+    {
         return;
     }
 
@@ -272,7 +282,8 @@ pub async fn create_bucket(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(req): Json<CreateBucketRequest>,
-) -> Result<(StatusCode, Json<BucketResponse>), (StatusCode, Json<ErrorResponse>)> {
+) -> Result<(StatusCode, Json<BucketResponse>), (StatusCode, Json<ErrorResponse>)>
+{
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
@@ -292,10 +303,18 @@ pub async fn create_bucket(
     let secret_key = config.storage.rustfs_secret_key.clone();
     let storage = config.storage.clone();
     drop(config);
-    let storage_mgr =
-        storage_manager_from_parts(&management_endpoint, &access_key, &secret_key).await?;
+    let storage_mgr = storage_manager_from_parts(
+        &management_endpoint,
+        &access_key,
+        &secret_key,
+    )
+    .await?;
 
-    let bucket = StorageBucket::new(user_id, req.name.clone(), storage.internal_endpoint());
+    let bucket = StorageBucket::new(
+        user_id,
+        req.name.clone(),
+        storage.internal_endpoint(),
+    );
 
     storage_mgr.create_bucket(&bucket).await.map_err(|e| {
         tracing::error!("failed to create bucket: {}", e);
@@ -344,13 +363,13 @@ pub async fn get_bucket(
         .get_storage_bucket(id)
         .map_err(internal_error)?
         .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "bucket not found".to_string(),
-                }),
-            )
-        })?;
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "bucket not found".to_string(),
+            }),
+        )
+    })?;
 
     if bucket.owner_id != user_id {
         return Err((
@@ -363,7 +382,12 @@ pub async fn get_bucket(
 
     let storage = config.storage.clone();
     drop(config);
-    maybe_refresh_bucket_sizes(&state, std::slice::from_mut(&mut bucket), &storage).await;
+    maybe_refresh_bucket_sizes(
+        &state,
+        std::slice::from_mut(&mut bucket),
+        &storage,
+    )
+    .await;
 
     Ok(Json(bucket_response(&bucket, &storage)))
 }
@@ -412,11 +436,14 @@ pub async fn get_bucket_connection(
         ));
     }
 
-    if config.storage.rustfs_access_key.is_empty() || config.storage.rustfs_secret_key.is_empty() {
+    if config.storage.rustfs_access_key.is_empty()
+        || config.storage.rustfs_secret_key.is_empty()
+    {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
-                error: "storage service credentials are not configured".to_string(),
+                error: "storage service credentials are not configured"
+                    .to_string(),
             }),
         ));
     }
@@ -472,8 +499,12 @@ pub async fn delete_bucket(
     let access_key = config.storage.rustfs_access_key.clone();
     let secret_key = config.storage.rustfs_secret_key.clone();
     drop(config);
-    let storage_mgr =
-        storage_manager_from_parts(&management_endpoint, &access_key, &secret_key).await?;
+    let storage_mgr = storage_manager_from_parts(
+        &management_endpoint,
+        &access_key,
+        &secret_key,
+    )
+    .await?;
 
     storage_mgr.delete_bucket(&bucket.name).await.map_err(|e| {
         tracing::error!("failed to delete bucket: {}", e);

@@ -9,12 +9,17 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use clap::Parser;
+use anyhow::{anyhow, Context};
+use bollard::query_parameters::ListContainersOptions;
+use clap::{Args as ClapArgs, Parser, Subcommand};
+use containr::systemd::{install_service_unit, ServiceUnitConfig};
+use serde_json::json;
 use tokio::sync::RwLock;
 use tokio::time::MissedTickBehavior;
 use tracing::{info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
+use containr_common::models::User;
 use containr_common::{Config, Database};
 
 const CERT_RENEWAL_CHECK_INTERVAL_SECS: u64 = 12 * 60 * 60;
@@ -24,38 +29,110 @@ const CERT_RENEWAL_CHECK_INTERVAL_SECS: u64 = 12 * 60 * 60;
 #[command(name = "containr")]
 #[command(about = "a rust-native paas for docker containers")]
 #[command(version)]
-struct Args {
+struct Cli {
+    #[command(flatten)]
+    server: ServerArgs,
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(ClapArgs, Debug, Clone)]
+struct ServerArgs {
     // config file path
-    #[arg(short, long, default_value = "containr.toml")]
+    #[arg(short, long, global = true, default_value = "containr.toml")]
     config: PathBuf,
 
     // data directory
-    #[arg(short, long, default_value = "./data")]
+    #[arg(short, long, global = true, default_value = "./data")]
     data_dir: PathBuf,
 
     // api server port
-    #[arg(long, default_value = "3000")]
+    #[arg(long, global = true, default_value = "2077")]
     api_port: u16,
 
     // http proxy port
-    #[arg(long, default_value = "80")]
+    #[arg(long, global = true, default_value = "80")]
     http_port: u16,
 
     // https proxy port
-    #[arg(long, default_value = "443")]
+    #[arg(long, global = true, default_value = "443")]
     https_port: u16,
 
     // log level
+    #[arg(long, global = true, default_value = "info")]
+    log_level: String,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    Server,
+    GenerateApiKey(GenerateApiKeyArgs),
+    SetupSystemd(SetupSystemdArgs),
+    #[command(subcommand)]
+    Docker(DockerCommand),
+}
+
+#[derive(ClapArgs, Debug)]
+struct GenerateApiKeyArgs {
+    #[arg(long)]
+    email: Option<String>,
+    #[arg(long, default_value = "3650")]
+    expiry_days: u64,
+    #[arg(long)]
+    raw: bool,
+}
+
+#[derive(ClapArgs, Debug)]
+struct SetupSystemdArgs {
+    #[arg(long, default_value = "containr")]
+    service_name: String,
+    #[arg(long, default_value = "/usr/local/bin/containr")]
+    binary_path: PathBuf,
+    #[arg(long, default_value = "/opt/containr")]
+    working_directory: PathBuf,
+    #[arg(long, default_value = "/opt/containr/containr.toml")]
+    config_path: PathBuf,
+    #[arg(long, default_value = "root")]
+    user: String,
     #[arg(long, default_value = "info")]
     log_level: String,
+    #[arg(long)]
+    output: Option<PathBuf>,
+    #[arg(long)]
+    enable: bool,
+    #[arg(long)]
+    start: bool,
+}
+
+#[derive(Subcommand, Debug)]
+enum DockerCommand {
+    Check,
+    Containers(DockerContainersArgs),
+}
+
+#[derive(ClapArgs, Debug)]
+struct DockerContainersArgs {
+    #[arg(long)]
+    all: bool,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
+    let cli = Cli::parse();
+    init_logging(&cli.server.log_level)?;
 
-    // setup logging
-    let log_level = match args.log_level.as_str() {
+    match cli.command {
+        None | Some(Command::Server) => run_server_command(&cli.server).await,
+        Some(Command::GenerateApiKey(args)) => {
+            run_generate_api_key_command(&cli.server, &args).await
+        }
+        Some(Command::SetupSystemd(args)) => run_setup_systemd_command(&args),
+        Some(Command::Docker(command)) => run_docker_command(command).await,
+    }
+}
+
+fn init_logging(log_level: &str) -> anyhow::Result<()> {
+    let log_level = match log_level {
         "trace" => Level::TRACE,
         "debug" => Level::DEBUG,
         "info" => Level::INFO,
@@ -70,12 +147,13 @@ async fn main() -> anyhow::Result<()> {
         .compact()
         .finish();
 
-    tracing::subscriber::set_global_default(subscriber)?;
+    tracing::subscriber::set_global_default(subscriber)
+        .context("failed to initialize logging")
+}
 
+async fn run_server_command(args: &ServerArgs) -> anyhow::Result<()> {
     info!("starting containr v{}", env!("CARGO_PKG_VERSION"));
-
-    // load or create config
-    let config = load_or_create_config(&args).await?;
+    let config = load_or_create_config(args).await?;
 
     // create data directory
     tokio::fs::create_dir_all(&args.data_dir).await?;
@@ -97,11 +175,18 @@ async fn main() -> anyhow::Result<()> {
     let algorithm = config.proxy.load_balance;
     let base_domain_clone = config.proxy.base_domain.clone();
     tokio::spawn(async move {
-        load_routes_from_db(&db_clone, &routes_clone, algorithm, &base_domain_clone).await;
+        load_routes_from_db(
+            &db_clone,
+            &routes_clone,
+            algorithm,
+            &base_domain_clone,
+        )
+        .await;
     });
 
     // create certificate request channel (shared between api and proxy)
-    let (cert_request_tx, mut cert_request_rx) = tokio::sync::mpsc::channel::<String>(64);
+    let (cert_request_tx, mut cert_request_rx) =
+        tokio::sync::mpsc::channel::<String>(64);
     let (proxy_update_tx, mut proxy_update_rx) =
         tokio::sync::mpsc::channel::<containr_runtime::ProxyRouteUpdate>(64);
 
@@ -137,18 +222,22 @@ async fn main() -> anyhow::Result<()> {
         };
 
         if let Some(manager) = acme_manager.as_ref() {
-            if let Err(error) = manager.sync_stored_certificates_to_disk().await {
+            if let Err(error) = manager.sync_stored_certificates_to_disk().await
+            {
                 warn!(error = %error, "failed to restore stored certificates to disk");
             }
 
-            if let Err(error) = renew_managed_certificates(&acme_db, manager, &acme_config).await {
+            if let Err(error) =
+                renew_managed_certificates(&acme_db, manager, &acme_config)
+                    .await
+            {
                 warn!(error = %error, "initial certificate renewal pass failed");
             }
         }
 
-        let mut renewal_interval = tokio::time::interval(tokio::time::Duration::from_secs(
-            CERT_RENEWAL_CHECK_INTERVAL_SECS,
-        ));
+        let mut renewal_interval = tokio::time::interval(
+            tokio::time::Duration::from_secs(CERT_RENEWAL_CHECK_INTERVAL_SECS),
+        );
         renewal_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
         let _ = renewal_interval.tick().await;
 
@@ -260,7 +349,9 @@ async fn main() -> anyhow::Result<()> {
         );
         match server {
             Ok(server) => server.run_forever(),
-            Err(error) => tracing::error!(error = %error, "failed to start pingora proxy"),
+            Err(error) => {
+                tracing::error!(error = %error, "failed to start pingora proxy")
+            }
         }
     });
 
@@ -285,13 +376,17 @@ async fn main() -> anyhow::Result<()> {
                     let base_domain = base_domain.clone();
 
                     // connect to docker for route refresh
-                    let docker = match bollard::Docker::connect_with_socket_defaults() {
-                        Ok(d) => d,
-                        Err(e) => {
-                            tracing::warn!("failed to connect to docker for route refresh: {}", e);
-                            continue;
-                        }
-                    };
+                    let docker =
+                        match bollard::Docker::connect_with_socket_defaults() {
+                            Ok(d) => d,
+                            Err(e) => {
+                                tracing::warn!(
+                                    "failed to connect to docker for route refresh: {}",
+                                    e
+                                );
+                                continue;
+                            }
+                        };
 
                     refresh_routes_for_app(
                         &db,
@@ -304,13 +399,24 @@ async fn main() -> anyhow::Result<()> {
                     .await;
                 }
                 containr_runtime::ProxyRouteUpdate::RemoveApp { app } => {
-                    remove_app_routes(&proxy_routes_for_updates, &app, &base_domain);
+                    remove_app_routes(
+                        &proxy_routes_for_updates,
+                        &app,
+                        &base_domain,
+                    );
                 }
             }
         }
     });
 
-    let encryption_secret = containr_api::security::resolve_encryption_secret(&config);
+    let encryption_secret =
+        containr_api::security::resolve_encryption_secret(&config);
+    let cron_scheduler = containr_runtime::CronJobScheduler::new(
+        db.clone(),
+        work_dir.clone(),
+        encryption_secret.clone(),
+    )
+    .await?;
     let worker = containr_runtime::DeploymentWorker::new(
         db.clone(),
         work_dir,
@@ -328,6 +434,11 @@ async fn main() -> anyhow::Result<()> {
         info!("deployment worker started (docker connected)");
     }
 
+    tokio::spawn(async move {
+        cron_scheduler.run().await;
+    });
+    info!("cron scheduler started");
+
     info!("containr is ready");
     info!("api: http://{}:{}", config.server.host, config.server.port);
     info!("proxy: http://0.0.0.0:{}", config.proxy.http_port);
@@ -343,7 +454,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 /// loads config from file or creates default
-async fn load_or_create_config(args: &Args) -> anyhow::Result<Config> {
+async fn load_or_create_config(args: &ServerArgs) -> anyhow::Result<Config> {
     if args.config.exists() {
         let content = tokio::fs::read_to_string(&args.config).await?;
         let config: Config = toml::from_str(&content)?;
@@ -359,7 +470,8 @@ async fn load_or_create_config(args: &Args) -> anyhow::Result<Config> {
             .join("containr.db")
             .to_string_lossy()
             .to_string();
-        config.acme.certs_dir = args.data_dir.join("certs").to_string_lossy().to_string();
+        config.acme.certs_dir =
+            args.data_dir.join("certs").to_string_lossy().to_string();
 
         // save default config as toml
         let content = toml::to_string_pretty(&config)?;
@@ -368,6 +480,161 @@ async fn load_or_create_config(args: &Args) -> anyhow::Result<Config> {
 
         Ok(config)
     }
+}
+
+async fn load_existing_config(args: &ServerArgs) -> anyhow::Result<Config> {
+    if !args.config.exists() {
+        return Err(anyhow!(
+            "config file not found: {}",
+            args.config.display()
+        ));
+    }
+
+    let content = tokio::fs::read_to_string(&args.config)
+        .await
+        .with_context(|| format!("failed to read {}", args.config.display()))?;
+    toml::from_str(&content)
+        .with_context(|| format!("failed to parse {}", args.config.display()))
+}
+
+async fn run_generate_api_key_command(
+    server_args: &ServerArgs,
+    args: &GenerateApiKeyArgs,
+) -> anyhow::Result<()> {
+    let config = load_existing_config(server_args).await?;
+    let db = open_database_for_admin_command(&config.database)?;
+    bootstrap_admin_user(&db)?;
+
+    let user = resolve_api_key_user(&db, args.email.as_deref())?;
+    let api_key = containr_api::auth::create_api_key(
+        user.id,
+        &user.email,
+        &config.auth.jwt_secret,
+        args.expiry_days,
+    )?;
+    let expires_at =
+        chrono::Utc::now() + chrono::Duration::days(args.expiry_days as i64);
+
+    if args.raw {
+        println!("{}", api_key);
+        return Ok(());
+    }
+
+    let output = json!({
+        "user_id": user.id,
+        "email": user.email,
+        "expires_at": expires_at.to_rfc3339(),
+        "api_key": api_key,
+    });
+    println!("{}", serde_json::to_string_pretty(&output)?);
+
+    Ok(())
+}
+
+fn open_database_for_admin_command(
+    config: &containr_common::DatabaseConfig,
+) -> anyhow::Result<Database> {
+    match Database::open(config) {
+        Ok(db) => Ok(db),
+        Err(error) if error.to_string().contains("could not acquire lock") => {
+            Err(anyhow!(
+                "failed to open {}; stop containr before running this command when using the sled backend",
+                config.path
+            ))
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn resolve_api_key_user(
+    db: &Database,
+    email: Option<&str>,
+) -> anyhow::Result<User> {
+    if let Some(email) = email {
+        return db
+            .get_user_by_email(email)?
+            .ok_or_else(|| anyhow!("user not found for email {}", email));
+    }
+
+    let mut users = db.list_users()?;
+    if users.is_empty() {
+        return Err(anyhow!(
+            "no users exist yet; register a user before generating an api key"
+        ));
+    }
+
+    users.sort_by_key(|user| (!user.is_admin, user.created_at));
+    users.into_iter().next().ok_or_else(|| {
+        anyhow!("failed to select a user for api key generation")
+    })
+}
+
+fn run_setup_systemd_command(args: &SetupSystemdArgs) -> anyhow::Result<()> {
+    let config = ServiceUnitConfig {
+        service_name: args.service_name.clone(),
+        user: args.user.clone(),
+        working_directory: args.working_directory.clone(),
+        binary_path: args.binary_path.clone(),
+        config_path: args.config_path.clone(),
+        log_level: args.log_level.clone(),
+    };
+    let output_path = install_service_unit(
+        &config,
+        args.output.as_deref(),
+        args.enable,
+        args.start,
+    )?;
+
+    println!("{}", output_path.display());
+    Ok(())
+}
+
+async fn run_docker_command(command: DockerCommand) -> anyhow::Result<()> {
+    match command {
+        DockerCommand::Check => run_docker_check().await,
+        DockerCommand::Containers(args) => run_docker_containers(args).await,
+    }
+}
+
+async fn run_docker_check() -> anyhow::Result<()> {
+    let docker = connect_docker()?;
+    let ping = docker
+        .ping()
+        .await
+        .context("failed to ping docker socket")?;
+    let version = docker
+        .version()
+        .await
+        .context("failed to query docker version")?;
+
+    let output = json!({
+        "ping": ping,
+        "version": version,
+    });
+    println!("{}", serde_json::to_string_pretty(&output)?);
+
+    Ok(())
+}
+
+async fn run_docker_containers(
+    args: DockerContainersArgs,
+) -> anyhow::Result<()> {
+    let docker = connect_docker()?;
+    let containers = docker
+        .list_containers(Some(ListContainersOptions {
+            all: args.all,
+            ..Default::default()
+        }))
+        .await
+        .context("failed to list containers through docker socket")?;
+
+    println!("{}", serde_json::to_string_pretty(&containers)?);
+    Ok(())
+}
+
+fn connect_docker() -> anyhow::Result<bollard::Docker> {
+    bollard::Docker::connect_with_socket_defaults()
+        .context("failed to connect to docker socket")
 }
 
 fn bootstrap_admin_user(db: &Database) -> anyhow::Result<()> {
@@ -435,7 +702,15 @@ async fn load_routes_from_db(
     }
 
     for app_id in apps {
-        refresh_routes_for_app(db, routes, app_id, algorithm, base_domain, &docker).await;
+        refresh_routes_for_app(
+            db,
+            routes,
+            app_id,
+            algorithm,
+            base_domain,
+            &docker,
+        )
+        .await;
     }
 }
 
@@ -496,9 +771,12 @@ async fn refresh_routes_for_app(
             .ok()
             .flatten()
             .filter(|deployment| {
-                deployment.status == containr_common::models::DeploymentStatus::Running
+                deployment.status
+                    == containr_common::models::DeploymentStatus::Running
             })
-            .and_then(|deployment| active_http_container_ids(&deployment, service.id));
+            .and_then(|deployment| {
+                active_http_container_ids(&deployment, service.id)
+            });
         let service_prefix = format!("containr-{}-{}-", app.id, service.name);
         let legacy_prefix = legacy_service_container_prefix(&app, &service);
 
@@ -515,7 +793,8 @@ async fn refresh_routes_for_app(
                             continue;
                         }
                     } else {
-                        let matches_service_prefix = name.starts_with(&service_prefix);
+                        let matches_service_prefix =
+                            name.starts_with(&service_prefix);
                         let matches_legacy_prefix = legacy_prefix
                             .as_deref()
                             .map(|prefix| name.starts_with(prefix))
@@ -526,7 +805,9 @@ async fn refresh_routes_for_app(
                         }
                     }
 
-                    if let Some(ip) = get_container_ip(docker, name, &network_name).await {
+                    if let Some(ip) =
+                        get_container_ip(docker, name, &network_name).await
+                    {
                         upstreams.push(containr_proxy::routes::Upstream {
                             host: ip,
                             port: service.port,
@@ -659,7 +940,10 @@ async fn collect_managed_certificate_domains(
     Ok(domains)
 }
 
-async fn storage_or_dashboard_domain_allowed(config: &Arc<RwLock<Config>>, domain: &str) -> bool {
+async fn storage_or_dashboard_domain_allowed(
+    config: &Arc<RwLock<Config>>,
+    domain: &str,
+) -> bool {
     let config = config.read().await;
     let normalized_domain = domain.trim().to_lowercase();
     if normalized_domain == config.proxy.base_domain.trim().to_lowercase() {
@@ -707,7 +991,10 @@ fn exposed_services(
         .collect()
 }
 
-fn app_subdomain(app: &containr_common::models::App, base_domain: &str) -> String {
+fn app_subdomain(
+    app: &containr_common::models::App,
+    base_domain: &str,
+) -> String {
     format!("{}.{}", app.name, base_domain)
 }
 
@@ -809,10 +1096,12 @@ fn resolve_api_host(host: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        active_http_container_ids, legacy_service_container_prefix, select_exposed_service,
+        active_http_container_ids, legacy_service_container_prefix,
+        select_exposed_service,
     };
     use containr_common::models::{
-        App, ContainerService, Deployment, DeploymentStatus, ServiceDeployment, ServiceType,
+        App, ContainerService, Deployment, DeploymentStatus, ServiceDeployment,
+        ServiceType,
     };
     use uuid::Uuid;
 
@@ -825,10 +1114,18 @@ mod tests {
             owner_id,
         );
 
-        let mut web =
-            ContainerService::new(app.id, "web".to_string(), "nginx:latest".to_string(), 8080);
-        let mut api =
-            ContainerService::new(app.id, "api".to_string(), "nginx:latest".to_string(), 3000);
+        let mut web = ContainerService::new(
+            app.id,
+            "web".to_string(),
+            "nginx:latest".to_string(),
+            8080,
+        );
+        let mut api = ContainerService::new(
+            app.id,
+            "api".to_string(),
+            "nginx:latest".to_string(),
+            3000,
+        );
         web.service_type = ServiceType::WebService;
         web.expose_http = true;
         api.service_type = ServiceType::WebService;
@@ -851,8 +1148,12 @@ mod tests {
             owner_id,
         );
 
-        let mut api =
-            ContainerService::new(app.id, "api".to_string(), "nginx:latest".to_string(), 3000);
+        let mut api = ContainerService::new(
+            app.id,
+            "api".to_string(),
+            "nginx:latest".to_string(),
+            3000,
+        );
         api.service_type = ServiceType::WebService;
         api.expose_http = true;
         let worker = ContainerService::new(
@@ -879,8 +1180,12 @@ mod tests {
             owner_id,
         );
 
-        let api =
-            ContainerService::new(app.id, "api".to_string(), "nginx:latest".to_string(), 3000);
+        let api = ContainerService::new(
+            app.id,
+            "api".to_string(),
+            "nginx:latest".to_string(),
+            3000,
+        );
         let worker = ContainerService::new(
             app.id,
             "worker".to_string(),
@@ -896,7 +1201,8 @@ mod tests {
     #[test]
     fn active_http_container_ids_prefers_service_deployments() {
         let service_id = Uuid::new_v4();
-        let mut deployment = Deployment::new(Uuid::new_v4(), "abc123".to_string());
+        let mut deployment =
+            Deployment::new(Uuid::new_v4(), "abc123".to_string());
         deployment.container_id = Some("containr-legacy".to_string());
 
         let mut first = ServiceDeployment::new(service_id, deployment.id, 0);
@@ -905,7 +1211,8 @@ mod tests {
         second.container_id = Some("containr-service-1".to_string());
         deployment.service_deployments = vec![first, second];
 
-        let container_ids = active_http_container_ids(&deployment, service_id).unwrap();
+        let container_ids =
+            active_http_container_ids(&deployment, service_id).unwrap();
         assert_eq!(container_ids.len(), 2);
         assert!(container_ids.contains("containr-service-0"));
         assert!(container_ids.contains("containr-service-1"));
@@ -915,10 +1222,12 @@ mod tests {
     #[test]
     fn active_http_container_ids_falls_back_to_legacy_container() {
         let service_id = Uuid::new_v4();
-        let mut deployment = Deployment::new(Uuid::new_v4(), "abc123".to_string());
+        let mut deployment =
+            Deployment::new(Uuid::new_v4(), "abc123".to_string());
         deployment.container_id = Some("containr-legacy".to_string());
 
-        let container_ids = active_http_container_ids(&deployment, service_id).unwrap();
+        let container_ids =
+            active_http_container_ids(&deployment, service_id).unwrap();
         assert_eq!(container_ids.len(), 1);
         assert!(container_ids.contains("containr-legacy"));
     }
@@ -1012,8 +1321,10 @@ mod tests {
             9000,
         ));
 
-        let prefix =
-            legacy_service_container_prefix(&multi_service_app, &multi_service_app.services[0]);
+        let prefix = legacy_service_container_prefix(
+            &multi_service_app,
+            &multi_service_app.services[0],
+        );
         assert!(prefix.is_none());
     }
 }

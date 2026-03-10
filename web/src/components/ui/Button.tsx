@@ -1,7 +1,14 @@
-import { Component, JSX, splitProps } from 'solid-js';
+import { Component, JSX, splitProps } from "solid-js";
 
-type ButtonVariant = 'primary' | 'outline' | 'ghost' | 'danger';
-type ButtonSize = 'sm' | 'md' | 'lg';
+import { cn } from "../../lib/cn";
+
+type ButtonVariant =
+    | "primary"
+    | "secondary"
+    | "outline"
+    | "ghost"
+    | "danger";
+type ButtonSize = "sm" | "md" | "lg" | "icon";
 
 interface ButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
     variant?: ButtonVariant;
@@ -12,54 +19,55 @@ interface ButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
 /// reusable button component
 export const Button: Component<ButtonProps> = (props) => {
     const [local, others] = splitProps(props, [
-        'variant',
-        'size',
-        'isLoading',
-        'children',
-        'class',
-        'disabled',
+        "variant",
+        "size",
+        "isLoading",
+        "children",
+        "class",
+        "disabled",
     ]);
 
-    const baseClass =
-        'inline-flex items-center justify-center font-medium transition-colors'
-        + ' focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed'
-        + ' border cursor-pointer';
+    const baseClass = cn(
+        "inline-flex items-center justify-center gap-2 border text-sm font-medium",
+        "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+    );
 
     const variants: Record<ButtonVariant, string> = {
         primary:
-            'bg-white text-black border-white hover:bg-neutral-200',
+            "border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)] hover:bg-white/85",
+        secondary:
+            "border-[var(--border)] bg-[var(--muted)] text-[var(--foreground)] hover:bg-[var(--surface-muted)]",
         outline:
-            'bg-transparent text-neutral-300 border-neutral-600'
-            + ' hover:border-neutral-400 hover:text-white',
+            "border-[var(--border-strong)] bg-transparent text-[var(--foreground)] hover:border-[var(--foreground)]",
         ghost:
-            'bg-transparent text-neutral-300 border-transparent'
-            + ' hover:bg-neutral-800 hover:text-white',
+            "border-transparent bg-transparent text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]",
         danger:
-            'bg-red-600 text-white border-red-600'
-            + ' hover:bg-red-700 hover:border-red-700',
+            "border-red-900 bg-red-950/80 text-red-100 hover:bg-red-900",
     };
 
     const sizes: Record<ButtonSize, string> = {
-        sm: 'h-8 px-3 text-xs',
-        md: 'h-10 px-4 text-sm',
-        lg: 'h-12 px-6 text-base',
+        sm: "h-8 px-3 text-xs",
+        md: "h-10 px-4 text-sm",
+        lg: "h-12 px-6 text-base",
+        icon: "h-10 w-10 px-0",
     };
 
     return (
         <button
-            class={`
-        ${baseClass}
-        ${variants[local.variant || 'primary']}
-        ${sizes[local.size || 'md']}
-        ${local.class || ''}
-      `}
+            class={cn(
+                baseClass,
+                variants[local.variant || "primary"],
+                sizes[local.size || "md"],
+                local.class,
+            )}
             disabled={local.disabled || local.isLoading}
             {...others}
         >
             {local.isLoading ? (
                 <>
                     <svg
-                        class="animate-spin -ml-1 mr-2 h-4 w-4 text-current"
+                        class="h-4 w-4 animate-spin text-current"
                         xmlns="http://www.w3.org/2000/svg"
                         fill="none"
                         viewBox="0 0 24 24"
@@ -78,7 +86,7 @@ export const Button: Component<ButtonProps> = (props) => {
                             d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                         ></path>
                     </svg>
-                    loading...
+                    loading
                 </>
             ) : (
                 local.children

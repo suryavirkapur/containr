@@ -3,24 +3,31 @@ containr
 
 rust-native platform as a service for deploying docker containers with automatic ssl.
 
-alpha release v0.1.0
+alpha release v0.1.14-alpha
 
 quick start
 -----------
 
-  # install
-  cargo install --git https://github.com/suryavirkapur/containr-paas containr
+  # install on a vps (installs docker too)
+  curl -fsSL https://github.com/suryavirkapur/containr/releases/latest/download/containr-install-vps.sh | sudo bash
 
-  # configure
+  # or install the binaries manually
+  curl -fsSL https://github.com/suryavirkapur/containr/releases/latest/download/containr-linux-amd64.tar.gz | tar xz
+  sudo install -m 755 containr /usr/local/bin/containr
+  sudo install -m 755 containrctl /usr/local/bin/containrctl
+
+  # generate local config if you are running from source
   ./install.sh
 
-  # run (requires root for ports 80/443)
-  sudo containr
+  # run
+  sudo containr server
 
-  # or with custom ports
-  containr --http-port 8080 --https-port 8443 --api-port 3000
+  # client setup
+  containrctl init --url http://127.0.0.1:2077 --instance-id local
+  containrctl register --email admin@example.com --password password123
 
-dashboard available at http://localhost:3000
+dashboard and proxied api live at your configured `base_domain`.
+direct api access is available on port 2077 by default.
 
 features
 --------
@@ -35,8 +42,9 @@ features
 - environment variables with secret masking
 - solidjs dashboard
 - websocket live container logs
-- managed databases (postgres, mysql, redis)
-- managed queues (redis, rabbitmq)
+- managed databases (postgres, mariadb, valkey, qdrant)
+- managed queues (rabbitmq)
+- unified service inventory and lifecycle api/cli
 - storage buckets
 - certificate management and renewal
 - multiple custom domains per app
@@ -46,7 +54,7 @@ system requirements
 
 - linux x86_64
 - macos is not a supported backend runtime or development target
-- docker (containerd runtime)
+- docker (containerd runtime, installed by `containr-install-vps.sh`)
 - rust 1.75+
 - mise
 - node 24 (via mise)
@@ -57,7 +65,7 @@ use a linux machine or vm for backend development and runtime testing.
 ports:
 - 80 (http proxy)
 - 443 (https proxy)
-- 3000 (api server)
+- 2077 (api server)
 
 documentation
 -------------
@@ -115,16 +123,17 @@ create containr.toml:
 
   [server]
   host = "0.0.0.0"
-  port = 3000
+  port = 2077
 
   [database]
-  backend = "sled"
+  backend = "sqlite"
   path = "./data/containr.db"
 
   [proxy]
   http_port = 80
   https_port = 443
   base_domain = "example.com"
+  public_ip = "203.0.113.10"
 
   [github]
   client_id = ""
@@ -143,7 +152,23 @@ create containr.toml:
   certs_dir = "./data/certs"
   staging = true
 
+sqlite is the default backend for fresh installs.
 use ./install.sh to generate config with random secrets.
+
+release flow
+------------
+
+build and publish a github release with the bundled binaries and vps installer:
+
+  scripts/release-gh.sh
+
+the release script builds `containr` and `containrctl`, creates
+`dist/containr-linux-amd64.tar.gz`, writes a sha256 file, and publishes a
+prerelease automatically when the version contains `alpha`, `beta`, or `rc`.
+
+docker-backed backend e2e coverage lives in:
+
+  scripts/e2e-services.sh
 
 dns setup
 ---------
@@ -153,7 +178,9 @@ point your base domain and wildcard to your server:
   your-domain.com     A     your-server-ip
   *.your-domain.com   A     your-server-ip
 
-apps are accessible at app-name.your-domain.com.
+dashboard: your-domain.com
+primary app route: app-name.your-domain.com
+service route: service-name.app-name.your-domain.com
 
 api endpoints
 -------------
@@ -183,6 +210,11 @@ certificates:
   POST /api/apps/{id}/certificate/reissue renew ssl
 
 managed services:
+  GET            /api/services           list unified services
+  GET            /api/services/{id}      get unified service
+  GET            /api/services/{id}/logs get service logs
+  POST           /api/services/{id}/start|stop|restart
+  DELETE         /api/services/{id}      delete service
   GET/POST       /api/databases          list/create databases
   GET/DELETE     /api/databases/{id}     get/delete database
   POST           /api/databases/{id}/start|stop
@@ -197,7 +229,7 @@ deploying an app
 ----------------
 
   # create app
-  curl -X POST http://localhost:3000/api/apps \
+  curl -X POST http://localhost:2077/api/apps \
     -H "authorization: bearer $TOKEN" \
     -H "content-type: application/json" \
     -d '{
@@ -208,10 +240,23 @@ deploying an app
     }'
 
   # trigger deployment
-  curl -X POST http://localhost:3000/api/apps/$APP_ID/deployments \
+  curl -X POST http://localhost:2077/api/apps/$APP_ID/deployments \
     -H "authorization: bearer $TOKEN"
 
 see examples/curl-examples.txt for more.
+
+cli examples
+------------
+
+  containrctl projects list
+  containrctl services list
+  containrctl services get SERVICE_ID
+  containrctl services logs --id SERVICE_ID --tail 200
+  containrctl databases proxy --id DB_ID --enabled
+  containrctl databases pitr --id DB_ID --enabled
+  containrctl databases base-backup --id DB_ID --label baseline
+  containrctl databases restore-point --id DB_ID --restore-point stable
+  containrctl databases recover --id DB_ID --restore-point stable
 
 contributing
 ------------

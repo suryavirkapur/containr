@@ -81,7 +81,7 @@ http request lifecycle:
       │     → serves challenge response
       │
       ├─→ api request (base_domain)
-      │     → forwards to api server (localhost:3000)
+      │     → forwards to api server (localhost:2077)
       │
       └─→ app request (app subdomain)
             → forwards to app container (localhost:dynamic_port)

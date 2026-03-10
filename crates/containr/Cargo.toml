@@ -9,6 +9,10 @@ name = "containr"
 path = "src/main.rs"
 
 [[bin]]
+name = "containrctl"
+path = "src/client.rs"
+
+[[bin]]
 name = "openapi"
 path = "src/openapi.rs"
 required-features = ["openapi-only"]
@@ -32,6 +36,7 @@ serde_json = { workspace = true }
 toml = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+reqwest = { workspace = true }
 
 clap = { version = "4", features = ["derive"] }
 
@@ -40,3 +45,6 @@ bollard = { workspace = true }
 
 # openapi
 utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
+
+[dev-dependencies]
+tempfile = "3"

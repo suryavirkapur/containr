@@ -73,6 +73,7 @@ fn deployment_source_url(source: &DeploymentSource) -> String {
     match source {
         DeploymentSource::RemoteGit { url, .. } => url.clone(),
         DeploymentSource::LocalPath { path } => path.clone(),
+        DeploymentSource::None => String::new(),
     }
 }
 
@@ -91,7 +92,12 @@ pub(crate) async fn create_and_queue_deployment(
     let mut deployment = Deployment::new(app.id, commit_sha.clone());
     deployment.commit_message = commit_message.clone();
     deployment.branch = branch.clone();
-    deployment.source_url = Some(deployment_source_url(&source));
+    let source_url = deployment_source_url(&source);
+    deployment.source_url = if source_url.is_empty() {
+        None
+    } else {
+        Some(source_url)
+    };
     deployment.rollout_strategy = rollout_strategy;
     deployment.rollback_from_deployment_id = rollback_from_deployment_id;
     state
@@ -304,7 +310,10 @@ pub async fn trigger_deployment(
     headers: HeaderMap,
     Path(app_id): Path<Uuid>,
     body: Option<Json<DeploymentTriggerRequest>>,
-) -> Result<(StatusCode, Json<DeploymentResponse>), (StatusCode, Json<ErrorResponse>)> {
+) -> Result<
+    (StatusCode, Json<DeploymentResponse>),
+    (StatusCode, Json<ErrorResponse>),
+> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
@@ -391,7 +400,10 @@ pub async fn rollback_deployment(
     headers: HeaderMap,
     Path((app_id, target_deployment_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<RollbackRequest>>,
-) -> Result<(StatusCode, Json<DeploymentResponse>), (StatusCode, Json<ErrorResponse>)> {
+) -> Result<
+    (StatusCode, Json<DeploymentResponse>),
+    (StatusCode, Json<ErrorResponse>),
+> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
@@ -439,7 +451,7 @@ pub async fn rollback_deployment(
         ));
     }
 
-    if target.image_id.is_none() {
+    if !can_rollback_to_deployment(&app, &target) {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -586,14 +598,44 @@ fn resolve_rollout_strategy(
 
 fn parse_rollout_strategy(value: &str) -> Option<RolloutStrategy> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "stop_first" | "stop-first" | "stopfirst" => Some(RolloutStrategy::StopFirst),
-        "start_first" | "start-first" | "startfirst" => Some(RolloutStrategy::StartFirst),
+        "stop_first" | "stop-first" | "stopfirst" => {
+            Some(RolloutStrategy::StopFirst)
+        }
+        "start_first" | "start-first" | "startfirst" => {
+            Some(RolloutStrategy::StartFirst)
+        }
         _ => None,
     }
 }
 
+pub(crate) fn can_rollback_to_deployment(
+    app: &App,
+    target: &Deployment,
+) -> bool {
+    if target.image_id.is_some() {
+        return true;
+    }
+
+    let service_images = target
+        .service_deployments
+        .iter()
+        .filter_map(|deployment| {
+            deployment
+                .image_id
+                .as_ref()
+                .map(|image_id| (deployment.service_id, image_id))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+
+    app.services.iter().all(|service| {
+        service_images.contains_key(&service.id) || !service.image.is_empty()
+    })
+}
+
 /// helper for internal errors
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    e: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", e);
     (
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -602,3 +644,7 @@ fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse
         }),
     )
 }
+
+#[cfg(test)]
+#[path = "deployments_test.rs"]
+mod deployments_test;

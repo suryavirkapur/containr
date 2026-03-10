@@ -179,7 +179,9 @@ pub async fn reissue_certificate(
     if let Some(Json(req)) = body {
         if let Some(domain) = req.domain {
             let normalized = domain.trim().to_lowercase();
-            if normalized.is_empty() || !domains.iter().any(|d| d == &normalized) {
+            if normalized.is_empty()
+                || !domains.iter().any(|d| d == &normalized)
+            {
                 return Err((
                     StatusCode::BAD_REQUEST,
                     Json(ErrorResponse {
@@ -240,7 +242,8 @@ pub async fn reissue_certificate(
     }
 
     Ok(Json(ReissueResponse {
-        message: "certificate issuance initiated. this may take a few moments.".to_string(),
+        message: "certificate issuance initiated. this may take a few moments."
+            .to_string(),
         domains,
     }))
 }
@@ -284,7 +287,9 @@ fn get_user_id(
 }
 
 /// Helper for internal errors
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    e: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", e);
     (
         StatusCode::INTERNAL_SERVER_ERROR,

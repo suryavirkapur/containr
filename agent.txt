@@ -1,4 +1,83 @@
 current context:
+- the backend runtime now treats the project/group as the network boundary:
+  grouped managed services join the project network, while ungrouped managed
+  services get a dedicated private `containr-svc-*` network
+- the backend now exposes a canonical service inventory through `/api/services`
+  so app services, managed databases, and managed queues can be listed and
+  inspected through one shared api model
+- app services now have direct lifecycle handlers for logs/start/stop/restart
+  without forcing a full project redeploy, backed by a dedicated
+  `AppServiceManager` runtime helper instead of inlining that logic in axum
+- `containrctl` now has a `services` command family for the unified backend
+  surface, and the default local instance url is `http://127.0.0.1:2077`
+- the repo now includes `scripts/e2e-services.sh`, a checked-in docker-backed
+  backend harness that exercises unified service inventory/lifecycle, grouped
+  valkey network isolation, wildcard routing, public managed-service ports,
+  and project teardown cleanup end to end
+- sqlite schema setup now comes from embedded migration files under
+  `crates/containr-common/migrations/` with an in-binary migration runner,
+  instead of keeping the whole schema inline in rust code
+- first-class managed database support now explicitly includes postgres,
+  valkey, mariadb, and qdrant in the api/cli surface; rabbitmq queue support
+  still exists, but the current backend focus is the database-heavy service set
+- managed database and queue api responses now expose `service_type`,
+  `group_id`, `network_name`, `public_ip`, and public connection metadata when
+  a service has a host port assigned
+- `containrctl` now supports `groups` as an alias for `projects`, filters
+  managed service lists by `--group-id`, and can toggle database exposure,
+  postgres pitr, postgres pgdog, and queue exposure
+- `containrctl` now also drives postgres pitr operations end to end through
+  `databases base-backup`, `databases restore-point`, and
+  `databases recover`
+- settings responses now include `dashboard_url`, `service_wildcard_domain`,
+  `api_port`, and `public_ip`, and the default api port is now 2077
+- the checked-in docker e2e harness now covers grouped postgres directly plus
+  pgdog proxy access, local pitr backup/restore/recovery, public postgres
+  host-port access, and the runtime invariant that each postgres service owns
+  at most one pgdog frontend container at a time
+- live postgres recovery testing exposed and fixed a permission issue where
+  `pg_basebackup` left host-mounted backup directories unreadable to the api
+  process during recovery; the runtime now normalizes backup permissions
+  immediately after each base backup
+- the default `containrctl` request timeout is now 180 seconds because
+  postgres pitr recovery exceeded the old 30-second default even when the
+  server-side operation was still progressing correctly
+- postgres pitr recovery now forces a wal switch and copies the live
+  `pg_wal` segment files into the mounted archive directory before stop and
+  restore, and normalizes the copied wal permissions so recovery can read
+  those files instead of failing with `permission denied`
+- a live docker-backed verification pass on 2026-03-09 proved:
+  same-group valkey connectivity works, cross-group valkey access fails by dns
+  isolation, qdrant public http access works, mariadb public tcp access works,
+  postgres pgdog proxy access works, and wildcard subdomain routing works for
+  both `app.base_domain` and `service.app.base_domain`
+- the group delete path now removes grouped managed services before deleting
+  the group network and no longer fails on root-owned database data directories;
+  permission-denied cleanup is logged and ignored during delete
+- one known rough edge remains after live testing:
+  `containrctl databases list --group-id <deleted-group>` returns `404`
+  because the filter validates that the group id still exists
+- the platform is now intentionally centered on four runtime primitives:
+  github repo builds, direct docker image deploys, cron jobs, and managed
+  postgres/redis/rabbitmq services
+- a live docker-backed validation pass on 2026-03-09 covered `containrctl`
+  init/register/login, image-only deploys, github repo deploys, cron runs,
+  deploy/rollback/delete flows, proxy routing, and full managed-service
+  create/get/logs/start/stop/restart/delete cycles
+- live testing found and fixed four backend issues: rollback rejection for
+  multi-image deployments, stale `running` deployment history, valkey auth not
+  being enforced, and managed database logs hanging because docker logs were
+  opened in follow mode
+- sqlite is now intended to be the default metadata backend for fresh installs,
+  while sled remains supported for existing deployments and explicit opt-in use
+- the repo now includes planned release packaging around a gh-driven release
+  flow and a dedicated vps bootstrap script that installs docker plus containr
+- the workspace now includes a second rust binary, `containrctl`, which stores
+  per-instance client settings in `$HOME/.containr/config.toml` and can init,
+  login/register, check health, list projects/containers, and fetch system stats
+- the main `containr` binary now exposes subcommands for docker socket checks,
+  offline api key generation, and systemd unit rendering alongside the existing
+  full server startup path
 - the project creation flow now uses a render-style single-service-first page with
   pre-selected web service type, explicit "expose to web" checkbox, collapsed
   advanced settings, and a "create and deploy" action that sends a single-element
@@ -162,6 +241,14 @@ current context:
   service through tar archive endpoints rooted at the host-side mount path
 
 pending tasks:
+- publish the current 0.1.14-alpha release flow through `gh` once the repo
+  state is ready for an actual prerelease cut
+- decide whether to migrate existing generated sample configs and old docs that
+  still mention app-era `/api/apps` examples toward the newer project-first cli
+  and api flow
+- decide whether api key generation should stay an offline database command or
+  move behind an authenticated admin api so it also works against a live sled
+  server without stopping the process
 - platform roadmap:
   1. expose initial deployment state better after create:
      - return or surface the queued deployment id/status directly from create
@@ -201,6 +288,14 @@ pending tasks:
   enough in production
 
 important decisions:
+- do not preserve deprecated project-level domain behavior in new tests or new
+  code paths; the service model and `service_type` are now authoritative
+- treat image-only apps as a first-class deployment mode through
+  `DeploymentSource::None` instead of forcing fake source checkout inputs
+- configure valkey auth through the real container startup command, not
+  through an environment variable that the image ignores
+- treat cli-served logs as bounded request/response output and never use
+  docker `follow` mode behind an http logs endpoint
 - keep the runtime compatible during rename by accepting `CONTAINR_ENCRYPTION_KEY` first and
   falling back to the legacy `ZNSKR_ENCRYPTION_KEY` until deployments are updated
 - remove the local git push deployment path entirely instead of keeping a hidden token-based deploy bypass
@@ -325,3 +420,7 @@ architectural notes:
 - startup deployment recovery only marks interrupted deployments failed in
   metadata; it still does not make the actual deployment queue durable or clean
   up any partially created containers automatically
+- the service inventory remains computed from the existing project/service,
+  managed database, and managed queue tables instead of introducing a new
+  canonical storage table in this pass; the unification is at the backend api
+  model and lifecycle layer first

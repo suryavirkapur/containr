@@ -19,11 +19,15 @@ use tokio::io::AsyncWriteExt;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::auth::{create_exec_token, extract_bearer_token, validate_exec_token, validate_token};
+use crate::auth::{
+    create_exec_token, extract_bearer_token, validate_exec_token,
+    validate_token,
+};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
 use containr_runtime::{
-    DockerContainerManager, DockerContainerState, DockerContainerStats, DockerMountInfo,
+    DockerContainerManager, DockerContainerState, DockerContainerStats,
+    DockerMountInfo,
 };
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -138,7 +142,9 @@ fn get_user_id(
 }
 
 /// helper for internal errors
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    e: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", e);
     (
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -160,6 +166,32 @@ fn parse_app_id_from_container(container_id: &str) -> Option<Uuid> {
     Uuid::parse_str(candidate).ok()
 }
 
+fn short_app_id(app_id: &Uuid) -> String {
+    app_id
+        .to_string()
+        .split('-')
+        .next()
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn cron_container_prefix(app_id: &Uuid) -> String {
+    format!("containr-cron-{}-", short_app_id(app_id))
+}
+
+fn parse_cron_service_name(
+    container_id: &str,
+    app_id: &Uuid,
+) -> Option<String> {
+    let prefix = cron_container_prefix(app_id);
+    let suffix = container_id.strip_prefix(&prefix)?;
+    let service_name = suffix.rsplit_once('-')?.0;
+    if service_name.is_empty() {
+        return None;
+    }
+    Some(service_name.to_string())
+}
+
 async fn ensure_container_owned(
     state: &AppState,
     user_id: Uuid,
@@ -167,7 +199,9 @@ async fn ensure_container_owned(
 ) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
     if let Some(id_str) = container_id.strip_prefix("containr-db-") {
         if let Ok(id) = Uuid::parse_str(id_str) {
-            if let Some(db) = state.db.get_managed_database(id).map_err(internal_error)? {
+            if let Some(db) =
+                state.db.get_managed_database(id).map_err(internal_error)?
+            {
                 if db.owner_id == user_id {
                     return Ok(());
                 }
@@ -183,7 +217,9 @@ async fn ensure_container_owned(
 
     if let Some(id_str) = container_id.strip_prefix("containr-queue-") {
         if let Ok(id) = Uuid::parse_str(id_str) {
-            if let Some(queue) = state.db.get_managed_queue(id).map_err(internal_error)? {
+            if let Some(queue) =
+                state.db.get_managed_queue(id).map_err(internal_error)?
+            {
                 if queue.owner_id == user_id {
                     return Ok(());
                 }
@@ -202,6 +238,16 @@ async fn ensure_container_owned(
             if app.owner_id == user_id {
                 return Ok(());
             }
+        }
+    }
+
+    for app in state
+        .db
+        .list_apps_by_owner(user_id)
+        .map_err(internal_error)?
+    {
+        if container_id.starts_with(&cron_container_prefix(&app.id)) {
+            return Ok(());
         }
     }
 
@@ -239,11 +285,9 @@ async fn ensure_container_owned(
                 return Ok(());
             }
 
-            if deployment
-                .service_deployments
-                .iter()
-                .any(|service| service.container_id.as_deref() == Some(container_id))
-            {
+            if deployment.service_deployments.iter().any(|service| {
+                service.container_id.as_deref() == Some(container_id)
+            }) {
                 return Ok(());
             }
         }
@@ -349,6 +393,11 @@ pub async fn list_containers(
         .db
         .list_apps_by_owner(user_id)
         .map_err(internal_error)?;
+    let docker = DockerContainerManager::new();
+    let docker_containers =
+        docker.list_containers().await.map_err(internal_error)?;
+    let mut known_container_ids = std::collections::HashSet::new();
+
     for app in apps {
         if let Some(deployment) = state
             .db
@@ -366,6 +415,7 @@ pub async fn list_containers(
             }
 
             if let Some(container_id) = deployment.container_id.clone() {
+                known_container_ids.insert(container_id.clone());
                 containers.push(ContainerListItem {
                     id: container_id.clone(),
                     resource_type: "app".to_string(),
@@ -375,6 +425,7 @@ pub async fn list_containers(
             }
             for sd in deployment.service_deployments {
                 if let Some(container_id) = sd.container_id.clone() {
+                    known_container_ids.insert(container_id.clone());
                     let service_name = service_names
                         .get(&sd.service_id)
                         .cloned()
@@ -392,6 +443,26 @@ pub async fn list_containers(
                     });
                 }
             }
+        }
+
+        let prefix = cron_container_prefix(&app.id);
+        for container in &docker_containers {
+            if !container.id.starts_with(&prefix) {
+                continue;
+            }
+            if known_container_ids.contains(&container.id) {
+                continue;
+            }
+
+            let service_name = parse_cron_service_name(&container.id, &app.id)
+                .unwrap_or_else(|| "cron".to_string());
+            known_container_ids.insert(container.id.clone());
+            containers.push(ContainerListItem {
+                id: container.id.clone(),
+                resource_type: "cron_job".to_string(),
+                resource_id: app.id.to_string(),
+                name: format!("{} (cron {})", app.name, service_name),
+            });
         }
     }
 
@@ -421,10 +492,13 @@ pub async fn issue_exec_token(
     ensure_container_owned(&state, user_id, &id).await?;
 
     let (token, expires_at) =
-        create_exec_token(user_id, &id, &config.auth.jwt_secret, 90).map_err(internal_error)?;
+        create_exec_token(user_id, &id, &config.auth.jwt_secret, 90)
+            .map_err(internal_error)?;
 
     let expires_at = DateTime::<Utc>::from_timestamp(expires_at, 0)
-        .ok_or_else(|| internal_error("failed to build exec token expiry timestamp"))?;
+        .ok_or_else(|| {
+            internal_error("failed to build exec token expiry timestamp")
+        })?;
 
     Ok(Json(ExecTokenResponse {
         token,
@@ -439,14 +513,16 @@ pub async fn container_exec_ws(
     Query(query): Query<ExecSocketQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
-    let claims = validate_exec_token(&query.token, &id, &config.auth.jwt_secret).map_err(|e| {
-        (
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: e.to_string(),
-            }),
-        )
-    })?;
+    let claims =
+        validate_exec_token(&query.token, &id, &config.auth.jwt_secret)
+            .map_err(|e| {
+                (
+                    StatusCode::UNAUTHORIZED,
+                    Json(ErrorResponse {
+                        error: e.to_string(),
+                    }),
+                )
+            })?;
     let command = resolve_exec_command(query.shell.as_deref())?;
     drop(config);
 
@@ -455,7 +531,9 @@ pub async fn container_exec_ws(
     let cols = query.cols.unwrap_or(120);
     let rows = query.rows.unwrap_or(32);
 
-    Ok(ws.on_upgrade(move |socket| handle_container_exec(socket, id, command, cols, rows)))
+    Ok(ws.on_upgrade(move |socket| {
+        handle_container_exec(socket, id, command, cols, rows)
+    }))
 }
 
 async fn handle_container_exec(
@@ -559,8 +637,10 @@ pub async fn get_container_status(
     ensure_container_owned(&state, user_id, &id).await?;
 
     let docker = DockerContainerManager::new();
-    let state_info: DockerContainerState = docker.get_state(&id).await.map_err(internal_error)?;
-    let stats: DockerContainerStats = docker.get_stats(&id).await.map_err(internal_error)?;
+    let state_info: DockerContainerState =
+        docker.get_state(&id).await.map_err(internal_error)?;
+    let stats: DockerContainerStats =
+        docker.get_stats(&id).await.map_err(internal_error)?;
 
     Ok(Json(ContainerStatusResponse {
         status: state_info.status,
@@ -623,7 +703,8 @@ pub async fn list_container_mounts(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<Vec<ContainerMountResponse>>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<Vec<ContainerMountResponse>>, (StatusCode, Json<ErrorResponse>)>
+{
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     ensure_container_owned(&state, user_id, &id).await?;
@@ -643,11 +724,16 @@ pub async fn list_container_mounts(
     Ok(Json(response))
 }
 
-fn find_mount<'a>(mounts: &'a [DockerMountInfo], destination: &str) -> Option<&'a DockerMountInfo> {
+fn find_mount<'a>(
+    mounts: &'a [DockerMountInfo],
+    destination: &str,
+) -> Option<&'a DockerMountInfo> {
     mounts.iter().find(|mount| mount.destination == destination)
 }
 
-fn validate_rel_path(rel_path: &str) -> Result<PathBuf, (StatusCode, Json<ErrorResponse>)> {
+fn validate_rel_path(
+    rel_path: &str,
+) -> Result<PathBuf, (StatusCode, Json<ErrorResponse>)> {
     let path = FsPath::new(rel_path);
     if path.is_absolute() {
         return Err((
@@ -753,10 +839,9 @@ pub async fn list_volume_entries(
         let meta = entry.metadata().map_err(internal_error)?;
         let name = entry.file_name().to_string_lossy().to_string();
         let rel_path = rel.join(&name).to_string_lossy().to_string();
-        let modified_at = meta
-            .modified()
-            .ok()
-            .map(|time| chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339());
+        let modified_at = meta.modified().ok().map(|time| {
+            chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339()
+        });
 
         entries.push(VolumeEntry {
             name,
@@ -803,7 +888,8 @@ pub async fn delete_volume_entry(
     ensure_container_owned(&state, user_id, &id).await?;
 
     let docker = DockerContainerManager::new();
-    let (base, rel, read_only) = resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
+    let (base, rel, read_only) =
+        resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
     if read_only {
         return Err((
             StatusCode::FORBIDDEN,
@@ -878,8 +964,11 @@ pub async fn download_volume_entry(
     );
     response.headers_mut().insert(
         header::CONTENT_DISPOSITION,
-        header::HeaderValue::from_str(&format!("attachment; filename=\"{}\"", filename))
-            .unwrap_or_else(|_| header::HeaderValue::from_static("attachment")),
+        header::HeaderValue::from_str(&format!(
+            "attachment; filename=\"{}\"",
+            filename
+        ))
+        .unwrap_or_else(|_| header::HeaderValue::from_static("attachment")),
     );
 
     Ok(response)
@@ -913,7 +1002,8 @@ pub async fn upload_volume_entry(
     ensure_container_owned(&state, user_id, &id).await?;
 
     let docker = DockerContainerManager::new();
-    let (base, rel, read_only) = resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
+    let (base, rel, read_only) =
+        resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
     if read_only {
         return Err((
             StatusCode::FORBIDDEN,
@@ -927,7 +1017,9 @@ pub async fn upload_volume_entry(
         .await
         .map_err(internal_error)?;
 
-    while let Some(field) = multipart.next_field().await.map_err(internal_error)? {
+    while let Some(field) =
+        multipart.next_field().await.map_err(internal_error)?
+    {
         let file_name = field
             .file_name()
             .map(|name| name.to_string())
@@ -980,7 +1072,8 @@ pub async fn create_volume_directory(
     ensure_container_owned(&state, user_id, &id).await?;
 
     let docker = DockerContainerManager::new();
-    let (base, rel, read_only) = resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
+    let (base, rel, read_only) =
+        resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
     if read_only {
         return Err((
             StatusCode::FORBIDDEN,

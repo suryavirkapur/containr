@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --font-family-serif: 'Playfair Display', Georgia, serif;
-  --font-family-sans: 'Inter', system-ui, sans-serif;
-  --font-family-mono: 'JetBrains Mono', Consolas, monospace;
+  --font-family-serif: "newsreader", "iowan old style", "palatino linotype", serif;
+  --font-family-sans: "space grotesk", "ibm plex sans", "avenir next", sans-serif;
+  --font-family-mono: "ibm plex mono", "jetbrains mono", "sfmono-regular", monospace;
   --radius-sm: 0;
   --radius: 0;
   --radius-md: 0;
@@ -15,47 +15,138 @@
 }
 
 :root {
-  font-family: 'Inter', system-ui, sans-serif;
+  --background: #09090b;
+  --foreground: #f5f7fa;
+  --card: #101319;
+  --card-foreground: #f5f7fa;
+  --muted: #131720;
+  --muted-foreground: #9ca3af;
+  --surface-muted: #171b24;
+  --border: #262b36;
+  --border-strong: #3b4352;
+  --input: #12161f;
+  --ring: #9aa4b2;
+  --foreground-subtle: #c8d0dc;
+  --primary: #f5f7fa;
+  --primary-foreground: #0b0d12;
+  --success: #14532d;
+  --warning: #78350f;
+  --destructive: #7f1d1d;
+  font-family: "space grotesk", "ibm plex sans", "avenir next", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+html,
 body {
-  @apply bg-[#0a0a0f] text-neutral-200 min-h-screen;
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(circle at top, rgba(30, 41, 59, 0.28), transparent 32%),
+    linear-gradient(180deg, #09090b 0%, #0b0f16 100%);
+  color: var(--foreground);
+  min-height: 100vh;
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* remove all border radius */
 *,
 *::before,
 *::after {
   border-radius: 0 !important;
 }
 
-/* scrollbar styles */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* bridge legacy light classes onto the new dark system so older pages still fit */
+.bg-white {
+  background-color: var(--card) !important;
+}
+
+.bg-neutral-50 {
+  background-color: var(--muted) !important;
+}
+
+.bg-neutral-100,
+.bg-neutral-200 {
+  background-color: var(--surface-muted) !important;
+}
+
+.text-black {
+  color: var(--foreground) !important;
+}
+
+.text-neutral-400,
+.text-neutral-500,
+.text-neutral-600,
+.text-neutral-700,
+.text-neutral-800 {
+  color: var(--muted-foreground) !important;
+}
+
+.border-neutral-100,
+.border-neutral-200,
+.border-neutral-300,
+.border-neutral-700,
+.border-neutral-800 {
+  border-color: var(--border) !important;
+}
+
+.hover\:bg-neutral-50:hover {
+  background-color: var(--surface-muted) !important;
+}
+
+.hover\:border-neutral-400:hover,
+.hover\:border-black:hover {
+  border-color: var(--border-strong) !important;
+}
+
+.hover\:text-black:hover,
+.hover\:text-white:hover {
+  color: var(--foreground) !important;
+}
+
+.focus\:border-black:focus,
+.focus\:border-neutral-400:focus,
+.focus\:border-purple-500:focus {
+  border-color: var(--ring) !important;
+}
+
+.focus\:ring-purple-500:focus {
+  --tw-ring-color: var(--ring) !important;
+}
+
+.accent-black {
+  accent-color: #e5e7eb;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-[#0a0a0f];
+  background: var(--background);
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-neutral-700;
+  background: var(--border-strong);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-neutral-600;
+  background: #525b6d;
 }
 
-/* selection */
 ::selection {
-  @apply bg-purple-600 text-white;
+  background: #334155;
+  color: var(--foreground);
 }

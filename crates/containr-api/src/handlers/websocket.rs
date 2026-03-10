@@ -41,7 +41,9 @@ pub async fn container_logs_ws(
     Query(query): Query<LogsQuery>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_container_logs(socket, app_id, query, state))
+    ws.on_upgrade(move |socket| {
+        handle_container_logs(socket, app_id, query, state)
+    })
 }
 
 /// handle websocket connection for container logs
@@ -70,7 +72,8 @@ async fn handle_container_logs(
         Err(e) => {
             let _ = socket
                 .send(Message::Text(
-                    format!("[error: failed to connect to docker: {}]", e).into(),
+                    format!("[error: failed to connect to docker: {}]", e)
+                        .into(),
                 ))
                 .await;
             return;
@@ -137,7 +140,13 @@ pub async fn deployment_logs_ws(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| {
-        handle_deployment_logs(socket, app_id, deployment_id, query.offset, state)
+        handle_deployment_logs(
+            socket,
+            app_id,
+            deployment_id,
+            query.offset,
+            state,
+        )
     })
 }
 
@@ -201,7 +210,8 @@ async fn handle_deployment_logs(
             Ok(logs) => {
                 if !logs.is_empty() {
                     for log in logs {
-                        if socket.send(Message::Text(log.into())).await.is_err() {
+                        if socket.send(Message::Text(log.into())).await.is_err()
+                        {
                             return;
                         }
                         current_offset += 1;
@@ -210,7 +220,9 @@ async fn handle_deployment_logs(
             }
             Err(e) => {
                 let _ = socket
-                    .send(Message::Text(format!("error reading logs: {}", e).into()))
+                    .send(Message::Text(
+                        format!("error reading logs: {}", e).into(),
+                    ))
                     .await;
                 break;
             }
@@ -224,7 +236,8 @@ async fn handle_deployment_logs(
         };
 
         let status = deployment.status;
-        let is_finished = status == containr_common::models::DeploymentStatus::Running
+        let is_finished = status
+            == containr_common::models::DeploymentStatus::Running
             || status == containr_common::models::DeploymentStatus::Failed
             || status == containr_common::models::DeploymentStatus::Stopped;
 
@@ -234,15 +247,19 @@ async fn handle_deployment_logs(
         // but get_deployment_logs returning empty means we are caught up for now.
         if is_finished {
             // double check if there are more logs just in case race condition
-            if let Ok(logs) = state
-                .db
-                .get_deployment_logs(deployment_id, 1, current_offset)
+            if let Ok(logs) =
+                state
+                    .db
+                    .get_deployment_logs(deployment_id, 1, current_offset)
             {
                 if logs.is_empty() {
                     let _ = socket
                         .send(Message::Text(
-                            format!("[deployment {}]", format!("{:?}", status).to_lowercase())
-                                .into(),
+                            format!(
+                                "[deployment {}]",
+                                format!("{:?}", status).to_lowercase()
+                            )
+                            .into(),
                         ))
                         .await;
                     break;
