@@ -372,7 +372,72 @@ impl ManagedDatabase {
 
     /// returns the bind mount argument for docker (host:container)
     pub fn bind_mount_arg(&self) -> String {
-        format!("{}:{}", self.host_data_path, self.db_type.volume_path())
+        format!("{}:{}", self.host_data_path, self.container_mount_target())
+    }
+
+    /// returns the bind mount target inside the container
+    pub fn container_mount_target(&self) -> &'static str {
+        if self.uses_versioned_postgres_layout() {
+            "/var/lib/postgresql"
+        } else {
+            self.db_type.volume_path()
+        }
+    }
+
+    /// returns the effective data directory inside the container
+    pub fn container_data_dir(&self) -> String {
+        if self.db_type != DatabaseType::Postgresql {
+            return self.db_type.volume_path().to_string();
+        }
+
+        match self.postgres_major_version() {
+            Some(major) if major >= 18 => {
+                format!("/var/lib/postgresql/{major}/docker")
+            }
+            _ => self.db_type.volume_path().to_string(),
+        }
+    }
+
+    /// returns the effective data directory on the host
+    pub fn host_runtime_data_path(&self) -> PathBuf {
+        if self.db_type != DatabaseType::Postgresql {
+            return PathBuf::from(&self.host_data_path);
+        }
+
+        match self.postgres_major_version() {
+            Some(major) if major >= 18 => Path::new(&self.host_data_path)
+                .join(major.to_string())
+                .join("docker"),
+            _ => PathBuf::from(&self.host_data_path),
+        }
+    }
+
+    /// returns env vars for container startup including version-specific data dir
+    pub fn container_env_vars(&self) -> Vec<(String, String)> {
+        let mut env_vars = self.db_type.env_vars(&self.credentials);
+        if self.uses_versioned_postgres_layout() {
+            env_vars.push(("PGDATA".into(), self.container_data_dir()));
+        }
+        env_vars
+    }
+
+    /// returns the parsed postgres major version when available
+    pub fn postgres_major_version(&self) -> Option<u16> {
+        if self.db_type != DatabaseType::Postgresql {
+            return None;
+        }
+
+        let leading = self
+            .version
+            .trim()
+            .split(['.', '-'])
+            .next()
+            .unwrap_or_default();
+        leading.parse::<u16>().ok()
+    }
+
+    fn uses_versioned_postgres_layout(&self) -> bool {
+        matches!(self.postgres_major_version(), Some(major) if major >= 18)
     }
 
     /// returns the docker network name used by this service
@@ -497,6 +562,52 @@ impl ManagedDatabase {
             port,
             self.credentials.database_name
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_postgres_database(version: &str) -> ManagedDatabase {
+        let mut db = ManagedDatabase::new(
+            Uuid::new_v4(),
+            "primary".to_string(),
+            DatabaseType::Postgresql,
+        );
+        db.version = version.to_string();
+        db
+    }
+
+    #[test]
+    fn postgres_16_uses_legacy_data_layout() {
+        let db = sample_postgres_database("16");
+
+        assert_eq!(db.container_mount_target(), "/var/lib/postgresql/data");
+        assert_eq!(db.container_data_dir(), "/var/lib/postgresql/data");
+        assert_eq!(
+            db.host_runtime_data_path(),
+            PathBuf::from(&db.host_data_path)
+        );
+        assert!(!db
+            .container_env_vars()
+            .iter()
+            .any(|(key, _)| key == "PGDATA"));
+    }
+
+    #[test]
+    fn postgres_18_uses_versioned_data_layout() {
+        let db = sample_postgres_database("18.1");
+
+        assert_eq!(db.container_mount_target(), "/var/lib/postgresql");
+        assert_eq!(db.container_data_dir(), "/var/lib/postgresql/18/docker");
+        assert_eq!(
+            db.host_runtime_data_path(),
+            Path::new(&db.host_data_path).join("18").join("docker")
+        );
+        assert!(db.container_env_vars().iter().any(|(key, value)| {
+            key == "PGDATA" && value == "/var/lib/postgresql/18/docker"
+        }));
     }
 }
 

@@ -6,8 +6,11 @@ use std::collections::HashMap;
 use std::fs;
 
 use bollard::Docker;
+use containr_common::managed_services::{DatabaseType, ManagedDatabase};
 use containr_runtime::docker::{DockerContainerConfig, DockerContainerManager};
 use containr_runtime::image::ImageManager;
+use containr_runtime::DatabaseManager;
+use uuid::Uuid;
 
 /// helper to check if docker is available
 async fn is_docker_available() -> bool {
@@ -236,4 +239,51 @@ async fn test_real_container_start_sanitizes_hostname() {
 
     let _ = manager.stop_container(container_id).await;
     let _ = manager.remove_container(container_id).await;
+}
+
+/// test postgres 18 startup uses the supported data layout
+#[tokio::test]
+async fn test_real_postgres_18_database_start() {
+    if !is_docker_available().await {
+        eprintln!("SKIP: docker not available");
+        return;
+    }
+
+    let temp_dir = match tempfile::tempdir() {
+        Ok(dir) => dir,
+        Err(error) => panic!("tempdir failed: {}", error),
+    };
+    let manager = DatabaseManager::new();
+    let mut db = ManagedDatabase::new_with_path(
+        Uuid::new_v4(),
+        "pg18-test".to_string(),
+        DatabaseType::Postgresql,
+        temp_dir.path(),
+    );
+    db.version = "18".to_string();
+
+    let start_result = manager.start_database(&mut db).await;
+    assert!(
+        start_result.is_ok(),
+        "postgres 18 start failed: {:?}",
+        start_result.err()
+    );
+    assert!(
+        manager.is_running(&db).await,
+        "postgres 18 container not running"
+    );
+
+    let runtime_data_dir = db.host_runtime_data_path();
+    assert!(
+        runtime_data_dir.exists(),
+        "postgres 18 data dir missing: {}",
+        runtime_data_dir.display()
+    );
+
+    let stop_result = manager.stop_database(&mut db).await;
+    assert!(
+        stop_result.is_ok(),
+        "postgres 18 stop failed: {:?}",
+        stop_result.err()
+    );
 }

@@ -105,10 +105,10 @@ impl DatabaseManager {
 
         self.stop_database(db).await?;
 
-        let data_dir = Path::new(&db.host_data_path);
-        Self::archive_existing_data_dir(db, data_dir)?;
-        Self::copy_dir_recursive(&backup_dir, data_dir)?;
-        Self::write_recovery_config(data_dir, restore_point, target_time)?;
+        let data_dir = db.host_runtime_data_path();
+        Self::archive_existing_data_dir(db, &data_dir)?;
+        Self::copy_dir_recursive(&backup_dir, &data_dir)?;
+        Self::write_recovery_config(&data_dir, restore_point, target_time)?;
 
         self.start_database(db).await?;
         Ok(())
@@ -197,18 +197,18 @@ impl DatabaseManager {
         db: &ManagedDatabase,
     ) -> Result<()> {
         self.prepare_postgres_pitr_dirs(db)?;
+        let wal_path = format!("{}/pg_wal", db.container_data_dir());
         self.exec_command_output(
             &Self::database_container_name(db),
             vec![
                 "sh".to_string(),
                 "-lc".to_string(),
                 format!(
-                    "cp -f /var/lib/postgresql/data/pg_wal/000000* {0}/ \
-                     2>/dev/null || true; \
-                     cp -f /var/lib/postgresql/data/pg_wal/*.history {0}/ \
+                    "cp -f {1}/000000* {0}/ 2>/dev/null || true; \
+                     cp -f {1}/*.history {0}/ \
                      2>/dev/null || true; \
                      chmod -R a+rX {0}",
-                    POSTGRES_PITR_WAL_PATH
+                    POSTGRES_PITR_WAL_PATH, wal_path
                 ),
             ],
             None,

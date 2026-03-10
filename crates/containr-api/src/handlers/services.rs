@@ -15,7 +15,9 @@ use crate::auth::{extract_bearer_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
 use crate::security::resolve_encryption_secret;
 use crate::state::AppState;
-use containr_common::managed_services::{ManagedDatabase, ManagedQueue};
+use containr_common::managed_services::{
+    ManagedDatabase, ManagedQueue, ServiceStatus,
+};
 use containr_common::models::{
     App, ContainerService, Deployment, DeploymentStatus, ServiceDeployment,
 };
@@ -240,6 +242,15 @@ fn bad_request(
     )
 }
 
+fn conflict(message: impl Into<String>) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::CONFLICT,
+        Json(ErrorResponse {
+            error: message.into(),
+        }),
+    )
+}
+
 fn service_manager_error<E: std::fmt::Display>(
     action: &str,
     error: E,
@@ -251,6 +262,22 @@ fn service_manager_error<E: std::fmt::Display>(
             error: format!("failed to {}: {}", action, error),
         }),
     )
+}
+
+fn ensure_database_not_starting(
+    database: &ManagedDatabase,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    if database.status == ServiceStatus::Starting {
+        return Err(conflict("database is already starting"));
+    }
+
+    Ok(())
+}
+
+fn mark_database_starting(database: &mut ManagedDatabase) {
+    database.status = ServiceStatus::Starting;
+    database.container_id = None;
+    database.updated_at = Utc::now();
 }
 
 fn resolve_group_id(
@@ -967,12 +994,24 @@ pub async fn start_service(
             .await?;
         }
         OwnedServiceRecord::ManagedDatabase(mut database) => {
-            DatabaseManager::new()
-                .start_database(&mut database)
-                .await
-                .map_err(|error| {
-                    service_manager_error("start service", error)
-                })?;
+            let manager = DatabaseManager::new();
+            ensure_database_not_starting(&database)?;
+            if manager.is_running(&database).await {
+                return Err(bad_request("database is already running"));
+            }
+
+            mark_database_starting(&mut database);
+            state
+                .db
+                .save_managed_database(&database)
+                .map_err(internal_error)?;
+
+            if let Err(error) = manager.start_database(&mut database).await {
+                database.status = ServiceStatus::Failed;
+                database.updated_at = Utc::now();
+                let _ = state.db.save_managed_database(&database);
+                return Err(service_manager_error("start service", error));
+            }
             state
                 .db
                 .save_managed_database(&database)
@@ -1106,6 +1145,7 @@ pub async fn restart_service(
             .await?;
         }
         OwnedServiceRecord::ManagedDatabase(mut database) => {
+            ensure_database_not_starting(&database)?;
             let manager = DatabaseManager::new();
             manager
                 .stop_database(&mut database)
@@ -1113,12 +1153,19 @@ pub async fn restart_service(
                 .map_err(|error| {
                     service_manager_error("restart service", error)
                 })?;
-            manager
-                .start_database(&mut database)
-                .await
-                .map_err(|error| {
-                    service_manager_error("restart service", error)
-                })?;
+
+            mark_database_starting(&mut database);
+            state
+                .db
+                .save_managed_database(&database)
+                .map_err(internal_error)?;
+
+            if let Err(error) = manager.start_database(&mut database).await {
+                database.status = ServiceStatus::Failed;
+                database.updated_at = Utc::now();
+                let _ = state.db.save_managed_database(&database);
+                return Err(service_manager_error("restart service", error));
+            }
             state
                 .db
                 .save_managed_database(&database)
