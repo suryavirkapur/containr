@@ -4,6 +4,7 @@ import {
 	createMemo,
 	createResource,
 	createSignal,
+	ErrorBoundary,
 	For,
 	onCleanup,
 	Show,
@@ -689,6 +690,37 @@ const AppDetail: Component = () => {
 	const serviceRuntime = (serviceId: string) =>
 		serviceRuntimeById().get(serviceId);
 
+	const resourceErrorMessage = (value: unknown): string | null => {
+		if (!value) {
+			return null;
+		}
+
+		if (value instanceof Error && value.message) {
+			return value.message;
+		}
+
+		if (
+			typeof value === "object" &&
+			value &&
+			"error" in value &&
+			typeof value.error === "string"
+		) {
+			return value.error;
+		}
+
+		return "failed to load project detail";
+	};
+
+	const pageError = createMemo(() => {
+		return (
+			resourceErrorMessage(app.error) ||
+			resourceErrorMessage(deployments.error) ||
+			resourceErrorMessage(certificate.error) ||
+			resourceErrorMessage(containers.error) ||
+			resourceErrorMessage(serviceInventory.error)
+		);
+	});
+
 	const certificateStatusLabel = (status: CertificateStatus["status"]) => {
 		switch (status) {
 			case "valid":
@@ -1114,946 +1146,788 @@ const AppDetail: Component = () => {
 	];
 
 	return (
-		<div>
-			{/* loading */}
-			<Show when={app.loading}>
-				<div class="animate-pulse">
-					<div class="h-7 bg-neutral-800 w-1/4 mb-3"></div>
-					<div class="h-4 bg-neutral-800/50 w-1/2 mb-10"></div>
-					<div class="border border-neutral-800 p-8">
-						<div class="h-5 bg-neutral-800 w-full mb-4"></div>
-						<div class="h-5 bg-neutral-800/50 w-3/4"></div>
-					</div>
+		<ErrorBoundary
+			fallback={(error) => (
+				<div class="border border-red-800/50 bg-red-900/20 px-4 py-3 text-sm text-red-300">
+					{error.message || "failed to render project detail"}
 				</div>
-			</Show>
-
-			{/* content */}
-			<Show when={!app.loading && app()}>
-				{/* header */}
-				<div class="flex justify-between items-start mb-6">
-					<div>
-						<div class="flex items-center gap-3">
-							<h1 class="text-2xl font-semibold text-white">{app()!.name}</h1>
-							<Badge variant="default">docker</Badge>
-						</div>
-						<p class="text-neutral-500 mt-1.5 text-sm font-mono">
-							{app()!.github_url}
-						</p>
-						<div class="flex items-center gap-3 mt-2">
-							<span class="flex items-center gap-1.5 text-xs text-neutral-400">
-								<span
-									class={`w-1.5 h-1.5 ${runtimeStatusDotClass(
-										projectRuntimeStatus(),
-									)}`}
-								></span>
-								{projectRuntimeText()}
-							</span>
-							<span class="text-neutral-600">·</span>
-							<span class="text-xs text-neutral-400 font-mono">
-								{app()!.branch}
-							</span>
-							<span class="text-neutral-600">·</span>
-							<span class="text-xs text-neutral-400">
-								{projectRuntimeDetail()}
-							</span>
-						</div>
-					</div>
-					<div class="flex gap-2">
-						<button
-							onClick={triggerDeploy}
-							disabled={deploying()}
-							class="px-4 py-1.5 bg-white text-black hover:bg-neutral-200 disabled:opacity-50 transition-colors text-sm font-medium cursor-pointer"
-						>
-							{deploying() ? "deploying..." : "manual deploy"}
-						</button>
-					</div>
-				</div>
-
-				<Show when={deployError()}>
-					<div class="mb-6 border border-red-800/50 bg-red-900/20 px-4 py-3 text-sm text-red-400">
-						{deployError()}
+			)}
+		>
+			<div>
+				<Show when={pageError()}>
+					<div class="mb-6 border border-red-800/50 bg-red-900/20 px-4 py-3 text-sm text-red-300">
+						{pageError()}
 					</div>
 				</Show>
 
-				{/* sidebar + content layout */}
-				<div class="flex gap-6">
-					{/* info grid */}
-					<div class="grid grid-cols-4 gap-px bg-neutral-200 mb-8">
-						{/* status */}
-						<div class="bg-white p-5">
-							<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-								status
-							</h3>
-							<div class="flex items-center gap-2">
-								<span
-									class={`w-2 h-2 ${runtimeStatusDotClass(
-										projectRuntimeStatus(),
-									)}`}
-								></span>
-								<span class="text-black text-sm">{projectRuntimeText()}</span>
+				{/* loading */}
+				<Show when={app.loading && !app()}>
+					<div class="animate-pulse">
+						<div class="h-7 bg-neutral-800 w-1/4 mb-3"></div>
+						<div class="h-4 bg-neutral-800/50 w-1/2 mb-10"></div>
+						<div class="border border-neutral-800 p-8">
+							<div class="h-5 bg-neutral-800 w-full mb-4"></div>
+							<div class="h-5 bg-neutral-800/50 w-3/4"></div>
+						</div>
+					</div>
+				</Show>
+
+				{/* content */}
+				<Show when={app()}>
+					{/* header */}
+					<div class="flex justify-between items-start mb-6">
+						<div>
+							<div class="flex items-center gap-3">
+								<h1 class="text-2xl font-semibold text-white">{app()!.name}</h1>
+								<Badge variant="default">docker</Badge>
 							</div>
-							<p class="mt-2 text-xs text-neutral-500">
-								{projectRuntimeDetail()}
+							<p class="text-neutral-500 mt-1.5 text-sm font-mono">
+								{app()!.github_url}
 							</p>
+							<div class="flex items-center gap-3 mt-2">
+								<span class="flex items-center gap-1.5 text-xs text-neutral-400">
+									<span
+										class={`w-1.5 h-1.5 ${runtimeStatusDotClass(
+											projectRuntimeStatus(),
+										)}`}
+									></span>
+									{projectRuntimeText()}
+								</span>
+								<span class="text-neutral-600">·</span>
+								<span class="text-xs text-neutral-400 font-mono">
+									{app()!.branch}
+								</span>
+								<span class="text-neutral-600">·</span>
+								<span class="text-xs text-neutral-400">
+									{projectRuntimeDetail()}
+								</span>
+							</div>
 						</div>
-
-						{/* custom domains */}
-						<div class="bg-white p-5">
-							<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-								custom domains
-							</h3>
-							<Show
-								when={appDomains().length > 0}
-								fallback={<span class="text-neutral-400 text-sm">n/a</span>}
+						<div class="flex gap-2">
+							<button
+								onClick={triggerDeploy}
+								disabled={deploying()}
+								class="px-4 py-1.5 bg-white text-black hover:bg-neutral-200 disabled:opacity-50 transition-colors text-sm font-medium cursor-pointer"
 							>
-								<div class="space-y-1">
-									<For each={appDomains().slice(0, 2)}>
-										{(domain) => (
-											<a
-												href={`https://${domain}`}
-												target="_blank"
-												class="block text-black text-sm hover:underline"
-											>
-												{domain}
-											</a>
-										)}
-									</For>
-									<Show when={appDomains().length > 2}>
-										<span class="text-xs text-neutral-400">
-											+{appDomains().length - 2} more
-										</span>
-									</Show>
+								{deploying() ? "deploying..." : "manual deploy"}
+							</button>
+						</div>
+					</div>
+
+					<Show when={deployError()}>
+						<div class="mb-6 border border-red-800/50 bg-red-900/20 px-4 py-3 text-sm text-red-400">
+							{deployError()}
+						</div>
+					</Show>
+
+					{/* sidebar + content layout */}
+					<div class="flex gap-6">
+						{/* info grid */}
+						<div class="grid grid-cols-4 gap-px bg-neutral-200 mb-8">
+							{/* status */}
+							<div class="bg-white p-5">
+								<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+									status
+								</h3>
+								<div class="flex items-center gap-2">
+									<span
+										class={`w-2 h-2 ${runtimeStatusDotClass(
+											projectRuntimeStatus(),
+										)}`}
+									></span>
+									<span class="text-black text-sm">{projectRuntimeText()}</span>
 								</div>
-							</Show>
-						</div>
+								<p class="mt-2 text-xs text-neutral-500">
+									{projectRuntimeDetail()}
+								</p>
+							</div>
 
-						{/* branch */}
-						<div class="bg-white p-5">
-							<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-								branch
-							</h3>
-							<span class="text-black text-sm font-mono">{app()!.branch}</span>
-						</div>
-
-						{/* certificate */}
-						<div class="bg-white p-5">
-							<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
-								ssl
-							</h3>
-							<Show when={certificate.loading}>
-								<span class="text-neutral-400 text-sm">loading...</span>
-							</Show>
-							<Show when={!certificate.loading}>
+							{/* custom domains */}
+							<div class="bg-white p-5">
+								<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+									custom domains
+								</h3>
 								<Show
-									when={certificateList().length > 0}
+									when={appDomains().length > 0}
 									fallback={<span class="text-neutral-400 text-sm">n/a</span>}
 								>
-									<div class="space-y-2">
-										<For each={certificateList().slice(0, 2)}>
-											{(cert) => (
-												<div class="flex items-center justify-between">
-													<div class="flex items-center gap-2">
-														<span
-															class={`w-2 h-2 ${certificateDotClass(cert.status)}`}
-														></span>
-														<span class="text-neutral-600 text-xs">
-															{cert.domain}
-														</span>
-													</div>
-													<span class="text-xs text-neutral-500">
-														{certificateStatusLabel(cert.status)}
-													</span>
-												</div>
+									<div class="space-y-1">
+										<For each={appDomains().slice(0, 2)}>
+											{(domain) => (
+												<a
+													href={`https://${domain}`}
+													target="_blank"
+													class="block text-black text-sm hover:underline"
+												>
+													{domain}
+												</a>
 											)}
 										</For>
-										<Show when={certificateList().length > 2}>
+										<Show when={appDomains().length > 2}>
 											<span class="text-xs text-neutral-400">
-												+{certificateList().length - 2} more
+												+{appDomains().length - 2} more
 											</span>
 										</Show>
 									</div>
 								</Show>
-							</Show>
-						</div>
-					</div>
-
-					<Show when={projectServices().length > 0}>
-						<div class="border border-neutral-200 mb-8">
-							<div class="border-b border-neutral-200 px-5 py-4 flex flex-wrap items-start justify-between gap-4">
-								<div>
-									<h2 class="text-sm font-serif text-black">services</h2>
-									<p class="mt-1 text-xs text-neutral-500">
-										{projectServices().length} configured service
-										{projectServices().length === 1 ? "" : "s"} with{" "}
-										{projectServices().reduce(
-											(total, service) => total + service.replicas,
-											0,
-										)}{" "}
-										total desired slots
-									</p>
-								</div>
-								<div class="flex flex-wrap gap-2 text-xs text-neutral-500">
-									<span class="border border-neutral-200 px-2 py-1">
-										web {serviceTypeCounts().web}
-									</span>
-									<span class="border border-neutral-200 px-2 py-1">
-										private {serviceTypeCounts().private}
-									</span>
-									<span class="border border-neutral-200 px-2 py-1">
-										workers {serviceTypeCounts().workers}
-									</span>
-									<span class="border border-neutral-200 px-2 py-1">
-										cron {serviceTypeCounts().cron}
-									</span>
-									<span class="border border-neutral-200 px-2 py-1">
-										with mounts{" "}
-										{
-											projectServices().filter(
-												(service) => service.mounts.length > 0,
-											).length
-										}
-									</span>
-								</div>
 							</div>
 
-							<div class="border-b border-neutral-200 px-5 py-3 overflow-x-auto">
-								<div class="flex gap-2 min-w-max">
-									<For each={projectServices()}>
-										{(service) => (
-											<button
-												type="button"
-												onClick={() => setSelectedServiceId(service.id)}
-												class={`border px-3 py-2 text-left min-w-[220px] transition-colors ${
-													selectedProjectService()?.id === service.id
-														? "border-black bg-black text-white"
-														: "border-neutral-200 text-black hover:border-neutral-400"
-												}`}
-											>
-												<div class="flex items-center justify-between gap-3">
-													<span class="text-sm font-medium">
-														{service.name}
-													</span>
-													<span
-														class={`text-[10px] uppercase tracking-wide ${
+							{/* branch */}
+							<div class="bg-white p-5">
+								<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+									branch
+								</h3>
+								<span class="text-black text-sm font-mono">
+									{app()!.branch}
+								</span>
+							</div>
+
+							{/* certificate */}
+							<div class="bg-white p-5">
+								<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-2">
+									ssl
+								</h3>
+								<Show when={certificate.loading}>
+									<span class="text-neutral-400 text-sm">loading...</span>
+								</Show>
+								<Show when={!certificate.loading}>
+									<Show
+										when={certificateList().length > 0}
+										fallback={<span class="text-neutral-400 text-sm">n/a</span>}
+									>
+										<div class="space-y-2">
+											<For each={certificateList().slice(0, 2)}>
+												{(cert) => (
+													<div class="flex items-center justify-between">
+														<div class="flex items-center gap-2">
+															<span
+																class={`w-2 h-2 ${certificateDotClass(cert.status)}`}
+															></span>
+															<span class="text-neutral-600 text-xs">
+																{cert.domain}
+															</span>
+														</div>
+														<span class="text-xs text-neutral-500">
+															{certificateStatusLabel(cert.status)}
+														</span>
+													</div>
+												)}
+											</For>
+											<Show when={certificateList().length > 2}>
+												<span class="text-xs text-neutral-400">
+													+{certificateList().length - 2} more
+												</span>
+											</Show>
+										</div>
+									</Show>
+								</Show>
+							</div>
+						</div>
+
+						<Show when={projectServices().length > 0}>
+							<div class="border border-neutral-200 mb-8">
+								<div class="border-b border-neutral-200 px-5 py-4 flex flex-wrap items-start justify-between gap-4">
+									<div>
+										<h2 class="text-sm font-serif text-black">services</h2>
+										<p class="mt-1 text-xs text-neutral-500">
+											{projectServices().length} configured service
+											{projectServices().length === 1 ? "" : "s"} with{" "}
+											{projectServices().reduce(
+												(total, service) => total + service.replicas,
+												0,
+											)}{" "}
+											total desired slots
+										</p>
+									</div>
+									<div class="flex flex-wrap gap-2 text-xs text-neutral-500">
+										<span class="border border-neutral-200 px-2 py-1">
+											web {serviceTypeCounts().web}
+										</span>
+										<span class="border border-neutral-200 px-2 py-1">
+											private {serviceTypeCounts().private}
+										</span>
+										<span class="border border-neutral-200 px-2 py-1">
+											workers {serviceTypeCounts().workers}
+										</span>
+										<span class="border border-neutral-200 px-2 py-1">
+											cron {serviceTypeCounts().cron}
+										</span>
+										<span class="border border-neutral-200 px-2 py-1">
+											with mounts{" "}
+											{
+												projectServices().filter(
+													(service) => service.mounts.length > 0,
+												).length
+											}
+										</span>
+									</div>
+								</div>
+
+								<div class="border-b border-neutral-200 px-5 py-3 overflow-x-auto">
+									<div class="flex gap-2 min-w-max">
+										<For each={projectServices()}>
+											{(service) => (
+												<button
+													type="button"
+													onClick={() => setSelectedServiceId(service.id)}
+													class={`border px-3 py-2 text-left min-w-[220px] transition-colors ${
+														selectedProjectService()?.id === service.id
+															? "border-black bg-black text-white"
+															: "border-neutral-200 text-black hover:border-neutral-400"
+													}`}
+												>
+													<div class="flex items-center justify-between gap-3">
+														<span class="text-sm font-medium">
+															{service.name}
+														</span>
+														<span
+															class={`text-[10px] uppercase tracking-wide ${
+																selectedProjectService()?.id === service.id
+																	? "text-neutral-200"
+																	: "text-neutral-500"
+															}`}
+														>
+															{serviceTypeLabel(service.service_type)}
+														</span>
+													</div>
+													<div
+														class={`mt-2 flex items-center gap-2 text-[11px] ${
 															selectedProjectService()?.id === service.id
 																? "text-neutral-200"
 																: "text-neutral-500"
 														}`}
 													>
-														{serviceTypeLabel(service.service_type)}
-													</span>
-												</div>
-												<div
-													class={`mt-2 flex items-center gap-2 text-[11px] ${
-														selectedProjectService()?.id === service.id
-															? "text-neutral-200"
-															: "text-neutral-500"
-													}`}
-												>
-													<span
-														class={`h-2 w-2 ${runtimeStatusDotClass(
-															serviceRuntime(service.id)?.status || "pending",
-														)}`}
-													></span>
-													<span>
-														{serviceRuntime(service.id)?.status || "pending"}
-													</span>
-													<span>
-														{serviceRuntime(service.id)
-															? `${serviceRuntime(service.id)!.running_instances}/${serviceRuntime(service.id)!.desired_instances}`
-															: "0/0"}
-													</span>
-												</div>
-												<div
-													class={`mt-2 flex items-center justify-between text-xs ${
-														selectedProjectService()?.id === service.id
-															? "text-neutral-200"
-															: "text-neutral-500"
-													}`}
-												>
-													<span>{formatServicePorts(service)}</span>
-													<span>
-														{service.replicas}x
-														{service.domains?.length
-															? ` · ${service.domains.length}d`
-															: ""}
-													</span>
-												</div>
-											</button>
-										)}
-									</For>
-								</div>
-							</div>
-
-							<Show when={selectedProjectService()}>
-								{(service) => (
-									<div class="px-5 py-5 space-y-4">
-										<div class="grid lg:grid-cols-[1.6fr_1fr] gap-4">
-											<div class="border border-neutral-200 bg-neutral-50 p-4">
-												<div class="flex flex-wrap items-start justify-between gap-4">
-													<div>
-														<div class="flex items-center gap-3">
-															<h3 class="text-xl font-serif text-black">
-																{service().name}
-															</h3>
-															<span class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
-																{serviceTypeLabel(service().service_type)}
-															</span>
-															<span class="inline-flex items-center gap-2 border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
-																<span
-																	class={`h-2 w-2 ${runtimeStatusDotClass(
-																		serviceRuntime(service().id)?.status ||
-																			"pending",
-																	)}`}
-																></span>
-																{serviceRuntime(service().id)?.status ||
-																	"pending"}
-															</span>
-														</div>
-														<p class="mt-2 text-sm text-neutral-500 font-mono">
-															{service().image || "built from repository"}
-														</p>
+														<span
+															class={`h-2 w-2 ${runtimeStatusDotClass(
+																serviceRuntime(service.id)?.status || "pending",
+															)}`}
+														></span>
+														<span>
+															{serviceRuntime(service.id)?.status || "pending"}
+														</span>
+														<span>
+															{serviceRuntime(service.id)
+																? `${serviceRuntime(service.id)!.running_instances}/${serviceRuntime(service.id)!.desired_instances}`
+																: "0/0"}
+														</span>
 													</div>
-													<div class="text-xs text-neutral-500 space-y-1">
-														<p>restart {service().restart_policy}</p>
-														<p>health {formatServiceHealth(service())}</p>
-													</div>
-												</div>
-											</div>
-
-											<div class="grid grid-cols-2 gap-3">
-												<div class="border border-neutral-200 p-3">
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														status
-													</p>
-													<p class="mt-2 text-sm font-mono text-black">
-														{serviceRuntime(service().id)?.status || "pending"}
-													</p>
-												</div>
-												<div class="border border-neutral-200 p-3">
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														instances
-													</p>
-													<p class="mt-2 text-sm font-mono text-black">
-														{serviceRuntime(service().id)
-															? `${serviceRuntime(service().id)!.running_instances}/${serviceRuntime(service().id)!.desired_instances}`
-															: "0/0"}
-													</p>
-												</div>
-												<div class="border border-neutral-200 p-3">
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														listen
-													</p>
-													<p class="mt-2 text-sm font-mono text-black">
-														{formatServicePorts(service())}
-													</p>
-												</div>
-												<div class="border border-neutral-200 p-3">
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														replicas
-													</p>
-													<p class="mt-2 text-sm font-mono text-black">
-														{service().replicas}
-													</p>
-												</div>
-												<div class="border border-neutral-200 p-3">
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														memory
-													</p>
-													<p class="mt-2 text-sm font-mono text-black">
-														{service().memory_limit_mb
-															? `${service().memory_limit_mb}mb`
-															: "auto"}
-													</p>
-												</div>
-												<div class="border border-neutral-200 p-3">
-													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-														cpu
-													</p>
-													<p class="mt-2 text-sm font-mono text-black">
-														{service().cpu_limit
-															? `${service().cpu_limit}`
-															: "auto"}
-													</p>
-												</div>
-											</div>
-										</div>
-
-										<div class="grid lg:grid-cols-3 gap-4">
-											<section class="border border-neutral-200 p-4">
-												<h4 class="text-xs uppercase tracking-wide text-neutral-400">
-													network
-												</h4>
-												<div class="mt-4 space-y-3 text-sm text-neutral-600">
-													<div>
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															public routing
-														</p>
-														<p class="mt-1">
-															{service().service_type === "web_service"
-																? "enabled"
-																: "disabled"}
-														</p>
-													</div>
-													<div>
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															default route
-														</p>
-														<p class="mt-1">
-															{formatPublicUrlStatus(service())}
-														</p>
-													</div>
-													<div>
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															custom domains
-														</p>
-														<Show
-															when={service().domains.length > 0}
-															fallback={<p class="mt-1">none</p>}
-														>
-															<div class="mt-2 space-y-2">
-																<For each={service().domains}>
-																	{(domain) => {
-																		const cert = certificateList().find(
-																			(entry) => entry.domain === domain,
-																		);
-																		const status = cert?.status || "none";
-																		return (
-																			<div class="flex items-center justify-between gap-2 border border-neutral-200 bg-white px-2 py-2 text-xs">
-																				<div class="flex items-center gap-2 overflow-hidden">
-																					<span
-																						class={`h-2 w-2 ${certificateDotClass(status)}`}
-																					></span>
-																					<a
-																						href={`https://${domain}`}
-																						target="_blank"
-																						class="truncate font-mono text-black hover:underline"
-																					>
-																						{domain}
-																					</a>
-																				</div>
-																				<div class="flex items-center gap-2 text-neutral-500">
-																					<span>
-																						{certificateStatusLabel(status)}
-																					</span>
-																					<Show when={status !== "pending"}>
-																						<button
-																							type="button"
-																							onClick={() =>
-																								reissueCertificate(domain)
-																							}
-																							disabled={reissuing()}
-																							class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600 hover:border-black hover:text-black disabled:opacity-50"
-																						>
-																							{reissuing() ? "..." : "reissue"}
-																						</button>
-																					</Show>
-																				</div>
-																			</div>
-																		);
-																	}}
-																</For>
-															</div>
-														</Show>
-													</div>
-													<div>
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															ports
-														</p>
-														<p class="mt-1 font-mono text-black">
-															{formatServicePorts(service())}
-														</p>
-													</div>
-													<div>
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															depends on
-														</p>
-														<p class="mt-1">
-															{service().depends_on.length > 0
-																? service().depends_on.join(", ")
-																: "none"}
-														</p>
-													</div>
-												</div>
-											</section>
-
-											<section class="border border-neutral-200 p-4">
-												<h4 class="text-xs uppercase tracking-wide text-neutral-400">
-													runtime
-												</h4>
-												<div class="mt-4 space-y-3 text-sm text-neutral-600">
-													<div>
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															health check
-														</p>
-														<p class="mt-1">
-															{formatServiceHealthDetail(service())}
-														</p>
-													</div>
-													<div>
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															working dir
-														</p>
-														<p class="mt-1 font-mono text-black">
-															{service().working_dir || "default"}
-														</p>
-													</div>
-													<div>
-														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
-															registry
-														</p>
-														<p class="mt-1">
-															{formatServiceRegistry(service())}
-														</p>
-													</div>
-													<Show
-														when={
-															service().entrypoint.length > 0 ||
-															service().command.length > 0
-														}
+													<div
+														class={`mt-2 flex items-center justify-between text-xs ${
+															selectedProjectService()?.id === service.id
+																? "text-neutral-200"
+																: "text-neutral-500"
+														}`}
 													>
-														<div class="space-y-2 text-xs text-neutral-500 font-mono">
-															<Show when={service().entrypoint.length > 0}>
-																<p>
-																	entrypoint {service().entrypoint.join(" ")}
-																</p>
-															</Show>
-															<Show when={service().command.length > 0}>
-																<p>cmd {service().command.join(" ")}</p>
-															</Show>
-														</div>
-													</Show>
-												</div>
-											</section>
-
-											<section class="border border-neutral-200 p-4">
-												<h4 class="text-xs uppercase tracking-wide text-neutral-400">
-													storage
-												</h4>
-												<Show
-													when={service().mounts.length > 0}
-													fallback={
-														<p class="mt-4 text-sm text-neutral-500">
-															no persistent mounts configured
-														</p>
-													}
-												>
-													<div class="mt-4 space-y-3">
-														<div class="flex flex-wrap gap-2 text-xs">
-															<For each={service().mounts}>
-																{(mount) => (
-																	<span class="border border-neutral-200 px-2 py-1 text-neutral-600 font-mono">
-																		{mount.name}:{mount.target}
-																		{mount.read_only ? ":ro" : ""}
-																	</span>
-																)}
-															</For>
-														</div>
-														<div class="flex flex-wrap items-center gap-2 text-xs">
-															<button
-																onClick={() =>
-																	void downloadServiceMounts(service().name)
-																}
-																disabled={
-																	serviceMountAction()?.service ===
-																	service().name
-																}
-																class="border border-neutral-300 px-2 py-1 text-neutral-700 hover:border-neutral-400 disabled:opacity-50"
-															>
-																{serviceMountAction()?.service ===
-																	service().name &&
-																serviceMountAction()?.kind === "backup"
-																	? "backing up..."
-																	: "backup mounts"}
-															</button>
-															<label
-																class={`border px-2 py-1 ${
-																	serviceMountAction()?.service ===
-																	service().name
-																		? "border-neutral-200 text-neutral-300 cursor-not-allowed"
-																		: "border-neutral-300 text-neutral-700 hover:border-neutral-400 cursor-pointer"
-																}`}
-															>
-																{serviceMountAction()?.service ===
-																	service().name &&
-																serviceMountAction()?.kind === "restore"
-																	? "restoring..."
-																	: "restore mounts"}
-																<input
-																	type="file"
-																	accept=".tar,application/x-tar"
-																	class="hidden"
-																	disabled={
-																		serviceMountAction()?.service ===
-																		service().name
-																	}
-																	onChange={(event) => {
-																		const input = event.currentTarget;
-																		void restoreServiceMounts(
-																			service().name,
-																			input.files,
-																		).finally(() => {
-																			input.value = "";
-																		});
-																	}}
-																/>
-															</label>
-														</div>
-														<Show
-															when={
-																serviceMountActionError()?.service ===
-																service().name
-															}
-														>
-															<p class="text-xs text-neutral-500">
-																{serviceMountActionError()?.message}
-															</p>
-														</Show>
+														<span>{formatServicePorts(service)}</span>
+														<span>
+															{service.replicas}x
+															{service.domains?.length
+																? ` · ${service.domains.length}d`
+																: ""}
+														</span>
 													</div>
-												</Show>
-											</section>
-										</div>
-									</div>
-								)}
-							</Show>
-						</div>
-					</Show>
-
-					{/* logs panel */}
-					<Show when={showLogs()}>
-						<div class="border border-neutral-200 mb-8">
-							<div class="border-b border-neutral-200 px-5 py-3 flex justify-between items-center">
-								<div class="flex items-center gap-3">
-									<h2 class="text-sm font-serif text-black">container logs</h2>
-									<div class="flex items-center gap-2">
-										<span
-											class={`w-1.5 h-1.5 ${logsConnected() ? "bg-black" : "bg-neutral-300"}`}
-										></span>
-										<span class="text-xs text-neutral-500">
-											{logsConnected() ? "live" : "disconnected"}
-										</span>
-									</div>
-								</div>
-								<button
-									onClick={() => setLogs([])}
-									class="text-xs text-neutral-500 hover:text-black"
-								>
-									clear
-								</button>
-							</div>
-							<div
-								ref={logsRef}
-								class="p-4 h-72 overflow-y-auto font-mono text-xs bg-neutral-50"
-							>
-								<Show when={logs().length === 0}>
-									<p class="text-neutral-400">
-										{logsConnected() ? "waiting for logs..." : "connecting..."}
-									</p>
-								</Show>
-								<For each={logs()}>
-									{(line) => (
-										<div
-											class="text-neutral-700 leading-relaxed whitespace-pre-wrap break-all"
-											innerHTML={parseAnsi(line)}
-										></div>
-									)}
-								</For>
-							</div>
-						</div>
-					</Show>
-
-					{/* container monitor */}
-					<div class="border border-neutral-200 mb-8">
-						<div class="border-b border-neutral-200 px-5 py-3 flex items-center justify-between">
-							<div>
-								<h2 class="text-sm font-serif text-black">container monitor</h2>
-								<p class="text-xs text-neutral-500 mt-1">
-									health, metrics, logs, volumes
-								</p>
-							</div>
-							<Show when={appContainers().length > 0}>
-								<select
-									value={selectedContainer()}
-									onChange={(e) => setSelectedContainer(e.currentTarget.value)}
-									class="px-2 py-1.5 border border-neutral-300 text-xs text-neutral-700"
-								>
-									<For each={appContainers()}>
-										{(container) => (
-											<option value={container.id}>{container.name}</option>
-										)}
-									</For>
-								</select>
-							</Show>
-						</div>
-						<div class="p-5">
-							<Show when={appContainers().length > 0}>
-								<ContainerMonitor containerId={selectedContainer()} />
-							</Show>
-							<Show when={appContainers().length === 0}>
-								<div class="border border-dashed border-neutral-200 p-8 text-center text-neutral-400 text-sm">
-									no running containers for this group
-								</div>
-							</Show>
-						</div>
-					</div>
-
-					{/* deployments */}
-					<div class="border border-neutral-200">
-						<div class="border-b border-neutral-200 px-5 py-3">
-							<h2 class="text-sm font-serif text-black">deployments</h2>
-						</div>
-
-						<Show when={deployments.loading}>
-							<div class="p-5 animate-pulse space-y-3">
-								<div class="h-10 bg-neutral-50"></div>
-								<div class="h-10 bg-neutral-50"></div>
-							</div>
-						</Show>
-
-						<Show when={!deployments.loading && deployments()?.length === 0}>
-							<div class="p-8 text-center text-neutral-400 text-sm">
-								no deployments yet
-							</div>
-						</Show>
-
-						<Show
-							when={
-								!deployments.loading &&
-								deployments() &&
-								deployments()!.length > 0
-							}
-						>
-							<div class="divide-y divide-neutral-200">
-								<For each={deployments()}>
-									{(deployment) => (
-										<div class="px-5 py-4 flex items-center justify-between">
-											<div class="flex items-center gap-4">
-												<span
-													class={`w-2 h-2 ${statusIndicator(deployment.status)}`}
-												></span>
-												<div>
-													<p class="text-black font-mono text-sm">
-														{deployment.commit_sha.substring(0, 8)}
-													</p>
-													<p class="text-neutral-500 text-xs mt-0.5 truncate max-w-md">
-														{deployment.commit_message || "no message"}
-													</p>
-												</div>
-											</div>
-											<div class="flex items-center gap-4 text-xs">
-												<span class="text-neutral-500">
-													{deployment.status}
-												</span>
-												<span class="text-neutral-400">
-													{new Date(deployment.created_at).toLocaleString()}
-												</span>
-												<button
-													onClick={() => openDeploymentLogs(deployment)}
-													class="px-2 py-1 border border-neutral-300 text-neutral-600 hover:text-black hover:border-neutral-400 transition-colors"
-												>
-													logs
-												</button>
-											</div>
-										</div>
-									)}
-								</For>
-							</div>
-						</Show>
-					</div>
-				</div>
-			</Show>
-			{/* edit modal */}
-			<Show when={editing()}>
-				<div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">
-					<div class="bg-white border border-neutral-300 w-full max-w-6xl max-h-[90vh] flex flex-col">
-						<div class="border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
-							<h2 class="text-lg font-serif text-black">group settings</h2>
-							<button
-								onClick={() => setEditing(false)}
-								class="text-neutral-400 hover:text-black"
-							>
-								<svg
-									class="h-5 w-5"
-									fill="none"
-									viewBox="0 0 24 24"
-									stroke="currentColor"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M6 18L18 6M6 6l12 12"
-									/>
-								</svg>
-							</button>
-						</div>
-
-						<div class="flex-1 overflow-y-auto p-6 space-y-6">
-							{/* source settings */}
-							<section class="border border-neutral-200 p-4">
-								<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-4">
-									source
-								</h3>
-
-								<div class="grid grid-cols-2 gap-4">
-									<div>
-										<label class="block text-xs text-neutral-500 mb-2">
-											repository url
-										</label>
-										<input
-											type="text"
-											value={editForm().github_url}
-											onInput={(e) =>
-												setEditForm((prev) => ({
-													...prev,
-													github_url: e.currentTarget.value,
-												}))
-											}
-											class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
-										/>
-									</div>
-									<div>
-										<label class="block text-xs text-neutral-500 mb-2">
-											branch
-										</label>
-										<input
-											type="text"
-											value={editForm().branch}
-											onInput={(e) =>
-												setEditForm((prev) => ({
-													...prev,
-													branch: e.currentTarget.value,
-												}))
-											}
-											class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
-										/>
-									</div>
-								</div>
-							</section>
-
-							<EnvVarEditor
-								envVars={editForm().env_vars}
-								theme="dark"
-								onChange={(envVars) =>
-									setEditForm((previous) => ({
-										...previous,
-										env_vars: envVars,
-									}))
-								}
-							/>
-
-							<section class="border border-neutral-200 p-4">
-								<div class="flex justify-between items-center mb-4">
-									<div>
-										<h3 class="text-xs text-neutral-500 uppercase tracking-wider">
-											services
-										</h3>
-										<p class="text-xs text-neutral-400 mt-2">
-											define render-style service types for this group. custom
-											domains now belong to each web service card.
-										</p>
-									</div>
-									<div class="flex flex-wrap gap-2">
-										<For each={serviceTypeOptions}>
-											{(serviceType) => (
-												<button
-													type="button"
-													onClick={() => addEditService(serviceType)}
-													class="px-3 py-1 text-xs border border-neutral-300 text-neutral-700 hover:border-neutral-400"
-												>
-													add {serviceTypeLabel(serviceType)}
 												</button>
 											)}
 										</For>
 									</div>
 								</div>
 
-								<div class="mb-4 grid gap-3 md:grid-cols-3">
-									<For each={serviceTypeOptions}>
-										{(serviceType) => (
-											<div class="border border-neutral-200 bg-neutral-50 px-3 py-3">
-												<p class="text-xs uppercase tracking-wide text-neutral-500">
-													{serviceTypeLabel(serviceType)}
-												</p>
-												<p class="mt-2 text-xs leading-relaxed text-neutral-500">
-													{serviceType === "web_service"
-														? "public url, http routing, and optional custom domains"
-														: serviceType === "private_service"
-															? "internal-only service that other group services can reach"
-															: "no inbound port, built for queues, cron jobs, and workers"}
-												</p>
+								<Show when={selectedProjectService()}>
+									{(service) => (
+										<div class="px-5 py-5 space-y-4">
+											<div class="grid lg:grid-cols-[1.6fr_1fr] gap-4">
+												<div class="border border-neutral-200 bg-neutral-50 p-4">
+													<div class="flex flex-wrap items-start justify-between gap-4">
+														<div>
+															<div class="flex items-center gap-3">
+																<h3 class="text-xl font-serif text-black">
+																	{service().name}
+																</h3>
+																<span class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
+																	{serviceTypeLabel(service().service_type)}
+																</span>
+																<span class="inline-flex items-center gap-2 border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
+																	<span
+																		class={`h-2 w-2 ${runtimeStatusDotClass(
+																			serviceRuntime(service().id)?.status ||
+																				"pending",
+																		)}`}
+																	></span>
+																	{serviceRuntime(service().id)?.status ||
+																		"pending"}
+																</span>
+															</div>
+															<p class="mt-2 text-sm text-neutral-500 font-mono">
+																{service().image || "built from repository"}
+															</p>
+														</div>
+														<div class="text-xs text-neutral-500 space-y-1">
+															<p>restart {service().restart_policy}</p>
+															<p>health {formatServiceHealth(service())}</p>
+														</div>
+													</div>
+												</div>
+
+												<div class="grid grid-cols-2 gap-3">
+													<div class="border border-neutral-200 p-3">
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															status
+														</p>
+														<p class="mt-2 text-sm font-mono text-black">
+															{serviceRuntime(service().id)?.status ||
+																"pending"}
+														</p>
+													</div>
+													<div class="border border-neutral-200 p-3">
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															instances
+														</p>
+														<p class="mt-2 text-sm font-mono text-black">
+															{serviceRuntime(service().id)
+																? `${serviceRuntime(service().id)!.running_instances}/${serviceRuntime(service().id)!.desired_instances}`
+																: "0/0"}
+														</p>
+													</div>
+													<div class="border border-neutral-200 p-3">
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															listen
+														</p>
+														<p class="mt-2 text-sm font-mono text-black">
+															{formatServicePorts(service())}
+														</p>
+													</div>
+													<div class="border border-neutral-200 p-3">
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															replicas
+														</p>
+														<p class="mt-2 text-sm font-mono text-black">
+															{service().replicas}
+														</p>
+													</div>
+													<div class="border border-neutral-200 p-3">
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															memory
+														</p>
+														<p class="mt-2 text-sm font-mono text-black">
+															{service().memory_limit_mb
+																? `${service().memory_limit_mb}mb`
+																: "auto"}
+														</p>
+													</div>
+													<div class="border border-neutral-200 p-3">
+														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+															cpu
+														</p>
+														<p class="mt-2 text-sm font-mono text-black">
+															{service().cpu_limit
+																? `${service().cpu_limit}`
+																: "auto"}
+														</p>
+													</div>
+												</div>
+											</div>
+
+											<div class="grid lg:grid-cols-3 gap-4">
+												<section class="border border-neutral-200 p-4">
+													<h4 class="text-xs uppercase tracking-wide text-neutral-400">
+														network
+													</h4>
+													<div class="mt-4 space-y-3 text-sm text-neutral-600">
+														<div>
+															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																public routing
+															</p>
+															<p class="mt-1">
+																{service().service_type === "web_service"
+																	? "enabled"
+																	: "disabled"}
+															</p>
+														</div>
+														<div>
+															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																default route
+															</p>
+															<p class="mt-1">
+																{formatPublicUrlStatus(service())}
+															</p>
+														</div>
+														<div>
+															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																custom domains
+															</p>
+															<Show
+																when={service().domains.length > 0}
+																fallback={<p class="mt-1">none</p>}
+															>
+																<div class="mt-2 space-y-2">
+																	<For each={service().domains}>
+																		{(domain) => {
+																			const cert = certificateList().find(
+																				(entry) => entry.domain === domain,
+																			);
+																			const status = cert?.status || "none";
+																			return (
+																				<div class="flex items-center justify-between gap-2 border border-neutral-200 bg-white px-2 py-2 text-xs">
+																					<div class="flex items-center gap-2 overflow-hidden">
+																						<span
+																							class={`h-2 w-2 ${certificateDotClass(status)}`}
+																						></span>
+																						<a
+																							href={`https://${domain}`}
+																							target="_blank"
+																							class="truncate font-mono text-black hover:underline"
+																						>
+																							{domain}
+																						</a>
+																					</div>
+																					<div class="flex items-center gap-2 text-neutral-500">
+																						<span>
+																							{certificateStatusLabel(status)}
+																						</span>
+																						<Show when={status !== "pending"}>
+																							<button
+																								type="button"
+																								onClick={() =>
+																									reissueCertificate(domain)
+																								}
+																								disabled={reissuing()}
+																								class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600 hover:border-black hover:text-black disabled:opacity-50"
+																							>
+																								{reissuing()
+																									? "..."
+																									: "reissue"}
+																							</button>
+																						</Show>
+																					</div>
+																				</div>
+																			);
+																		}}
+																	</For>
+																</div>
+															</Show>
+														</div>
+														<div>
+															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																ports
+															</p>
+															<p class="mt-1 font-mono text-black">
+																{formatServicePorts(service())}
+															</p>
+														</div>
+														<div>
+															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																depends on
+															</p>
+															<p class="mt-1">
+																{service().depends_on.length > 0
+																	? service().depends_on.join(", ")
+																	: "none"}
+															</p>
+														</div>
+													</div>
+												</section>
+
+												<section class="border border-neutral-200 p-4">
+													<h4 class="text-xs uppercase tracking-wide text-neutral-400">
+														runtime
+													</h4>
+													<div class="mt-4 space-y-3 text-sm text-neutral-600">
+														<div>
+															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																health check
+															</p>
+															<p class="mt-1">
+																{formatServiceHealthDetail(service())}
+															</p>
+														</div>
+														<div>
+															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																working dir
+															</p>
+															<p class="mt-1 font-mono text-black">
+																{service().working_dir || "default"}
+															</p>
+														</div>
+														<div>
+															<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+																registry
+															</p>
+															<p class="mt-1">
+																{formatServiceRegistry(service())}
+															</p>
+														</div>
+														<Show
+															when={
+																service().entrypoint.length > 0 ||
+																service().command.length > 0
+															}
+														>
+															<div class="space-y-2 text-xs text-neutral-500 font-mono">
+																<Show when={service().entrypoint.length > 0}>
+																	<p>
+																		entrypoint {service().entrypoint.join(" ")}
+																	</p>
+																</Show>
+																<Show when={service().command.length > 0}>
+																	<p>cmd {service().command.join(" ")}</p>
+																</Show>
+															</div>
+														</Show>
+													</div>
+												</section>
+
+												<section class="border border-neutral-200 p-4">
+													<h4 class="text-xs uppercase tracking-wide text-neutral-400">
+														storage
+													</h4>
+													<Show
+														when={service().mounts.length > 0}
+														fallback={
+															<p class="mt-4 text-sm text-neutral-500">
+																no persistent mounts configured
+															</p>
+														}
+													>
+														<div class="mt-4 space-y-3">
+															<div class="flex flex-wrap gap-2 text-xs">
+																<For each={service().mounts}>
+																	{(mount) => (
+																		<span class="border border-neutral-200 px-2 py-1 text-neutral-600 font-mono">
+																			{mount.name}:{mount.target}
+																			{mount.read_only ? ":ro" : ""}
+																		</span>
+																	)}
+																</For>
+															</div>
+															<div class="flex flex-wrap items-center gap-2 text-xs">
+																<button
+																	onClick={() =>
+																		void downloadServiceMounts(service().name)
+																	}
+																	disabled={
+																		serviceMountAction()?.service ===
+																		service().name
+																	}
+																	class="border border-neutral-300 px-2 py-1 text-neutral-700 hover:border-neutral-400 disabled:opacity-50"
+																>
+																	{serviceMountAction()?.service ===
+																		service().name &&
+																	serviceMountAction()?.kind === "backup"
+																		? "backing up..."
+																		: "backup mounts"}
+																</button>
+																<label
+																	class={`border px-2 py-1 ${
+																		serviceMountAction()?.service ===
+																		service().name
+																			? "border-neutral-200 text-neutral-300 cursor-not-allowed"
+																			: "border-neutral-300 text-neutral-700 hover:border-neutral-400 cursor-pointer"
+																	}`}
+																>
+																	{serviceMountAction()?.service ===
+																		service().name &&
+																	serviceMountAction()?.kind === "restore"
+																		? "restoring..."
+																		: "restore mounts"}
+																	<input
+																		type="file"
+																		accept=".tar,application/x-tar"
+																		class="hidden"
+																		disabled={
+																			serviceMountAction()?.service ===
+																			service().name
+																		}
+																		onChange={(event) => {
+																			const input = event.currentTarget;
+																			void restoreServiceMounts(
+																				service().name,
+																				input.files,
+																			).finally(() => {
+																				input.value = "";
+																			});
+																		}}
+																	/>
+																</label>
+															</div>
+															<Show
+																when={
+																	serviceMountActionError()?.service ===
+																	service().name
+																}
+															>
+																<p class="text-xs text-neutral-500">
+																	{serviceMountActionError()?.message}
+																</p>
+															</Show>
+														</div>
+													</Show>
+												</section>
+											</div>
+										</div>
+									)}
+								</Show>
+							</div>
+						</Show>
+
+						{/* logs panel */}
+						<Show when={showLogs()}>
+							<div class="border border-neutral-200 mb-8">
+								<div class="border-b border-neutral-200 px-5 py-3 flex justify-between items-center">
+									<div class="flex items-center gap-3">
+										<h2 class="text-sm font-serif text-black">
+											container logs
+										</h2>
+										<div class="flex items-center gap-2">
+											<span
+												class={`w-1.5 h-1.5 ${logsConnected() ? "bg-black" : "bg-neutral-300"}`}
+											></span>
+											<span class="text-xs text-neutral-500">
+												{logsConnected() ? "live" : "disconnected"}
+											</span>
+										</div>
+									</div>
+									<button
+										onClick={() => setLogs([])}
+										class="text-xs text-neutral-500 hover:text-black"
+									>
+										clear
+									</button>
+								</div>
+								<div
+									ref={logsRef}
+									class="p-4 h-72 overflow-y-auto font-mono text-xs bg-neutral-50"
+								>
+									<Show when={logs().length === 0}>
+										<p class="text-neutral-400">
+											{logsConnected()
+												? "waiting for logs..."
+												: "connecting..."}
+										</p>
+									</Show>
+									<For each={logs()}>
+										{(line) => (
+											<div
+												class="text-neutral-700 leading-relaxed whitespace-pre-wrap break-all"
+												innerHTML={parseAnsi(line)}
+											></div>
+										)}
+									</For>
+								</div>
+							</div>
+						</Show>
+
+						{/* container monitor */}
+						<div class="border border-neutral-200 mb-8">
+							<div class="border-b border-neutral-200 px-5 py-3 flex items-center justify-between">
+								<div>
+									<h2 class="text-sm font-serif text-black">
+										container monitor
+									</h2>
+									<p class="text-xs text-neutral-500 mt-1">
+										health, metrics, logs, volumes
+									</p>
+								</div>
+								<Show when={appContainers().length > 0}>
+									<select
+										value={selectedContainer()}
+										onChange={(e) =>
+											setSelectedContainer(e.currentTarget.value)
+										}
+										class="px-2 py-1.5 border border-neutral-300 text-xs text-neutral-700"
+									>
+										<For each={appContainers()}>
+											{(container) => (
+												<option value={container.id}>{container.name}</option>
+											)}
+										</For>
+									</select>
+								</Show>
+							</div>
+							<div class="p-5">
+								<Show when={appContainers().length > 0}>
+									<ContainerMonitor containerId={selectedContainer()} />
+								</Show>
+								<Show when={appContainers().length === 0}>
+									<div class="border border-dashed border-neutral-200 p-8 text-center text-neutral-400 text-sm">
+										no running containers for this group
+									</div>
+								</Show>
+							</div>
+						</div>
+
+						{/* deployments */}
+						<div class="border border-neutral-200">
+							<div class="border-b border-neutral-200 px-5 py-3">
+								<h2 class="text-sm font-serif text-black">deployments</h2>
+							</div>
+
+							<Show when={deployments.loading}>
+								<div class="p-5 animate-pulse space-y-3">
+									<div class="h-10 bg-neutral-50"></div>
+									<div class="h-10 bg-neutral-50"></div>
+								</div>
+							</Show>
+
+							<Show when={!deployments.loading && deployments()?.length === 0}>
+								<div class="p-8 text-center text-neutral-400 text-sm">
+									no deployments yet
+								</div>
+							</Show>
+
+							<Show
+								when={
+									!deployments.loading &&
+									deployments() &&
+									deployments()!.length > 0
+								}
+							>
+								<div class="divide-y divide-neutral-200">
+									<For each={deployments()}>
+										{(deployment) => (
+											<div class="px-5 py-4 flex items-center justify-between">
+												<div class="flex items-center gap-4">
+													<span
+														class={`w-2 h-2 ${statusIndicator(deployment.status)}`}
+													></span>
+													<div>
+														<p class="text-black font-mono text-sm">
+															{deployment.commit_sha.substring(0, 8)}
+														</p>
+														<p class="text-neutral-500 text-xs mt-0.5 truncate max-w-md">
+															{deployment.commit_message || "no message"}
+														</p>
+													</div>
+												</div>
+												<div class="flex items-center gap-4 text-xs">
+													<span class="text-neutral-500">
+														{deployment.status}
+													</span>
+													<span class="text-neutral-400">
+														{new Date(deployment.created_at).toLocaleString()}
+													</span>
+													<button
+														onClick={() => openDeploymentLogs(deployment)}
+														class="px-2 py-1 border border-neutral-300 text-neutral-600 hover:text-black hover:border-neutral-400 transition-colors"
+													>
+														logs
+													</button>
+												</div>
 											</div>
 										)}
 									</For>
 								</div>
-
-								<For each={editForm().services}>
-									{(service, index) => (
-										<ServiceForm
-											service={service}
-											index={index()}
-											allServices={editForm().services}
-											onUpdate={updateEditService}
-											onRemove={removeEditService}
-										/>
-									)}
-								</For>
-
-								<Show when={editForm().services.length === 0}>
-									<div class="text-center py-8 text-neutral-400 text-sm border border-dashed border-neutral-200">
-										no services configured
-									</div>
-								</Show>
-							</section>
-						</div>
-
-						<Show when={editError()}>
-							<div class="border-t border-neutral-200 px-6 py-4">
-								<div class="border border-neutral-300 bg-neutral-50 text-neutral-700 px-4 py-2 text-sm">
-									{editError()}
-								</div>
-							</div>
-						</Show>
-						<div class="border-t border-neutral-200 px-6 py-4 flex gap-2">
-							<button
-								onClick={() => setEditing(false)}
-								class="flex-1 px-4 py-2 border border-neutral-300 text-neutral-700 hover:text-black hover:border-neutral-400 transition-colors text-sm"
-							>
-								cancel
-							</button>
-							<button
-								onClick={updateApp}
-								disabled={saving()}
-								class="flex-1 px-4 py-2 bg-black text-white hover:bg-neutral-800 disabled:opacity-50 transition-colors text-sm"
-							>
-								{saving() ? "saving..." : "save changes"}
-							</button>
+							</Show>
 						</div>
 					</div>
-				</div>
-			</Show>
-
-			{/* deployment logs modal */}
-			<Show when={selectedDeployment()}>
-				<div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">
-					<div class="bg-white border border-neutral-300 w-full max-w-4xl max-h-[90vh] flex flex-col">
-						<div class="border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
-							<div>
-								<h2 class="text-lg font-serif text-black">deployment logs</h2>
-								<p class="text-xs text-neutral-500 mt-1 font-mono">
-									{selectedDeployment()!.commit_sha.substring(0, 8)} -{" "}
-									{selectedDeployment()!.status}
-								</p>
-							</div>
-							<div class="flex items-center gap-4">
-								<Show when={deploymentLogsConnected()}>
-									<div class="flex items-center gap-2">
-										<span class="w-1.5 h-1.5 bg-black"></span>
-										<span class="text-xs text-neutral-500">live</span>
-									</div>
-								</Show>
+				</Show>
+				{/* edit modal */}
+				<Show when={editing()}>
+					<div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">
+						<div class="bg-white border border-neutral-300 w-full max-w-6xl max-h-[90vh] flex flex-col">
+							<div class="border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
+								<h2 class="text-lg font-serif text-black">group settings</h2>
 								<button
-									onClick={closeDeploymentLogs}
+									onClick={() => setEditing(false)}
 									class="text-neutral-400 hover:text-black"
 								>
 									<svg
@@ -2071,74 +1945,267 @@ const AppDetail: Component = () => {
 									</svg>
 								</button>
 							</div>
-						</div>
-						<div
-							ref={deploymentLogsRef}
-							class="flex-1 p-4 overflow-y-auto font-mono text-xs bg-neutral-50 min-h-[300px] max-h-[60vh]"
-						>
-							<Show
-								when={deploymentLogsLoading() && deploymentLogs().length === 0}
-							>
-								<p class="text-neutral-400">loading logs...</p>
-							</Show>
-							<Show
-								when={!deploymentLogsLoading() && deploymentLogs().length === 0}
-							>
-								<p class="text-neutral-400">no logs available</p>
-							</Show>
-							<Show
-								when={
-									!deploymentLogsConnected() &&
-									deploymentLogHasMore() &&
-									deploymentLogs().length > 0
-								}
-							>
-								<div class="mb-4 text-center">
-									<button
-										onClick={loadMoreLogs}
-										disabled={deploymentLogsLoading()}
-										class="text-xs text-neutral-500 hover:text-black border border-neutral-200 px-3 py-1 bg-white hover:border-neutral-400 transition-colors disabled:opacity-50"
-									>
-										{deploymentLogsLoading() ? "loading..." : "load older logs"}
-									</button>
+
+							<div class="flex-1 overflow-y-auto p-6 space-y-6">
+								{/* source settings */}
+								<section class="border border-neutral-200 p-4">
+									<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-4">
+										source
+									</h3>
+
+									<div class="grid grid-cols-2 gap-4">
+										<div>
+											<label class="block text-xs text-neutral-500 mb-2">
+												repository url
+											</label>
+											<input
+												type="text"
+												value={editForm().github_url}
+												onInput={(e) =>
+													setEditForm((prev) => ({
+														...prev,
+														github_url: e.currentTarget.value,
+													}))
+												}
+												class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
+											/>
+										</div>
+										<div>
+											<label class="block text-xs text-neutral-500 mb-2">
+												branch
+											</label>
+											<input
+												type="text"
+												value={editForm().branch}
+												onInput={(e) =>
+													setEditForm((prev) => ({
+														...prev,
+														branch: e.currentTarget.value,
+													}))
+												}
+												class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-white focus:border-neutral-400 focus:outline-none text-sm font-mono"
+											/>
+										</div>
+									</div>
+								</section>
+
+								<EnvVarEditor
+									envVars={editForm().env_vars}
+									theme="dark"
+									onChange={(envVars) =>
+										setEditForm((previous) => ({
+											...previous,
+											env_vars: envVars,
+										}))
+									}
+								/>
+
+								<section class="border border-neutral-200 p-4">
+									<div class="flex justify-between items-center mb-4">
+										<div>
+											<h3 class="text-xs text-neutral-500 uppercase tracking-wider">
+												services
+											</h3>
+											<p class="text-xs text-neutral-400 mt-2">
+												define render-style service types for this group. custom
+												domains now belong to each web service card.
+											</p>
+										</div>
+										<div class="flex flex-wrap gap-2">
+											<For each={serviceTypeOptions}>
+												{(serviceType) => (
+													<button
+														type="button"
+														onClick={() => addEditService(serviceType)}
+														class="px-3 py-1 text-xs border border-neutral-300 text-neutral-700 hover:border-neutral-400"
+													>
+														add {serviceTypeLabel(serviceType)}
+													</button>
+												)}
+											</For>
+										</div>
+									</div>
+
+									<div class="mb-4 grid gap-3 md:grid-cols-3">
+										<For each={serviceTypeOptions}>
+											{(serviceType) => (
+												<div class="border border-neutral-200 bg-neutral-50 px-3 py-3">
+													<p class="text-xs uppercase tracking-wide text-neutral-500">
+														{serviceTypeLabel(serviceType)}
+													</p>
+													<p class="mt-2 text-xs leading-relaxed text-neutral-500">
+														{serviceType === "web_service"
+															? "public url, http routing, and optional custom domains"
+															: serviceType === "private_service"
+																? "internal-only service that other group services can reach"
+																: "no inbound port, built for queues, cron jobs, and workers"}
+													</p>
+												</div>
+											)}
+										</For>
+									</div>
+
+									<For each={editForm().services}>
+										{(service, index) => (
+											<ServiceForm
+												service={service}
+												index={index()}
+												allServices={editForm().services}
+												onUpdate={updateEditService}
+												onRemove={removeEditService}
+											/>
+										)}
+									</For>
+
+									<Show when={editForm().services.length === 0}>
+										<div class="text-center py-8 text-neutral-400 text-sm border border-dashed border-neutral-200">
+											no services configured
+										</div>
+									</Show>
+								</section>
+							</div>
+
+							<Show when={editError()}>
+								<div class="border-t border-neutral-200 px-6 py-4">
+									<div class="border border-neutral-300 bg-neutral-50 text-neutral-700 px-4 py-2 text-sm">
+										{editError()}
+									</div>
 								</div>
 							</Show>
-							<For each={deploymentLogs()}>
-								{(line) => (
-									<div
-										class="text-neutral-700 leading-relaxed whitespace-pre-wrap break-all"
-										innerHTML={parseAnsi(line)}
-									></div>
-								)}
-							</For>
-						</div>
-						<div class="border-t border-neutral-200 px-6 py-3 flex justify-between items-center text-xs text-neutral-500">
-							<div>
-								<span>
-									started:{" "}
-									{new Date(selectedDeployment()!.created_at).toLocaleString()}
-								</span>
-								<Show when={selectedDeployment()!.finished_at}>
-									<span class="mx-2">|</span>
-									<span>
-										finished:{" "}
-										{new Date(
-											selectedDeployment()!.finished_at!,
-										).toLocaleString()}
-									</span>
-								</Show>
+							<div class="border-t border-neutral-200 px-6 py-4 flex gap-2">
+								<button
+									onClick={() => setEditing(false)}
+									class="flex-1 px-4 py-2 border border-neutral-300 text-neutral-700 hover:text-black hover:border-neutral-400 transition-colors text-sm"
+								>
+									cancel
+								</button>
+								<button
+									onClick={updateApp}
+									disabled={saving()}
+									class="flex-1 px-4 py-2 bg-black text-white hover:bg-neutral-800 disabled:opacity-50 transition-colors text-sm"
+								>
+									{saving() ? "saving..." : "save changes"}
+								</button>
 							</div>
-							<button
-								onClick={() => setDeploymentLogs([])}
-								class="text-neutral-500 hover:text-black"
-							>
-								clear
-							</button>
 						</div>
 					</div>
-				</div>
-			</Show>
-		</div>
+				</Show>
+
+				{/* deployment logs modal */}
+				<Show when={selectedDeployment()}>
+					<div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">
+						<div class="bg-white border border-neutral-300 w-full max-w-4xl max-h-[90vh] flex flex-col">
+							<div class="border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
+								<div>
+									<h2 class="text-lg font-serif text-black">deployment logs</h2>
+									<p class="text-xs text-neutral-500 mt-1 font-mono">
+										{selectedDeployment()!.commit_sha.substring(0, 8)} -{" "}
+										{selectedDeployment()!.status}
+									</p>
+								</div>
+								<div class="flex items-center gap-4">
+									<Show when={deploymentLogsConnected()}>
+										<div class="flex items-center gap-2">
+											<span class="w-1.5 h-1.5 bg-black"></span>
+											<span class="text-xs text-neutral-500">live</span>
+										</div>
+									</Show>
+									<button
+										onClick={closeDeploymentLogs}
+										class="text-neutral-400 hover:text-black"
+									>
+										<svg
+											class="h-5 w-5"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke="currentColor"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M6 18L18 6M6 6l12 12"
+											/>
+										</svg>
+									</button>
+								</div>
+							</div>
+							<div
+								ref={deploymentLogsRef}
+								class="flex-1 p-4 overflow-y-auto font-mono text-xs bg-neutral-50 min-h-[300px] max-h-[60vh]"
+							>
+								<Show
+									when={
+										deploymentLogsLoading() && deploymentLogs().length === 0
+									}
+								>
+									<p class="text-neutral-400">loading logs...</p>
+								</Show>
+								<Show
+									when={
+										!deploymentLogsLoading() && deploymentLogs().length === 0
+									}
+								>
+									<p class="text-neutral-400">no logs available</p>
+								</Show>
+								<Show
+									when={
+										!deploymentLogsConnected() &&
+										deploymentLogHasMore() &&
+										deploymentLogs().length > 0
+									}
+								>
+									<div class="mb-4 text-center">
+										<button
+											onClick={loadMoreLogs}
+											disabled={deploymentLogsLoading()}
+											class="text-xs text-neutral-500 hover:text-black border border-neutral-200 px-3 py-1 bg-white hover:border-neutral-400 transition-colors disabled:opacity-50"
+										>
+											{deploymentLogsLoading()
+												? "loading..."
+												: "load older logs"}
+										</button>
+									</div>
+								</Show>
+								<For each={deploymentLogs()}>
+									{(line) => (
+										<div
+											class="text-neutral-700 leading-relaxed whitespace-pre-wrap break-all"
+											innerHTML={parseAnsi(line)}
+										></div>
+									)}
+								</For>
+							</div>
+							<div class="border-t border-neutral-200 px-6 py-3 flex justify-between items-center text-xs text-neutral-500">
+								<div>
+									<span>
+										started:{" "}
+										{new Date(
+											selectedDeployment()!.created_at,
+										).toLocaleString()}
+									</span>
+									<Show when={selectedDeployment()!.finished_at}>
+										<span class="mx-2">|</span>
+										<span>
+											finished:{" "}
+											{new Date(
+												selectedDeployment()!.finished_at!,
+											).toLocaleString()}
+										</span>
+									</Show>
+								</div>
+								<button
+									onClick={() => setDeploymentLogs([])}
+									class="text-neutral-500 hover:text-black"
+								>
+									clear
+								</button>
+							</div>
+						</div>
+					</div>
+				</Show>
+			</div>
+		</ErrorBoundary>
 	);
 };
 

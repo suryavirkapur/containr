@@ -159,6 +159,10 @@ changelog
   `32a2e361-2e6c-473d-ab01-f1827188282b` had a failed deployment
   (`fcb479a4-d833-426f-bbd9-17caedb7daa0`) rather than an active deployment,
   so the page issue was a frontend truthfulness bug
+- harden `web/src/pages/AppDetail.tsx` with explicit resource error messages
+  and a route-level error boundary so the project page no longer fails silently
+  into a blank or apparently endless-loading state if one of its render paths
+  or data requests breaks
 
 0.1.13-alpha - 2026-03-09
 - add first-class `containr` subcommands for docker socket checks, long-lived api key generation, and systemd unit generation
