@@ -505,6 +505,10 @@ architectural notes:
   `colrskeww` project (`32a2e361-2e6c-473d-ab01-f1827188282b`) had one latest
   deployment in `failed` state, not an active deployment, so the bug was in
   frontend status reporting rather than a currently live deploy loop
+- `web/src/pages/AppDetail.tsx` now also surfaces resource failures and render
+  exceptions through an inline error panel and a route-level error boundary so
+  the detail page stops looking like a perpetual loading screen when a client-
+  side render path breaks
 - verified after the shell/theme pass:
   `pnpm --dir web build`
 - verified again after the project-detail status fix:
