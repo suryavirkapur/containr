@@ -1528,8 +1528,8 @@ const AppDetail: Component = () => {
 							</div>
 						</Show>
 					</div>
+				</div>
 			</Show>
-
 			{/* edit modal */}
 			<Show when={editing()}>
 				<div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">

@@ -44,6 +44,14 @@ changelog
   live `pg_wal` segment files into the mounted local archive before stop and
   restore, and normalize the copied wal permissions so recovery can actually
   read those files instead of failing with `permission denied`
+- refactor `crates/containr-runtime/src/database_manager.rs` by moving the
+  postgres pitr backup, restore, wal sync, and recovery helpers into
+  `crates/containr-runtime/src/database_manager/pitr.rs` so runtime container
+  lifecycle code is separated from the postgres recovery flow
+- refactor `crates/containr/src/client.rs` so repeated resource list/get/logs/
+  start/stop/restart/delete path handling for services, databases, and queues
+  now flows through shared helper functions instead of duplicating the same
+  string-building logic in each command matcher
 - raise the default `containrctl` request timeout to 180 seconds so postgres
   recovery and other long-running control-plane actions do not fail client-side
   while the server is still doing valid work
@@ -79,6 +87,23 @@ changelog
 - add a dedicated vps install script that installs docker from the official apt repository, downloads the latest containr release, writes production config, and installs the systemd service
 - add a `gh` release script that builds release assets, packages `containr` and `containrctl`, and publishes a prerelease from the current version
 - update the readme and deployment docs to use the current `suryavirkapur/containr` repository, release assets, and client cli workflow
+- move the dashboard homepage to the unified `/api/services` inventory so the
+  landing page now shows app services, managed databases, and managed queues
+  together instead of only project-scoped app services
+- add homepage quick-create tiles for web services, private services,
+  background workers, cron jobs, postgres, valkey, mariadb, qdrant, and
+  rabbitmq so service creation is visible from `/` instead of buried in menus
+- let `web/src/pages/NewApp.tsx` honor `?service_type=` presets, including
+  cron jobs, so dashboard quick-create links open the app-service form with the
+  requested runtime shape already selected
+- let `web/src/pages/Databases.tsx` and `web/src/pages/Queues.tsx` honor
+  `?create=1&type=...` so the homepage can deep-link directly into the correct
+  managed-service create flow
+- fix the database create form to submit `redis` for valkey instead of the
+  unsupported `valkey` value, and remove the stale unsupported `nats` option
+  from the queue create ui
+- fix the existing `web/src/pages/AppDetail.tsx` jsx tree mismatch so the
+  solid/vite frontend now builds successfully again
 
 0.1.13-alpha - 2026-03-09
 - add first-class `containr` subcommands for docker socket checks, long-lived api key generation, and systemd unit generation

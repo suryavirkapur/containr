@@ -1,5 +1,12 @@
-import { Component, createResource, createSignal, For, Show } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import {
+	Component,
+	createEffect,
+	createResource,
+	createSignal,
+	For,
+	Show,
+} from "solid-js";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 
 import { api, components } from "../api";
 import EnvVarEditor from "../components/EnvVarEditor";
@@ -62,14 +69,17 @@ const serviceTypeOptions: { type: ServiceType; icon: string }[] = [
 	{ type: "web_service", icon: "public" },
 	{ type: "private_service", icon: "private" },
 	{ type: "background_worker", icon: "worker" },
+	{ type: "cron_job", icon: "cron" },
 ];
 
 const NewApp: Component = () => {
 	const navigate = useNavigate();
+	const [searchParams] = useSearchParams();
 	const [selectedType, setSelectedType] =
 		createSignal<ServiceType>("web_service");
-	const [service, setService] =
-		createSignal<Service>(createServiceForType("web_service"));
+	const [service, setService] = createSignal<Service>(
+		createServiceForType("web_service"),
+	);
 	const [githubUrl, setGithubUrl] = createSignal("");
 	const [branch, setBranch] = createSignal("main");
 	const [useRepoPicker, setUseRepoPicker] = createSignal(true);
@@ -112,6 +122,22 @@ const NewApp: Component = () => {
 		setSelectedType(serviceType);
 		setService(applyServiceType(service(), serviceType));
 	};
+
+	createEffect(() => {
+		const requestedType = searchParams.service_type;
+		if (
+			requestedType !== "web_service" &&
+			requestedType !== "private_service" &&
+			requestedType !== "background_worker" &&
+			requestedType !== "cron_job"
+		) {
+			return;
+		}
+
+		if (requestedType !== selectedType()) {
+			switchServiceType(requestedType);
+		}
+	});
 
 	const handleSubmit = async (event: Event) => {
 		event.preventDefault();
@@ -175,9 +201,7 @@ const NewApp: Component = () => {
 						</p>
 						<CardTitle class="mt-2">choose the runtime shape</CardTitle>
 					</div>
-					<Badge variant="outline">
-						{serviceTypeLabel(selectedType())}
-					</Badge>
+					<Badge variant="outline">{serviceTypeLabel(selectedType())}</Badge>
 				</CardHeader>
 				<CardContent class="grid gap-3 md:grid-cols-3">
 					<For each={serviceTypeOptions}>
@@ -245,7 +269,9 @@ const NewApp: Component = () => {
 										loading repositories...
 									</div>
 								</Show>
-								<Show when={!githubRepos.loading && filteredRepos().length === 0}>
+								<Show
+									when={!githubRepos.loading && filteredRepos().length === 0}
+								>
 									<div class="px-4 py-6 text-sm text-[var(--muted-foreground)]">
 										no repositories found
 									</div>
