@@ -488,5 +488,24 @@ architectural notes:
 - `web/src/index.css` now applies `--radius` to raw `select` and `textarea`
   controls as a compatibility bridge for older pages that still use direct
   form elements outside the shared ui primitives
+- `/projects/new` no longer asks for the app service type twice: the page-level
+  runtime chooser is now the single type selector there, and
+  `web/src/components/ServiceForm.tsx` can hide its internal type grid when
+  embedded in the new-service flow
+- `web/src/components/ServiceForm.tsx` now recognizes `cron_job` as a first-
+  class app service type and treats it like other no-ingress runtimes for
+  port, health-check, label, and description behavior
+- `web/src/pages/AppDetail.tsx` now pulls `/api/services` as the runtime source
+  of truth for app-service status instead of hard-coding the project page as
+  running or relying only on old deployment/container heuristics
+- project detail now shows real project and per-service runtime state, desired
+  vs running instance counts, and includes cron services in its service-type
+  counts instead of leaving the page out of sync with the unified dashboard
+- copied prod sled metadata from `root@100.109.217.118` confirmed the reported
+  `colrskeww` project (`32a2e361-2e6c-473d-ab01-f1827188282b`) had one latest
+  deployment in `failed` state, not an active deployment, so the bug was in
+  frontend status reporting rather than a currently live deploy loop
 - verified after the shell/theme pass:
+  `pnpm --dir web build`
+- verified again after the project-detail status fix:
   `pnpm --dir web build`
