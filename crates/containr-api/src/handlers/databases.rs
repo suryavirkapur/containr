@@ -187,6 +187,15 @@ fn bad_request(
     )
 }
 
+fn conflict(message: impl Into<String>) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::CONFLICT,
+        Json(ErrorResponse {
+            error: message.into(),
+        }),
+    )
+}
+
 fn allocate_public_port(
     requested_port: Option<u16>,
 ) -> Result<u16, (StatusCode, Json<ErrorResponse>)> {
@@ -235,6 +244,22 @@ fn should_restart_service(
 ) -> bool {
     container_id.is_some()
         || matches!(status, ServiceStatus::Running | ServiceStatus::Starting)
+}
+
+fn ensure_database_not_starting(
+    db: &ManagedDatabase,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    if db.status == ServiceStatus::Starting {
+        return Err(conflict("database is already starting"));
+    }
+
+    Ok(())
+}
+
+fn mark_database_starting(db: &mut ManagedDatabase) {
+    db.status = ServiceStatus::Starting;
+    db.container_id = None;
+    db.updated_at = Utc::now();
 }
 
 fn ensure_postgresql_database(
@@ -517,6 +542,7 @@ pub async fn create_database(
         db.cpu_limit = cpu;
     }
     db.group_id = resolve_group_id(&state, user_id, req.group_id.as_deref())?;
+    mark_database_starting(&mut db);
 
     state
         .db
@@ -712,15 +738,23 @@ pub async fn start_database(
 
     // start the container via database manager
     let db_manager = DatabaseManager::new();
-    db_manager.start_database(&mut db).await.map_err(|e| {
-        tracing::error!("failed to start database: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("failed to start database: {}", e),
-            }),
-        )
-    })?;
+    ensure_database_not_starting(&db)?;
+    if db_manager.is_running(&db).await {
+        return Err(bad_request("database is already running"));
+    }
+
+    mark_database_starting(&mut db);
+    state
+        .db
+        .save_managed_database(&db)
+        .map_err(internal_error)?;
+
+    if let Err(error) = db_manager.start_database(&mut db).await {
+        db.status = ServiceStatus::Failed;
+        db.updated_at = Utc::now();
+        let _ = state.db.save_managed_database(&db);
+        return Err(database_manager_error("start database", error));
+    }
 
     state
         .db
@@ -848,6 +882,7 @@ pub async fn restart_database(
     if !should_restart_service(db.status, &db.container_id) {
         return Err(bad_request("database is not running"));
     }
+    ensure_database_not_starting(&db)?;
 
     let db_manager = DatabaseManager::new();
     db_manager
@@ -855,7 +890,15 @@ pub async fn restart_database(
         .await
         .map_err(|error| database_manager_error("restart database", error))?;
 
+    mark_database_starting(&mut db);
+    state
+        .db
+        .save_managed_database(&db)
+        .map_err(internal_error)?;
+
     if let Err(error) = db_manager.start_database(&mut db).await {
+        db.status = ServiceStatus::Failed;
+        db.updated_at = Utc::now();
         let _ = state.db.save_managed_database(&db);
         return Err(database_manager_error("restart database", error));
     }
@@ -1003,6 +1046,7 @@ pub async fn expose_database(
         ));
     }
 
+    ensure_database_not_starting(&db)?;
     let db_manager = DatabaseManager::new();
     let restart_required = should_restart_service(db.status, &db.container_id);
 
@@ -1023,15 +1067,18 @@ pub async fn expose_database(
             )
         })?;
 
-        db_manager.start_database(&mut db).await.map_err(|e| {
-            tracing::error!("failed to start database: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("failed to start database: {}", e),
-                }),
-            )
-        })?;
+        mark_database_starting(&mut db);
+        state
+            .db
+            .save_managed_database(&db)
+            .map_err(internal_error)?;
+
+        if let Err(error) = db_manager.start_database(&mut db).await {
+            db.status = ServiceStatus::Failed;
+            db.updated_at = Utc::now();
+            let _ = state.db.save_managed_database(&db);
+            return Err(database_manager_error("start database", error));
+        }
     } else {
         db.updated_at = chrono::Utc::now();
     }
@@ -1151,6 +1198,7 @@ pub async fn configure_pitr(
     }
 
     ensure_postgresql_database(&db, "point in time recovery")?;
+    ensure_database_not_starting(&db)?;
 
     let db_manager = DatabaseManager::new();
     let restart_required = should_restart_service(db.status, &db.container_id);
@@ -1161,10 +1209,19 @@ pub async fn configure_pitr(
             .stop_database(&mut db)
             .await
             .map_err(|e| database_manager_error("stop database", e))?;
-        db_manager
-            .start_database(&mut db)
-            .await
-            .map_err(|e| database_manager_error("start database", e))?;
+
+        mark_database_starting(&mut db);
+        state
+            .db
+            .save_managed_database(&db)
+            .map_err(internal_error)?;
+
+        if let Err(error) = db_manager.start_database(&mut db).await {
+            db.status = ServiceStatus::Failed;
+            db.updated_at = Utc::now();
+            let _ = state.db.save_managed_database(&db);
+            return Err(database_manager_error("start database", error));
+        }
     } else {
         db.updated_at = Utc::now();
     }
@@ -1228,6 +1285,7 @@ pub async fn configure_proxy(
     }
 
     ensure_postgresql_database(&db, "database proxy")?;
+    ensure_database_not_starting(&db)?;
 
     let db_manager = DatabaseManager::new();
     let restart_required = should_restart_service(db.status, &db.container_id);
@@ -1257,10 +1315,19 @@ pub async fn configure_proxy(
             .stop_database(&mut db)
             .await
             .map_err(|e| database_manager_error("stop database", e))?;
-        db_manager
-            .start_database(&mut db)
-            .await
-            .map_err(|e| database_manager_error("start database", e))?;
+
+        mark_database_starting(&mut db);
+        state
+            .db
+            .save_managed_database(&db)
+            .map_err(internal_error)?;
+
+        if let Err(error) = db_manager.start_database(&mut db).await {
+            db.status = ServiceStatus::Failed;
+            db.updated_at = Utc::now();
+            let _ = state.db.save_managed_database(&db);
+            return Err(database_manager_error("start database", error));
+        }
     } else {
         db.updated_at = Utc::now();
     }

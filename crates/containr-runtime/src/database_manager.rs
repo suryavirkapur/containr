@@ -109,14 +109,13 @@ impl DatabaseManager {
         self.ensure_network(&network_name).await?;
 
         let env: Vec<String> = db
-            .db_type
-            .env_vars(&db.credentials)
+            .container_env_vars()
             .into_iter()
             .map(|(k, v)| format!("{}={}", k, v))
             .collect();
 
         let mut mounts = vec![Mount {
-            target: Some(db.db_type.volume_path().to_string()),
+            target: Some(db.container_mount_target().to_string()),
             source: Some(db.host_data_path.clone()),
             typ: Some(MountTypeEnum::BIND),
             ..Default::default()
@@ -521,10 +520,19 @@ impl DatabaseManager {
                 )
                 .await
                 .map_err(|e| {
-                    ClientError::Operation(format!(
-                        "docker inspect failed: {}",
-                        e
-                    ))
+                    let error = e.to_string();
+                    if error.contains("No such container")
+                        || error.contains("404")
+                    {
+                        ClientError::Operation(
+                            "container disappeared while starting".to_string(),
+                        )
+                    } else {
+                        ClientError::Operation(format!(
+                            "docker inspect failed: {}",
+                            error
+                        ))
+                    }
                 })?;
 
             let state = inspect.state.unwrap_or_default();
@@ -981,5 +989,19 @@ mod tests {
                 db.credentials.password.clone(),
             ])
         );
+    }
+
+    #[test]
+    fn postgres_18_uses_versioned_mount_target() {
+        let owner_id = Uuid::new_v4();
+        let mut db = ManagedDatabase::new(
+            owner_id,
+            "primary".to_string(),
+            DatabaseType::Postgresql,
+        );
+        db.version = "18".to_string();
+
+        assert_eq!(db.container_mount_target(), "/var/lib/postgresql");
+        assert_eq!(db.container_data_dir(), "/var/lib/postgresql/18/docker");
     }
 }

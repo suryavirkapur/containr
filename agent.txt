@@ -1,4 +1,26 @@
 current context:
+- the live VM database failure for `bbdb3` traced back to PostgreSQL 18+ data
+  directory semantics: the runtime was still bind-mounting the old
+  `/var/lib/postgresql/data` target even though newer images expect the volume
+  at `/var/lib/postgresql` with an explicit versioned `PGDATA`
+- `crates/containr-common/src/managed_services.rs` now owns the version-aware
+  PostgreSQL layout rules through `container_mount_target()`,
+  `container_data_dir()`, `host_runtime_data_path()`, and
+  `container_env_vars()`, so the runtime and PITR code no longer hard-code the
+  data directory shape
+- `crates/containr-runtime/src/database_manager.rs` and
+  `crates/containr-runtime/src/database_manager/pitr.rs` now use those helpers
+  for container mounts, startup env, WAL sync, and recovery-copy targets, and
+  `crates/containr-runtime/tests/integration.rs` includes a real Docker test
+  that boots `postgres:18` successfully through the managed database runtime
+- the database API and unified service API now persist `starting` before
+  launching managed database containers, which prevents repeat start/restart
+  requests from removing the in-flight container and surfacing 404 inspect
+  errors while a launch is already underway
+- `web/src/pages/Databases.tsx` was rebuilt on the shared Solid UI primitives
+  and now matches the active theme palette, uses shadcn-style cards/badges/
+  alerts, and shows explicit action feedback instead of throwing the page on
+  database action errors
 - `web/src/components/ui/Sidebar.tsx` no longer hard-codes a dark rgba
   background for the main sidebar surface; it now uses `--card`, which makes
   the desktop and mobile sidebar shells follow the active light/dark palette
