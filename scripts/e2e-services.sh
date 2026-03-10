@@ -37,6 +37,18 @@ expect_contains() {
     fi
 }
 
+expect_nonempty() {
+    if [ -z "$1" ]; then
+        fail "expected non-empty output"
+    fi
+}
+
+extract_client_secret() {
+    local key="$1"
+
+    rg -o "${key} = \"([^\"]+)\"" "$client_config" -r '$1' | head -n 1
+}
+
 count_running_containers_named() {
     local name="$1"
 
@@ -177,7 +189,8 @@ trap cleanup EXIT
 mkdir -p "$data_dir"
 cp containr.example.toml "$config"
 
-sed -i "s|path = \"./data/containr.db\"|path = \"$data_dir/containr.db\"|" \
+sed -i \
+    "s|path = \"./data/containr.sqlite3\"|path = \"$data_dir/containr.sqlite3\"|" \
     "$config"
 sed -i "s|http_port = 80|http_port = 18080|" "$config"
 sed -i "s|https_port = 443|https_port = 18443|" "$config"
@@ -212,9 +225,41 @@ ctl init \
     --url http://127.0.0.1:2077 \
     --instance-id local \
     --timeout-secs 180 >/dev/null
+ctl config show > "$tmpdir/config-show.json"
+expect_eq "$(json "$tmpdir/config-show.json" '.config.active_instance')" \
+    "default"
 ctl register \
     --email e2e@example.com \
     --password testpass123 >/dev/null
+ctl login \
+    --email e2e@example.com \
+    --password testpass123 >/dev/null
+
+stored_token="$(extract_client_secret token)"
+[ -n "$stored_token" ] || fail "missing stored token in client config"
+
+ctl init \
+    --name alt \
+    --url http://127.0.0.1:2077 \
+    --instance-id alt-local \
+    --timeout-secs 180 >/dev/null
+ctl config use alt >/dev/null
+ctl config set-url http://127.0.0.1:2077 >/dev/null
+ctl config set-instance-id alt-instance >/dev/null
+ctl config set-token "$stored_token" >/dev/null
+ctl health > "$tmpdir/health.json"
+expect_eq "$(json "$tmpdir/health.json" '.status')" "ok"
+ctl config clear-auth >/dev/null
+set +e
+authless_output="$(ctl projects list 2>&1)"
+authless_status="$?"
+set -e
+expect_eq "$authless_status" "1"
+expect_contains "$authless_output" "missing a token or api_key"
+ctl config set-api-key "$stored_token" >/dev/null
+ctl projects list > "$tmpdir/projects-empty.json"
+expect_eq "$(jq 'length' "$tmpdir/projects-empty.json")" "0"
+ctl config use default >/dev/null
 
 cat > "$tmpdir/project.toml" <<'EOF'
 name = "svcgroup"
@@ -247,8 +292,20 @@ EOF
 ctl projects apply --file "$tmpdir/project.toml" --no-deploy \
     > "$tmpdir/apply.json"
 project_id="$(json "$tmpdir/apply.json" '.project.id')"
+ctl projects list > "$tmpdir/projects.json"
+expect_eq "$(jq 'length' "$tmpdir/projects.json")" "1"
+ctl projects get "$project_id" > "$tmpdir/project-get.json"
+expect_eq "$(json "$tmpdir/project-get.json" '.id')" "$project_id"
 ctl projects deploy --id "$project_id" >/dev/null
 wait_for_deployment_running "$project_id"
+ctl projects metrics "$project_id" > "$tmpdir/project-metrics.json"
+ctl projects deployments "$project_id" > "$tmpdir/project-deployments.json"
+deployment_id="$(json "$tmpdir/project-deployments.json" '.[0].id')"
+deployment_logs="$(ctl projects deployment-logs \
+    --project-id "$project_id" \
+    --deployment-id "$deployment_id" \
+    --limit 50)"
+expect_nonempty "$deployment_logs"
 
 ctl services list --group-id "$project_id" > "$tmpdir/services.json"
 web_id="$(jq -r '.[] | select(.name=="web") | .id' "$tmpdir/services.json")"
@@ -264,6 +321,9 @@ expect_eq \
 expect_eq \
     "$(jq -r '.[] | select(.name=="cron") | .status' "$tmpdir/services.json")" \
     "stopped"
+
+ctl services get "$worker_id" > "$tmpdir/worker-service.json"
+expect_eq "$(json "$tmpdir/worker-service.json" '.id')" "$worker_id"
 
 worker_logs="$(
     ctl services logs --id "$worker_id" --tail 20
@@ -297,6 +357,47 @@ ctl services delete "$cron_id" >/dev/null
 ctl services list --group-id "$project_id" > "$tmpdir/services.json"
 expect_eq "$(jq 'length' "$tmpdir/services.json")" "2"
 
+cat > "$tmpdir/project-v2.toml" <<'EOF'
+name = "svcgroup"
+source_url = ""
+
+[[services]]
+name = "web"
+image = "hashicorp/http-echo:1.0.0"
+service_type = "web_service"
+port = 5678
+expose_http = true
+command = ["-text=web-v2"]
+
+[[services]]
+name = "worker"
+image = "busybox:1.36"
+service_type = "background_worker"
+port = 0
+command = ["sh", "-c", "while true; do echo worker-v2; sleep 5; done"]
+EOF
+
+ctl projects apply --file "$tmpdir/project-v2.toml" --id "$project_id" \
+    > "$tmpdir/project-update.json"
+wait_for_deployment_running "$project_id"
+expect_contains \
+    "$(curl -s -H 'Host: svcgroup.containr.local' http://127.0.0.1:18080)" \
+    "^web-v2$"
+ctl projects deployments "$project_id" > "$tmpdir/project-deployments.json"
+latest_deployment_id="$(json "$tmpdir/project-deployments.json" '.[0].id')"
+previous_deployment_id="$(json "$tmpdir/project-deployments.json" '.[1].id')"
+ctl projects rollback \
+    --project-id "$project_id" \
+    --deployment-id "$previous_deployment_id" >/dev/null
+wait_for_deployment_running "$project_id"
+expect_contains \
+    "$(curl -s -H 'Host: svcgroup.containr.local' http://127.0.0.1:18080)" \
+    "^web$"
+ctl projects deployments "$project_id" > "$tmpdir/project-deployments.json"
+current_deployment_id="$(json "$tmpdir/project-deployments.json" '.[0].id')"
+[ "$current_deployment_id" != "$latest_deployment_id" ] || \
+    fail "rollback did not create a new deployment"
+
 ctl databases create \
     --name shared-cache \
     --db-type redis \
@@ -311,6 +412,9 @@ ctl databases create \
 ctl queues create \
     --name events \
     --queue-type rabbitmq > "$tmpdir/rabbitmq.json"
+ctl queues create \
+    --name jobs \
+    --queue-type rabbitmq > "$tmpdir/rabbitmq-jobs.json"
 
 redis_id="$(json "$tmpdir/redis.json" '.id')"
 redis_host="$(json "$tmpdir/redis.json" '.internal_host')"
@@ -323,6 +427,16 @@ postgres_pass="$(json "$tmpdir/postgres.json" '.password')"
 postgres_db="$(json "$tmpdir/postgres.json" '.database_name')"
 qdrant_id="$(json "$tmpdir/qdrant.json" '.id')"
 rabbit_id="$(json "$tmpdir/rabbitmq.json" '.id')"
+jobs_queue_id="$(json "$tmpdir/rabbitmq-jobs.json" '.id')"
+
+ctl databases list --group-id "$project_id" > "$tmpdir/databases-group.json"
+expect_eq "$(jq 'length' "$tmpdir/databases-group.json")" "2"
+ctl databases list > "$tmpdir/databases-all.json"
+expect_eq "$(jq 'length' "$tmpdir/databases-all.json")" "3"
+ctl databases get "$postgres_id" > "$tmpdir/postgres-get.json"
+expect_eq "$(json "$tmpdir/postgres-get.json" '.id')" "$postgres_id"
+expect_contains "$(ctl databases logs --id "$postgres_id" --tail 50)" \
+    "database system"
 
 ctl databases pitr --id "$postgres_id" --enabled > "$tmpdir/postgres-pitr.json"
 expect_eq "$(json "$tmpdir/postgres-pitr.json" '.pitr_enabled')" "true"
@@ -451,6 +565,12 @@ wait_for_psql_value \
     "select current_database();" \
     "$postgres_db"
 
+ctl databases stop "$postgres_id" > "$tmpdir/postgres-stop.json"
+expect_eq "$(json "$tmpdir/postgres-stop.json" '.status')" "stopped"
+ctl databases start "$postgres_id" > "$tmpdir/postgres-start.json"
+expect_eq "$(json "$tmpdir/postgres-start.json" '.status')" "running"
+ctl databases restart "$postgres_id" > "$tmpdir/postgres-restart.json"
+expect_eq "$(json "$tmpdir/postgres-restart.json" '.status')" "running"
 ctl services restart "$postgres_id" > "$tmpdir/postgres-service-restart.json"
 expect_eq \
     "$(json "$tmpdir/postgres-service-restart.json" '.status')" \
@@ -497,6 +617,14 @@ expect_eq "$(json "$tmpdir/rabbit-restart.json" '.status')" "running"
 
 ctl databases expose --id "$qdrant_id" --enabled > "$tmpdir/qdrant-expose.json"
 ctl queues expose --id "$rabbit_id" --enabled > "$tmpdir/rabbit-expose.json"
+ctl queues list > "$tmpdir/queues-all.json"
+expect_eq "$(jq 'length' "$tmpdir/queues-all.json")" "2"
+ctl queues get "$rabbit_id" > "$tmpdir/rabbit-get.json"
+expect_eq "$(json "$tmpdir/rabbit-get.json" '.id')" "$rabbit_id"
+ctl queues stop "$rabbit_id" > "$tmpdir/rabbit-stop.json"
+expect_eq "$(json "$tmpdir/rabbit-stop.json" '.status')" "stopped"
+ctl queues start "$rabbit_id" > "$tmpdir/rabbit-start.json"
+expect_eq "$(json "$tmpdir/rabbit-start.json" '.status')" "running"
 
 qdrant_port="$(json "$tmpdir/qdrant-expose.json" '.external_port')"
 rabbit_port="$(json "$tmpdir/rabbit-expose.json" '.external_port')"
@@ -512,6 +640,25 @@ expect_eq "$(json "$tmpdir/qdrant-service.json" '.external_port')" \
     "$qdrant_port"
 expect_eq "$(json "$tmpdir/rabbit-service.json" '.external_port')" \
     "$rabbit_port"
+
+ctl containers list > "$tmpdir/containers.json"
+worker_container_id="$(
+    jq -r --arg rid "$project_id" \
+        '.[] | select(
+            .resource_type == "app" and
+            .resource_id == $rid and
+            (.name | contains("(worker)"))
+        ) | .id' "$tmpdir/containers.json" | \
+        head -n 1
+)"
+[ -n "$worker_container_id" ] || fail "missing worker container id"
+expect_contains \
+    "$(ctl containers logs --id "$worker_container_id" --tail 20)" \
+    "worker"
+
+ctl system stats > "$tmpdir/system-stats.json"
+cpu_percent="$(json "$tmpdir/system-stats.json" '.cpu_percent')"
+[ "$cpu_percent" != "null" ] || fail "missing cpu_percent in system stats"
 
 same_group="$(
     docker run --rm \
@@ -535,6 +682,13 @@ expect_contains "$other_group_output" "Temporary failure in name resolution"
 
 ctl services delete "$qdrant_id" >/dev/null
 ctl services delete "$rabbit_id" >/dev/null
+ctl queues delete "$jobs_queue_id" >/dev/null
+ctl databases delete "$redis_id" >/dev/null
+ctl services list --group-id "$project_id" > "$tmpdir/services-after-db-delete.json"
+if jq -e --arg id "$redis_id" '.[] | select(.id == $id)' \
+    "$tmpdir/services-after-db-delete.json" >/dev/null; then
+    fail "redis service still present after delete"
+fi
 ctl projects delete "$project_id" >/dev/null
 
 ctl services list > "$tmpdir/final-services.json"

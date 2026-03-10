@@ -569,6 +569,8 @@ pub struct Deployment {
     pub rollout_strategy: RolloutStrategy,
     #[serde(default)]
     pub rollback_from_deployment_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_snapshot: Option<App>,
     pub status: DeploymentStatus,
     /// deprecated: use service_deployments for multi-container apps
     pub container_id: Option<String>,
@@ -596,6 +598,7 @@ impl Deployment {
             source_url: None,
             rollout_strategy: RolloutStrategy::default(),
             rollback_from_deployment_id: None,
+            app_snapshot: None,
             status: DeploymentStatus::Pending,
             container_id: None,
             image_id: None,

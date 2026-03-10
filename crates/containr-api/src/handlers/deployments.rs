@@ -100,6 +100,7 @@ pub(crate) async fn create_and_queue_deployment(
     };
     deployment.rollout_strategy = rollout_strategy;
     deployment.rollback_from_deployment_id = rollback_from_deployment_id;
+    deployment.app_snapshot = Some(app.clone());
     state
         .db
         .save_deployment(&deployment)
@@ -566,15 +567,10 @@ pub async fn get_deployment_logs(
     // get logs from new storage
     let limit = query.limit.unwrap_or(100);
     let offset = query.offset.unwrap_or(0);
-    let mut logs = state
+    let logs = state
         .db
         .get_deployment_logs(deployment_id, limit, offset)
         .map_err(internal_error)?;
-
-    // if new storage empty and offset is 0, fallback to old storage for backward compatibility
-    if logs.is_empty() && offset == 0 && !deployment.logs.is_empty() {
-        logs = deployment.logs;
-    }
 
     Ok(Json(logs))
 }

@@ -41,6 +41,7 @@ pub async fn run_server(
 ) -> Result<mpsc::Receiver<DeploymentJob>> {
     // create deployment queue channel
     let (tx, rx) = mpsc::channel::<DeploymentJob>(100);
+    let config_snapshot = config.read().await.clone();
 
     // create shared state
     let state = AppState::new(
@@ -48,12 +49,12 @@ pub async fn run_server(
         config_path,
         data_dir,
         db,
+        PathBuf::from(config_snapshot.cache.path.clone()),
         tx,
         proxy_update_tx,
         cert_request_tx,
-    );
+    )?;
     let replay_state = state.clone();
-    let config_snapshot = config.read().await.clone();
 
     // cors layer
     let cors = if config_snapshot.security.cors_allowed_origins.is_empty() {

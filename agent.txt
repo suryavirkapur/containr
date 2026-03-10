@@ -1,4 +1,42 @@
 current context:
+- `containrctl` is now a separate workspace package in `crates/containrctl`
+  instead of an extra bin target inside `crates/containr`; its `api_client`,
+  `client_config`, config tests, and main binary code moved with it
+- `crates/containr` now only owns the server/openapi binaries plus shared
+  server-side helpers like `systemd`, and install docs now reference explicit
+  `--package containr` / `--package containrctl` cargo installs
+- the metadata layer is now sqlite-only:
+  `crates/containr-common/src/db.rs` uses sqlx with embedded migrations from
+  `crates/containr-common/sqlx_migrations/`, and the dead
+  `crates/containr-common/src/sqlite_relational.rs` backend was removed
+- the sync `Database` api is still intact, but it now runs async sqlx work on
+  a dedicated internal tokio runtime with a thread bridge for callers already
+  inside a tokio runtime, which fixed the earlier test/runtime panics around
+  missing tokio context and nested runtime startup
+- config is now explicit about storage concerns:
+  `[database]` only contains the sqlite path,
+  `[cache]` points at the sled cache directory, and
+  `[logging]` controls append-only file logs plus retention cleanup
+- `crates/containr/src/logging.rs` now initializes daily rotated append-only
+  tracing logs in `logging.dir` and starts a background retention task that
+  deletes old `containr.log*` files after `logging.retention_days`
+- api oauth state is no longer stored in a process-local dashmap;
+  `crates/containr-api/src/cache.rs` persists it in a sled tree so ephemeral
+  cache state survives process-local struct resets and uses the configured
+  cache directory
+- deployment log reads now rely only on the dedicated log storage path;
+  the legacy `deployment.logs` fallback was removed from both the http handler
+  and websocket streaming path
+- `/api/settings` now exposes `log_dir` and `log_retention_days`, and
+  `web/src/pages/Settings.tsx` lets admins tune retention from the dashboard
+- shipped config/docs/install assets now describe the sqlite/cache/logging
+  layout and default sqlite filename `containr.sqlite3`
+- focused verification on 2026-03-10 passed:
+  `cargo test -p containr-common`
+  `cargo test -p containr-api --features skip-web-build`
+  `cargo test -p containr-runtime`
+  `cargo test -p containr --features openapi-only`
+  `pnpm --dir web build`
 - the live VM database failure for `bbdb3` traced back to PostgreSQL 18+ data
   directory semantics: the runtime was still bind-mounting the old
   `/var/lib/postgresql/data` target even though newer images expect the volume
@@ -563,3 +601,18 @@ architectural notes:
   `pnpm --dir web build`
 - verified again after the project-detail status fix:
   `pnpm --dir web build`
+- `scripts/e2e-services.sh` now acts as the full docker-backed `containrctl`
+  regression sweep: it covers config/auth, project lifecycle, service
+  lifecycle, managed database/queue lifecycle, container listing/logs, system
+  stats, wildcard routing, grouped-network reachability, and postgres PITR
+- the rollback path was corrected by snapshotting the full app/service spec on
+  each deployment and making rollback deploy from the stored snapshot, not
+  just from the previous deployment's image ids
+- standalone managed-service network creation now survives docker address-pool
+  exhaustion by allocating an explicit free `10.x.x.0/24` subnet; the queue
+  and database managers now surface network-create failures instead of
+  ignoring them and failing later at container start
+- verified after the containrctl/docker sweep pass:
+  `scripts/e2e-services.sh`
+  `cargo test -p containr-runtime`
+  `cargo test -p containrctl`

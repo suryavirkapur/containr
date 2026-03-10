@@ -9,10 +9,6 @@ name = "containr"
 path = "src/main.rs"
 
 [[bin]]
-name = "containrctl"
-path = "src/client.rs"
-
-[[bin]]
 name = "openapi"
 path = "src/openapi.rs"
 required-features = ["openapi-only"]
@@ -30,6 +26,7 @@ containr-proxy = { path = "../containr-proxy" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

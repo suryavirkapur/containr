@@ -163,8 +163,8 @@ async fn handle_deployment_logs(
     // initial offset
     let mut current_offset = initial_offset;
 
-    // get deployment from database to verify existence and check for legacy logs
-    let deployment = match state.db.get_deployment(deployment_id) {
+    // get deployment from database to verify existence
+    let _deployment = match state.db.get_deployment(deployment_id) {
         Ok(Some(d)) => d,
         Ok(None) => {
             let _ = socket
@@ -179,25 +179,6 @@ async fn handle_deployment_logs(
             return;
         }
     };
-
-    // check if we have legacy logs in the deployment struct
-    if !deployment.logs.is_empty() {
-        for log in deployment.logs.iter().skip(current_offset) {
-            if socket
-                .send(Message::Text(log.clone().into()))
-                .await
-                .is_err()
-            {
-                return;
-            }
-
-            current_offset += 1;
-        }
-        // if legacy logs exist, we assume no new logs in DB for simplicity,
-        // or we could check DB too, but usually it's one or the other.
-        // Assuming migration happened or new deployment.
-        // If it's a new deployment, deployment.logs is empty.
-    }
 
     // poll for new logs from DB
     loop {

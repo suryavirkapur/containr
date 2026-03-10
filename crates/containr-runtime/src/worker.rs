@@ -149,13 +149,13 @@ impl DeploymentWorker {
             return Err(anyhow::anyhow!("deployment app mismatch"));
         }
 
-        // get app config
-        let app = self
+        // get the current app config
+        let current_app = self
             .db
             .get_app(job.app_id)?
             .ok_or_else(|| anyhow::anyhow!("app not found"))?;
 
-        let service_images = if let Some(source_deployment_id) =
+        let rollback_source = if let Some(source_deployment_id) =
             job.rollback_from_deployment_id
         {
             let source =
@@ -169,14 +169,25 @@ impl DeploymentWorker {
                 ));
             }
 
+            Some(source)
+        } else {
+            None
+        };
+        let effective_app = self.resolve_deployment_app(
+            &current_app,
+            &deployment,
+            rollback_source.as_ref(),
+        );
+
+        let service_images = if let Some(source) = rollback_source.as_ref() {
             let _ = self.db.append_deployment_log(
                 deployment.id,
                 &format!(
-                    "rollback: using service image artifacts from deployment {}",
+                    "rollback: using service snapshot from deployment {}",
                     source.id
                 ),
             );
-            self.resolve_rollback_service_images(&app, &source)?
+            self.resolve_rollback_service_images(&effective_app, source)?
         } else {
             let repo_path = match &job.source {
                 DeploymentSource::None => None,
@@ -189,7 +200,7 @@ impl DeploymentWorker {
             self.update_status(&deployment, DeploymentStatus::Building)?;
             let service_images = self
                 .build_service_images(
-                    &app,
+                    &effective_app,
                     &deployment,
                     repo_path.as_deref(),
                     &job.commit_sha,
@@ -207,16 +218,16 @@ impl DeploymentWorker {
 
         // prepare shared env vars (all services inherit these)
         let mut env_vars = HashMap::new();
-        for env in &app.env_vars {
+        for env in &effective_app.env_vars {
             env_vars.insert(env.key.clone(), env.value.clone());
         }
 
         // create network for this app
-        let network_name = app.network_name();
+        let network_name = effective_app.network_name();
         self.docker_manager.create_network(&network_name).await?;
 
         self.deploy_services(
-            &app,
+            &effective_app,
             &deployment,
             &network_name,
             &service_images,
@@ -474,6 +485,7 @@ impl DeploymentWorker {
         updated_deployment.started_at = Some(chrono::Utc::now());
         updated_deployment.finished_at = Some(chrono::Utc::now());
         self.db.save_deployment(&updated_deployment)?;
+        self.db.save_app(app)?;
         self.send_proxy_refresh(app.id).await;
 
         if matches!(rollout_strategy, RolloutStrategy::StartFirst) {
@@ -714,6 +726,19 @@ impl DeploymentWorker {
         }
 
         Ok(service_images)
+    }
+
+    fn resolve_deployment_app(
+        &self,
+        current_app: &containr_common::models::App,
+        deployment: &Deployment,
+        rollback_source: Option<&Deployment>,
+    ) -> containr_common::models::App {
+        rollback_source
+            .and_then(|source| source.app_snapshot.clone())
+            .or_else(|| deployment.app_snapshot.clone())
+            .unwrap_or_else(|| current_app.clone())
+            .normalized_for_service_model()
     }
 
     fn primary_deployment_image_id(
@@ -1018,15 +1043,14 @@ impl DeploymentWorker {
 mod tests {
     use super::*;
     use containr_common::models::ContainerService;
-    use containr_common::{encrypt, DatabaseBackendKind, DatabaseConfig};
+    use containr_common::{encrypt, DatabaseConfig};
 
     fn make_worker() -> DeploymentWorker {
         let root = std::env::temp_dir()
             .join(format!("containr-test-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let db = Database::open(&DatabaseConfig {
-            backend: DatabaseBackendKind::Sled,
-            path: root.join("containr.db").to_string_lossy().to_string(),
+            path: root.join("containr.sqlite3").to_string_lossy().to_string(),
         })
         .unwrap();
         let work_dir = root.join("work");
@@ -1116,5 +1140,47 @@ mod tests {
         let registry_auth = registry_auth.unwrap();
         assert_eq!(registry_auth.username, "demo-user");
         assert_eq!(registry_auth.password, "super-secret");
+    }
+
+    #[test]
+    fn resolve_deployment_app_prefers_rollback_snapshot() {
+        let worker = make_worker();
+        let owner_id = Uuid::new_v4();
+
+        let mut current_app = containr_common::models::App::new(
+            "svcgroup".to_string(),
+            "".to_string(),
+            owner_id,
+        );
+        current_app.ensure_service_model();
+        current_app.services[0].command =
+            Some(vec!["-text=current".to_string()]);
+
+        let mut queued_deployment = containr_common::models::Deployment::new(
+            current_app.id,
+            "head".to_string(),
+        );
+        queued_deployment.app_snapshot = Some(current_app.clone());
+
+        let mut rollback_app = current_app.clone();
+        rollback_app.services[0].command =
+            Some(vec!["-text=rollback".to_string()]);
+
+        let mut rollback_source = containr_common::models::Deployment::new(
+            current_app.id,
+            "old".to_string(),
+        );
+        rollback_source.app_snapshot = Some(rollback_app.clone());
+
+        let resolved = worker.resolve_deployment_app(
+            &current_app,
+            &queued_deployment,
+            Some(&rollback_source),
+        );
+
+        assert_eq!(
+            resolved.services[0].command,
+            Some(vec!["-text=rollback".to_string()])
+        );
     }
 }

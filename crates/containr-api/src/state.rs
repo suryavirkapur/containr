@@ -1,11 +1,11 @@
 //! shared application state
 
 use containr_common::{Config, Database};
-use dashmap::DashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, RwLock};
 
+use crate::cache::CacheStore;
 use crate::github::DeploymentJob;
 use containr_runtime::ProxyRouteUpdate;
 
@@ -18,7 +18,7 @@ pub struct AppState {
     pub db: Database,
     pub deployment_tx: mpsc::Sender<DeploymentJob>,
     pub proxy_update_tx: Option<mpsc::Sender<ProxyRouteUpdate>>,
-    pub oauth_states: Arc<DashMap<String, i64>>,
+    pub cache: Arc<Mutex<CacheStore>>,
     pub cert_request_tx: Option<mpsc::Sender<String>>,
 }
 
@@ -29,19 +29,20 @@ impl AppState {
         config_path: PathBuf,
         data_dir: PathBuf,
         db: Database,
+        cache_path: PathBuf,
         deployment_tx: mpsc::Sender<DeploymentJob>,
         proxy_update_tx: Option<mpsc::Sender<ProxyRouteUpdate>>,
         cert_request_tx: Option<mpsc::Sender<String>>,
-    ) -> Self {
-        Self {
+    ) -> containr_common::Result<Self> {
+        Ok(Self {
             config,
             config_path,
             data_dir,
             db,
             deployment_tx,
             proxy_update_tx,
-            oauth_states: Arc::new(DashMap::new()),
+            cache: Arc::new(Mutex::new(CacheStore::open(&cache_path)?)),
             cert_request_tx,
-        }
+        })
     }
 }

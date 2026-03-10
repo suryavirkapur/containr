@@ -9,16 +9,16 @@ use std::sync::Arc;
 
 use bollard::models::{
     ContainerCreateBody, EndpointSettings, HealthStatusEnum, HostConfig, Mount,
-    MountTypeEnum, NetworkCreateRequest, NetworkingConfig, RestartPolicy,
-    RestartPolicyNameEnum,
+    MountTypeEnum, NetworkingConfig, RestartPolicy, RestartPolicyNameEnum,
 };
 use bollard::query_parameters::{
     CreateContainerOptions, InspectContainerOptions, InspectNetworkOptions,
     RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
 };
 use bollard::Docker;
-use tracing::{info, warn};
+use tracing::info;
 
+use crate::docker::create_bridge_network;
 use crate::error::{ClientError, Result};
 use crate::ImageManager;
 use containr_common::managed_services::{
@@ -305,25 +305,7 @@ impl QueueManager {
         }
 
         info!("creating docker network: {}", name);
-
-        let options = NetworkCreateRequest {
-            name: name.to_string(),
-            driver: Some("bridge".to_string()),
-            ..Default::default()
-        };
-
-        match self.docker.create_network(options).await {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                let err_str = e.to_string();
-                if err_str.contains("already exists") {
-                    Ok(())
-                } else {
-                    warn!("failed to create network: {}", err_str);
-                    Ok(())
-                }
-            }
-        }
+        create_bridge_network(&self.docker, name).await
     }
 
     /// stops a managed queue container

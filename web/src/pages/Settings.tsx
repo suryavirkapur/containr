@@ -9,12 +9,14 @@ import {
 	useTheme,
 } from "../context/ThemeContext";
 import {
+	Alert,
 	Button,
 	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
 	CardTitle,
+	Input,
 } from "../components/ui";
 
 type SettingsResponse = components["schemas"]["SettingsResponse"];
@@ -80,6 +82,8 @@ const Settings: Component = () => {
 		createSignal("");
 	const [storageInternalHost, setStorageInternalHost] = createSignal("");
 	const [storagePort, setStoragePort] = createSignal(9000);
+	const [logDir, setLogDir] = createSignal("");
+	const [logRetentionDays, setLogRetentionDays] = createSignal(14);
 	const [acmeEmail, setAcmeEmail] = createSignal("");
 	const [acmeStaging, setAcmeStaging] = createSignal(true);
 
@@ -139,6 +143,8 @@ const Settings: Component = () => {
 			setStorageManagementEndpoint(s.storage_management_endpoint);
 			setStorageInternalHost(s.storage_internal_host);
 			setStoragePort(s.storage_port);
+			setLogDir(s.log_dir);
+			setLogRetentionDays(s.log_retention_days);
 			setAcmeEmail(s.acme_email);
 			setAcmeStaging(s.acme_staging);
 		}
@@ -160,6 +166,7 @@ const Settings: Component = () => {
 					storage_management_endpoint: storageManagementEndpoint(),
 					storage_internal_host: storageInternalHost(),
 					storage_port: storagePort(),
+					log_retention_days: logRetentionDays(),
 					acme_email: acmeEmail(),
 					acme_staging: acmeStaging(),
 				},
@@ -280,15 +287,12 @@ const Settings: Component = () => {
 
 				{/* message */}
 				<Show when={message()}>
-					<div
-						class={`mb-6 p-4 border ${
-							message()?.type === "success"
-								? "border-green-300 bg-green-50 text-green-800"
-								: "border-red-300 bg-red-50 text-red-800"
-						}`}
+					<Alert
+						class="mb-6"
+						variant={message()?.type === "success" ? "success" : "destructive"}
 					>
 						{message()?.text}
-					</div>
+					</Alert>
 				</Show>
 
 				<form onSubmit={handleSave} class="space-y-8">
@@ -403,6 +407,32 @@ const Settings: Component = () => {
 								<span>https port:</span>
 								<span class="font-mono">{settings()?.https_port}</span>
 							</div>
+						</div>
+					</section>
+
+					<section class="border border-neutral-200 p-6">
+						<h2 class="text-lg font-serif text-black mb-6">logging</h2>
+
+						<div class="grid gap-4 md:grid-cols-2">
+							<Input
+								label="log directory"
+								value={logDir()}
+								readOnly
+								description="append-only containr logs are written here with daily rotation."
+								class="font-mono"
+							/>
+							<Input
+								label="retention days"
+								type="number"
+								min="0"
+								value={logRetentionDays()}
+								onInput={(event) =>
+									setLogRetentionDays(
+										Number.parseInt(event.currentTarget.value, 10) || 0,
+									)
+								}
+								description="older rotated logs are removed after this many days. use 0 to disable cleanup."
+							/>
 						</div>
 					</section>
 

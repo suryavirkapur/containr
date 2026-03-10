@@ -9,10 +9,18 @@ host = "0.0.0.0"
 port = 2077
 
 [database]
-# metadata database backend: sled or sqlite
-backend = "sqlite"
-# path to the configured metadata database
-path = "./data/containr.db"
+# metadata database path
+path = "./data/containr.sqlite3"
+
+[cache]
+# sled-backed ephemeral cache path
+path = "./data/cache"
+
+[logging]
+# append-only containr log directory
+dir = "./data/logs"
+# rotated log retention in days (0 disables cleanup)
+retention_days = 14
 
 [proxy]
 # http proxy port (requires root for port 80)

@@ -16,11 +16,12 @@ use containr::systemd::{install_service_unit, ServiceUnitConfig};
 use serde_json::json;
 use tokio::sync::RwLock;
 use tokio::time::MissedTickBehavior;
-use tracing::{info, warn, Level};
-use tracing_subscriber::FmtSubscriber;
+use tracing::{info, warn};
 
 use containr_common::models::User;
 use containr_common::{Config, Database};
+
+mod logging;
 
 const CERT_RENEWAL_CHECK_INTERVAL_SECS: u64 = 12 * 60 * 60;
 
@@ -119,41 +120,38 @@ struct DockerContainersArgs {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    init_logging(&cli.server.log_level)?;
 
     match cli.command {
-        None | Some(Command::Server) => run_server_command(&cli.server).await,
-        Some(Command::GenerateApiKey(args)) => {
-            run_generate_api_key_command(&cli.server, &args).await
+        None | Some(Command::Server) => {
+            let config = load_or_create_config(&cli.server).await?;
+            let _logging =
+                logging::init_file_logging(&cli.server.log_level, &config)?;
+            run_server_command(&cli.server, config).await
         }
-        Some(Command::SetupSystemd(args)) => run_setup_systemd_command(&args),
-        Some(Command::Docker(command)) => run_docker_command(command).await,
+        Some(Command::GenerateApiKey(args)) => {
+            let config = load_existing_config(&cli.server).await?;
+            let _logging =
+                logging::init_file_logging(&cli.server.log_level, &config)?;
+            run_generate_api_key_command(&config, &args).await
+        }
+        Some(Command::SetupSystemd(args)) => {
+            let _logging =
+                logging::init_console_logging(&cli.server.log_level)?;
+            run_setup_systemd_command(&args)
+        }
+        Some(Command::Docker(command)) => {
+            let _logging =
+                logging::init_console_logging(&cli.server.log_level)?;
+            run_docker_command(command).await
+        }
     }
 }
 
-fn init_logging(log_level: &str) -> anyhow::Result<()> {
-    let log_level = match log_level {
-        "trace" => Level::TRACE,
-        "debug" => Level::DEBUG,
-        "info" => Level::INFO,
-        "warn" => Level::WARN,
-        "error" => Level::ERROR,
-        _ => Level::INFO,
-    };
-
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(log_level)
-        .with_target(false)
-        .compact()
-        .finish();
-
-    tracing::subscriber::set_global_default(subscriber)
-        .context("failed to initialize logging")
-}
-
-async fn run_server_command(args: &ServerArgs) -> anyhow::Result<()> {
+async fn run_server_command(
+    args: &ServerArgs,
+    config: Config,
+) -> anyhow::Result<()> {
     info!("starting containr v{}", env!("CARGO_PKG_VERSION"));
-    let config = load_or_create_config(args).await?;
 
     // create data directory
     tokio::fs::create_dir_all(&args.data_dir).await?;
@@ -161,8 +159,12 @@ async fn run_server_command(args: &ServerArgs) -> anyhow::Result<()> {
     // open database
     let db = Database::open(&config.database)?;
     bootstrap_admin_user(&db)?;
-    info!(path = %config.database.path, backend = ?config.database.backend, "database opened");
+    info!(
+        path = %config.database.sqlite_path().display(),
+        "database opened"
+    );
     let shared_config = Arc::new(RwLock::new(config.clone()));
+    tokio::spawn(logging::run_log_retention_task(shared_config.clone()));
 
     // create route manager and challenge store for proxy
     let routes = containr_proxy::RouteManager::new();
@@ -457,26 +459,24 @@ async fn run_server_command(args: &ServerArgs) -> anyhow::Result<()> {
 async fn load_or_create_config(args: &ServerArgs) -> anyhow::Result<Config> {
     if args.config.exists() {
         let content = tokio::fs::read_to_string(&args.config).await?;
-        let config: Config = toml::from_str(&content)?;
-        info!(path = %args.config.display(), "loaded config");
+        let mut config: Config = toml::from_str(&content)?;
+        normalize_config_paths(args, &mut config);
         Ok(config)
     } else {
         let mut config = Config::default();
         config.server.port = args.api_port;
         config.proxy.http_port = args.http_port;
         config.proxy.https_port = args.https_port;
-        config.database.path = args
-            .data_dir
-            .join("containr.db")
-            .to_string_lossy()
-            .to_string();
-        config.acme.certs_dir =
-            args.data_dir.join("certs").to_string_lossy().to_string();
+        normalize_config_paths(args, &mut config);
 
         // save default config as toml
+        if let Some(parent) = args.config.parent() {
+            if !parent.as_os_str().is_empty() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+        }
         let content = toml::to_string_pretty(&config)?;
         tokio::fs::write(&args.config, &content).await?;
-        info!(path = %args.config.display(), "created default config");
 
         Ok(config)
     }
@@ -493,15 +493,17 @@ async fn load_existing_config(args: &ServerArgs) -> anyhow::Result<Config> {
     let content = tokio::fs::read_to_string(&args.config)
         .await
         .with_context(|| format!("failed to read {}", args.config.display()))?;
-    toml::from_str(&content)
-        .with_context(|| format!("failed to parse {}", args.config.display()))
+    let mut config = toml::from_str(&content).with_context(|| {
+        format!("failed to parse {}", args.config.display())
+    })?;
+    normalize_config_paths(args, &mut config);
+    Ok(config)
 }
 
 async fn run_generate_api_key_command(
-    server_args: &ServerArgs,
+    config: &Config,
     args: &GenerateApiKeyArgs,
 ) -> anyhow::Result<()> {
-    let config = load_existing_config(server_args).await?;
     let db = open_database_for_admin_command(&config.database)?;
     bootstrap_admin_user(&db)?;
 
@@ -534,16 +536,7 @@ async fn run_generate_api_key_command(
 fn open_database_for_admin_command(
     config: &containr_common::DatabaseConfig,
 ) -> anyhow::Result<Database> {
-    match Database::open(config) {
-        Ok(db) => Ok(db),
-        Err(error) if error.to_string().contains("could not acquire lock") => {
-            Err(anyhow!(
-                "failed to open {}; stop containr before running this command when using the sled backend",
-                config.path
-            ))
-        }
-        Err(error) => Err(error.into()),
-    }
+    Database::open(config).map_err(Into::into)
 }
 
 fn resolve_api_key_user(
@@ -630,6 +623,42 @@ async fn run_docker_containers(
 
     println!("{}", serde_json::to_string_pretty(&containers)?);
     Ok(())
+}
+
+fn normalize_config_paths(args: &ServerArgs, config: &mut Config) {
+    let default_database = containr_common::DatabaseConfig::default().path;
+    if config.database.path.trim().is_empty()
+        || config.database.path == default_database
+    {
+        config.database.path = args
+            .data_dir
+            .join("containr.sqlite3")
+            .to_string_lossy()
+            .to_string();
+    }
+
+    let default_cache = containr_common::CacheConfig::default().path;
+    if config.cache.path.trim().is_empty() || config.cache.path == default_cache
+    {
+        config.cache.path =
+            args.data_dir.join("cache").to_string_lossy().to_string();
+    }
+
+    let default_logs = containr_common::LoggingConfig::default().dir;
+    if config.logging.dir.trim().is_empty()
+        || config.logging.dir == default_logs
+    {
+        config.logging.dir =
+            args.data_dir.join("logs").to_string_lossy().to_string();
+    }
+
+    let default_certs = Config::default().acme.certs_dir;
+    if config.acme.certs_dir.trim().is_empty()
+        || config.acme.certs_dir == default_certs
+    {
+        config.acme.certs_dir =
+            args.data_dir.join("certs").to_string_lossy().to_string();
+    }
 }
 
 fn connect_docker() -> anyhow::Result<bollard::Docker> {

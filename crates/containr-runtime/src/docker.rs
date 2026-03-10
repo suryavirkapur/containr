@@ -2,7 +2,7 @@
 //!
 //! async container operations using bollard docker api.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -11,9 +11,9 @@ use bollard::exec::{
 };
 use bollard::models::{
     ContainerCreateBody, ContainerStateStatusEnum, ContainerSummaryStateEnum,
-    EndpointSettings, HealthStatusEnum, HostConfig, Mount, MountTypeEnum,
-    NetworkConnectRequest, NetworkCreateRequest, NetworkingConfig,
-    RestartPolicy, RestartPolicyNameEnum,
+    EndpointSettings, HealthStatusEnum, HostConfig, Ipam, IpamConfig, Mount,
+    MountTypeEnum, NetworkConnectRequest, NetworkCreateRequest,
+    NetworkingConfig, RestartPolicy, RestartPolicyNameEnum,
 };
 use bollard::query_parameters::{
     CreateContainerOptions, InspectContainerOptions, ListContainersOptions,
@@ -29,6 +29,102 @@ use tracing::{error, info, warn};
 use crate::error::{ClientError, Result};
 
 pub const INTERNAL_NETWORK_NAME: &str = "containr-internal";
+
+pub(crate) async fn create_bridge_network(
+    docker: &Docker,
+    name: &str,
+) -> Result<()> {
+    let options = NetworkCreateRequest {
+        name: name.to_string(),
+        driver: Some("bridge".to_string()),
+        ..Default::default()
+    };
+
+    match docker.create_network(options).await {
+        Ok(_) => Ok(()),
+        Err(error) => {
+            let error_message = error.to_string();
+            if error_message.contains("already exists") {
+                return Ok(());
+            }
+
+            if !error_message
+                .contains("predefined address pools have been fully subnetted")
+            {
+                return Err(ClientError::Operation(format!(
+                    "docker network create failed: {}",
+                    error
+                )));
+            }
+
+            let subnet = find_available_network_subnet(docker).await?;
+            warn!(
+                network = %name,
+                subnet = %subnet,
+                "docker address pool exhausted, using explicit subnet"
+            );
+
+            let fallback_options = NetworkCreateRequest {
+                name: name.to_string(),
+                driver: Some("bridge".to_string()),
+                ipam: Some(Ipam {
+                    config: Some(vec![IpamConfig {
+                        subnet: Some(subnet),
+                        ..Default::default()
+                    }]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+
+            match docker.create_network(fallback_options).await {
+                Ok(_) => Ok(()),
+                Err(fallback_error) => {
+                    if fallback_error.to_string().contains("already exists") {
+                        Ok(())
+                    } else {
+                        Err(ClientError::Operation(format!(
+                            "docker network create failed: {}",
+                            fallback_error
+                        )))
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn find_available_network_subnet(docker: &Docker) -> Result<String> {
+    let networks = docker.list_networks(None).await.map_err(|error| {
+        ClientError::Operation(format!("docker network list failed: {}", error))
+    })?;
+    let mut used_subnets = HashSet::new();
+
+    for network in networks {
+        if let Some(ipam) = network.ipam {
+            if let Some(configs) = ipam.config {
+                for config in configs {
+                    if let Some(subnet) = config.subnet {
+                        used_subnets.insert(subnet);
+                    }
+                }
+            }
+        }
+    }
+
+    for second_octet in 200..=254 {
+        for third_octet in 0..=255 {
+            let subnet = format!("10.{}.{}.0/24", second_octet, third_octet);
+            if !used_subnets.contains(&subnet) {
+                return Ok(subnet);
+            }
+        }
+    }
+
+    Err(ClientError::Operation(
+        "no free docker subnet available for bridge network".to_string(),
+    ))
+}
 
 /// network attachment for container creation
 #[derive(Debug, Clone, Default)]
@@ -789,27 +885,7 @@ impl DockerContainerManager {
             return Ok(());
         }
 
-        let options = NetworkCreateRequest {
-            name: name.to_string(),
-            driver: Some("bridge".to_string()),
-            ..Default::default()
-        };
-
-        match self.client().create_network(options).await {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                let err_str = e.to_string();
-                // ignore "already exists" errors
-                if err_str.contains("already exists") {
-                    Ok(())
-                } else {
-                    Err(ClientError::Operation(format!(
-                        "docker network create failed: {}",
-                        e
-                    )))
-                }
-            }
-        }
+        create_bridge_network(self.client(), name).await
     }
 
     /// removes a docker network

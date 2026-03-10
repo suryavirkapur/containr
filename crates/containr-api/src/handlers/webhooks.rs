@@ -205,9 +205,7 @@ mod tests {
     use crate::security::encrypt_value;
     use crate::state::AppState;
     use containr_common::models::{App, User};
-    use containr_common::{
-        Config, Database, DatabaseBackendKind, DatabaseConfig,
-    };
+    use containr_common::{Config, Database, DatabaseConfig};
 
     #[tokio::test]
     async fn source_resolution_failure_does_not_persist_deployment(
@@ -272,7 +270,6 @@ mod tests {
         let root = std::env::temp_dir()
             .join(format!("containr-webhook-test-{}", Uuid::new_v4()));
         let db = Database::open(&DatabaseConfig {
-            backend: DatabaseBackendKind::Sled,
             path: root.join("state").to_string_lossy().to_string(),
         })?;
 
@@ -312,10 +309,11 @@ mod tests {
             PathBuf::from("containr.toml"),
             PathBuf::from("data"),
             db,
+            root.join("cache"),
             deployment_tx,
             None,
             None,
-        );
+        )?;
 
         Ok(TestFixture { state, config, app })
     }

@@ -25,8 +25,14 @@ host = "0.0.0.0"
 port = 2077
 
 [database]
-backend = "sqlite"
-path = "./data/containr.db"
+path = "./data/containr.sqlite3"
+
+[cache]
+path = "./data/cache"
+
+[logging]
+dir = "./data/logs"
+retention_days = 14
 
 [proxy]
 http_port = 80
@@ -62,5 +68,7 @@ rustfs_secret_key = ""
 EOF
 
 mkdir -p ./data/certs
+mkdir -p ./data/cache
+mkdir -p ./data/logs
 
-echo "Wrote $CONFIG_PATH and created ./data/certs."
+echo "Wrote $CONFIG_PATH and created ./data/{certs,cache,logs}."
