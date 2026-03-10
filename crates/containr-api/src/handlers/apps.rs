@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::ErrorKind;
 use std::net::IpAddr;
 use std::path::{Component, Path as FsPath, PathBuf};
+use std::str::FromStr;
 
 use axum::{
     body::Body,
@@ -13,6 +14,7 @@ use axum::{
     response::Response,
     Json,
 };
+use croner::Cron;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tracing::warn;
@@ -28,11 +30,13 @@ use crate::handlers::deployments::create_and_queue_deployment;
 use crate::security::encrypt_value;
 use crate::state::AppState;
 use containr_common::models::{
-    App, BuildArg, ContainerService, EnvVar, HealthCheck, RestartPolicy, RolloutStrategy,
-    ServiceMount, ServiceRegistryAuth, ServiceType,
+    App, BuildArg, ContainerService, EnvVar, HealthCheck, RestartPolicy,
+    RolloutStrategy, ServiceMount, ServiceRegistryAuth, ServiceType,
 };
 use containr_common::Config;
-use containr_runtime::{DockerContainerManager, ProxyRouteUpdate};
+use containr_runtime::{
+    DatabaseManager, DockerContainerManager, ProxyRouteUpdate, QueueManager,
+};
 
 /// create app request
 #[derive(Debug, Deserialize, ToSchema)]
@@ -196,6 +200,8 @@ pub struct ServiceRequest {
     pub entrypoint: Option<Vec<String>>,
     /// working directory override
     pub working_dir: Option<String>,
+    /// cron expression used for scheduled jobs
+    pub schedule: Option<String>,
     /// persistent mounts attached to the service
     pub mounts: Option<Vec<ServiceMountRequest>>,
 }
@@ -251,6 +257,8 @@ pub struct ServiceResponse {
     pub entrypoint: Vec<String>,
     /// working directory override
     pub working_dir: Option<String>,
+    /// cron expression used for scheduled jobs
+    pub schedule: Option<String>,
     /// persistent mounts
     pub mounts: Vec<ServiceMountResponse>,
 }
@@ -328,7 +336,8 @@ pub struct AppResponse {
 impl From<&App> for AppResponse {
     fn from(app: &App) -> Self {
         let domains = app.custom_domains();
-        let primary_domain = app.domain.clone().or_else(|| domains.first().cloned());
+        let primary_domain =
+            app.domain.clone().or_else(|| domains.first().cloned());
         Self {
             id: app.id,
             name: app.name.clone(),
@@ -357,11 +366,10 @@ impl From<&App> for AppResponse {
                     id: s.id.to_string(),
                     name: s.name.clone(),
                     image: s.image.clone(),
-                    service_type: match s.service_type {
-                        ServiceType::WebService => "web_service".to_string(),
-                        ServiceType::PrivateService => "private_service".to_string(),
-                        ServiceType::BackgroundWorker => "background_worker".to_string(),
-                    },
+                    service_type: ContainerService::service_type_name(
+                        s.service_type,
+                    )
+                    .to_string(),
                     port: s.port,
                     expose_http: s.is_public_http(),
                     domain: s.domains.first().cloned(),
@@ -371,22 +379,22 @@ impl From<&App> for AppResponse {
                     memory_limit_mb: s.memory_limit.map(|m| m / (1024 * 1024)),
                     cpu_limit: s.cpu_limit,
                     depends_on: s.depends_on.clone(),
-                    health_check: s
-                        .health_check
-                        .as_ref()
-                        .map(|health_check| HealthCheckResponse {
+                    health_check: s.health_check.as_ref().map(|health_check| {
+                        HealthCheckResponse {
                             path: health_check.path.clone(),
                             interval_secs: health_check.interval_secs,
                             timeout_secs: health_check.timeout_secs,
                             retries: health_check.retries,
-                        }),
-                    restart_policy: format!("{:?}", s.restart_policy).to_lowercase(),
-                    registry_auth: s.registry_auth.as_ref().map(|registry_auth| {
-                        ServiceRegistryAuthResponse {
-                            server: registry_auth.server.clone(),
-                            username: registry_auth.username.clone(),
                         }
                     }),
+                    restart_policy: format!("{:?}", s.restart_policy)
+                        .to_lowercase(),
+                    registry_auth: s.registry_auth.as_ref().map(
+                        |registry_auth| ServiceRegistryAuthResponse {
+                            server: registry_auth.server.clone(),
+                            username: registry_auth.username.clone(),
+                        },
+                    ),
                     env_vars: s
                         .env_vars
                         .iter()
@@ -419,6 +427,7 @@ impl From<&App> for AppResponse {
                     command: s.command.clone().unwrap_or_default(),
                     entrypoint: s.entrypoint.clone().unwrap_or_default(),
                     working_dir: s.working_dir.clone(),
+                    schedule: s.schedule.clone(),
                     mounts: s
                         .mounts
                         .iter()
@@ -449,12 +458,16 @@ fn parse_restart_policy(value: Option<&str>) -> RestartPolicy {
 
 fn parse_service_type(value: &str) -> Option<ServiceType> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "web_service" | "web-service" | "webservice" | "web" => Some(ServiceType::WebService),
-        "private_service" | "private-service" | "privateservice" | "private" => {
-            Some(ServiceType::PrivateService)
+        "web_service" | "web-service" | "webservice" | "web" => {
+            Some(ServiceType::WebService)
         }
-        "background_worker" | "background-worker" | "backgroundworker" | "worker"
-        | "background" => Some(ServiceType::BackgroundWorker),
+        "private_service" | "private-service" | "privateservice"
+        | "private" => Some(ServiceType::PrivateService),
+        "background_worker" | "background-worker" | "backgroundworker"
+        | "worker" | "background" => Some(ServiceType::BackgroundWorker),
+        "cron_job" | "cron-job" | "cronjob" | "cron" => {
+            Some(ServiceType::CronJob)
+        }
         _ => None,
     }
 }
@@ -469,7 +482,7 @@ fn resolve_service_type(
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
                     error:
-                        "invalid service type. use web_service, private_service, or background_worker"
+                        "invalid service type. use web_service, private_service, background_worker, or cron_job"
                             .to_string(),
                 }),
             )
@@ -528,7 +541,8 @@ fn build_service_mounts(
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: "mount target must be an absolute container path".to_string(),
+                    error: "mount target must be an absolute container path"
+                        .to_string(),
                 }),
             ));
         }
@@ -572,6 +586,32 @@ fn normalize_optional_string(value: Option<String>) -> Option<String> {
     })
 }
 
+fn normalize_cron_schedule(
+    value: Option<String>,
+    existing: Option<&str>,
+) -> Result<Option<String>, (StatusCode, Json<ErrorResponse>)> {
+    match value {
+        Some(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+
+            Cron::from_str(trimmed).map_err(|error| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!("invalid cron schedule: {}", error),
+                    }),
+                )
+            })?;
+
+            Ok(Some(trimmed.to_string()))
+        }
+        None => Ok(existing.map(|existing| existing.to_string())),
+    }
+}
+
 fn normalize_optional_args(
     value: Option<Vec<String>>,
     existing: Option<&[String]>,
@@ -607,7 +647,9 @@ fn normalize_additional_ports(
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: "additional service ports must be between 1 and 65535".to_string(),
+                    error:
+                        "additional service ports must be between 1 and 65535"
+                            .to_string(),
                 }),
             ));
         }
@@ -615,7 +657,10 @@ fn normalize_additional_ports(
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: format!("additional port {} duplicates the primary port", port),
+                    error: format!(
+                        "additional port {} duplicates the primary port",
+                        port
+                    ),
                 }),
             ));
         }
@@ -674,7 +719,9 @@ fn normalize_repo_relative_path(
                 return Err((
                     StatusCode::BAD_REQUEST,
                     Json(ErrorResponse {
-                        error: format!("{field} must be relative to the repository root"),
+                        error: format!(
+                            "{field} must be relative to the repository root"
+                        ),
                     }),
                 ));
             }
@@ -690,7 +737,7 @@ fn normalize_repo_relative_path(
                                     "{field} cannot contain parent traversal or absolute components"
                                 ),
                             }),
-                        ))
+                        ));
                     }
                 }
             }
@@ -737,9 +784,9 @@ fn build_service_env_vars(
         }
 
         let existing_value = existing_by_key.get(&key);
-        let secret = request
-            .secret
-            .unwrap_or_else(|| existing_value.map(|item| item.secret).unwrap_or(false));
+        let secret = request.secret.unwrap_or_else(|| {
+            existing_value.map(|item| item.secret).unwrap_or(false)
+        });
         let value = if secret && request.value == "********" {
             existing_value
                 .map(|item| item.value.clone())
@@ -800,9 +847,9 @@ fn build_service_build_args(
         }
 
         let existing_value = existing_by_key.get(&key);
-        let secret = request
-            .secret
-            .unwrap_or_else(|| existing_value.map(|item| item.secret).unwrap_or(false));
+        let secret = request.secret.unwrap_or_else(|| {
+            existing_value.map(|item| item.secret).unwrap_or(false)
+        });
         let value = if secret && request.value == "********" {
             existing_value
                 .map(|item| item.value.clone())
@@ -848,7 +895,9 @@ fn build_service_registry_auth(
         (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: "registry username is required when registry auth is set".to_string(),
+                error:
+                    "registry username is required when registry auth is set"
+                        .to_string(),
             }),
         )
     })?;
@@ -934,7 +983,15 @@ fn build_services(
         let service_type = resolve_service_type(&request, Some(&service))?;
         let requested_domains = requested_service_domains(&request);
         let port = request.port;
-        if matches!(service_type, ServiceType::BackgroundWorker) {
+        let schedule = normalize_cron_schedule(
+            request.schedule,
+            service.schedule.as_deref(),
+        )?;
+
+        if matches!(
+            service_type,
+            ServiceType::BackgroundWorker | ServiceType::CronJob
+        ) {
             if request.expose_http == Some(true) {
                 return Err((
                     StatusCode::BAD_REQUEST,
@@ -950,7 +1007,8 @@ fn build_services(
                 return Err((
                     StatusCode::BAD_REQUEST,
                     Json(ErrorResponse {
-                        error: "only web services can use custom domains".to_string(),
+                        error: "only web services can use custom domains"
+                            .to_string(),
                     }),
                 ));
             }
@@ -958,7 +1016,8 @@ fn build_services(
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: "web and private services require a container port".to_string(),
+                    error: "web and private services require a container port"
+                        .to_string(),
                 }),
             ));
         }
@@ -971,19 +1030,71 @@ fn build_services(
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: "only web services can use custom domains".to_string(),
+                    error: "only web services can use custom domains"
+                        .to_string(),
                 }),
             ));
         }
 
-        if matches!(service_type, ServiceType::BackgroundWorker)
-            && port == 0
+        if matches!(
+            service_type,
+            ServiceType::BackgroundWorker | ServiceType::CronJob
+        ) && port == 0
             && request.health_check.is_some()
         {
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
                     error: "background workers need a port before enabling http health checks"
+                        .to_string(),
+                }),
+            ));
+        }
+
+        if matches!(service_type, ServiceType::CronJob) {
+            if port != 0 {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "cron jobs must use port 0".to_string(),
+                    }),
+                ));
+            }
+            if request.replicas.unwrap_or(1) != 1 {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "cron jobs support exactly one replica"
+                            .to_string(),
+                    }),
+                ));
+            }
+            if request
+                .additional_ports
+                .as_ref()
+                .is_some_and(|ports| !ports.is_empty())
+            {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "cron jobs cannot expose additional ports"
+                            .to_string(),
+                    }),
+                ));
+            }
+            if schedule.is_none() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "cron jobs require a schedule".to_string(),
+                    }),
+                ));
+            }
+        } else if schedule.is_some() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "schedule is only supported for cron jobs"
                         .to_string(),
                 }),
             ));
@@ -1009,7 +1120,8 @@ fn build_services(
             service.registry_auth.as_ref(),
             request.registry_auth,
         )?;
-        service.env_vars = build_service_env_vars(request.env_vars, &service.env_vars)?;
+        service.env_vars =
+            build_service_env_vars(request.env_vars, &service.env_vars)?;
         service.domains = if matches!(service_type, ServiceType::WebService) {
             requested_domains.unwrap_or_else(|| service.custom_domains())
         } else {
@@ -1029,20 +1141,31 @@ fn build_services(
             Some(build_target) => normalize_optional_string(Some(build_target)),
             None => service.build_target.clone(),
         };
-        service.build_args = build_service_build_args(request.build_args, &service.build_args)?;
-        service.command = normalize_optional_args(request.command, service.command.as_deref());
-        service.entrypoint =
-            normalize_optional_args(request.entrypoint, service.entrypoint.as_deref());
-        service.working_dir =
-            normalize_working_dir(request.working_dir, service.working_dir.as_deref())?;
+        service.build_args =
+            build_service_build_args(request.build_args, &service.build_args)?;
+        service.command = normalize_optional_args(
+            request.command,
+            service.command.as_deref(),
+        );
+        service.entrypoint = normalize_optional_args(
+            request.entrypoint,
+            service.entrypoint.as_deref(),
+        );
+        service.working_dir = normalize_working_dir(
+            request.working_dir,
+            service.working_dir.as_deref(),
+        )?;
+        service.schedule = schedule;
         service.mounts = build_service_mounts(request.mounts)?;
-        service.health_check = request.health_check.map(|health_check| HealthCheck {
-            path: health_check.path,
-            interval_secs: health_check.interval_secs.unwrap_or(30),
-            timeout_secs: health_check.timeout_secs.unwrap_or(5),
-            retries: health_check.retries.unwrap_or(3),
-        });
-        service.restart_policy = parse_restart_policy(request.restart_policy.as_deref());
+        service.health_check =
+            request.health_check.map(|health_check| HealthCheck {
+                path: health_check.path,
+                interval_secs: health_check.interval_secs.unwrap_or(30),
+                timeout_secs: health_check.timeout_secs.unwrap_or(5),
+                retries: health_check.retries.unwrap_or(3),
+            });
+        service.restart_policy =
+            parse_restart_policy(request.restart_policy.as_deref());
         service.updated_at = chrono::Utc::now();
         services.push(service);
     }
@@ -1113,7 +1236,11 @@ fn get_owned_service_record(
     Ok((app, service))
 }
 
-fn service_mount_root(data_dir: &FsPath, app_id: Uuid, service_id: Uuid) -> PathBuf {
+fn service_mount_root(
+    data_dir: &FsPath,
+    app_id: Uuid,
+    service_id: Uuid,
+) -> PathBuf {
     data_dir
         .join("builds")
         .join("app-mounts")
@@ -1125,15 +1252,81 @@ async fn delete_app_runtime(
     state: &AppState,
     app: &App,
 ) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let db_manager = DatabaseManager::new();
+    let grouped_databases = state
+        .db
+        .list_managed_databases_by_owner(app.owner_id)
+        .map_err(internal_error)?
+        .into_iter()
+        .filter(|database| database.group_id == Some(app.id))
+        .collect::<Vec<_>>();
+
+    for mut database in grouped_databases {
+        let _ = db_manager.stop_database(&mut database).await;
+        let database_root = database.root_path();
+        if database_root.starts_with(&state.data_dir) {
+            if let Err(error) = tokio::fs::remove_dir_all(&database_root).await
+            {
+                if error.kind() != ErrorKind::NotFound {
+                    warn!(
+                        database_id = %database.id,
+                        error = %error,
+                        "failed to remove database data"
+                    );
+                }
+            }
+        }
+        state
+            .db
+            .delete_managed_database(database.id)
+            .map_err(internal_error)?;
+    }
+
+    let queue_manager = QueueManager::new();
+    let grouped_queues = state
+        .db
+        .list_managed_queues_by_owner(app.owner_id)
+        .map_err(internal_error)?
+        .into_iter()
+        .filter(|queue| queue.group_id == Some(app.id))
+        .collect::<Vec<_>>();
+
+    for mut queue in grouped_queues {
+        let _ = queue_manager.stop_queue(&mut queue).await;
+        let queue_root = queue.root_path();
+        if queue_root.starts_with(&state.data_dir) {
+            if let Err(error) = tokio::fs::remove_dir_all(&queue_root).await {
+                if error.kind() != ErrorKind::NotFound {
+                    warn!(
+                        queue_id = %queue.id,
+                        error = %error,
+                        "failed to remove queue data"
+                    );
+                }
+            }
+        }
+        state
+            .db
+            .delete_managed_queue(queue.id)
+            .map_err(internal_error)?;
+    }
+
     let docker_manager = DockerContainerManager::new();
     let container_prefix = format!("containr-{}", app.id);
+    let cron_prefix = format!(
+        "containr-cron-{}-",
+        app.id.to_string().split('-').next().unwrap_or_default()
+    );
     let container_names = docker_manager
         .list_containers()
         .await
         .map_err(internal_error)?
         .into_iter()
         .map(|container| container.id)
-        .filter(|name| name.starts_with(&container_prefix))
+        .filter(|name| {
+            name.starts_with(&container_prefix)
+                || name.starts_with(&cron_prefix)
+        })
         .collect::<Vec<_>>();
 
     docker_manager
@@ -1141,12 +1334,13 @@ async fn delete_app_runtime(
         .await
         .map_err(internal_error)?;
     docker_manager
-        .remove_network(&format!("containr-{}", app.id))
+        .remove_network(&app.network_name())
         .await
         .map_err(internal_error)?;
 
     for service in &app.services {
-        let mount_root = service_mount_root(&state.data_dir, app.id, service.id);
+        let mount_root =
+            service_mount_root(&state.data_dir, app.id, service.id);
         if let Err(error) = tokio::fs::remove_dir_all(&mount_root).await {
             if error.kind() != ErrorKind::NotFound {
                 return Err(internal_error(format!(
@@ -1175,12 +1369,14 @@ fn sanitize_archive_entry_path(
         _ => {
             return Err(anyhow::anyhow!(
                 "archive entry must start with a mount name"
-            ))
+            ));
         }
     };
 
     if !allowed_mounts.contains(&first) {
-        return Err(anyhow::anyhow!("archive entry references an unknown mount"));
+        return Err(anyhow::anyhow!(
+            "archive entry references an unknown mount"
+        ));
     }
 
     clean.push(first);
@@ -1229,7 +1425,9 @@ fn validate_service_mount_archive(
         let entry = entry?;
         let entry_type = entry.header().entry_type();
         if !entry_type.is_dir() && !entry_type.is_file() {
-            return Err(anyhow::anyhow!("archive contains unsupported entry types"));
+            return Err(anyhow::anyhow!(
+                "archive contains unsupported entry types"
+            ));
         }
 
         let path = entry.path()?;
@@ -1264,7 +1462,8 @@ fn extract_service_mount_archive(
     for entry in archive.entries()? {
         let mut entry = entry?;
         let path = entry.path()?;
-        let rel_path = sanitize_archive_entry_path(path.as_ref(), &allowed_mounts)?;
+        let rel_path =
+            sanitize_archive_entry_path(path.as_ref(), &allowed_mounts)?;
         let target = mount_root.join(rel_path);
 
         if let Some(parent) = target.parent() {
@@ -1338,7 +1537,8 @@ pub async fn list_apps(
         .list_apps_by_owner(user_id)
         .map_err(internal_error)?;
 
-    let responses: Vec<AppResponse> = apps.iter().map(AppResponse::from).collect();
+    let responses: Vec<AppResponse> =
+        apps.iter().map(AppResponse::from).collect();
     Ok(Json(responses))
 }
 
@@ -1360,10 +1560,12 @@ pub async fn create_app(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(req): Json<CreateAppRequest>,
-) -> Result<(StatusCode, Json<AppResponse>), (StatusCode, Json<ErrorResponse>)> {
+) -> Result<(StatusCode, Json<AppResponse>), (StatusCode, Json<ErrorResponse>)>
+{
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
-    let legacy_requested_domains = merge_domains(req.domain.clone(), req.domains.clone());
+    let legacy_requested_domains =
+        merge_domains(req.domain.clone(), req.domains.clone());
 
     // validate name
     if req.name.is_empty() || req.name.len() > 64 {
@@ -1384,7 +1586,8 @@ pub async fn create_app(
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: "set custom domains on services instead of the project".to_string(),
+                error: "set custom domains on services instead of the project"
+                    .to_string(),
             }),
         ));
     }
@@ -1423,9 +1626,20 @@ pub async fn create_app(
         app.services = build_services(&config, app.id, &[], services)?;
     }
     app.ensure_service_model();
+    if app.requires_source_checkout() && app.github_url.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error:
+                    "github_url is required when a service needs a source build"
+                        .to_string(),
+            }),
+        ));
+    }
     apply_legacy_project_domains(
         &mut app,
-        (!legacy_requested_domains.is_empty()).then_some(legacy_requested_domains),
+        (!legacy_requested_domains.is_empty())
+            .then_some(legacy_requested_domains),
     )?;
     let domains = validate_app_service_domains(&state, &config, &app).await?;
 
@@ -1482,18 +1696,19 @@ pub async fn get_app(
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
-    let app = state
-        .db
-        .get_app(id)
-        .map_err(internal_error)?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "app not found".to_string(),
-                }),
-            )
-        })?;
+    let app =
+        state
+            .db
+            .get_app(id)
+            .map_err(internal_error)?
+            .ok_or_else(|| {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: "app not found".to_string(),
+                    }),
+                )
+            })?;
 
     // check ownership
     if app.owner_id != user_id {
@@ -1530,18 +1745,19 @@ pub async fn get_app_metrics(
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
-    let app = state
-        .db
-        .get_app(id)
-        .map_err(internal_error)?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "app not found".to_string(),
-                }),
-            )
-        })?;
+    let app =
+        state
+            .db
+            .get_app(id)
+            .map_err(internal_error)?
+            .ok_or_else(|| {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: "app not found".to_string(),
+                    }),
+                )
+            })?;
 
     if app.owner_id != user_id {
         return Err((
@@ -1598,19 +1814,25 @@ pub async fn backup_service_mounts(
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     drop(config);
 
-    let (_app, service) = get_owned_service_record(&state, user_id, id, &service_name)?;
+    let (_app, service) =
+        get_owned_service_record(&state, user_id, id, &service_name)?;
     let mount_root = service_mount_root(&state.data_dir, id, service.id);
     let temp_dir = state.data_dir.join("tmp");
     tokio::fs::create_dir_all(&temp_dir)
         .await
         .map_err(internal_error)?;
-    let archive_path = temp_dir.join(format!("{}-{}.tar", service.id, Uuid::new_v4()));
+    let archive_path =
+        temp_dir.join(format!("{}-{}.tar", service.id, Uuid::new_v4()));
     let mounts = service.mounts.clone();
     let archive_path_for_build = archive_path.clone();
     let mount_root_for_build = mount_root.clone();
 
     tokio::task::spawn_blocking(move || {
-        build_service_mount_archive(&archive_path_for_build, &mount_root_for_build, &mounts)
+        build_service_mount_archive(
+            &archive_path_for_build,
+            &mount_root_for_build,
+            &mounts,
+        )
     })
     .await
     .map_err(internal_error)?
@@ -1655,23 +1877,28 @@ pub async fn restore_service_mounts(
     headers: HeaderMap,
     Path((id, service_name)): Path<(Uuid, String)>,
     mut multipart: Multipart,
-) -> Result<Json<ServiceMountRestoreResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<ServiceMountRestoreResponse>, (StatusCode, Json<ErrorResponse>)>
+{
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     drop(config);
 
-    let (_app, service) = get_owned_service_record(&state, user_id, id, &service_name)?;
+    let (_app, service) =
+        get_owned_service_record(&state, user_id, id, &service_name)?;
     let temp_dir = state.data_dir.join("tmp");
     tokio::fs::create_dir_all(&temp_dir)
         .await
         .map_err(internal_error)?;
-    let archive_path = temp_dir.join(format!("{}-{}.tar", service.id, Uuid::new_v4()));
+    let archive_path =
+        temp_dir.join(format!("{}-{}.tar", service.id, Uuid::new_v4()));
     let mut archive_file = tokio::fs::File::create(&archive_path)
         .await
         .map_err(internal_error)?;
     let mut archive_found = false;
 
-    while let Some(mut field) = multipart.next_field().await.map_err(internal_error)? {
+    while let Some(mut field) =
+        multipart.next_field().await.map_err(internal_error)?
+    {
         if field.name() != Some("archive") {
             continue;
         }
@@ -1720,7 +1947,11 @@ pub async fn restore_service_mounts(
     let mounts = service.mounts.clone();
     let archive_path_for_restore = archive_path.clone();
     tokio::task::spawn_blocking(move || {
-        extract_service_mount_archive(&archive_path_for_restore, &mount_root, &mounts)
+        extract_service_mount_archive(
+            &archive_path_for_restore,
+            &mount_root,
+            &mounts,
+        )
     })
     .await
     .map_err(internal_error)?
@@ -1764,18 +1995,19 @@ pub async fn update_app(
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
-    let mut app = state
-        .db
-        .get_app(id)
-        .map_err(internal_error)?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "app not found".to_string(),
-                }),
-            )
-        })?;
+    let mut app =
+        state
+            .db
+            .get_app(id)
+            .map_err(internal_error)?
+            .ok_or_else(|| {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: "app not found".to_string(),
+                    }),
+                )
+            })?;
 
     // check ownership
     if app.owner_id != user_id {
@@ -1787,7 +2019,8 @@ pub async fn update_app(
         ));
     }
     let previous_domains = app.custom_domains();
-    let legacy_requested_domains = merge_domains(req.domain.clone(), req.domains.clone());
+    let legacy_requested_domains =
+        merge_domains(req.domain.clone(), req.domains.clone());
     if !legacy_requested_domains.is_empty()
         && req
             .services
@@ -1797,7 +2030,8 @@ pub async fn update_app(
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: "set custom domains on services instead of the project".to_string(),
+                error: "set custom domains on services instead of the project"
+                    .to_string(),
             }),
         ));
     }
@@ -1808,6 +2042,9 @@ pub async fn update_app(
     }
     if let Some(branch) = req.branch {
         app.branch = branch;
+    }
+    if let Some(github_url) = req.github_url {
+        app.github_url = github_url;
     }
 
     if let Some(port) = req.port {
@@ -1824,12 +2061,13 @@ pub async fn update_app(
         app.env_vars = env_vars
             .into_iter()
             .map(|e| {
-                let value = if e.secret.unwrap_or(false) && e.value == "********" {
-                    // unexpected: user sent back the mask, try to find existing value
-                    existing_vars.get(&e.key).cloned().unwrap_or(e.value)
-                } else {
-                    e.value
-                };
+                let value =
+                    if e.secret.unwrap_or(false) && e.value == "********" {
+                        // unexpected: user sent back the mask, try to find existing value
+                        existing_vars.get(&e.key).cloned().unwrap_or(e.value)
+                    } else {
+                        e.value
+                    };
 
                 EnvVar {
                     key: e.key,
@@ -1850,13 +2088,25 @@ pub async fn update_app(
         })?;
     }
     if let Some(services) = req.services {
-        app.services = build_services(&config, app.id, &app.services, services)?;
+        app.services =
+            build_services(&config, app.id, &app.services, services)?;
     }
 
     app.ensure_service_model();
+    if app.requires_source_checkout() && app.github_url.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error:
+                    "github_url is required when a service needs a source build"
+                        .to_string(),
+            }),
+        ));
+    }
     apply_legacy_project_domains(
         &mut app,
-        (req.domain.is_some() || req.domains.is_some()).then_some(legacy_requested_domains),
+        (req.domain.is_some() || req.domains.is_some())
+            .then_some(legacy_requested_domains),
     )?;
     app.updated_at = chrono::Utc::now();
     let current_domains = app.custom_domains();
@@ -1903,18 +2153,19 @@ pub async fn delete_app(
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
-    let app = state
-        .db
-        .get_app(id)
-        .map_err(internal_error)?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "app not found".to_string(),
-                }),
-            )
-        })?;
+    let app =
+        state
+            .db
+            .get_app(id)
+            .map_err(internal_error)?
+            .ok_or_else(|| {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: "app not found".to_string(),
+                    }),
+                )
+            })?;
 
     // check ownership
     if app.owner_id != user_id {
@@ -1940,7 +2191,9 @@ pub async fn delete_app(
 }
 
 /// helper for internal errors
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    e: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", e);
     (
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -1960,8 +2213,12 @@ fn normalize_domain(input: &str) -> Option<String> {
 
 fn parse_rollout_strategy(value: &str) -> Option<RolloutStrategy> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "stop_first" | "stop-first" | "stopfirst" => Some(RolloutStrategy::StopFirst),
-        "start_first" | "start-first" | "startfirst" => Some(RolloutStrategy::StartFirst),
+        "stop_first" | "stop-first" | "stopfirst" => {
+            Some(RolloutStrategy::StopFirst)
+        }
+        "start_first" | "start-first" | "startfirst" => {
+            Some(RolloutStrategy::StartFirst)
+        }
         _ => None,
     }
 }
@@ -1978,7 +2235,10 @@ fn normalize_domains(domains: Vec<String>) -> Vec<String> {
     normalized
 }
 
-fn merge_domains(domain: Option<String>, domains: Option<Vec<String>>) -> Vec<String> {
+fn merge_domains(
+    domain: Option<String>,
+    domains: Option<Vec<String>>,
+) -> Vec<String> {
     let mut combined = Vec::new();
     if let Some(list) = domains {
         combined.extend(list);
@@ -2018,7 +2278,8 @@ fn apply_legacy_project_domains(
         (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: "custom domains require at least one web service".to_string(),
+                error: "custom domains require at least one web service"
+                    .to_string(),
             }),
         )
     })?;
@@ -2041,7 +2302,8 @@ async fn validate_app_service_domains(
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: "only web services can use custom domains".to_string(),
+                    error: "only web services can use custom domains"
+                        .to_string(),
                 }),
             ));
         }
@@ -2069,10 +2331,14 @@ async fn validate_app_service_domains(
         config.proxy.public_ip.as_deref(),
     )
     .await
-    .map_err(|error| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error })))?;
+    .map_err(|error| {
+        (StatusCode::BAD_REQUEST, Json(ErrorResponse { error }))
+    })?;
 
     for domain in &domains {
-        if let Some(existing) = state.db.get_app_by_domain(domain).map_err(internal_error)? {
+        if let Some(existing) =
+            state.db.get_app_by_domain(domain).map_err(internal_error)?
+        {
             if existing.id != app.id {
                 return Err((
                     StatusCode::CONFLICT,
@@ -2113,13 +2379,17 @@ async fn validate_domain(
         return Err("www subdomains are not supported".to_string());
     }
 
-    let public_ip = public_ip
-        .ok_or_else(|| "public_ip must be configured for domain validation".to_string())?;
+    let public_ip = public_ip.ok_or_else(|| {
+        "public_ip must be configured for domain validation".to_string()
+    })?;
     let public_ip: IpAddr = public_ip
         .parse()
         .map_err(|_| "public_ip is not a valid IP address".to_string())?;
 
-    let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+    let resolver = TokioAsyncResolver::tokio(
+        ResolverConfig::default(),
+        ResolverOpts::default(),
+    );
 
     if let Ok(lookup) = resolver.lookup_ip(domain).await {
         if lookup.iter().any(|ip| ip == public_ip) {
@@ -2130,7 +2400,9 @@ async fn validate_domain(
     let cname_lookup = resolver
         .lookup(domain, RecordType::CNAME)
         .await
-        .map_err(|_| "domain does not resolve to required records".to_string())?;
+        .map_err(|_| {
+            "domain does not resolve to required records".to_string()
+        })?;
 
     let suffix = format!(".{}", base_domain.trim_end_matches('.'));
     for record in cname_lookup.iter() {
@@ -2151,12 +2423,15 @@ async fn validate_domain(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_service_mounts, build_services, normalize_additional_ports, normalize_optional_args,
-        normalize_working_dir, sanitize_archive_entry_path, HealthCheckRequest,
-        ServiceMountRequest, ServiceRequest,
+        build_service_mounts, build_services, normalize_additional_ports,
+        normalize_optional_args, normalize_working_dir,
+        sanitize_archive_entry_path, HealthCheckRequest, ServiceMountRequest,
+        ServiceRequest,
     };
     use axum::http::StatusCode;
-    use containr_common::models::{ContainerService, RestartPolicy, ServiceRegistryAuth};
+    use containr_common::models::{
+        ContainerService, RestartPolicy, ServiceRegistryAuth,
+    };
     use containr_common::Config;
     use std::collections::HashSet;
     use std::path::Path;
@@ -2178,7 +2453,9 @@ mod tests {
         ]));
 
         match result {
-            Ok(_) => panic!("expected duplicate mount target validation to fail"),
+            Ok(_) => {
+                panic!("expected duplicate mount target validation to fail")
+            }
             Err((status, body)) => {
                 assert_eq!(status, StatusCode::BAD_REQUEST);
                 assert_eq!(body.0.error, "duplicate mount target: /data");
@@ -2243,6 +2520,7 @@ mod tests {
                 ]),
                 entrypoint: Some(vec!["/usr/bin/env".to_string()]),
                 working_dir: Some("/workspace".to_string()),
+                schedule: None,
                 mounts: Some(vec![ServiceMountRequest {
                     name: "data".to_string(),
                     target: "/var/lib/app".to_string(),
@@ -2283,7 +2561,10 @@ mod tests {
                         "start".to_string()
                     ])
                 );
-                assert_eq!(service.entrypoint, Some(vec!["/usr/bin/env".to_string()]));
+                assert_eq!(
+                    service.entrypoint,
+                    Some(vec!["/usr/bin/env".to_string()])
+                );
                 assert_eq!(service.working_dir, Some("/workspace".to_string()));
                 assert_eq!(service.restart_policy, RestartPolicy::Always);
                 assert!(service.health_check.is_some());
@@ -2294,7 +2575,8 @@ mod tests {
 
     #[test]
     fn omitted_command_fields_preserve_existing_values() {
-        let existing_command = vec!["npm".to_string(), "run".to_string(), "serve".to_string()];
+        let existing_command =
+            vec!["npm".to_string(), "run".to_string(), "serve".to_string()];
         let existing_entrypoint = vec!["/usr/bin/env".to_string()];
 
         assert_eq!(
@@ -2308,21 +2590,29 @@ mod tests {
 
         match normalize_working_dir(None, Some("/workspace")) {
             Ok(value) => assert_eq!(value, Some("/workspace".to_string())),
-            Err(_) => panic!("expected working directory preservation to succeed"),
+            Err(_) => {
+                panic!("expected working directory preservation to succeed")
+            }
         }
     }
 
     #[test]
     fn empty_command_fields_clear_existing_values() {
         assert_eq!(
-            normalize_optional_args(Some(vec![" ".to_string()]), Some(&["x".to_string()])),
+            normalize_optional_args(
+                Some(vec![" ".to_string()]),
+                Some(&["x".to_string()])
+            ),
             None
         );
         assert_eq!(normalize_optional_args(Some(Vec::new()), None), None);
 
-        match normalize_working_dir(Some("   ".to_string()), Some("/workspace")) {
+        match normalize_working_dir(Some("   ".to_string()), Some("/workspace"))
+        {
             Ok(value) => assert_eq!(value, None),
-            Err(_) => panic!("expected blank working directory to clear the value"),
+            Err(_) => {
+                panic!("expected blank working directory to clear the value")
+            }
         }
     }
 
@@ -2330,7 +2620,9 @@ mod tests {
     fn additional_ports_preserve_and_validate() {
         match normalize_additional_ports(None, &[9000, 9001], 8080) {
             Ok(value) => assert_eq!(value, vec![9000, 9001]),
-            Err(_) => panic!("expected existing additional ports to be preserved"),
+            Err(_) => {
+                panic!("expected existing additional ports to be preserved")
+            }
         }
 
         match normalize_additional_ports(Some(vec![8080]), &[], 8080) {
@@ -2379,6 +2671,7 @@ mod tests {
                     command: None,
                     entrypoint: None,
                     working_dir: None,
+                    schedule: None,
                     mounts: None,
                 },
                 ServiceRequest {
@@ -2405,6 +2698,7 @@ mod tests {
                     command: None,
                     entrypoint: None,
                     working_dir: None,
+                    schedule: None,
                     mounts: None,
                 },
             ],
@@ -2415,7 +2709,9 @@ mod tests {
                 assert_eq!(services.len(), 2);
                 assert!(services.iter().all(|service| service.expose_http));
             }
-            Err(_) => panic!("expected multiple public services to be accepted"),
+            Err(_) => {
+                panic!("expected multiple public services to be accepted")
+            }
         }
     }
 
@@ -2429,7 +2725,10 @@ mod tests {
             Ok(_) => panic!("expected empty service list to be rejected"),
             Err((status, body)) => {
                 assert_eq!(status, StatusCode::BAD_REQUEST);
-                assert_eq!(body.0.error, "apps must define at least one service");
+                assert_eq!(
+                    body.0.error,
+                    "apps must define at least one service"
+                );
             }
         }
     }
@@ -2437,7 +2736,9 @@ mod tests {
     #[test]
     fn rejects_relative_working_directory() {
         match normalize_working_dir(Some("workspace".to_string()), None) {
-            Ok(_) => panic!("expected relative working directory to be rejected"),
+            Ok(_) => {
+                panic!("expected relative working directory to be rejected")
+            }
             Err((status, body)) => {
                 assert_eq!(status, StatusCode::BAD_REQUEST);
                 assert_eq!(
@@ -2449,9 +2750,112 @@ mod tests {
     }
 
     #[test]
+    fn accepts_cron_job_service() {
+        let config = Config::default();
+        let app_id = Uuid::new_v4();
+
+        let result = build_services(
+            &config,
+            app_id,
+            &[],
+            vec![ServiceRequest {
+                name: "cleanup".to_string(),
+                image: Some("alpine:3.22".to_string()),
+                service_type: Some("cron_job".to_string()),
+                port: 0,
+                expose_http: Some(false),
+                domains: None,
+                domain: None,
+                additional_ports: None,
+                replicas: Some(1),
+                memory_limit_mb: None,
+                cpu_limit: None,
+                depends_on: Some(vec!["redis".to_string()]),
+                health_check: None,
+                restart_policy: Some("never".to_string()),
+                registry_auth: None,
+                env_vars: None,
+                build_context: None,
+                dockerfile_path: None,
+                build_target: None,
+                build_args: None,
+                command: Some(vec![
+                    "/bin/sh".to_string(),
+                    "-lc".to_string(),
+                    "echo cleanup".to_string(),
+                ]),
+                entrypoint: None,
+                working_dir: None,
+                schedule: Some("*/5 * * * *".to_string()),
+                mounts: None,
+            }],
+        );
+
+        match result {
+            Ok(services) => {
+                assert_eq!(services.len(), 1);
+                let service = &services[0];
+                assert!(service.is_cron_job());
+                assert_eq!(service.schedule.as_deref(), Some("*/5 * * * *"));
+                assert_eq!(service.port, 0);
+            }
+            Err(_) => panic!("expected cron service to be accepted"),
+        }
+    }
+
+    #[test]
+    fn rejects_cron_job_without_schedule() {
+        let config = Config::default();
+
+        let result = build_services(
+            &config,
+            Uuid::new_v4(),
+            &[],
+            vec![ServiceRequest {
+                name: "cleanup".to_string(),
+                image: Some("alpine:3.22".to_string()),
+                service_type: Some("cron_job".to_string()),
+                port: 0,
+                expose_http: Some(false),
+                domains: None,
+                domain: None,
+                additional_ports: None,
+                replicas: Some(1),
+                memory_limit_mb: None,
+                cpu_limit: None,
+                depends_on: None,
+                health_check: None,
+                restart_policy: Some("never".to_string()),
+                registry_auth: None,
+                env_vars: None,
+                build_context: None,
+                dockerfile_path: None,
+                build_target: None,
+                build_args: None,
+                command: None,
+                entrypoint: None,
+                working_dir: None,
+                schedule: None,
+                mounts: None,
+            }],
+        );
+
+        match result {
+            Ok(_) => panic!("expected cron validation to fail"),
+            Err((status, body)) => {
+                assert_eq!(status, StatusCode::BAD_REQUEST);
+                assert_eq!(body.0.error, "cron jobs require a schedule");
+            }
+        }
+    }
+
+    #[test]
     fn archive_path_validation_accepts_known_mounts() {
         let allowed = HashSet::from(["data".to_string(), "cache".to_string()]);
-        match sanitize_archive_entry_path(Path::new("data/nested/file.txt"), &allowed) {
+        match sanitize_archive_entry_path(
+            Path::new("data/nested/file.txt"),
+            &allowed,
+        ) {
             Ok(path) => assert_eq!(path, Path::new("data/nested/file.txt")),
             Err(_) => panic!("expected archive path to be accepted"),
         }
@@ -2460,7 +2864,8 @@ mod tests {
     #[test]
     fn archive_path_validation_rejects_unknown_mounts() {
         let allowed = HashSet::from(["data".to_string()]);
-        match sanitize_archive_entry_path(Path::new("cache/file.txt"), &allowed) {
+        match sanitize_archive_entry_path(Path::new("cache/file.txt"), &allowed)
+        {
             Ok(_) => panic!("expected archive path to be rejected"),
             Err(error) => assert_eq!(
                 error.to_string(),
@@ -2472,9 +2877,12 @@ mod tests {
     #[test]
     fn archive_path_validation_rejects_parent_traversal() {
         let allowed = HashSet::from(["data".to_string()]);
-        match sanitize_archive_entry_path(Path::new("data/../secret"), &allowed) {
+        match sanitize_archive_entry_path(Path::new("data/../secret"), &allowed)
+        {
             Ok(_) => panic!("expected archive path traversal to be rejected"),
-            Err(error) => assert_eq!(error.to_string(), "archive entry path is invalid"),
+            Err(error) => {
+                assert_eq!(error.to_string(), "archive entry path is invalid")
+            }
         }
     }
 }

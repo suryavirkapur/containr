@@ -1,119 +1,116 @@
 import { Component, createSignal } from "solid-js";
 import { A, useNavigate } from "@solidjs/router";
-import { Button } from "../components/ui/Button";
-import { Input } from "../components/ui/Input";
+
 import { api } from "../api";
+import {
+	Alert,
+	Button,
+	Card,
+	CardContent,
+	CardHeader,
+	CardTitle,
+	Input,
+} from "../components/ui";
 
-/**
- * registration page
- */
 const Register: Component = () => {
-  const [email, setEmail] = createSignal("");
-  const [password, setPassword] = createSignal("");
-  const [confirmPassword, setConfirmPassword] = createSignal("");
-  const [error, setError] = createSignal("");
-  const [loading, setLoading] = createSignal(false);
-  const navigate = useNavigate();
+	const [email, setEmail] = createSignal("");
+	const [password, setPassword] = createSignal("");
+	const [confirmPassword, setConfirmPassword] = createSignal("");
+	const [error, setError] = createSignal("");
+	const [loading, setLoading] = createSignal(false);
+	const navigate = useNavigate();
 
-  const handleSubmit = async (e: Event) => {
-    e.preventDefault();
-    setError("");
+	const handleSubmit = async (event: Event) => {
+		event.preventDefault();
+		setError("");
 
-    if (password() !== confirmPassword()) {
-      setError("passwords do not match");
-      return;
-    }
+		if (password() !== confirmPassword()) {
+			setError("passwords do not match");
+			return;
+		}
 
-    if (password().length < 8) {
-      setError("password must be at least 8 characters");
-      return;
-    }
+		if (password().length < 8) {
+			setError("password must be at least 8 characters");
+			return;
+		}
 
-    setLoading(true);
+		setLoading(true);
 
-    try {
-      const { data, error } = await api.POST("/api/auth/register", {
-        body: { email: email(), password: password() },
-      });
-      if (error) throw error;
-      localStorage.setItem("containr_token", data.token);
-      navigate("/");
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+		try {
+			const { data, error: apiError } = await api.POST("/api/auth/register", {
+				body: { email: email(), password: password() },
+			});
+			if (apiError) throw apiError;
+			localStorage.setItem("containr_token", data.token);
+			navigate("/");
+		} catch (err: any) {
+			setError(err.message);
+		} finally {
+			setLoading(false);
+		}
+	};
 
-  return (
-    <div class="min-h-screen flex items-center justify-center bg-white px-4">
-      <div class="w-full max-w-sm">
-        {/* logo */}
-        <div class="text-center mb-10">
-          <h1 class="text-4xl font-serif font-bold text-black tracking-tight">
-            containr
-          </h1>
-          <p class="text-neutral-500 mt-2 text-sm font-light">
-            deploy containers with ease
-          </p>
-        </div>
+	return (
+		<div class="flex min-h-screen items-center justify-center px-4 py-10">
+			<Card class="w-full max-w-md">
+				<CardHeader class="space-y-4 text-center">
+					<p class="text-[11px] font-semibold uppercase tracking-[0.32em] text-[var(--muted-foreground)]">
+						containr
+					</p>
+					<div class="space-y-2">
+						<CardTitle class="text-3xl">create account</CardTitle>
+						<p class="text-sm text-[var(--muted-foreground)]">
+							spin up your own internal paas workspace and start deploying services
+						</p>
+					</div>
+				</CardHeader>
+				<CardContent class="space-y-6">
+					{error() ? (
+						<Alert variant="destructive" title="registration failed">
+							{error()}
+						</Alert>
+					) : null}
 
-        {/* form */}
-        <div class="border-t border-b border-neutral-100 py-10">
-          <h2 class="text-xl font-serif font-medium text-black mb-8 text-center">
-            create account
-          </h2>
+					<form onSubmit={handleSubmit} class="space-y-4">
+						<Input
+							label="email"
+							type="email"
+							value={email()}
+							onInput={(event) => setEmail(event.currentTarget.value)}
+							placeholder="you@example.com"
+							required
+						/>
+						<Input
+							label="password"
+							type="password"
+							value={password()}
+							onInput={(event) => setPassword(event.currentTarget.value)}
+							placeholder="at least 8 characters"
+							required
+						/>
+						<Input
+							label="confirm password"
+							type="password"
+							value={confirmPassword()}
+							onInput={(event) => setConfirmPassword(event.currentTarget.value)}
+							placeholder="confirm your password"
+							required
+						/>
+						<Button type="submit" isLoading={loading()} class="w-full">
+							create account
+						</Button>
+					</form>
 
-          {error() && (
-            <div class="border border-red-200 bg-red-50 text-red-800 px-4 py-3 mb-6 text-xs font-mono">
-              {error()}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} class="space-y-5">
-            <Input
-              label="email"
-              type="email"
-              value={email()}
-              onInput={(e) => setEmail(e.currentTarget.value)}
-              placeholder="you@example.com"
-              required
-            />
-
-            <Input
-              label="password"
-              type="password"
-              value={password()}
-              onInput={(e) => setPassword(e.currentTarget.value)}
-              placeholder="at least 8 characters"
-              required
-            />
-
-            <Input
-              label="confirm password"
-              type="password"
-              value={confirmPassword()}
-              onInput={(e) => setConfirmPassword(e.currentTarget.value)}
-              placeholder="confirm your password"
-              required
-            />
-
-            <Button type="submit" isLoading={loading()} class="w-full">
-              {loading() ? "creating account..." : "create account"}
-            </Button>
-          </form>
-
-          {/* login link */}
-          <p class="mt-8 text-center text-neutral-400 text-sm">
-            already have an account?{" "}
-            <A href="/login" class="text-black hover:underline font-medium">
-              sign in
-            </A>
-          </p>
-        </div>
-      </div>
-    </div>
-  );
+					<p class="text-center text-sm text-[var(--muted-foreground)]">
+						already have an account?{" "}
+						<A href="/login" class="text-[var(--foreground)] underline underline-offset-4">
+							sign in
+						</A>
+					</p>
+				</CardContent>
+			</Card>
+		</div>
+	);
 };
 
 export default Register;

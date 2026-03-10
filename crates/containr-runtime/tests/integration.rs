@@ -93,11 +93,16 @@ async fn test_image_build_containerfile_detection() {
     // create a temp directory with a containerfile
     let temp_dir = tempfile::tempdir().unwrap();
     let containerfile_path = temp_dir.path().join("Containerfile");
-    fs::write(&containerfile_path, "FROM alpine:latest\nRUN echo hello").unwrap();
+    fs::write(&containerfile_path, "FROM alpine:latest\nRUN echo hello")
+        .unwrap();
 
     // this should detect the containerfile (in stub mode, it just returns success)
     let result = manager
-        .build_image("test-image:latest", temp_dir.path().to_str().unwrap(), None)
+        .build_image(
+            "test-image:latest",
+            temp_dir.path().to_str().unwrap(),
+            None,
+        )
         .await;
 
     assert!(result.is_ok());
@@ -130,8 +135,10 @@ async fn test_containerfile_precedence() {
     let temp_dir = tempfile::tempdir().unwrap();
 
     // create both files
-    fs::write(temp_dir.path().join("Dockerfile"), "FROM ubuntu:latest").unwrap();
-    fs::write(temp_dir.path().join("Containerfile"), "FROM alpine:latest").unwrap();
+    fs::write(temp_dir.path().join("Dockerfile"), "FROM ubuntu:latest")
+        .unwrap();
+    fs::write(temp_dir.path().join("Containerfile"), "FROM alpine:latest")
+        .unwrap();
 
     // when both exist, containerfile should be preferred
     let containerfile_path = temp_dir.path().join("Containerfile");

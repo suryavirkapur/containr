@@ -2,6 +2,8 @@
 //!
 //! provides docker-based apis for managing containers, images, and deployments.
 
+pub mod app_service_manager;
+pub mod cron_scheduler;
 pub mod database_manager;
 pub mod docker;
 pub mod error;
@@ -11,11 +13,14 @@ pub mod route_updates;
 pub mod storage_manager;
 pub mod worker;
 
+pub use app_service_manager::AppServiceManager;
+pub use cron_scheduler::CronJobScheduler;
 pub use database_manager::DatabaseManager;
 pub use docker::{
-    DockerBindMount, DockerContainerConfig, DockerContainerInfo, DockerContainerManager,
-    DockerContainerState, DockerContainerStats, DockerContainerStatus, DockerExecSession,
-    DockerMountInfo, DockerNetworkAttachment, INTERNAL_NETWORK_NAME,
+    DockerBindMount, DockerContainerConfig, DockerContainerInfo,
+    DockerContainerManager, DockerContainerState, DockerContainerStats,
+    DockerContainerStatus, DockerExecSession, DockerMountInfo,
+    DockerNetworkAttachment,
 };
 pub use error::{ClientError, Result};
 pub use image::{ImageInfo, ImageManager, RegistryCredentials};

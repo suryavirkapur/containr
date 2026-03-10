@@ -9,7 +9,9 @@ use axum::{
 use serde::Serialize;
 
 use crate::deployment_source::resolve_remote_deployment_source;
-use crate::github::{extract_branch, verify_webhook_signature, DeploymentJob, PushEvent};
+use crate::github::{
+    extract_branch, verify_webhook_signature, DeploymentJob, PushEvent,
+};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
 use containr_common::models::Deployment;
@@ -42,15 +44,19 @@ pub async fn github_webhook(
 
     // verify signature
     let config = state.config.read().await;
-    let valid =
-        verify_webhook_signature(&body, signature, &config.github.webhook_secret).map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: e.to_string(),
-                }),
-            )
-        })?;
+    let valid = verify_webhook_signature(
+        &body,
+        signature,
+        &config.github.webhook_secret,
+    )
+    .map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
 
     if !valid {
         return Err((
@@ -100,11 +106,15 @@ pub async fn github_webhook(
 
     match app {
         Some(app) => {
-            let source = resolve_remote_deployment_source(&state, app.owner_id, &app).await?;
+            let source =
+                resolve_remote_deployment_source(&state, app.owner_id, &app)
+                    .await?;
 
             // create deployment
-            let mut deployment = Deployment::new(app.id, push_event.after.clone());
-            deployment.commit_message = push_event.head_commit.map(|c| c.message);
+            let mut deployment =
+                Deployment::new(app.id, push_event.after.clone());
+            deployment.commit_message =
+                push_event.head_commit.map(|c| c.message);
             state
                 .db
                 .save_deployment(&deployment)
@@ -150,7 +160,10 @@ async fn find_app_by_repo(
     state: &AppState,
     repo_url: &str,
     branch: &str,
-) -> Result<Option<containr_common::models::App>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<
+    Option<containr_common::models::App>,
+    (StatusCode, Json<ErrorResponse>),
+> {
     // use the database method to find the app
     state
         .db
@@ -159,7 +172,9 @@ async fn find_app_by_repo(
 }
 
 /// helper for internal errors
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    e: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", e);
     (
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -190,15 +205,21 @@ mod tests {
     use crate::security::encrypt_value;
     use crate::state::AppState;
     use containr_common::models::{App, User};
-    use containr_common::{Config, Database, DatabaseBackendKind, DatabaseConfig};
+    use containr_common::{
+        Config, Database, DatabaseBackendKind, DatabaseConfig,
+    };
 
     #[tokio::test]
-    async fn source_resolution_failure_does_not_persist_deployment() -> Result<()> {
+    async fn source_resolution_failure_does_not_persist_deployment(
+    ) -> Result<()> {
         let fixture = test_fixture(TestTokenMode::InvalidEncrypted, false)?;
-        let body = push_event_body(&fixture.app.github_url, &fixture.app.branch)?;
-        let headers = signed_headers(&body, &fixture.config.github.webhook_secret)?;
+        let body =
+            push_event_body(&fixture.app.github_url, &fixture.app.branch)?;
+        let headers =
+            signed_headers(&body, &fixture.config.github.webhook_secret)?;
 
-        let result = github_webhook(State(fixture.state.clone()), headers, body).await;
+        let result =
+            github_webhook(State(fixture.state.clone()), headers, body).await;
         let (status, _) = result.err().context("expected webhook failure")?;
 
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -214,10 +235,13 @@ mod tests {
     #[tokio::test]
     async fn queue_failure_rolls_back_persisted_deployment() -> Result<()> {
         let fixture = test_fixture(TestTokenMode::ValidEncrypted, true)?;
-        let body = push_event_body(&fixture.app.github_url, &fixture.app.branch)?;
-        let headers = signed_headers(&body, &fixture.config.github.webhook_secret)?;
+        let body =
+            push_event_body(&fixture.app.github_url, &fixture.app.branch)?;
+        let headers =
+            signed_headers(&body, &fixture.config.github.webhook_secret)?;
 
-        let result = github_webhook(State(fixture.state.clone()), headers, body).await;
+        let result =
+            github_webhook(State(fixture.state.clone()), headers, body).await;
         let (status, _) = result.err().context("expected webhook failure")?;
 
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -241,8 +265,12 @@ mod tests {
         ValidEncrypted,
     }
 
-    fn test_fixture(token_mode: TestTokenMode, close_queue: bool) -> Result<TestFixture> {
-        let root = std::env::temp_dir().join(format!("containr-webhook-test-{}", Uuid::new_v4()));
+    fn test_fixture(
+        token_mode: TestTokenMode,
+        close_queue: bool,
+    ) -> Result<TestFixture> {
+        let root = std::env::temp_dir()
+            .join(format!("containr-webhook-test-{}", Uuid::new_v4()));
         let db = Database::open(&DatabaseConfig {
             backend: DatabaseBackendKind::Sled,
             path: root.join("state").to_string_lossy().to_string(),
@@ -258,12 +286,15 @@ mod tests {
             drop(deployment_rx);
         }
 
-        let mut user =
-            User::new_with_password("owner@example.com".to_string(), "password-hash".to_string());
+        let mut user = User::new_with_password(
+            "owner@example.com".to_string(),
+            "password-hash".to_string(),
+        );
         user.github_access_token = Some(match token_mode {
             TestTokenMode::InvalidEncrypted => "enc:not-valid".to_string(),
             TestTokenMode::ValidEncrypted => {
-                encrypt_value(&config, "github-oauth-token").map_err(anyhow::Error::msg)?
+                encrypt_value(&config, "github-oauth-token")
+                    .map_err(anyhow::Error::msg)?
             }
         });
         db.save_user(&user)?;
@@ -312,11 +343,13 @@ mod tests {
     fn signed_headers(body: &[u8], secret: &str) -> Result<HeaderMap> {
         let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())?;
         mac.update(body);
-        let signature = format!("sha256={}", hex::encode(mac.finalize().into_bytes()));
+        let signature =
+            format!("sha256={}", hex::encode(mac.finalize().into_bytes()));
 
         let mut headers = HeaderMap::new();
         headers.insert("x-github-event", HeaderValue::from_static("push"));
-        headers.insert("x-hub-signature-256", HeaderValue::from_str(&signature)?);
+        headers
+            .insert("x-hub-signature-256", HeaderValue::from_str(&signature)?);
 
         Ok(headers)
     }

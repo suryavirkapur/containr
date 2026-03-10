@@ -32,19 +32,15 @@ step 1: prepare the server
     # update system
     apt update && apt upgrade -y
 
-    # install docker
-    curl -fsSL https://get.docker.com | sh
-    systemctl enable docker
-    systemctl start docker
-
-    # add user to docker group (logout/login after)
-    usermod -aG docker $USER
+    # install docker and containr automatically
+    curl -fsSL https://github.com/suryavirkapur/containr/releases/latest/download/containr-install-vps.sh | bash
 
 step 2: install containr
 
     # download latest release
-    curl -fsSL https://github.com/suryavirkapur/containr-paas/releases/latest/download/containr-linux-amd64.tar.gz | tar xz
+    curl -fsSL https://github.com/suryavirkapur/containr/releases/latest/download/containr-linux-amd64.tar.gz | tar xz
     mv containr /usr/local/bin/
+    mv containrctl /usr/local/bin/
 
     # create directories
     mkdir -p /etc/containr
@@ -56,10 +52,10 @@ step 3: configure containr
     cat > /etc/containr/containr.toml << 'EOF'
     [server]
     host = "0.0.0.0"
-    port = 3000
+    port = 2077
 
     [database]
-    backend = "sled"
+    backend = "sqlite"
     path = "/var/lib/containr/containr.db"
 
     [proxy]
@@ -206,7 +202,7 @@ nginx example:
         server_name your-domain.com *.your-domain.com;
 
         location / {
-            proxy_pass http://127.0.0.1:3000;
+            proxy_pass http://127.0.0.1:2077;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";
@@ -256,7 +252,7 @@ monitoring
 
 health check endpoint:
 
-    curl http://localhost:3000/health
+    curl http://localhost:2077/health
 
 prometheus metrics (planned for future release)
 
@@ -304,7 +300,7 @@ updating containr
 binary update:
 
     systemctl stop containr
-    curl -fsSL https://github.com/suryavirkapur/containr-paas/releases/latest/download/containr-linux-amd64.tar.gz | tar xz
+    curl -fsSL https://github.com/suryavirkapur/containr/releases/latest/download/containr-linux-amd64.tar.gz | tar xz
     mv containr /usr/local/bin/
     systemctl start containr
 

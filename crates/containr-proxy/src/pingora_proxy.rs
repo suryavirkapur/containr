@@ -97,7 +97,10 @@ impl DynamicCertResolver {
         }
     }
 
-    async fn load_cert(&self, domain: &str) -> Option<(X509, Vec<X509>, PKey<Private>)> {
+    async fn load_cert(
+        &self,
+        domain: &str,
+    ) -> Option<(X509, Vec<X509>, PKey<Private>)> {
         let cert_path = self.certs_dir.join(format!("{}.pem", domain));
         let key_path = self.certs_dir.join(format!("{}.key", domain));
         let cert_modified = tokio::fs::metadata(&cert_path)
@@ -110,7 +113,9 @@ impl DynamicCertResolver {
             .and_then(|metadata| metadata.modified().ok());
 
         if let Some(cached) = self.cache.get(domain) {
-            if cached.cert_modified == cert_modified && cached.key_modified == key_modified {
+            if cached.cert_modified == cert_modified
+                && cached.key_modified == key_modified
+            {
                 return Some((
                     cached.leaf.clone(),
                     cached.chain.clone(),
@@ -148,7 +153,10 @@ impl DynamicCertResolver {
 
 #[async_trait]
 impl TlsAccept for DynamicCertResolver {
-    async fn certificate_callback(&self, ssl: &mut pingora_core::protocols::tls::TlsRef) -> () {
+    async fn certificate_callback(
+        &self,
+        ssl: &mut pingora_core::protocols::tls::TlsRef,
+    ) -> () {
         let domain = match ssl.servername(ssl::NameType::HOST_NAME) {
             Some(name) => name.to_string(),
             None => {
@@ -200,7 +208,11 @@ impl ProxyHttp for ContainrProxy {
     }
 
     /// Called before connecting to upstream - handles routing, ACME, and protocol detection
-    async fn request_filter(&self, session: &mut Session, ctx: &mut Self::CTX) -> Result<bool> {
+    async fn request_filter(
+        &self,
+        session: &mut Session,
+        ctx: &mut Self::CTX,
+    ) -> Result<bool> {
         let req_header = session.req_header();
         let path = req_header.uri.path();
         let config = self.config.read().await;
@@ -212,8 +224,9 @@ impl ProxyHttp for ContainrProxy {
             .map(str::trim)
             .filter(|hostname| !hostname.is_empty())
             .map(normalize_hostname);
-        let storage_upstream =
-            parse_storage_management_upstream(config.storage.management_endpoint());
+        let storage_upstream = parse_storage_management_upstream(
+            config.storage.management_endpoint(),
+        );
         drop(config);
 
         // try Host header first, then :authority pseudo-header (HTTP/2), then URI host
@@ -267,7 +280,10 @@ impl ProxyHttp for ContainrProxy {
                 // Send challenge response
                 let mut header = ResponseHeader::build(200, None)?;
                 header.insert_header("Content-Type", "text/plain")?;
-                header.insert_header("Content-Length", key_auth.len().to_string())?;
+                header.insert_header(
+                    "Content-Length",
+                    key_auth.len().to_string(),
+                )?;
                 session
                     .write_response_header(Box::new(header), false)
                     .await?;
@@ -317,10 +333,12 @@ impl ProxyHttp for ContainrProxy {
                     .write_response_header(Box::new(header), true)
                     .await?;
             } else {
-                let body = "https required; certificate provisioning in progress";
+                let body =
+                    "https required; certificate provisioning in progress";
                 let mut header = ResponseHeader::build(426, None)?;
                 header.insert_header("Content-Type", "text/plain")?;
-                header.insert_header("Content-Length", body.len().to_string())?;
+                header
+                    .insert_header("Content-Length", body.len().to_string())?;
                 session
                     .write_response_header(Box::new(header), false)
                     .await?;
@@ -346,7 +364,8 @@ impl ProxyHttp for ContainrProxy {
                 let body = "storage proxy is not configured";
                 let mut header = ResponseHeader::build(503, None)?;
                 header.insert_header("Content-Type", "text/plain")?;
-                header.insert_header("Content-Length", body.len().to_string())?;
+                header
+                    .insert_header("Content-Length", body.len().to_string())?;
                 session
                     .write_response_header(Box::new(header), false)
                     .await?;
@@ -375,7 +394,8 @@ impl ProxyHttp for ContainrProxy {
                 let body = "no route found";
                 let mut header = ResponseHeader::build(404, None)?;
                 header.insert_header("Content-Type", "text/plain")?;
-                header.insert_header("Content-Length", body.len().to_string())?;
+                header
+                    .insert_header("Content-Length", body.len().to_string())?;
                 session
                     .write_response_header(Box::new(header), false)
                     .await?;
@@ -418,10 +438,9 @@ impl ProxyHttp for ContainrProxy {
         _session: &mut Session,
         ctx: &mut Self::CTX,
     ) -> Result<Box<HttpPeer>> {
-        let addr = ctx
-            .upstream_addr
-            .as_ref()
-            .ok_or_else(|| Error::explain(ErrorType::InternalError, "no upstream configured"))?;
+        let addr = ctx.upstream_addr.as_ref().ok_or_else(|| {
+            Error::explain(ErrorType::InternalError, "no upstream configured")
+        })?;
 
         let mut resolved = addr.to_socket_addrs().map_err(|error| {
             Error::explain(
@@ -431,12 +450,16 @@ impl ProxyHttp for ContainrProxy {
         })?;
 
         let socket_addr = resolved.next().ok_or_else(|| {
-            Error::explain(ErrorType::InternalError, "no upstream address resolved")
+            Error::explain(
+                ErrorType::InternalError,
+                "no upstream address resolved",
+            )
         })?;
 
         // Create peer - Pingora handles HTTP/1.1 upgrade for WebSocket
         // and HTTP/2 for gRPC automatically based on negotiation
-        let mut peer = HttpPeer::new(socket_addr, ctx.upstream_tls, String::new());
+        let mut peer =
+            HttpPeer::new(socket_addr, ctx.upstream_tls, String::new());
 
         // For gRPC, prefer HTTP/2
         if ctx.is_grpc {
@@ -464,7 +487,12 @@ impl ProxyHttp for ContainrProxy {
     }
 
     /// Log the request/response after completion
-    async fn logging(&self, session: &mut Session, _e: Option<&Error>, ctx: &mut Self::CTX) {
+    async fn logging(
+        &self,
+        session: &mut Session,
+        _e: Option<&Error>,
+        ctx: &mut Self::CTX,
+    ) {
         if let Some(selection) = ctx.upstream_selection.as_ref() {
             selection.complete();
         }
@@ -511,9 +539,16 @@ pub fn create_proxy_server(
     let mut server = Server::new(None).unwrap();
     server.bootstrap();
 
-    let proxy = ContainrProxy::new(routes, challenges, config, api_upstream, certs_dir.clone());
+    let proxy = ContainrProxy::new(
+        routes,
+        challenges,
+        config,
+        api_upstream,
+        certs_dir.clone(),
+    );
 
-    let mut proxy_service = pingora_proxy::http_proxy_service(&server.configuration, proxy);
+    let mut proxy_service =
+        pingora_proxy::http_proxy_service(&server.configuration, proxy);
 
     proxy_service.add_tcp(&format!("0.0.0.0:{}", http_port));
 
@@ -521,7 +556,11 @@ pub fn create_proxy_server(
     let callbacks: TlsAcceptCallbacks = Box::new(resolver);
     let mut tls_settings = TlsSettings::with_callbacks(callbacks)?;
     tls_settings.enable_h2();
-    proxy_service.add_tls_with_settings(&format!("0.0.0.0:{}", https_port), None, tls_settings);
+    proxy_service.add_tls_with_settings(
+        &format!("0.0.0.0:{}", https_port),
+        None,
+        tls_settings,
+    );
 
     server.add_service(proxy_service);
 
@@ -542,7 +581,8 @@ fn parse_storage_management_upstream(endpoint: &str) -> Option<(String, bool)> {
         return None;
     }
 
-    let (authority, tls) = if let Some(rest) = trimmed.strip_prefix("https://") {
+    let (authority, tls) = if let Some(rest) = trimmed.strip_prefix("https://")
+    {
         (rest, true)
     } else if let Some(rest) = trimmed.strip_prefix("http://") {
         (rest, false)

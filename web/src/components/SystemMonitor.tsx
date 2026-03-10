@@ -6,6 +6,13 @@ import {
 	Show,
 } from "solid-js";
 import { api, components } from "../api";
+import {
+	Card,
+	CardContent,
+	CardHeader,
+	CardTitle,
+	Skeleton,
+} from "./ui";
 
 type SystemStats = components["schemas"]["SystemStats"];
 
@@ -111,88 +118,106 @@ const SystemMonitor: Component = () => {
 	};
 
 	return (
-		<div class="border border-neutral-800 bg-[#12121a] p-5 mb-8">
-			<div class="flex items-center justify-between mb-4">
-				<h2 class="text-sm font-medium text-neutral-200">system</h2>
+		<Card class="mb-8 overflow-hidden">
+			<CardHeader class="flex flex-row items-center justify-between gap-4">
+				<div>
+					<p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
+						host
+					</p>
+					<CardTitle class="mt-2">system monitor</CardTitle>
+				</div>
 				<Show when={stats()}>
-					<span class="text-xs text-neutral-500">
+					<span class="border border-[var(--border)] bg-[var(--muted)] px-3 py-2 text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
 						up {formatUptime(stats()!.uptime_seconds)}
 					</span>
 				</Show>
-			</div>
+			</CardHeader>
 
-			<Show
-				when={stats()}
-				fallback={
-					<div class="animate-pulse space-y-3">
-						<div class="h-8 bg-neutral-800" />
-						<div class="h-8 bg-neutral-800" />
-					</div>
-				}
-			>
-				<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+			<CardContent>
+				<Show
+					when={stats()}
+					fallback={
+						<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+							<Skeleton class="h-24" />
+							<Skeleton class="h-24" />
+							<Skeleton class="h-24" />
+							<Skeleton class="h-24" />
+						</div>
+					}
+				>
+					<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 					<div>
-						<div class="flex items-center justify-between mb-1">
-							<span class="text-xs text-neutral-500">cpu</span>
-							<span class="text-xs font-mono text-neutral-300">
+						<div class="mb-4 border border-[var(--border)] bg-[var(--muted)] p-4">
+							<div class="mb-1 flex items-center justify-between">
+								<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
+									cpu
+								</span>
+								<span class="text-xs font-mono text-[var(--foreground-subtle)]">
 								{stats()!.cpu_percent.toFixed(1)}%
-							</span>
-						</div>
-						<ProgressBar
-							value={stats()!.cpu_percent}
-							color={cpuColor()}
-						/>
-						<div class="text-xs text-neutral-500 mt-1">
-							load: {stats()!.load_avg[0].toFixed(2)},{" "}
-							{stats()!.load_avg[1].toFixed(2)},{" "}
-							{stats()!.load_avg[2].toFixed(2)}
+								</span>
+							</div>
+							<ProgressBar value={stats()!.cpu_percent} color={cpuColor()} />
+							<div class="mt-3 text-xs text-[var(--muted-foreground)]">
+								load: {stats()!.load_avg[0].toFixed(2)},{" "}
+								{stats()!.load_avg[1].toFixed(2)},{" "}
+								{stats()!.load_avg[2].toFixed(2)}
+							</div>
 						</div>
 					</div>
 
 					<div>
-						<div class="flex items-center justify-between mb-1">
-							<span class="text-xs text-neutral-500">memory</span>
-							<span class="text-xs font-mono text-neutral-300">
+						<div class="mb-4 border border-[var(--border)] bg-[var(--muted)] p-4">
+							<div class="mb-1 flex items-center justify-between">
+								<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
+									memory
+								</span>
+								<span class="text-xs font-mono text-[var(--foreground-subtle)]">
 								{memPercent().toFixed(1)}%
-							</span>
-						</div>
-						<ProgressBar value={memPercent()} color={memColor()} />
-						<div class="text-xs text-neutral-500 mt-1">
-							{formatBytes(stats()!.memory_used_bytes)} /{" "}
-							{formatBytes(stats()!.memory_total_bytes)}
+								</span>
+							</div>
+							<ProgressBar value={memPercent()} color={memColor()} />
+							<div class="mt-3 text-xs text-[var(--muted-foreground)]">
+								{formatBytes(stats()!.memory_used_bytes)} /{" "}
+								{formatBytes(stats()!.memory_total_bytes)}
+							</div>
 						</div>
 					</div>
 
 					<div>
-						<div class="flex items-center justify-between mb-1">
-							<span class="text-xs text-neutral-500">
-								network rx
-							</span>
-							<span class="text-xs font-mono text-neutral-300">
+						<div class="mb-4 border border-[var(--border)] bg-[var(--muted)] p-4">
+							<div class="mb-1 flex items-center justify-between">
+								<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
+									network rx
+								</span>
+								<span class="text-xs font-mono text-[var(--foreground-subtle)]">
 								{formatBytes(networkSpeed().rx)}/s
-							</span>
-						</div>
-						<div class="text-xs text-neutral-500 mt-1">
-							total: {formatBytes(stats()!.network_rx_bytes)}
+								</span>
+							</div>
+							<div class="mt-6 text-xs text-[var(--muted-foreground)]">
+								total: {formatBytes(stats()!.network_rx_bytes)}
+							</div>
 						</div>
 					</div>
 
 					<div>
-						<div class="flex items-center justify-between mb-1">
-							<span class="text-xs text-neutral-500">
-								network tx
-							</span>
-							<span class="text-xs font-mono text-neutral-300">
+						<div class="mb-4 border border-[var(--border)] bg-[var(--muted)] p-4">
+							<div class="mb-1 flex items-center justify-between">
+								<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
+									network tx
+								</span>
+								<span class="text-xs font-mono text-[var(--foreground-subtle)]">
 								{formatBytes(networkSpeed().tx)}/s
-							</span>
-						</div>
-						<div class="text-xs text-neutral-500 mt-1">
-							total: {formatBytes(stats()!.network_tx_bytes)}
+								</span>
+							</div>
+							<div class="mt-6 text-xs text-[var(--muted-foreground)]">
+								total: {formatBytes(stats()!.network_tx_bytes)}
+							</div>
 						</div>
 					</div>
-				</div>
-			</Show>
-		</div>
+					</div>
+				</Show>
+			</CardContent>
+		</Card>
 	);
 };
 

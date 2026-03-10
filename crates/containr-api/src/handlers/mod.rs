@@ -11,6 +11,7 @@ pub mod github_repos;
 pub mod health;
 pub mod projects;
 pub mod queues;
+pub mod services;
 pub mod settings;
 pub mod storage;
 pub mod system;

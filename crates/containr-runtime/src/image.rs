@@ -7,7 +7,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use bollard::query_parameters::{
-    BuildImageOptions, CreateImageOptions, ListImagesOptions, RemoveImageOptions,
+    BuildImageOptions, CreateImageOptions, ListImagesOptions,
+    RemoveImageOptions,
 };
 use bollard::{auth::DockerCredentials, body_full, Docker};
 use futures::StreamExt;
@@ -126,29 +127,40 @@ impl ImageManager {
             ..Default::default()
         };
 
-        let registry_credentials = credentials.map(|credentials| DockerCredentials {
-            username: Some(credentials.username.clone()),
-            password: Some(credentials.password.clone()),
-            serveraddress: Some(resolve_registry_server(name, credentials.server.as_deref())),
-            ..Default::default()
-        });
+        let registry_credentials =
+            credentials.map(|credentials| DockerCredentials {
+                username: Some(credentials.username.clone()),
+                password: Some(credentials.password.clone()),
+                serveraddress: Some(resolve_registry_server(
+                    name,
+                    credentials.server.as_deref(),
+                )),
+                ..Default::default()
+            });
 
-        let mut stream = self
-            .client()
-            .create_image(Some(options), None, registry_credentials);
+        let mut stream = self.client().create_image(
+            Some(options),
+            None,
+            registry_credentials,
+        );
 
         while let Some(result) = stream.next().await {
             match result {
                 Ok(info) => {
                     // log progress if available
                     if let Some(status) = info.status {
-                        if status.contains("Digest") || status.contains("Downloaded") {
+                        if status.contains("Digest")
+                            || status.contains("Downloaded")
+                        {
                             info!(name = %name, status = %status, "pull progress");
                         }
                     }
                 }
                 Err(e) => {
-                    return Err(ClientError::Operation(format!("pull failed: {}", e)));
+                    return Err(ClientError::Operation(format!(
+                        "pull failed: {}",
+                        e
+                    )));
                 }
             }
         }
@@ -229,8 +241,10 @@ impl ImageManager {
             Some(f) => f.to_string(),
             None => {
                 // auto-detect: prefer Containerfile over Dockerfile
-                let containerfile_path = Path::new(&config.context_path).join("Containerfile");
-                let dockerfile_path = Path::new(&config.context_path).join("Dockerfile");
+                let containerfile_path =
+                    Path::new(&config.context_path).join("Containerfile");
+                let dockerfile_path =
+                    Path::new(&config.context_path).join("Dockerfile");
 
                 if containerfile_path.exists() {
                     info!(name = %name, "auto-detected Containerfile");
@@ -255,8 +269,13 @@ impl ImageManager {
         );
 
         // create tar archive of the context directory
-        let tar_data = create_tar_archive(&config.context_path)
-            .map_err(|e| ClientError::Operation(format!("failed to create tar archive: {}", e)))?;
+        let tar_data =
+            create_tar_archive(&config.context_path).map_err(|e| {
+                ClientError::Operation(format!(
+                    "failed to create tar archive: {}",
+                    e
+                ))
+            })?;
 
         let options = BuildImageOptions {
             dockerfile: containerfile,
@@ -271,9 +290,11 @@ impl ImageManager {
             ..Default::default()
         };
 
-        let mut stream =
-            self.client()
-                .build_image(options, None, Some(body_full(bytes::Bytes::from(tar_data))));
+        let mut stream = self.client().build_image(
+            options,
+            None,
+            Some(body_full(bytes::Bytes::from(tar_data))),
+        );
 
         while let Some(result) = stream.next().await {
             match result {
@@ -289,13 +310,19 @@ impl ImageManager {
                     if let Some(error_detail) = info.error_detail {
                         if let Some(msg) = error_detail.message {
                             log_line(&format!("build error: {}", msg));
-                            return Err(ClientError::Operation(format!("build failed: {}", msg)));
+                            return Err(ClientError::Operation(format!(
+                                "build failed: {}",
+                                msg
+                            )));
                         }
                     }
                 }
                 Err(e) => {
                     log_line(&format!("build error: {}", e));
-                    return Err(ClientError::Operation(format!("build failed: {}", e)));
+                    return Err(ClientError::Operation(format!(
+                        "build failed: {}",
+                        e
+                    )));
                 }
             }
         }
@@ -332,11 +359,16 @@ impl ImageManager {
             ..Default::default()
         };
 
-        let images = self
-            .client()
-            .list_images(Some(options))
-            .await
-            .map_err(|e| ClientError::Operation(format!("docker images failed: {}", e)))?;
+        let images =
+            self.client()
+                .list_images(Some(options))
+                .await
+                .map_err(|e| {
+                    ClientError::Operation(format!(
+                        "docker images failed: {}",
+                        e
+                    ))
+                })?;
 
         let infos: Vec<ImageInfo> = images
             .into_iter()
@@ -395,7 +427,10 @@ impl Default for ImageManager {
     }
 }
 
-pub fn resolve_registry_server(name: &str, configured_server: Option<&str>) -> String {
+pub fn resolve_registry_server(
+    name: &str,
+    configured_server: Option<&str>,
+) -> String {
     if let Some(server) = configured_server.and_then(|server| {
         let trimmed = server.trim();
         if trimmed.is_empty() {
@@ -411,7 +446,10 @@ pub fn resolve_registry_server(name: &str, configured_server: Option<&str>) -> S
         return "https://index.docker.io/v1/".to_string();
     };
 
-    if first_segment.contains('.') || first_segment.contains(':') || first_segment == "localhost" {
+    if first_segment.contains('.')
+        || first_segment.contains(':')
+        || first_segment == "localhost"
+    {
         first_segment.to_string()
     } else {
         "https://index.docker.io/v1/".to_string()
@@ -441,7 +479,10 @@ mod tests {
     #[test]
     fn resolve_registry_server_prefers_explicit_override() {
         assert_eq!(
-            resolve_registry_server("ghcr.io/demo/private:1", Some("registry.example.com")),
+            resolve_registry_server(
+                "ghcr.io/demo/private:1",
+                Some("registry.example.com")
+            ),
             "registry.example.com"
         );
     }

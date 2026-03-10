@@ -6,9 +6,15 @@ pub mod encryption;
 pub mod error;
 pub mod managed_services;
 pub mod models;
+pub mod service_inventory;
 
 pub use config::{Config, DatabaseBackendKind, DatabaseConfig};
 pub use db::Database;
 pub use encryption::{decrypt, derive_key, encrypt};
 pub use error::{Error, Result};
-pub use managed_services::{DatabaseType, ManagedDatabase, ServiceStatus, StorageBucket};
+pub use managed_services::{
+    DatabaseType, ManagedDatabase, ServiceStatus, StorageBucket,
+};
+pub use service_inventory::{
+    ServiceInventoryItem, ServiceResourceKind, ServiceRuntimeStatus,
+};

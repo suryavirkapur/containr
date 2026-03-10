@@ -1,5 +1,6 @@
 //! metadata database backends for containr
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -14,13 +15,19 @@ use crate::config::{DatabaseBackendKind, DatabaseConfig};
 use crate::error::{Error, Result};
 #[allow(unused_imports)]
 use crate::managed_services::{
-    DatabaseType, ManagedDatabase, ManagedQueue, QueueType, ServiceStatus, StorageBucket,
+    DatabaseType, ManagedDatabase, ManagedQueue, QueueType, ServiceStatus,
+    StorageBucket,
 };
 #[allow(unused_imports)]
 use crate::models::{
-    App, BuildArg, Certificate, ContainerService, Deployment, DeploymentStatus, EnvVar,
-    GithubAppConfig, GithubInstallation, HealthCheck, Project, RestartPolicy, RolloutStrategy,
-    ServiceDeployment, ServiceHealth, ServiceMount, ServiceRegistryAuth, User,
+    App, BuildArg, Certificate, ContainerService, Deployment, DeploymentStatus,
+    EnvVar, GithubAppConfig, GithubInstallation, HealthCheck, Project,
+    RestartPolicy, RolloutStrategy, ServiceDeployment, ServiceHealth,
+    ServiceMount, ServiceRegistryAuth, ServiceType, User,
+};
+use crate::service_inventory::{
+    summarize_app_service_runtime, ServiceInventoryItem, ServiceResourceKind,
+    ServiceRuntimeStatus,
 };
 
 const USERS_TABLE: &str = "users";
@@ -82,14 +89,30 @@ pub trait DatabaseBackend: Send + Sync {
     fn list_apps_by_owner(&self, owner_id: Uuid) -> Result<Vec<App>>;
     fn get_app_by_domain(&self, domain: &str) -> Result<Option<App>>;
     fn delete_app(&self, id: Uuid) -> Result<bool>;
-    fn get_app_by_github_url(&self, github_url: &str, branch: &str) -> Result<Option<App>>;
+    fn get_app_by_github_url(
+        &self,
+        github_url: &str,
+        branch: &str,
+    ) -> Result<Option<App>>;
     fn save_service(&self, service: &ContainerService) -> Result<()>;
     fn get_service(&self, id: Uuid) -> Result<Option<ContainerService>>;
-    fn list_services_by_app(&self, app_id: Uuid) -> Result<Vec<ContainerService>>;
+    fn list_services_by_app(
+        &self,
+        app_id: Uuid,
+    ) -> Result<Vec<ContainerService>>;
     fn delete_service(&self, id: Uuid) -> Result<bool>;
-    fn save_service_deployment(&self, deployment: &ServiceDeployment) -> Result<()>;
-    fn get_service_deployment(&self, id: Uuid) -> Result<Option<ServiceDeployment>>;
-    fn list_service_deployments(&self, deployment_id: Uuid) -> Result<Vec<ServiceDeployment>>;
+    fn save_service_deployment(
+        &self,
+        deployment: &ServiceDeployment,
+    ) -> Result<()>;
+    fn get_service_deployment(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<ServiceDeployment>>;
+    fn list_service_deployments(
+        &self,
+        deployment_id: Uuid,
+    ) -> Result<Vec<ServiceDeployment>>;
     fn list_service_deployments_by_service(
         &self,
         service_id: Uuid,
@@ -98,7 +121,11 @@ pub trait DatabaseBackend: Send + Sync {
     fn get_deployment(&self, id: Uuid) -> Result<Option<Deployment>>;
     fn list_deployments_by_app(&self, app_id: Uuid) -> Result<Vec<Deployment>>;
     fn delete_deployment(&self, id: Uuid) -> Result<bool>;
-    fn append_deployment_log(&self, deployment_id: Uuid, log_line: &str) -> Result<()>;
+    fn append_deployment_log(
+        &self,
+        deployment_id: Uuid,
+        log_line: &str,
+    ) -> Result<()>;
     fn get_deployment_logs(
         &self,
         deployment_id: Uuid,
@@ -110,19 +137,30 @@ pub trait DatabaseBackend: Send + Sync {
     fn list_certificates(&self) -> Result<Vec<Certificate>>;
     fn delete_certificate(&self, domain: &str) -> Result<bool>;
     fn save_managed_database(&self, db: &ManagedDatabase) -> Result<()>;
-    fn get_managed_database(&self, id: Uuid) -> Result<Option<ManagedDatabase>>;
-    fn list_managed_databases_by_owner(&self, owner_id: Uuid) -> Result<Vec<ManagedDatabase>>;
+    fn get_managed_database(&self, id: Uuid)
+        -> Result<Option<ManagedDatabase>>;
+    fn list_managed_databases_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ManagedDatabase>>;
     fn delete_managed_database(&self, id: Uuid) -> Result<bool>;
     fn save_managed_queue(&self, queue: &ManagedQueue) -> Result<()>;
     fn get_managed_queue(&self, id: Uuid) -> Result<Option<ManagedQueue>>;
-    fn list_managed_queues_by_owner(&self, owner_id: Uuid) -> Result<Vec<ManagedQueue>>;
+    fn list_managed_queues_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ManagedQueue>>;
     fn delete_managed_queue(&self, id: Uuid) -> Result<bool>;
     fn save_storage_bucket(&self, bucket: &StorageBucket) -> Result<()>;
     fn get_storage_bucket(&self, id: Uuid) -> Result<Option<StorageBucket>>;
-    fn list_storage_buckets_by_owner(&self, owner_id: Uuid) -> Result<Vec<StorageBucket>>;
+    fn list_storage_buckets_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<StorageBucket>>;
     fn delete_storage_bucket(&self, id: Uuid) -> Result<bool>;
     fn save_github_app(&self, app: &GithubAppConfig) -> Result<()>;
-    fn get_github_app(&self, owner_id: Uuid) -> Result<Option<GithubAppConfig>>;
+    fn get_github_app(&self, owner_id: Uuid)
+        -> Result<Option<GithubAppConfig>>;
     fn delete_github_app(&self, owner_id: Uuid) -> Result<bool>;
 }
 
@@ -135,8 +173,12 @@ pub struct Database {
 impl Database {
     pub fn open(config: &DatabaseConfig) -> Result<Self> {
         let backend: Arc<dyn DatabaseBackend> = match config.backend {
-            DatabaseBackendKind::Sled => Arc::new(SledDatabase::open(&config.path)?),
-            DatabaseBackendKind::Sqlite => Arc::new(SqliteDatabase::open(&config.path)?),
+            DatabaseBackendKind::Sled => {
+                Arc::new(SledDatabase::open(&config.path)?)
+            }
+            DatabaseBackendKind::Sqlite => {
+                Arc::new(SqliteDatabase::open(&config.path)?)
+            }
         };
 
         Ok(Self { backend })
@@ -170,7 +212,10 @@ impl Database {
         self.backend.get_user_by_email(email)
     }
 
-    pub fn get_user_by_github_id(&self, github_id: i64) -> Result<Option<User>> {
+    pub fn get_user_by_github_id(
+        &self,
+        github_id: i64,
+    ) -> Result<Option<User>> {
         self.backend.get_user_by_github_id(github_id)
     }
 
@@ -215,7 +260,10 @@ impl Database {
             .collect())
     }
 
-    pub fn list_projects_by_owner(&self, owner_id: Uuid) -> Result<Vec<Project>> {
+    pub fn list_projects_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<Project>> {
         self.list_apps_by_owner(owner_id)
     }
 
@@ -226,7 +274,10 @@ impl Database {
             .map(|app| app.normalized_for_service_model()))
     }
 
-    pub fn get_project_by_domain(&self, domain: &str) -> Result<Option<Project>> {
+    pub fn get_project_by_domain(
+        &self,
+        domain: &str,
+    ) -> Result<Option<Project>> {
         self.get_app_by_domain(domain)
     }
 
@@ -238,7 +289,11 @@ impl Database {
         self.delete_app(id)
     }
 
-    pub fn get_app_by_github_url(&self, github_url: &str, branch: &str) -> Result<Option<App>> {
+    pub fn get_app_by_github_url(
+        &self,
+        github_url: &str,
+        branch: &str,
+    ) -> Result<Option<App>> {
         Ok(self
             .backend
             .get_app_by_github_url(github_url, branch)?
@@ -261,7 +316,10 @@ impl Database {
         self.backend.get_service(id)
     }
 
-    pub fn list_services_by_app(&self, app_id: Uuid) -> Result<Vec<ContainerService>> {
+    pub fn list_services_by_app(
+        &self,
+        app_id: Uuid,
+    ) -> Result<Vec<ContainerService>> {
         self.backend.list_services_by_app(app_id)
     }
 
@@ -278,15 +336,24 @@ impl Database {
         Ok(count)
     }
 
-    pub fn save_service_deployment(&self, deployment: &ServiceDeployment) -> Result<()> {
+    pub fn save_service_deployment(
+        &self,
+        deployment: &ServiceDeployment,
+    ) -> Result<()> {
         self.backend.save_service_deployment(deployment)
     }
 
-    pub fn get_service_deployment(&self, id: Uuid) -> Result<Option<ServiceDeployment>> {
+    pub fn get_service_deployment(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<ServiceDeployment>> {
         self.backend.get_service_deployment(id)
     }
 
-    pub fn list_service_deployments(&self, deployment_id: Uuid) -> Result<Vec<ServiceDeployment>> {
+    pub fn list_service_deployments(
+        &self,
+        deployment_id: Uuid,
+    ) -> Result<Vec<ServiceDeployment>> {
         self.backend.list_service_deployments(deployment_id)
     }
 
@@ -305,11 +372,17 @@ impl Database {
         self.backend.get_deployment(id)
     }
 
-    pub fn list_deployments_by_app(&self, app_id: Uuid) -> Result<Vec<Deployment>> {
+    pub fn list_deployments_by_app(
+        &self,
+        app_id: Uuid,
+    ) -> Result<Vec<Deployment>> {
         self.backend.list_deployments_by_app(app_id)
     }
 
-    pub fn get_latest_deployment(&self, app_id: Uuid) -> Result<Option<Deployment>> {
+    pub fn get_latest_deployment(
+        &self,
+        app_id: Uuid,
+    ) -> Result<Option<Deployment>> {
         let deployments = self.list_deployments_by_app(app_id)?;
         Ok(deployments.into_iter().next())
     }
@@ -318,7 +391,11 @@ impl Database {
         self.backend.delete_deployment(id)
     }
 
-    pub fn append_deployment_log(&self, deployment_id: Uuid, log_line: &str) -> Result<()> {
+    pub fn append_deployment_log(
+        &self,
+        deployment_id: Uuid,
+        log_line: &str,
+    ) -> Result<()> {
         self.backend.append_deployment_log(deployment_id, log_line)
     }
 
@@ -352,11 +429,17 @@ impl Database {
         self.backend.save_managed_database(db)
     }
 
-    pub fn get_managed_database(&self, id: Uuid) -> Result<Option<ManagedDatabase>> {
+    pub fn get_managed_database(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<ManagedDatabase>> {
         self.backend.get_managed_database(id)
     }
 
-    pub fn list_managed_databases_by_owner(&self, owner_id: Uuid) -> Result<Vec<ManagedDatabase>> {
+    pub fn list_managed_databases_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ManagedDatabase>> {
         self.backend.list_managed_databases_by_owner(owner_id)
     }
 
@@ -372,7 +455,10 @@ impl Database {
         self.backend.get_managed_queue(id)
     }
 
-    pub fn list_managed_queues_by_owner(&self, owner_id: Uuid) -> Result<Vec<ManagedQueue>> {
+    pub fn list_managed_queues_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ManagedQueue>> {
         self.backend.list_managed_queues_by_owner(owner_id)
     }
 
@@ -380,15 +466,221 @@ impl Database {
         self.backend.delete_managed_queue(id)
     }
 
+    pub fn list_service_inventory_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ServiceInventoryItem>> {
+        self.list_service_inventory_by_owner_and_group(owner_id, None)
+    }
+
+    pub fn list_service_inventory_by_owner_and_group(
+        &self,
+        owner_id: Uuid,
+        group_id: Option<Uuid>,
+    ) -> Result<Vec<ServiceInventoryItem>> {
+        let apps = self.list_apps_by_owner(owner_id)?;
+        let group_names = apps
+            .iter()
+            .map(|app| (app.id, app.name.clone()))
+            .collect::<HashMap<_, _>>();
+        let mut inventory = Vec::new();
+
+        for app in &apps {
+            if let Some(filter_group_id) = group_id {
+                if app.id != filter_group_id {
+                    continue;
+                }
+            }
+
+            let deployments = self.list_deployments_by_app(app.id)?;
+            for service in &app.services {
+                let runtime =
+                    summarize_app_service_runtime(service, &deployments);
+                let image = runtime.image.clone().or_else(|| {
+                    if service.image.trim().is_empty() {
+                        None
+                    } else {
+                        Some(service.image.clone())
+                    }
+                });
+
+                inventory.push(ServiceInventoryItem {
+                    id: service.id,
+                    owner_id: app.owner_id,
+                    group_id: Some(app.id),
+                    project_id: Some(app.id),
+                    project_name: Some(app.name.clone()),
+                    resource_kind: ServiceResourceKind::AppService,
+                    service_type: service.service_type,
+                    name: service.name.clone(),
+                    image,
+                    status: runtime.status,
+                    network_name: app.network_name(),
+                    internal_host: Some(service.name.clone()),
+                    port: if service.port == 0 {
+                        None
+                    } else {
+                        Some(service.port)
+                    },
+                    external_port: None,
+                    proxy_port: None,
+                    proxy_external_port: None,
+                    connection_string: None,
+                    proxy_connection_string: None,
+                    domains: service.custom_domains(),
+                    schedule: service.schedule.clone(),
+                    public_http: service.is_public_http(),
+                    desired_instances: runtime.desired_instances,
+                    running_instances: runtime.running_instances,
+                    container_ids: runtime.container_ids,
+                    deployment_id: runtime.deployment_id,
+                    pitr_enabled: false,
+                    proxy_enabled: false,
+                    created_at: service.created_at,
+                    updated_at: service.updated_at,
+                });
+            }
+        }
+
+        for database in self.list_managed_databases_by_owner(owner_id)? {
+            if group_id.is_some() && database.group_id != group_id {
+                continue;
+            }
+
+            inventory.push(ServiceInventoryItem {
+                id: database.id,
+                owner_id: database.owner_id,
+                group_id: database.group_id,
+                project_id: database.group_id,
+                project_name: database
+                    .group_id
+                    .and_then(|value| group_names.get(&value).cloned()),
+                resource_kind: ServiceResourceKind::ManagedDatabase,
+                service_type: database.db_type.service_type(),
+                name: database.name.clone(),
+                image: Some(database.docker_image()),
+                status: ServiceRuntimeStatus::from_managed_status(
+                    database.status,
+                ),
+                network_name: database.network_name(),
+                internal_host: Some(database.normalized_internal_host()),
+                port: Some(database.port),
+                external_port: database.external_port,
+                proxy_port: database.proxy_port(),
+                proxy_external_port: database.proxy_external_port,
+                connection_string: Some(database.connection_string()),
+                proxy_connection_string: database.proxy_connection_string(),
+                domains: Vec::new(),
+                schedule: None,
+                public_http: false,
+                desired_instances: 1,
+                running_instances: if matches!(
+                    database.status,
+                    crate::managed_services::ServiceStatus::Running
+                ) {
+                    1
+                } else {
+                    0
+                },
+                container_ids: database
+                    .container_id
+                    .clone()
+                    .into_iter()
+                    .collect(),
+                deployment_id: None,
+                pitr_enabled: database.pitr_enabled,
+                proxy_enabled: database.proxy_enabled,
+                created_at: database.created_at,
+                updated_at: database.updated_at,
+            });
+        }
+
+        for queue in self.list_managed_queues_by_owner(owner_id)? {
+            if group_id.is_some() && queue.group_id != group_id {
+                continue;
+            }
+
+            inventory.push(ServiceInventoryItem {
+                id: queue.id,
+                owner_id: queue.owner_id,
+                group_id: queue.group_id,
+                project_id: queue.group_id,
+                project_name: queue
+                    .group_id
+                    .and_then(|value| group_names.get(&value).cloned()),
+                resource_kind: ServiceResourceKind::ManagedQueue,
+                service_type: queue.queue_type.service_type(),
+                name: queue.name.clone(),
+                image: Some(queue.docker_image()),
+                status: ServiceRuntimeStatus::from_managed_status(queue.status),
+                network_name: queue.network_name(),
+                internal_host: Some(queue.normalized_internal_host()),
+                port: Some(queue.port),
+                external_port: queue.external_port,
+                proxy_port: None,
+                proxy_external_port: None,
+                connection_string: Some(queue.connection_string()),
+                proxy_connection_string: None,
+                domains: Vec::new(),
+                schedule: None,
+                public_http: false,
+                desired_instances: 1,
+                running_instances: if matches!(
+                    queue.status,
+                    crate::managed_services::ServiceStatus::Running
+                ) {
+                    1
+                } else {
+                    0
+                },
+                container_ids: queue.container_id.clone().into_iter().collect(),
+                deployment_id: None,
+                pitr_enabled: false,
+                proxy_enabled: false,
+                created_at: queue.created_at,
+                updated_at: queue.updated_at,
+            });
+        }
+
+        inventory.sort_by(|left, right| {
+            let left_group = left.project_name.as_deref().unwrap_or("");
+            let right_group = right.project_name.as_deref().unwrap_or("");
+
+            left_group
+                .cmp(right_group)
+                .then_with(|| left.name.cmp(&right.name))
+                .then_with(|| left.created_at.cmp(&right.created_at))
+        });
+
+        Ok(inventory)
+    }
+
+    pub fn get_service_inventory_by_id(
+        &self,
+        owner_id: Uuid,
+        service_id: Uuid,
+    ) -> Result<Option<ServiceInventoryItem>> {
+        Ok(self
+            .list_service_inventory_by_owner(owner_id)?
+            .into_iter()
+            .find(|service| service.id == service_id))
+    }
+
     pub fn save_storage_bucket(&self, bucket: &StorageBucket) -> Result<()> {
         self.backend.save_storage_bucket(bucket)
     }
 
-    pub fn get_storage_bucket(&self, id: Uuid) -> Result<Option<StorageBucket>> {
+    pub fn get_storage_bucket(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<StorageBucket>> {
         self.backend.get_storage_bucket(id)
     }
 
-    pub fn list_storage_buckets_by_owner(&self, owner_id: Uuid) -> Result<Vec<StorageBucket>> {
+    pub fn list_storage_buckets_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<StorageBucket>> {
         self.backend.list_storage_buckets_by_owner(owner_id)
     }
 
@@ -400,7 +692,10 @@ impl Database {
         self.backend.save_github_app(app)
     }
 
-    pub fn get_github_app(&self, owner_id: Uuid) -> Result<Option<GithubAppConfig>> {
+    pub fn get_github_app(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Option<GithubAppConfig>> {
         self.backend.get_github_app(owner_id)
     }
 
@@ -424,13 +719,22 @@ impl SledDatabase {
         Ok(self.db.open_tree(name)?)
     }
 
-    fn insert<T: Serialize>(&self, tree: &sled::Tree, key: &str, value: &T) -> Result<()> {
+    fn insert<T: Serialize>(
+        &self,
+        tree: &sled::Tree,
+        key: &str,
+        value: &T,
+    ) -> Result<()> {
         let bytes = serde_json::to_vec(value)?;
         tree.insert(key, bytes)?;
         Ok(())
     }
 
-    fn get<T: DeserializeOwned>(&self, tree: &sled::Tree, key: &str) -> Result<Option<T>> {
+    fn get<T: DeserializeOwned>(
+        &self,
+        tree: &sled::Tree,
+        key: &str,
+    ) -> Result<Option<T>> {
         match tree.get(key)? {
             Some(bytes) => {
                 let value: T = serde_json::from_slice(&bytes)?;
@@ -545,7 +849,11 @@ impl DatabaseBackend for SledDatabase {
         self.delete(&tree, &id.to_string())
     }
 
-    fn get_app_by_github_url(&self, github_url: &str, branch: &str) -> Result<Option<App>> {
+    fn get_app_by_github_url(
+        &self,
+        github_url: &str,
+        branch: &str,
+    ) -> Result<Option<App>> {
         let tree = self.get_tree(APPS_TABLE)?;
         let normalized_url = github_url.trim_end_matches(".git");
         for result in tree.iter() {
@@ -569,7 +877,10 @@ impl DatabaseBackend for SledDatabase {
         self.get(&tree, &id.to_string())
     }
 
-    fn list_services_by_app(&self, app_id: Uuid) -> Result<Vec<ContainerService>> {
+    fn list_services_by_app(
+        &self,
+        app_id: Uuid,
+    ) -> Result<Vec<ContainerService>> {
         let tree = self.get_tree(SERVICES_TABLE)?;
         let mut services = Vec::new();
         for result in tree.iter() {
@@ -588,17 +899,26 @@ impl DatabaseBackend for SledDatabase {
         self.delete(&tree, &id.to_string())
     }
 
-    fn save_service_deployment(&self, deployment: &ServiceDeployment) -> Result<()> {
+    fn save_service_deployment(
+        &self,
+        deployment: &ServiceDeployment,
+    ) -> Result<()> {
         let tree = self.get_tree(SERVICE_DEPLOYMENTS_TABLE)?;
         self.insert(&tree, &deployment.id.to_string(), deployment)
     }
 
-    fn get_service_deployment(&self, id: Uuid) -> Result<Option<ServiceDeployment>> {
+    fn get_service_deployment(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<ServiceDeployment>> {
         let tree = self.get_tree(SERVICE_DEPLOYMENTS_TABLE)?;
         self.get(&tree, &id.to_string())
     }
 
-    fn list_service_deployments(&self, deployment_id: Uuid) -> Result<Vec<ServiceDeployment>> {
+    fn list_service_deployments(
+        &self,
+        deployment_id: Uuid,
+    ) -> Result<Vec<ServiceDeployment>> {
         let tree = self.get_tree(SERVICE_DEPLOYMENTS_TABLE)?;
         let mut deployments = Vec::new();
         for result in tree.iter() {
@@ -629,7 +949,8 @@ impl DatabaseBackend for SledDatabase {
                 deployments.push(deployment);
             }
         }
-        deployments.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+        deployments
+            .sort_by(|left, right| right.created_at.cmp(&left.created_at));
         Ok(deployments)
     }
 
@@ -653,7 +974,8 @@ impl DatabaseBackend for SledDatabase {
                 deployments.push(deployment);
             }
         }
-        deployments.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+        deployments
+            .sort_by(|left, right| right.created_at.cmp(&left.created_at));
         Ok(deployments)
     }
 
@@ -662,14 +984,19 @@ impl DatabaseBackend for SledDatabase {
         self.delete(&tree, &id.to_string())
     }
 
-    fn append_deployment_log(&self, deployment_id: Uuid, log_line: &str) -> Result<()> {
+    fn append_deployment_log(
+        &self,
+        deployment_id: Uuid,
+        log_line: &str,
+    ) -> Result<()> {
         let tree = self.get_tree("deployment_logs_v2")?;
         let counters = self.get_tree("deployment_log_counters")?;
         let counter_key = deployment_id.as_bytes();
 
         let next_counter = counters
             .update_and_fetch(counter_key, |prev| {
-                let next = prev.map(parse_log_counter).unwrap_or(0).saturating_add(1);
+                let next =
+                    prev.map(parse_log_counter).unwrap_or(0).saturating_add(1);
                 Some(next.to_be_bytes().to_vec())
             })?
             .map(|bytes| parse_log_counter(bytes.as_ref()))
@@ -758,12 +1085,18 @@ impl DatabaseBackend for SledDatabase {
         self.insert(&tree, &db.id.to_string(), db)
     }
 
-    fn get_managed_database(&self, id: Uuid) -> Result<Option<ManagedDatabase>> {
+    fn get_managed_database(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<ManagedDatabase>> {
         let tree = self.get_tree(MANAGED_DATABASES_TABLE)?;
         self.get(&tree, &id.to_string())
     }
 
-    fn list_managed_databases_by_owner(&self, owner_id: Uuid) -> Result<Vec<ManagedDatabase>> {
+    fn list_managed_databases_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ManagedDatabase>> {
         let tree = self.get_tree(MANAGED_DATABASES_TABLE)?;
         let mut databases = Vec::new();
         for result in tree.iter() {
@@ -792,7 +1125,10 @@ impl DatabaseBackend for SledDatabase {
         self.get(&tree, &id.to_string())
     }
 
-    fn list_managed_queues_by_owner(&self, owner_id: Uuid) -> Result<Vec<ManagedQueue>> {
+    fn list_managed_queues_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ManagedQueue>> {
         let tree = self.get_tree(MANAGED_QUEUES_TABLE)?;
         let mut queues = Vec::new();
         for result in tree.iter() {
@@ -821,7 +1157,10 @@ impl DatabaseBackend for SledDatabase {
         self.get(&tree, &id.to_string())
     }
 
-    fn list_storage_buckets_by_owner(&self, owner_id: Uuid) -> Result<Vec<StorageBucket>> {
+    fn list_storage_buckets_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<StorageBucket>> {
         let tree = self.get_tree(STORAGE_BUCKETS_TABLE)?;
         let mut buckets = Vec::new();
         for result in tree.iter() {
@@ -845,7 +1184,10 @@ impl DatabaseBackend for SledDatabase {
         self.insert(&tree, &app.owner_id.to_string(), app)
     }
 
-    fn get_github_app(&self, owner_id: Uuid) -> Result<Option<GithubAppConfig>> {
+    fn get_github_app(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Option<GithubAppConfig>> {
         let tree = self.get_tree(GITHUB_APPS_TABLE)?;
         self.get(&tree, &owner_id.to_string())
     }
@@ -929,7 +1271,12 @@ impl LegacySqliteDatabase {
         })
     }
 
-    fn put_json<T: Serialize>(&self, table: &str, key: &str, value: &T) -> Result<()> {
+    fn put_json<T: Serialize>(
+        &self,
+        table: &str,
+        key: &str,
+        value: &T,
+    ) -> Result<()> {
         let value = serde_json::to_string(value)?;
         self.conn.lock().execute(
             &format!(
@@ -941,7 +1288,11 @@ impl LegacySqliteDatabase {
         Ok(())
     }
 
-    fn get_json<T: DeserializeOwned>(&self, table: &str, key: &str) -> Result<Option<T>> {
+    fn get_json<T: DeserializeOwned>(
+        &self,
+        table: &str,
+        key: &str,
+    ) -> Result<Option<T>> {
         let value: Option<String> = self
             .conn
             .lock()
@@ -959,16 +1310,17 @@ impl LegacySqliteDatabase {
     }
 
     fn delete_key(&self, table: &str, key: &str) -> Result<bool> {
-        let rows = self
-            .conn
-            .lock()
-            .execute(&format!("delete from {table} where key = ?1"), params![key])?;
+        let rows = self.conn.lock().execute(
+            &format!("delete from {table} where key = ?1"),
+            params![key],
+        )?;
         Ok(rows > 0)
     }
 
     fn list_json<T: DeserializeOwned>(&self, table: &str) -> Result<Vec<T>> {
         let conn = self.conn.lock();
-        let mut statement = conn.prepare(&format!("select value from {table}"))?;
+        let mut statement =
+            conn.prepare(&format!("select value from {table}"))?;
         let mut rows = statement.query([])?;
         let mut items = Vec::new();
 
@@ -1056,7 +1408,11 @@ impl DatabaseBackend for LegacySqliteDatabase {
         self.delete_key(APPS_TABLE, &id.to_string())
     }
 
-    fn get_app_by_github_url(&self, github_url: &str, branch: &str) -> Result<Option<App>> {
+    fn get_app_by_github_url(
+        &self,
+        github_url: &str,
+        branch: &str,
+    ) -> Result<Option<App>> {
         let normalized_url = github_url.trim_end_matches(".git");
         for app in self.list_json::<App>(APPS_TABLE)? {
             let app_url = app.github_url.trim_end_matches(".git");
@@ -1075,7 +1431,10 @@ impl DatabaseBackend for LegacySqliteDatabase {
         self.get_json(SERVICES_TABLE, &id.to_string())
     }
 
-    fn list_services_by_app(&self, app_id: Uuid) -> Result<Vec<ContainerService>> {
+    fn list_services_by_app(
+        &self,
+        app_id: Uuid,
+    ) -> Result<Vec<ContainerService>> {
         let mut services = Vec::new();
         for service in self.list_json::<ContainerService>(SERVICES_TABLE)? {
             if service.app_id == app_id {
@@ -1090,7 +1449,10 @@ impl DatabaseBackend for LegacySqliteDatabase {
         self.delete_key(SERVICES_TABLE, &id.to_string())
     }
 
-    fn save_service_deployment(&self, deployment: &ServiceDeployment) -> Result<()> {
+    fn save_service_deployment(
+        &self,
+        deployment: &ServiceDeployment,
+    ) -> Result<()> {
         self.put_json(
             SERVICE_DEPLOYMENTS_TABLE,
             &deployment.id.to_string(),
@@ -1098,13 +1460,21 @@ impl DatabaseBackend for LegacySqliteDatabase {
         )
     }
 
-    fn get_service_deployment(&self, id: Uuid) -> Result<Option<ServiceDeployment>> {
+    fn get_service_deployment(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<ServiceDeployment>> {
         self.get_json(SERVICE_DEPLOYMENTS_TABLE, &id.to_string())
     }
 
-    fn list_service_deployments(&self, deployment_id: Uuid) -> Result<Vec<ServiceDeployment>> {
+    fn list_service_deployments(
+        &self,
+        deployment_id: Uuid,
+    ) -> Result<Vec<ServiceDeployment>> {
         let mut deployments = Vec::new();
-        for deployment in self.list_json::<ServiceDeployment>(SERVICE_DEPLOYMENTS_TABLE)? {
+        for deployment in
+            self.list_json::<ServiceDeployment>(SERVICE_DEPLOYMENTS_TABLE)?
+        {
             if deployment.deployment_id == deployment_id {
                 deployments.push(deployment);
             }
@@ -1122,12 +1492,15 @@ impl DatabaseBackend for LegacySqliteDatabase {
         service_id: Uuid,
     ) -> Result<Vec<ServiceDeployment>> {
         let mut deployments = Vec::new();
-        for deployment in self.list_json::<ServiceDeployment>(SERVICE_DEPLOYMENTS_TABLE)? {
+        for deployment in
+            self.list_json::<ServiceDeployment>(SERVICE_DEPLOYMENTS_TABLE)?
+        {
             if deployment.service_id == service_id {
                 deployments.push(deployment);
             }
         }
-        deployments.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+        deployments
+            .sort_by(|left, right| right.created_at.cmp(&left.created_at));
         Ok(deployments)
     }
 
@@ -1146,7 +1519,8 @@ impl DatabaseBackend for LegacySqliteDatabase {
                 deployments.push(deployment);
             }
         }
-        deployments.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+        deployments
+            .sort_by(|left, right| right.created_at.cmp(&left.created_at));
         Ok(deployments)
     }
 
@@ -1154,7 +1528,11 @@ impl DatabaseBackend for LegacySqliteDatabase {
         self.delete_key(DEPLOYMENTS_TABLE, &id.to_string())
     }
 
-    fn append_deployment_log(&self, deployment_id: Uuid, log_line: &str) -> Result<()> {
+    fn append_deployment_log(
+        &self,
+        deployment_id: Uuid,
+        log_line: &str,
+    ) -> Result<()> {
         let deployment_key = deployment_id.to_string();
         let mut conn = self.conn.lock();
         let tx = conn.transaction()?;
@@ -1224,13 +1602,21 @@ impl DatabaseBackend for LegacySqliteDatabase {
         self.put_json(MANAGED_DATABASES_TABLE, &db.id.to_string(), db)
     }
 
-    fn get_managed_database(&self, id: Uuid) -> Result<Option<ManagedDatabase>> {
+    fn get_managed_database(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<ManagedDatabase>> {
         self.get_json(MANAGED_DATABASES_TABLE, &id.to_string())
     }
 
-    fn list_managed_databases_by_owner(&self, owner_id: Uuid) -> Result<Vec<ManagedDatabase>> {
+    fn list_managed_databases_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ManagedDatabase>> {
         let mut databases = Vec::new();
-        for database in self.list_json::<ManagedDatabase>(MANAGED_DATABASES_TABLE)? {
+        for database in
+            self.list_json::<ManagedDatabase>(MANAGED_DATABASES_TABLE)?
+        {
             if database.owner_id == owner_id {
                 databases.push(database);
             }
@@ -1251,7 +1637,10 @@ impl DatabaseBackend for LegacySqliteDatabase {
         self.get_json(MANAGED_QUEUES_TABLE, &id.to_string())
     }
 
-    fn list_managed_queues_by_owner(&self, owner_id: Uuid) -> Result<Vec<ManagedQueue>> {
+    fn list_managed_queues_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ManagedQueue>> {
         let mut queues = Vec::new();
         for queue in self.list_json::<ManagedQueue>(MANAGED_QUEUES_TABLE)? {
             if queue.owner_id == owner_id {
@@ -1274,7 +1663,10 @@ impl DatabaseBackend for LegacySqliteDatabase {
         self.get_json(STORAGE_BUCKETS_TABLE, &id.to_string())
     }
 
-    fn list_storage_buckets_by_owner(&self, owner_id: Uuid) -> Result<Vec<StorageBucket>> {
+    fn list_storage_buckets_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<StorageBucket>> {
         let mut buckets = Vec::new();
         for bucket in self.list_json::<StorageBucket>(STORAGE_BUCKETS_TABLE)? {
             if bucket.owner_id == owner_id {
@@ -1293,7 +1685,10 @@ impl DatabaseBackend for LegacySqliteDatabase {
         self.put_json(GITHUB_APPS_TABLE, &app.owner_id.to_string(), app)
     }
 
-    fn get_github_app(&self, owner_id: Uuid) -> Result<Option<GithubAppConfig>> {
+    fn get_github_app(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Option<GithubAppConfig>> {
         self.get_json(GITHUB_APPS_TABLE, &owner_id.to_string())
     }
 
@@ -1322,8 +1717,11 @@ mod tests {
     use crate::models::DeploymentStatus;
 
     fn temp_config(backend: DatabaseBackendKind, name: &str) -> DatabaseConfig {
-        let root =
-            std::env::temp_dir().join(format!("containr-db-test-{}-{}", name, Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!(
+            "containr-db-test-{}-{}",
+            name,
+            Uuid::new_v4()
+        ));
         let path = match backend {
             DatabaseBackendKind::Sled => root.join("state"),
             DatabaseBackendKind::Sqlite => root.join("state.sqlite3"),
@@ -1373,7 +1771,13 @@ mod tests {
             },
         ];
 
-        let mut web = ContainerService::new(app.id, "web".to_string(), "".to_string(), 8080);
+        let mut web = ContainerService::new(
+            app.id,
+            "web".to_string(),
+            "".to_string(),
+            8080,
+        );
+        web.service_type = ServiceType::WebService;
         web.expose_http = true;
         web.domains = vec![
             "web.demo.example.com".to_string(),
@@ -1405,7 +1809,12 @@ mod tests {
             retries: 2,
         });
 
-        let mut worker = ContainerService::new(app.id, "worker".to_string(), "".to_string(), 9000);
+        let mut worker = ContainerService::new(
+            app.id,
+            "worker".to_string(),
+            "".to_string(),
+            9000,
+        );
         worker.depends_on = vec!["web".to_string()];
         worker.restart_policy = crate::models::RestartPolicy::OnFailure;
 
@@ -1413,8 +1822,9 @@ mod tests {
         db.save_app(&app).unwrap();
 
         let loaded = db.get_app(app.id).unwrap().unwrap();
+        let expected = app.normalized_for_service_model();
         assert_eq!(loaded.name, "demo");
-        assert_eq!(loaded.custom_domains(), app.custom_domains());
+        assert_eq!(loaded.custom_domains(), expected.custom_domains());
         assert_eq!(loaded.env_vars.len(), 2);
         assert_eq!(loaded.services.len(), 2);
         let loaded_web = loaded
@@ -1427,7 +1837,8 @@ mod tests {
             loaded_web.domains,
             vec![
                 "web.demo.example.com".to_string(),
-                "demo.example.com".to_string()
+                "demo.example.com".to_string(),
+                "www.demo.example.com".to_string(),
             ]
         );
         assert_eq!(loaded_web.replicas, 2);
@@ -1472,14 +1883,18 @@ mod tests {
         db.append_deployment_log(deployment.id, "second line")
             .unwrap();
 
-        let mut service_deployment =
-            crate::models::ServiceDeployment::new(loaded_web.id, deployment.id, 0);
+        let mut service_deployment = crate::models::ServiceDeployment::new(
+            loaded_web.id,
+            deployment.id,
+            0,
+        );
         service_deployment.status = crate::models::DeploymentStatus::Running;
         service_deployment.health = crate::models::ServiceHealth::Healthy;
         service_deployment.logs = vec!["service ready".to_string()];
         db.save_service_deployment(&service_deployment).unwrap();
 
-        let service_deployments = db.list_service_deployments(deployment.id).unwrap();
+        let service_deployments =
+            db.list_service_deployments(deployment.id).unwrap();
         assert_eq!(service_deployments.len(), 1);
         assert_eq!(
             service_deployments[0].logs,
@@ -1492,8 +1907,11 @@ mod tests {
             vec!["first line".to_string(), "second line".to_string()]
         );
 
-        let mut managed_db =
-            ManagedDatabase::new(owner_id, "primary".to_string(), DatabaseType::Postgresql);
+        let mut managed_db = ManagedDatabase::new(
+            owner_id,
+            "primary".to_string(),
+            DatabaseType::Postgresql,
+        );
         managed_db.external_port = Some(32101);
         managed_db.pitr_enabled = true;
         managed_db.pitr_last_base_backup_at = Some(Utc::now());
@@ -1502,7 +1920,8 @@ mod tests {
         managed_db.proxy_external_port = Some(32103);
         managed_db.status = ServiceStatus::Running;
         db.save_managed_database(&managed_db).unwrap();
-        let loaded_managed_db = db.get_managed_database(managed_db.id).unwrap().unwrap();
+        let loaded_managed_db =
+            db.get_managed_database(managed_db.id).unwrap().unwrap();
         assert_eq!(loaded_managed_db.external_port, Some(32101));
         assert!(loaded_managed_db.pitr_enabled);
         assert_eq!(
@@ -1512,11 +1931,13 @@ mod tests {
         assert!(loaded_managed_db.proxy_enabled);
         assert_eq!(loaded_managed_db.proxy_external_port, Some(32103));
 
-        let mut managed_queue = ManagedQueue::new(owner_id, "events".to_string(), QueueType::Nats);
+        let mut managed_queue =
+            ManagedQueue::new(owner_id, "events".to_string(), QueueType::Nats);
         managed_queue.external_port = Some(32102);
         managed_queue.status = ServiceStatus::Stopped;
         db.save_managed_queue(&managed_queue).unwrap();
-        let loaded_managed_queue = db.get_managed_queue(managed_queue.id).unwrap().unwrap();
+        let loaded_managed_queue =
+            db.get_managed_queue(managed_queue.id).unwrap().unwrap();
         assert_eq!(loaded_managed_queue.external_port, Some(32102));
 
         let bucket = StorageBucket::new(
@@ -1529,13 +1950,15 @@ mod tests {
         assert!(loaded_bucket.access_key.is_empty());
         assert!(loaded_bucket.secret_key.is_empty());
 
-        let mut github_app = crate::models::GithubAppConfig::builder(12345, "demo-app", owner_id)
-            .client_id("client-id")
-            .client_secret("client-secret")
-            .private_key("private-key")
-            .webhook_secret("webhook-secret")
-            .html_url("https://github.com/apps/demo-app")
-            .build();
+        let mut github_app = crate::models::GithubAppConfig::builder(
+            12345, "demo-app", owner_id,
+        )
+        .client_id("client-id")
+        .client_secret("client-secret")
+        .private_key("private-key")
+        .webhook_secret("webhook-secret")
+        .html_url("https://github.com/apps/demo-app")
+        .build();
         let mut installation = crate::models::GithubInstallation::new(
             67890,
             "demo-org".to_string(),
@@ -1566,8 +1989,11 @@ mod tests {
 
     #[test]
     fn legacy_apps_are_promoted_to_default_service_model() {
-        let db =
-            Database::open(&temp_config(DatabaseBackendKind::Sqlite, "legacy-service")).unwrap();
+        let db = Database::open(&temp_config(
+            DatabaseBackendKind::Sqlite,
+            "legacy-service",
+        ))
+        .unwrap();
 
         let owner_id = Uuid::new_v4();
         let mut app = App::new(
@@ -1590,8 +2016,12 @@ mod tests {
 
     #[test]
     fn sqlite_backend_rejects_legacy_json_tables() {
-        let config = temp_config(DatabaseBackendKind::Sqlite, "legacy-migration");
-        std::fs::create_dir_all(std::path::Path::new(&config.path).parent().unwrap()).unwrap();
+        let config =
+            temp_config(DatabaseBackendKind::Sqlite, "legacy-migration");
+        std::fs::create_dir_all(
+            std::path::Path::new(&config.path).parent().unwrap(),
+        )
+        .unwrap();
         let conn = rusqlite::Connection::open(&config.path).unwrap();
         conn.execute_batch(
             r#"
@@ -1605,11 +2035,13 @@ mod tests {
         drop(conn);
 
         match Database::open(&config) {
-            Ok(_) => panic!("expected sqlite open to reject legacy json tables"),
+            Ok(_) => {
+                panic!("expected sqlite open to reject legacy json tables")
+            }
             Err(error) => {
-                assert!(error
-                    .to_string()
-                    .contains("unsupported legacy sqlite json tables detected: apps"));
+                assert!(error.to_string().contains(
+                    "unsupported legacy sqlite json tables detected: apps"
+                ));
             }
         }
     }

@@ -125,7 +125,8 @@ impl RouteManager {
     }
 
     pub fn select_upstream(&self, domain: &str) -> Option<SelectedUpstream> {
-        let route = self.routes.get(domain).map(|route| route.value().clone())?;
+        let route =
+            self.routes.get(domain).map(|route| route.value().clone())?;
 
         if route.upstreams.is_empty() {
             return None;
@@ -138,8 +139,11 @@ impl RouteManager {
             }
             LoadBalanceAlgorithm::LeastConnections => {
                 let mut selected = 0usize;
-                let mut lowest = route.upstreams[0].inflight.load(Ordering::Relaxed);
-                for (idx, upstream) in route.upstreams.iter().enumerate().skip(1) {
+                let mut lowest =
+                    route.upstreams[0].inflight.load(Ordering::Relaxed);
+                for (idx, upstream) in
+                    route.upstreams.iter().enumerate().skip(1)
+                {
                     let inflight = upstream.inflight.load(Ordering::Relaxed);
                     if inflight < lowest {
                         lowest = inflight;
@@ -189,10 +193,10 @@ impl SelectedUpstream {
 
     pub fn complete(&self) {
         let upstream = &self.route.upstreams[self.index];
-        let _ = upstream
-            .inflight
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-                value.checked_sub(1)
-            });
+        let _ = upstream.inflight.fetch_update(
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |value| value.checked_sub(1),
+        );
     }
 }

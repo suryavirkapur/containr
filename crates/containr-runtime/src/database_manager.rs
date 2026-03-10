@@ -10,20 +10,20 @@ use std::sync::Arc;
 
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use bollard::models::{
-    ContainerCreateBody, EndpointSettings, HealthConfig, HealthStatusEnum, HostConfig, Mount,
-    MountTypeEnum, NetworkCreateRequest, NetworkingConfig, PortBinding, RestartPolicy,
-    RestartPolicyNameEnum,
+    ContainerCreateBody, EndpointSettings, HealthConfig, HealthStatusEnum,
+    HostConfig, Mount, MountTypeEnum, NetworkCreateRequest, NetworkingConfig,
+    PortBinding, RestartPolicy, RestartPolicyNameEnum,
 };
 use bollard::query_parameters::{
-    CreateContainerOptions, InspectContainerOptions, InspectNetworkOptions, LogsOptions,
-    RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
+    CreateContainerOptions, InspectContainerOptions, InspectNetworkOptions,
+    LogsOptions, RemoveContainerOptions, StartContainerOptions,
+    StopContainerOptions,
 };
 use bollard::Docker;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use tracing::{error, info, warn};
 
-use crate::docker::INTERNAL_NETWORK_NAME;
 use crate::error::{ClientError, Result};
 use crate::ImageManager;
 use containr_common::managed_services::{
@@ -37,7 +37,8 @@ const PGDOG_CONFIG_PATH: &str = "/etc/pgdog/pgdog.toml";
 const PGDOG_USERS_PATH: &str = "/etc/pgdog/users.toml";
 const POSTGRES_PITR_MOUNT_PATH: &str = "/var/lib/postgresql/containr-pitr";
 const POSTGRES_PITR_WAL_PATH: &str = "/var/lib/postgresql/containr-pitr/wal";
-const POSTGRES_PITR_BACKUPS_PATH: &str = "/var/lib/postgresql/containr-pitr/basebackups";
+const POSTGRES_PITR_BACKUPS_PATH: &str =
+    "/var/lib/postgresql/containr-pitr/basebackups";
 const PGDOG_POOL_SIZE: usize = 20;
 const PGDOG_MIN_POOL_SIZE: usize = 1;
 const DATABASE_PROXY_MEMORY_LIMIT_BYTES: i64 = 256 * 1024 * 1024;
@@ -70,7 +71,10 @@ impl DatabaseManager {
 
     /// starts a managed database container
     /// creates the data directory and runs the container with bind mount
-    pub async fn start_database(&self, db: &mut ManagedDatabase) -> Result<String> {
+    pub async fn start_database(
+        &self,
+        db: &mut ManagedDatabase,
+    ) -> Result<String> {
         if db.proxy_enabled && db.db_type != DatabaseType::Postgresql {
             return Err(ClientError::Operation(
                 "pgdog proxy is only supported for postgresql".to_string(),
@@ -99,7 +103,8 @@ impl DatabaseManager {
         Self::ensure_host_dir(Path::new(&db.host_data_path))?;
         db.internal_host = db.normalized_internal_host();
 
-        self.ensure_network(INTERNAL_NETWORK_NAME).await?;
+        let network_name = db.network_name();
+        self.ensure_network(&network_name).await?;
 
         let env: Vec<String> = db
             .db_type
@@ -115,7 +120,7 @@ impl DatabaseManager {
             ..Default::default()
         }];
 
-        let mut cmd = None;
+        let mut cmd = Self::build_start_command(db);
         if matches!(db.db_type, DatabaseType::Postgresql) && db.pitr_enabled {
             self.prepare_postgres_pitr_dirs(db)?;
             mounts.push(Mount {
@@ -128,7 +133,10 @@ impl DatabaseManager {
         }
 
         let mut labels = HashMap::new();
-        labels.insert("containr.type".to_string(), "managed-database".to_string());
+        labels.insert(
+            "containr.type".to_string(),
+            "managed-database".to_string(),
+        );
         labels.insert("containr.db.id".to_string(), db.id.to_string());
         labels.insert(
             "containr.db.type".to_string(),
@@ -137,20 +145,23 @@ impl DatabaseManager {
 
         let host_config = HostConfig {
             mounts: Some(mounts),
-            memory: Some(Self::u64_to_i64(db.memory_limit, "database memory_limit")?),
+            memory: Some(Self::u64_to_i64(
+                db.memory_limit,
+                "database memory_limit",
+            )?),
             nano_cpus: Some((db.cpu_limit * 1_000_000_000.0) as i64),
             restart_policy: Some(RestartPolicy {
                 name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
                 maximum_retry_count: None,
             }),
-            network_mode: Some(INTERNAL_NETWORK_NAME.to_string()),
+            network_mode: Some(network_name.clone()),
             port_bindings: Self::build_port_bindings(db.port, db.external_port),
             ..Default::default()
         };
 
         let networking_config = Some(NetworkingConfig {
             endpoints_config: Some(HashMap::from([(
-                INTERNAL_NETWORK_NAME.to_string(),
+                network_name.clone(),
                 EndpointSettings {
                     aliases: Some(db.network_aliases()),
                     ..Default::default()
@@ -194,14 +205,18 @@ impl DatabaseManager {
             .docker
             .create_container(Some(options), container_config)
             .await
-            .map_err(|e| ClientError::Operation(format!("docker create failed: {}", e)))?;
+            .map_err(|e| {
+                ClientError::Operation(format!("docker create failed: {}", e))
+            })?;
 
         let container_id = response.id.clone();
 
         self.docker
             .start_container(&container_id, None::<StartContainerOptions>)
             .await
-            .map_err(|e| ClientError::Operation(format!("docker start failed: {}", e)))?;
+            .map_err(|e| {
+                ClientError::Operation(format!("docker start failed: {}", e))
+            })?;
 
         if !self.wait_for_ready(&container_id, 90).await? {
             let _ = self.remove_container_if_exists(&container_name).await;
@@ -254,6 +269,11 @@ impl DatabaseManager {
         db.container_id = None;
         db.status = ServiceStatus::Stopped;
         db.updated_at = Utc::now();
+
+        if db.group_id.is_none() {
+            self.remove_network_if_exists(&db.network_name()).await?;
+        }
+
         Ok(())
     }
 
@@ -265,7 +285,8 @@ impl DatabaseManager {
     ) -> Result<String> {
         let container_name = Self::database_container_name(db);
         let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-        let backup_file = output_path.join(format!("{}_{}.sql", db.name, timestamp));
+        let backup_file =
+            output_path.join(format!("{}_{}.sql", db.name, timestamp));
 
         info!("exporting database {} to {:?}", db.name, backup_file);
 
@@ -296,9 +317,11 @@ impl DatabaseManager {
             }
         };
 
-        let output_data = self.exec_command_output(&container_name, cmd, None).await?;
-        fs::write(&backup_file, &output_data)
-            .map_err(|e| ClientError::Operation(format!("write backup failed: {}", e)))?;
+        let output_data =
+            self.exec_command_output(&container_name, cmd, None).await?;
+        fs::write(&backup_file, &output_data).map_err(|e| {
+            ClientError::Operation(format!("write backup failed: {}", e))
+        })?;
 
         Ok(backup_file.to_string_lossy().to_string())
     }
@@ -321,12 +344,18 @@ impl DatabaseManager {
 
         let label = requested_label
             .map(|value| Self::sanitize_name(value, "base"))
-            .unwrap_or_else(|| format!("base-{}", Utc::now().format("%Y%m%d%H%M%S")));
+            .unwrap_or_else(|| {
+                format!("base-{}", Utc::now().format("%Y%m%d%H%M%S"))
+            });
         let backup_dir = db.pitr_backups_path().join(&label);
 
         if backup_dir.exists() {
-            fs::remove_dir_all(&backup_dir)
-                .map_err(|e| ClientError::Operation(format!("remove backup dir failed: {}", e)))?;
+            fs::remove_dir_all(&backup_dir).map_err(|e| {
+                ClientError::Operation(format!(
+                    "remove backup dir failed: {}",
+                    e
+                ))
+            })?;
         }
 
         let cmd = vec![
@@ -352,6 +381,8 @@ impl DatabaseManager {
             Some(vec![format!("PGPASSWORD={}", db.credentials.password)]),
         )
         .await?;
+        self.normalize_postgres_backup_permissions(db, &label)
+            .await?;
 
         db.pitr_last_base_backup_at = Some(Utc::now());
         db.pitr_last_base_backup_label = Some(label.clone());
@@ -370,21 +401,28 @@ impl DatabaseManager {
 
         if !self.is_running(db).await {
             return Err(ClientError::Operation(
-                "database must be running to create a restore point".to_string(),
+                "database must be running to create a restore point"
+                    .to_string(),
             ));
         }
 
         let restore_point = requested_name
             .map(|value| Self::sanitize_name(value, "restore"))
-            .unwrap_or_else(|| format!("restore-{}", Utc::now().format("%Y%m%d%H%M%S")));
+            .unwrap_or_else(|| {
+                format!("restore-{}", Utc::now().format("%Y%m%d%H%M%S"))
+            });
 
         let lsn = self
             .exec_postgres_query(
                 db,
-                &format!("select pg_create_restore_point('{}');", restore_point),
+                &format!(
+                    "select pg_create_restore_point('{}');",
+                    restore_point
+                ),
             )
             .await?;
         self.switch_postgres_wal(db).await?;
+        self.sync_postgres_wal_archive(db).await?;
 
         Ok((restore_point, lsn))
     }
@@ -404,10 +442,10 @@ impl DatabaseManager {
             ));
         }
 
-        let backup_label = db
-            .pitr_last_base_backup_label
-            .clone()
-            .ok_or_else(|| ClientError::Operation("no base backup available".to_string()))?;
+        let backup_label =
+            db.pitr_last_base_backup_label.clone().ok_or_else(|| {
+                ClientError::Operation("no base backup available".to_string())
+            })?;
         let backup_dir = db.pitr_backups_path().join(&backup_label);
         if !backup_dir.exists() {
             return Err(ClientError::Operation(
@@ -417,6 +455,7 @@ impl DatabaseManager {
 
         if self.is_running(db).await {
             self.switch_postgres_wal(db).await?;
+            self.sync_postgres_wal_archive(db).await?;
         }
 
         self.stop_database(db).await?;
@@ -428,7 +467,10 @@ impl DatabaseManager {
                 Utc::now().format("%Y%m%d_%H%M%S")
             ));
             fs::rename(data_dir, &archived_data_dir).map_err(|e| {
-                ClientError::Operation(format!("archive current data directory failed: {}", e))
+                ClientError::Operation(format!(
+                    "archive current data directory failed: {}",
+                    e
+                ))
             })?;
         }
 
@@ -440,13 +482,17 @@ impl DatabaseManager {
     }
 
     /// gets logs from a database container
-    pub async fn get_logs(&self, db: &ManagedDatabase, _tail: usize) -> Result<String> {
+    pub async fn get_logs(
+        &self,
+        db: &ManagedDatabase,
+        tail: usize,
+    ) -> Result<String> {
         if let Some(ref container_id) = db.container_id {
             let options = LogsOptions {
-                follow: true,
+                follow: false,
                 stdout: true,
                 stderr: true,
-                tail: "100".to_string(),
+                tail: tail.to_string(),
                 ..Default::default()
             };
             let mut stream = self.docker.logs(container_id, Some(options));
@@ -473,10 +519,15 @@ impl DatabaseManager {
         if let Some(ref container_id) = db.container_id {
             match self
                 .docker
-                .inspect_container(container_id, None::<InspectContainerOptions>)
+                .inspect_container(
+                    container_id,
+                    None::<InspectContainerOptions>,
+                )
                 .await
             {
-                Ok(inspect) => inspect.state.and_then(|s| s.running).unwrap_or(false),
+                Ok(inspect) => {
+                    inspect.state.and_then(|s| s.running).unwrap_or(false)
+                }
                 Err(_) => false,
             }
         } else {
@@ -494,20 +545,30 @@ impl DatabaseManager {
             ));
         }
 
-        let proxy_host = db
-            .proxy_internal_host()
-            .ok_or_else(|| ClientError::Operation("proxy host is not available".to_string()))?;
+        let proxy_host = db.proxy_internal_host().ok_or_else(|| {
+            ClientError::Operation("proxy host is not available".to_string())
+        })?;
 
+        let network_name = db.network_name();
         self.ensure_image(PGDOG_IMAGE).await?;
-        self.ensure_network(INTERNAL_NETWORK_NAME).await?;
+        self.ensure_network(&network_name).await?;
 
         let config_dir = db.proxy_config_path();
         Self::ensure_host_dir(&config_dir)?;
         fs::write(config_dir.join("pgdog.toml"), Self::render_pgdog_config(db))
-            .map_err(|e| ClientError::Operation(format!("failed to write pgdog config: {}", e)))?;
-        fs::write(config_dir.join("users.toml"), Self::render_pgdog_users(db)).map_err(|e| {
-            ClientError::Operation(format!("failed to write pgdog users config: {}", e))
-        })?;
+            .map_err(|e| {
+                ClientError::Operation(format!(
+                    "failed to write pgdog config: {}",
+                    e
+                ))
+            })?;
+        fs::write(config_dir.join("users.toml"), Self::render_pgdog_users(db))
+            .map_err(|e| {
+                ClientError::Operation(format!(
+                    "failed to write pgdog users config: {}",
+                    e
+                ))
+            })?;
 
         let mut labels = HashMap::new();
         labels.insert(
@@ -530,14 +591,17 @@ impl DatabaseManager {
                 name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
                 maximum_retry_count: None,
             }),
-            network_mode: Some(INTERNAL_NETWORK_NAME.to_string()),
-            port_bindings: Self::build_port_bindings(POSTGRES_PROXY_PORT, db.proxy_external_port),
+            network_mode: Some(network_name.clone()),
+            port_bindings: Self::build_port_bindings(
+                POSTGRES_PROXY_PORT,
+                db.proxy_external_port,
+            ),
             ..Default::default()
         };
 
         let networking_config = Some(NetworkingConfig {
             endpoints_config: Some(HashMap::from([(
-                INTERNAL_NETWORK_NAME.to_string(),
+                network_name,
                 EndpointSettings {
                     aliases: Some(vec![proxy_host.clone()]),
                     ..Default::default()
@@ -565,12 +629,16 @@ impl DatabaseManager {
             .docker
             .create_container(Some(options), container_config)
             .await
-            .map_err(|e| ClientError::Operation(format!("pgdog create failed: {}", e)))?;
+            .map_err(|e| {
+                ClientError::Operation(format!("pgdog create failed: {}", e))
+            })?;
 
         self.docker
             .start_container(&response.id, None::<StartContainerOptions>)
             .await
-            .map_err(|e| ClientError::Operation(format!("pgdog start failed: {}", e)))?;
+            .map_err(|e| {
+                ClientError::Operation(format!("pgdog start failed: {}", e))
+            })?;
 
         if !self.wait_for_ready(&response.id, 30).await? {
             let _ = self
@@ -589,15 +657,28 @@ impl DatabaseManager {
             .await
     }
 
-    async fn wait_for_ready(&self, container_id: &str, timeout_secs: u64) -> Result<bool> {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    async fn wait_for_ready(
+        &self,
+        container_id: &str,
+        timeout_secs: u64,
+    ) -> Result<bool> {
+        let deadline = std::time::Instant::now()
+            + std::time::Duration::from_secs(timeout_secs);
 
         while std::time::Instant::now() < deadline {
             let inspect = self
                 .docker
-                .inspect_container(container_id, None::<InspectContainerOptions>)
+                .inspect_container(
+                    container_id,
+                    None::<InspectContainerOptions>,
+                )
                 .await
-                .map_err(|e| ClientError::Operation(format!("docker inspect failed: {}", e)))?;
+                .map_err(|e| {
+                    ClientError::Operation(format!(
+                        "docker inspect failed: {}",
+                        e
+                    ))
+                })?;
 
             let state = inspect.state.unwrap_or_default();
             let running = state.running.unwrap_or(false);
@@ -662,6 +743,25 @@ impl DatabaseManager {
         }
     }
 
+    async fn remove_network_if_exists(&self, name: &str) -> Result<()> {
+        if self
+            .docker
+            .inspect_network(name, None::<InspectNetworkOptions>)
+            .await
+            .is_err()
+        {
+            return Ok(());
+        }
+
+        self.docker.remove_network(name).await.map_err(|e| {
+            ClientError::Operation(format!(
+                "docker network remove failed: {}",
+                e
+            ))
+        })?;
+        Ok(())
+    }
+
     /// returns health check command for database type
     fn get_health_check_cmd(&self, db: &ManagedDatabase) -> String {
         match db.db_type {
@@ -673,20 +773,38 @@ impl DatabaseManager {
                 "mariadb-admin ping -u{} -p{}",
                 db.credentials.username, db.credentials.password
             ),
-            DatabaseType::Valkey => format!("valkey-cli -a {} ping", db.credentials.password),
-            DatabaseType::Qdrant => "curl -f http://localhost:6333/health || exit 1".to_string(),
+            DatabaseType::Valkey => {
+                format!("valkey-cli -a {} ping", db.credentials.password)
+            }
+            DatabaseType::Qdrant => String::new(),
         }
     }
 
-    fn ensure_postgres_pitr_supported(&self, db: &ManagedDatabase) -> Result<()> {
+    fn build_start_command(db: &ManagedDatabase) -> Option<Vec<String>> {
+        match db.db_type {
+            DatabaseType::Valkey => Some(vec![
+                "valkey-server".to_string(),
+                "--requirepass".to_string(),
+                db.credentials.password.clone(),
+            ]),
+            _ => None,
+        }
+    }
+
+    fn ensure_postgres_pitr_supported(
+        &self,
+        db: &ManagedDatabase,
+    ) -> Result<()> {
         if db.db_type != DatabaseType::Postgresql {
             return Err(ClientError::Operation(
-                "point in time recovery is only supported for postgresql".to_string(),
+                "point in time recovery is only supported for postgresql"
+                    .to_string(),
             ));
         }
         if !db.pitr_enabled {
             return Err(ClientError::Operation(
-                "point in time recovery is not enabled for this database".to_string(),
+                "point in time recovery is not enabled for this database"
+                    .to_string(),
             ));
         }
         Ok(())
@@ -752,7 +870,10 @@ impl DatabaseManager {
         ]
     }
 
-    async fn remove_container_if_exists(&self, container_name: &str) -> Result<()> {
+    async fn remove_container_if_exists(
+        &self,
+        container_name: &str,
+    ) -> Result<()> {
         let rm_options = RemoveContainerOptions {
             force: true,
             ..Default::default()
@@ -766,7 +887,8 @@ impl DatabaseManager {
             Ok(_) => Ok(()),
             Err(e) => {
                 let error = e.to_string();
-                if error.contains("No such container") || error.contains("404") {
+                if error.contains("No such container") || error.contains("404")
+                {
                     Ok(())
                 } else {
                     Err(ClientError::Operation(format!(
@@ -796,7 +918,9 @@ impl DatabaseManager {
             .docker
             .create_exec(container_name, exec_options)
             .await
-            .map_err(|e| ClientError::Operation(format!("create exec failed: {}", e)))?;
+            .map_err(|e| {
+                ClientError::Operation(format!("create exec failed: {}", e))
+            })?;
 
         let start_options = StartExecOptions {
             detach: false,
@@ -813,15 +937,17 @@ impl DatabaseManager {
             }
             Ok(StartExecResults::Detached) => {}
             Err(e) => {
-                return Err(ClientError::Operation(format!("exec failed: {}", e)));
+                return Err(ClientError::Operation(format!(
+                    "exec failed: {}",
+                    e
+                )));
             }
         }
 
-        let inspect = self
-            .docker
-            .inspect_exec(&exec.id)
-            .await
-            .map_err(|e| ClientError::Operation(format!("inspect exec failed: {}", e)))?;
+        let inspect =
+            self.docker.inspect_exec(&exec.id).await.map_err(|e| {
+                ClientError::Operation(format!("inspect exec failed: {}", e))
+            })?;
 
         match inspect.exit_code {
             Some(0) => Ok(output_data),
@@ -836,7 +962,11 @@ impl DatabaseManager {
         }
     }
 
-    async fn exec_postgres_query(&self, db: &ManagedDatabase, sql: &str) -> Result<String> {
+    async fn exec_postgres_query(
+        &self,
+        db: &ManagedDatabase,
+        sql: &str,
+    ) -> Result<String> {
         let output = self
             .exec_command_output(
                 &Self::database_container_name(db),
@@ -864,6 +994,52 @@ impl DatabaseManager {
             .map(|_| ())
     }
 
+    async fn sync_postgres_wal_archive(
+        &self,
+        db: &ManagedDatabase,
+    ) -> Result<()> {
+        self.prepare_postgres_pitr_dirs(db)?;
+        self.exec_command_output(
+            &Self::database_container_name(db),
+            vec![
+                "sh".to_string(),
+                "-lc".to_string(),
+                format!(
+                    "cp -f /var/lib/postgresql/data/pg_wal/000000* {0}/ \
+                     2>/dev/null || true; \
+                     cp -f /var/lib/postgresql/data/pg_wal/*.history {0}/ \
+                     2>/dev/null || true; \
+                     chmod -R a+rX {0}",
+                    POSTGRES_PITR_WAL_PATH
+                ),
+            ],
+            None,
+        )
+        .await
+        .map(|_| ())
+    }
+
+    async fn normalize_postgres_backup_permissions(
+        &self,
+        db: &ManagedDatabase,
+        label: &str,
+    ) -> Result<()> {
+        self.exec_command_output(
+            &Self::database_container_name(db),
+            vec![
+                "sh".to_string(),
+                "-lc".to_string(),
+                format!(
+                    "chmod -R a+rX '{}/{}'",
+                    POSTGRES_PITR_BACKUPS_PATH, label
+                ),
+            ],
+            None,
+        )
+        .await
+        .map(|_| ())
+    }
+
     fn trim_exec_output(output: &[u8]) -> String {
         let text = String::from_utf8_lossy(output).trim().to_string();
         if text.is_empty() {
@@ -879,13 +1055,20 @@ impl DatabaseManager {
         target_time: Option<DateTime<Utc>>,
     ) -> Result<()> {
         let recovery_signal = data_dir.join("recovery.signal");
-        fs::write(&recovery_signal, "")
-            .map_err(|e| ClientError::Operation(format!("write recovery.signal failed: {}", e)))?;
+        fs::write(&recovery_signal, "").map_err(|e| {
+            ClientError::Operation(format!(
+                "write recovery.signal failed: {}",
+                e
+            ))
+        })?;
 
         let auto_conf_path = data_dir.join("postgresql.auto.conf");
         let existing = if auto_conf_path.exists() {
             fs::read_to_string(&auto_conf_path).map_err(|e| {
-                ClientError::Operation(format!("read postgresql.auto.conf failed: {}", e))
+                ClientError::Operation(format!(
+                    "read postgresql.auto.conf failed: {}",
+                    e
+                ))
             })?
         } else {
             String::new()
@@ -912,14 +1095,20 @@ impl DatabaseManager {
             managed.push(format!("recovery_target_name = '{}'", value));
         }
         if let Some(value) = target_time {
-            managed.push(format!("recovery_target_time = '{}'", value.to_rfc3339()));
+            managed.push(format!(
+                "recovery_target_time = '{}'",
+                value.to_rfc3339()
+            ));
         }
 
         let mut contents = managed.join("\n");
         contents.push('\n');
 
         fs::write(&auto_conf_path, contents).map_err(|e| {
-            ClientError::Operation(format!("write postgresql.auto.conf failed: {}", e))
+            ClientError::Operation(format!(
+                "write postgresql.auto.conf failed: {}",
+                e
+            ))
         })?;
 
         let standby_signal = data_dir.join("standby.signal");
@@ -931,27 +1120,39 @@ impl DatabaseManager {
     }
 
     fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
-        let metadata = fs::metadata(source)
-            .map_err(|e| ClientError::Operation(format!("stat backup directory failed: {}", e)))?;
+        let metadata = fs::metadata(source).map_err(|e| {
+            ClientError::Operation(format!(
+                "stat backup directory failed: {}",
+                e
+            ))
+        })?;
         if !metadata.is_dir() {
             return Err(ClientError::Operation(
                 "base backup directory is not a directory".to_string(),
             ));
         }
 
-        fs::create_dir_all(destination)
-            .map_err(|e| ClientError::Operation(format!("create data directory failed: {}", e)))?;
+        fs::create_dir_all(destination).map_err(|e| {
+            ClientError::Operation(format!(
+                "create data directory failed: {}",
+                e
+            ))
+        })?;
 
-        for entry in fs::read_dir(source)
-            .map_err(|e| ClientError::Operation(format!("read backup directory failed: {}", e)))?
-        {
-            let entry =
-                entry.map_err(|e| ClientError::Operation(format!("read entry failed: {}", e)))?;
+        for entry in fs::read_dir(source).map_err(|e| {
+            ClientError::Operation(format!(
+                "read backup directory failed: {}",
+                e
+            ))
+        })? {
+            let entry = entry.map_err(|e| {
+                ClientError::Operation(format!("read entry failed: {}", e))
+            })?;
             let source_path = entry.path();
             let destination_path = destination.join(entry.file_name());
-            let file_type = entry
-                .file_type()
-                .map_err(|e| ClientError::Operation(format!("stat entry failed: {}", e)))?;
+            let file_type = entry.file_type().map_err(|e| {
+                ClientError::Operation(format!("stat entry failed: {}", e))
+            })?;
 
             if file_type.is_dir() {
                 Self::copy_dir_recursive(&source_path, &destination_path)?;
@@ -975,8 +1176,12 @@ impl DatabaseManager {
 
     fn ensure_host_dir(path: &Path) -> Result<()> {
         if !path.exists() {
-            fs::create_dir_all(path)
-                .map_err(|e| ClientError::Operation(format!("create directory failed: {}", e)))?;
+            fs::create_dir_all(path).map_err(|e| {
+                ClientError::Operation(format!(
+                    "create directory failed: {}",
+                    e
+                ))
+            })?;
         }
 
         #[cfg(unix)]
@@ -990,10 +1195,13 @@ impl DatabaseManager {
     }
 
     fn render_pgdog_config(db: &ManagedDatabase) -> String {
-        let database_name = Self::escape_toml_string(&db.credentials.database_name);
-        let database_host = Self::escape_toml_string(&db.normalized_internal_host());
+        let database_name =
+            Self::escape_toml_string(&db.credentials.database_name);
+        let database_host =
+            Self::escape_toml_string(&db.normalized_internal_host());
         let server_user = Self::escape_toml_string(&db.credentials.username);
-        let server_password = Self::escape_toml_string(&db.credentials.password);
+        let server_password =
+            Self::escape_toml_string(&db.credentials.password);
 
         format!(
             "[general]\n\
@@ -1022,7 +1230,8 @@ impl DatabaseManager {
     }
 
     fn render_pgdog_users(db: &ManagedDatabase) -> String {
-        let database_name = Self::escape_toml_string(&db.credentials.database_name);
+        let database_name =
+            Self::escape_toml_string(&db.credentials.database_name);
         let username = Self::escape_toml_string(&db.credentials.username);
         let password = Self::escape_toml_string(&db.credentials.password);
 
@@ -1052,7 +1261,8 @@ impl DatabaseManager {
             }
         }
 
-        let sanitized = sanitized.trim_matches('-').trim_matches('_').to_string();
+        let sanitized =
+            sanitized.trim_matches('-').trim_matches('_').to_string();
         if sanitized.is_empty() {
             format!("{}-{}", prefix, Utc::now().format("%Y%m%d%H%M%S"))
         } else {
@@ -1068,8 +1278,12 @@ impl DatabaseManager {
     }
 
     fn u64_to_i64(value: u64, field: &str) -> Result<i64> {
-        i64::try_from(value)
-            .map_err(|_| ClientError::Operation(format!("invalid {} value: {}", field, value)))
+        i64::try_from(value).map_err(|_| {
+            ClientError::Operation(format!(
+                "invalid {} value: {}",
+                field, value
+            ))
+        })
     }
 }
 
@@ -1086,8 +1300,11 @@ mod tests {
 
     fn sample_database() -> ManagedDatabase {
         let owner_id = Uuid::new_v4();
-        let mut db =
-            ManagedDatabase::new(owner_id, "primary".to_string(), DatabaseType::Postgresql);
+        let mut db = ManagedDatabase::new(
+            owner_id,
+            "primary".to_string(),
+            DatabaseType::Postgresql,
+        );
         db.proxy_enabled = true;
         db.pitr_enabled = true;
         db
@@ -1099,7 +1316,10 @@ mod tests {
         let config = DatabaseManager::render_pgdog_config(&db);
         assert!(config.contains("[general]"));
         assert!(config.contains("pooler_mode = \"session\""));
-        assert!(config.contains(&format!("host = \"{}\"", db.normalized_internal_host())));
+        assert!(config.contains(&format!(
+            "host = \"{}\"",
+            db.normalized_internal_host()
+        )));
         assert!(config.contains(&format!("port = {}", POSTGRES_PROXY_PORT)));
     }
 
@@ -1108,8 +1328,13 @@ mod tests {
         let db = sample_database();
         let config = DatabaseManager::render_pgdog_users(&db);
         assert!(config.contains("[[users]]"));
-        assert!(config.contains(&format!("name = \"{}\"", db.credentials.username)));
-        assert!(config.contains(&format!("server_user = \"{}\"", db.credentials.username)));
+        assert!(
+            config.contains(&format!("name = \"{}\"", db.credentials.username))
+        );
+        assert!(config.contains(&format!(
+            "server_user = \"{}\"",
+            db.credentials.username
+        )));
     }
 
     #[test]
@@ -1135,6 +1360,25 @@ mod tests {
                 "--users".to_string(),
                 PGDOG_USERS_PATH.to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn valkey_start_command_enforces_password() {
+        let owner_id = Uuid::new_v4();
+        let db = ManagedDatabase::new(
+            owner_id,
+            "cache".to_string(),
+            DatabaseType::Valkey,
+        );
+
+        assert_eq!(
+            DatabaseManager::build_start_command(&db),
+            Some(vec![
+                "valkey-server".to_string(),
+                "--requirepass".to_string(),
+                db.credentials.password.clone(),
+            ])
         );
     }
 }

@@ -8,20 +8,22 @@ use std::path::Path;
 use std::sync::Arc;
 
 use bollard::models::{
-    ContainerCreateBody, EndpointSettings, HealthStatusEnum, HostConfig, Mount, MountTypeEnum,
-    NetworkCreateRequest, NetworkingConfig, RestartPolicy, RestartPolicyNameEnum,
+    ContainerCreateBody, EndpointSettings, HealthStatusEnum, HostConfig, Mount,
+    MountTypeEnum, NetworkCreateRequest, NetworkingConfig, RestartPolicy,
+    RestartPolicyNameEnum,
 };
 use bollard::query_parameters::{
-    CreateContainerOptions, InspectContainerOptions, InspectNetworkOptions, RemoveContainerOptions,
-    StartContainerOptions, StopContainerOptions,
+    CreateContainerOptions, InspectContainerOptions, InspectNetworkOptions,
+    RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
 };
 use bollard::Docker;
 use tracing::{info, warn};
 
-use crate::docker::INTERNAL_NETWORK_NAME;
 use crate::error::{ClientError, Result};
 use crate::ImageManager;
-use containr_common::managed_services::{ManagedQueue, QueueType, ServiceStatus};
+use containr_common::managed_services::{
+    ManagedQueue, QueueType, ServiceStatus,
+};
 
 /// manages queue container lifecycle
 pub struct QueueManager {
@@ -44,7 +46,10 @@ impl QueueManager {
 
     /// starts a managed queue container
     /// creates the data directory and runs the container with bind mount
-    pub async fn start_queue(&self, queue: &mut ManagedQueue) -> Result<String> {
+    pub async fn start_queue(
+        &self,
+        queue: &mut ManagedQueue,
+    ) -> Result<String> {
         info!(
             "starting queue: {} ({})",
             queue.name,
@@ -57,7 +62,10 @@ impl QueueManager {
         if !data_path.exists() {
             info!("creating data directory: {}", queue.host_data_path);
             std::fs::create_dir_all(data_path).map_err(|e| {
-                ClientError::Operation(format!("failed to create data directory: {}", e))
+                ClientError::Operation(format!(
+                    "failed to create data directory: {}",
+                    e
+                ))
             })?;
 
             // set permissions (755)
@@ -74,7 +82,8 @@ impl QueueManager {
         queue.internal_host = queue.normalized_internal_host();
 
         // ensure network exists
-        self.ensure_network(INTERNAL_NETWORK_NAME).await?;
+        let network_name = queue.network_name();
+        self.ensure_network(&network_name).await?;
 
         // build environment variables
         let mut env = Vec::new();
@@ -127,13 +136,15 @@ impl QueueManager {
 
         let host_config = HostConfig {
             mounts: Some(vec![mount]),
-            memory: Some((queue.memory_limit / (1024 * 1024)) as i64 * 1024 * 1024),
+            memory: Some(
+                (queue.memory_limit / (1024 * 1024)) as i64 * 1024 * 1024,
+            ),
             nano_cpus: Some((queue.cpu_limit * 1_000_000_000.0) as i64),
             restart_policy: Some(RestartPolicy {
                 name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
                 maximum_retry_count: None,
             }),
-            network_mode: Some(INTERNAL_NETWORK_NAME.to_string()),
+            network_mode: Some(network_name.clone()),
             port_bindings: queue.external_port.map(|external_port| {
                 HashMap::from([(
                     format!("{}/tcp", queue.port),
@@ -148,7 +159,7 @@ impl QueueManager {
 
         let networking_config = Some(NetworkingConfig {
             endpoints_config: Some(HashMap::from([(
-                INTERNAL_NETWORK_NAME.to_string(),
+                network_name,
                 EndpointSettings {
                     aliases: Some(queue.network_aliases()),
                     ..Default::default()
@@ -196,7 +207,9 @@ impl QueueManager {
             .docker
             .create_container(Some(options), container_config)
             .await
-            .map_err(|e| ClientError::Operation(format!("docker create failed: {}", e)))?;
+            .map_err(|e| {
+                ClientError::Operation(format!("docker create failed: {}", e))
+            })?;
 
         let container_id = response.id.clone();
 
@@ -204,7 +217,9 @@ impl QueueManager {
         self.docker
             .start_container(&container_id, None::<StartContainerOptions>)
             .await
-            .map_err(|e| ClientError::Operation(format!("docker start failed: {}", e)))?;
+            .map_err(|e| {
+                ClientError::Operation(format!("docker start failed: {}", e))
+            })?;
 
         if !self.wait_for_ready(&container_id, 90).await? {
             return Err(ClientError::Operation(
@@ -221,13 +236,21 @@ impl QueueManager {
         Ok(container_id)
     }
 
-    async fn wait_for_ready(&self, container_id: &str, timeout_secs: u64) -> Result<bool> {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    async fn wait_for_ready(
+        &self,
+        container_id: &str,
+        timeout_secs: u64,
+    ) -> Result<bool> {
+        let deadline = std::time::Instant::now()
+            + std::time::Duration::from_secs(timeout_secs);
 
         while std::time::Instant::now() < deadline {
             let inspect = match self
                 .docker
-                .inspect_container(container_id, None::<InspectContainerOptions>)
+                .inspect_container(
+                    container_id,
+                    None::<InspectContainerOptions>,
+                )
                 .await
             {
                 Ok(inspect) => inspect,
@@ -331,6 +354,29 @@ impl QueueManager {
             queue.updated_at = chrono::Utc::now();
         }
 
+        if queue.group_id.is_none() {
+            self.remove_network_if_exists(&queue.network_name()).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn remove_network_if_exists(&self, name: &str) -> Result<()> {
+        if self
+            .docker
+            .inspect_network(name, None::<InspectNetworkOptions>)
+            .await
+            .is_err()
+        {
+            return Ok(());
+        }
+
+        self.docker.remove_network(name).await.map_err(|e| {
+            ClientError::Operation(format!(
+                "docker network remove failed: {}",
+                e
+            ))
+        })?;
         Ok(())
     }
 }

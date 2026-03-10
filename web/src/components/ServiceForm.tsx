@@ -1,6 +1,7 @@
 import { Component, createMemo, createSignal, For, Show } from "solid-js";
 
 import EnvVarEditor from "./EnvVarEditor";
+import { Badge, Button, Card } from "./ui";
 import { EditableKeyValueEntry } from "../utils/keyValueEntries";
 
 export type ServiceType =
@@ -155,6 +156,7 @@ interface ServiceFormProps {
 	allServices: Service[];
 	onUpdate: (index: number, service: Service) => void;
 	onRemove: (index: number) => void;
+	allowRemove?: boolean;
 }
 
 /**
@@ -279,8 +281,8 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 
 	const tabClass = (tab: "overview" | "build" | "runtime" | "storage") =>
 		activeTab() === tab
-			? "border-black bg-black text-white"
-			: "border-neutral-300 text-neutral-600 hover:border-neutral-400";
+			? "border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]"
+			: "border-[var(--border)] bg-[var(--muted)] text-[var(--muted-foreground)] hover:border-[var(--border-strong)] hover:text-[var(--foreground)]";
 
 	const modeLabel = () =>
 		isRepositoryBuild() ? "repo build" : "prebuilt image";
@@ -290,57 +292,60 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 	};
 
 	return (
-		<div class="mb-4 border border-neutral-200">
-			<div class="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-200 bg-neutral-50 px-4 py-3">
+		<Card class="mb-4 overflow-hidden">
+			<div class="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] bg-[var(--muted)] px-4 py-4">
 				<div>
 					<div class="flex items-center gap-3">
-						<span class="text-sm font-medium text-black">
+						<span class="text-sm font-medium text-[var(--foreground)]">
 							{props.service.name || `service ${props.index + 1}`}
 						</span>
-						<span class="border border-neutral-200 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
+						<Badge variant="secondary">
 							{serviceTypeLabel(props.service.service_type)}
-						</span>
-						<span class="border border-neutral-200 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
+						</Badge>
+						<Badge variant="outline">
 							{modeLabel()}
-						</span>
+						</Badge>
 					</div>
-					<div class="mt-2 flex flex-wrap gap-2 text-xs text-neutral-500">
-						<span class="border border-neutral-200 px-2 py-1 font-mono">
+					<div class="mt-2 flex flex-wrap gap-2 text-xs text-[var(--muted-foreground)]">
+						<span class="border border-[var(--border)] px-2 py-1 font-mono">
 							{expectsInboundPort()
 								? `:${props.service.port}`
 								: "no inbound port"}
 						</span>
-						<span class="border border-neutral-200 px-2 py-1">
+						<span class="border border-[var(--border)] px-2 py-1">
 							{props.service.replicas} replica
 							{props.service.replicas === 1 ? "" : "s"}
 						</span>
-						<span class="border border-neutral-200 px-2 py-1">
+						<span class="border border-[var(--border)] px-2 py-1">
 							{props.service.env_vars.length} env
 						</span>
 						<Show when={props.service.domains.length > 0}>
-							<span class="border border-neutral-200 px-2 py-1">
+							<span class="border border-[var(--border)] px-2 py-1">
 								{props.service.domains.length} domain
 								{props.service.domains.length === 1 ? "" : "s"}
 							</span>
 						</Show>
 						<Show when={props.service.mounts.length > 0}>
-							<span class="border border-neutral-200 px-2 py-1">
+							<span class="border border-[var(--border)] px-2 py-1">
 								{props.service.mounts.length} mount
 								{props.service.mounts.length === 1 ? "" : "s"}
 							</span>
 						</Show>
 					</div>
 				</div>
-				<button
-					type="button"
-					onClick={() => props.onRemove(props.index)}
-					class="text-sm text-neutral-400 hover:text-neutral-600"
-				>
-					remove
-				</button>
+				<Show when={props.allowRemove !== false}>
+					<Button
+						type="button"
+						variant="ghost"
+						size="sm"
+						onClick={() => props.onRemove(props.index)}
+					>
+						remove
+					</Button>
+				</Show>
 			</div>
 
-			<div class="border-b border-neutral-100 px-4 py-3">
+			<div class="border-b border-[var(--border)] px-4 py-3">
 				<div class="flex flex-wrap gap-2">
 					<button
 						type="button"
@@ -1036,7 +1041,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 					</div>
 				</Show>
 			</div>
-		</div>
+		</Card>
 	);
 };
 

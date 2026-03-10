@@ -1,12 +1,14 @@
-import { Component, JSX, splitProps } from 'solid-js';
+import { Component, JSX, splitProps } from "solid-js";
+
+import { cn } from "../../lib/cn";
 
 type BadgeVariant =
-    | 'default'
-    | 'outline'
-    | 'secondary'
-    | 'success'
-    | 'warning'
-    | 'error';
+    | "default"
+    | "outline"
+    | "secondary"
+    | "success"
+    | "warning"
+    | "error";
 
 interface BadgeProps extends JSX.HTMLAttributes<HTMLSpanElement> {
     variant?: BadgeVariant;
@@ -15,30 +17,34 @@ interface BadgeProps extends JSX.HTMLAttributes<HTMLSpanElement> {
 /// reusable badge component
 export const Badge: Component<BadgeProps> = (props) => {
     const [local, others] = splitProps(props, [
-        'variant',
-        'class',
-        'children',
+        "variant",
+        "class",
+        "children",
     ]);
 
     const variants: Record<BadgeVariant, string> = {
-        default: 'bg-neutral-700 text-neutral-200',
-        outline: 'text-neutral-300 border border-neutral-600',
-        secondary: 'bg-neutral-800 text-neutral-300',
+        default:
+            "border-[var(--border)] bg-[var(--muted)] text-[var(--foreground)]",
+        outline:
+            "border-[var(--border-strong)] bg-transparent text-[var(--muted-foreground)]",
+        secondary:
+            "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--foreground)]",
         success:
-            'bg-emerald-900/50 text-emerald-400 border border-emerald-700/50',
+            "border-emerald-900 bg-emerald-950/70 text-emerald-200",
         warning:
-            'bg-yellow-900/50 text-yellow-400 border border-yellow-700/50',
-        error: 'bg-red-900/50 text-red-400 border border-red-700/50',
+            "border-amber-900 bg-amber-950/70 text-amber-200",
+        error:
+            "border-red-900 bg-red-950/70 text-red-200",
     };
 
     return (
         <span
-            class={`
-        inline-flex items-center px-2.5 py-0.5 text-xs font-medium
-        transition-colors border border-transparent
-        ${variants[local.variant || 'default']}
-        ${local.class || ''}
-      `}
+            class={cn(
+                "inline-flex items-center border px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.16em]",
+                "transition-colors",
+                variants[local.variant || "default"],
+                local.class,
+            )}
             {...others}
         >
             {local.children}

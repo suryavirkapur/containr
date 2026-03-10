@@ -17,8 +17,16 @@ use containr_common::models::User;
 /// settings response - only exposes safe fields
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SettingsResponse {
+    /// dashboard url served by the proxy
+    pub dashboard_url: Option<String>,
+    /// wildcard suffix used for default service subdomains
+    pub service_wildcard_domain: Option<String>,
+    /// configured api port
+    pub api_port: u16,
     /// base domain for all apps
     pub base_domain: String,
+    /// public ip used for direct port access and domain validation
+    pub public_ip: Option<String>,
     /// optional public s3 hostname routed to rustfs
     pub storage_public_hostname: Option<String>,
     /// rustfs endpoint used by containr for management operations
@@ -42,6 +50,8 @@ pub struct SettingsResponse {
 pub struct UpdateSettingsRequest {
     /// new base domain (optional)
     pub base_domain: Option<String>,
+    /// public ip used for direct access and domain validation
+    pub public_ip: Option<String>,
     /// optional public s3 hostname
     pub storage_public_hostname: Option<String>,
     /// rustfs endpoint used by containr for management operations
@@ -83,11 +93,21 @@ pub async fn get_settings(
 ) -> Result<Json<SettingsResponse>, (StatusCode, Json<ErrorResponse>)> {
     let _ = require_admin_user(&state, &headers).await?;
     let config = state.config.read().await;
+    let dashboard_url = dashboard_url(&config.proxy.base_domain);
+    let service_wildcard_domain =
+        service_wildcard_domain(&config.proxy.base_domain);
 
     Ok(Json(SettingsResponse {
+        dashboard_url,
+        service_wildcard_domain,
+        api_port: config.server.port,
         base_domain: config.proxy.base_domain.clone(),
+        public_ip: config.proxy.public_ip.clone(),
         storage_public_hostname: config.storage.rustfs_public_hostname.clone(),
-        storage_management_endpoint: config.storage.rustfs_management_endpoint.clone(),
+        storage_management_endpoint: config
+            .storage
+            .rustfs_management_endpoint
+            .clone(),
         storage_internal_host: config.storage.rustfs_internal_host.clone(),
         storage_port: config.storage.rustfs_port,
         http_port: config.proxy.http_port,
@@ -126,8 +146,18 @@ pub async fn update_settings(
         if let Some(base_domain) = req.base_domain {
             config.proxy.base_domain = base_domain.trim().to_string();
             if !config.proxy.base_domain.is_empty() {
-                requested_certificate_domains.push(config.proxy.base_domain.clone());
+                requested_certificate_domains
+                    .push(config.proxy.base_domain.clone());
             }
+        }
+
+        if let Some(public_ip) = req.public_ip {
+            let normalized = public_ip.trim().to_string();
+            config.proxy.public_ip = if normalized.is_empty() {
+                None
+            } else {
+                Some(normalized)
+            };
         }
 
         if let Some(storage_public_hostname) = req.storage_public_hostname {
@@ -145,7 +175,9 @@ pub async fn update_settings(
             }
         }
 
-        if let Some(storage_management_endpoint) = req.storage_management_endpoint {
+        if let Some(storage_management_endpoint) =
+            req.storage_management_endpoint
+        {
             let normalized = storage_management_endpoint
                 .trim()
                 .trim_end_matches('/')
@@ -191,9 +223,18 @@ pub async fn update_settings(
     tracing::info!(base_domain = %config.proxy.base_domain, "settings updated");
 
     Ok(Json(SettingsResponse {
+        dashboard_url: dashboard_url(&config.proxy.base_domain),
+        service_wildcard_domain: service_wildcard_domain(
+            &config.proxy.base_domain,
+        ),
+        api_port: config.server.port,
         base_domain: config.proxy.base_domain.clone(),
+        public_ip: config.proxy.public_ip.clone(),
         storage_public_hostname: config.storage.rustfs_public_hostname.clone(),
-        storage_management_endpoint: config.storage.rustfs_management_endpoint.clone(),
+        storage_management_endpoint: config
+            .storage
+            .rustfs_management_endpoint
+            .clone(),
         storage_internal_host: config.storage.rustfs_internal_host.clone(),
         storage_port: config.storage.rustfs_port,
         http_port: config.proxy.http_port,
@@ -201,6 +242,24 @@ pub async fn update_settings(
         acme_email: config.acme.email.clone(),
         acme_staging: config.acme.staging,
     }))
+}
+
+fn dashboard_url(base_domain: &str) -> Option<String> {
+    let base_domain = base_domain.trim().trim_end_matches('/');
+    if base_domain.is_empty() {
+        return None;
+    }
+
+    Some(format!("https://{}", base_domain))
+}
+
+fn service_wildcard_domain(base_domain: &str) -> Option<String> {
+    let base_domain = base_domain.trim().trim_end_matches('.');
+    if base_domain.is_empty() {
+        return None;
+    }
+
+    Some(format!("*.{}", base_domain))
 }
 
 /// request certificate for dashboard domain
@@ -352,7 +411,9 @@ fn get_user_id(
 }
 
 /// helper for internal errors
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    e: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", e);
     (
         StatusCode::INTERNAL_SERVER_ERROR,

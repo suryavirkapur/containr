@@ -9,7 +9,7 @@ server section
 
 [server]
 host = "0.0.0.0"     # api server bind address
-port = 3000          # api server port
+port = 2077          # api server port
 
 options:
     host (string)
@@ -19,7 +19,7 @@ options:
 
     port (u16)
         port for the api server.
-        default: 3000
+        default: 2077
         the dashboard and api are served on this port.
 
 --------------------------------------------------------------------------------
@@ -27,16 +27,16 @@ database section
 --------------------------------------------------------------------------------
 
 [database]
-backend = "sled"
+backend = "sqlite"
 path = "./data/containr.db"
 
 options:
     backend (string)
         metadata database backend.
-        default: "sled"
+        default: "sqlite"
         options:
-            - sled: embedded key-value store
             - sqlite: sqlite database with wal journal mode
+            - sled: embedded key-value store
 
     path (string)
         path to the selected metadata database.
@@ -241,10 +241,10 @@ complete example
 
 [server]
 host = "0.0.0.0"
-port = 3000
+port = 2077
 
 [database]
-backend = "sled"
+backend = "sqlite"
 path = "/var/lib/containr/containr.db"
 
 [proxy]
@@ -288,6 +288,35 @@ all settings must be in the toml file.
 
 for containerized deployments, mount the config file:
     docker run -v /path/to/containr.toml:/etc/containr/containr.toml containr
+
+--------------------------------------------------------------------------------
+client cli config
+--------------------------------------------------------------------------------
+
+the `containrctl` client stores its own toml config in:
+
+    $HOME/.containr/config.toml
+
+example:
+
+    active_instance = "default"
+
+    [instances.default]
+    instance_id = "local"
+    url = "http://127.0.0.1:2077"
+    token = ""
+    api_key = ""
+    timeout_secs = 30
+    tls_verify = true
+
+you can initialize or update this file with:
+
+    containrctl init --url http://127.0.0.1:2077 --instance-id local
+    containrctl config set-token <bearer_token>
+    containrctl config set-api-key <api_key>
+
+api keys generated through `containr generate-api-key` are bearer tokens and can
+be stored in either `token` or `api_key`.
 
 --------------------------------------------------------------------------------
 hot reload

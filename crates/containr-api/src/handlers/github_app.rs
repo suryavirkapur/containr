@@ -14,8 +14,8 @@ use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::github::{
-    convert_manifest_code, generate_app_jwt, get_installation_repos, get_installation_token,
-    list_app_installations, GithubRepo,
+    convert_manifest_code, generate_app_jwt, get_installation_repos,
+    get_installation_token, list_app_installations, GithubRepo,
 };
 use crate::handlers::auth::ErrorResponse;
 use crate::security::{decrypt_value, encrypt_value};
@@ -153,7 +153,8 @@ pub async fn get_github_app(
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
-    let app_config = state.db.get_github_app(user_id).map_err(internal_error)?;
+    let app_config =
+        state.db.get_github_app(user_id).map_err(internal_error)?;
 
     match app_config {
         Some(app) => {
@@ -161,10 +162,15 @@ pub async fn get_github_app(
             let mut installations = app.installations.clone();
 
             // try to sync with github
-            if let Ok(pem) = decrypt_value(&config, &app.private_key, Some(&config.auth.jwt_secret))
-            {
+            if let Ok(pem) = decrypt_value(
+                &config,
+                &app.private_key,
+                Some(&config.auth.jwt_secret),
+            ) {
                 if let Ok(jwt) = generate_app_jwt(app.app_id, &pem) {
-                    if let Ok(github_installations) = list_app_installations(&jwt).await {
+                    if let Ok(github_installations) =
+                        list_app_installations(&jwt).await
+                    {
                         installations = github_installations
                             .into_iter()
                             .map(|i| {
@@ -224,7 +230,9 @@ pub async fn get_app_manifest(
     let _user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let base_domain = config.proxy.base_domain.trim_end_matches('/');
-    let base_url = if base_domain.starts_with("http://") || base_domain.starts_with("https://") {
+    let base_url = if base_domain.starts_with("http://")
+        || base_domain.starts_with("https://")
+    {
         base_domain.to_string()
     } else {
         format!("https://{}", base_domain)
@@ -279,32 +287,36 @@ pub async fn github_app_callback(
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     // convert manifest code to app credentials
-    let app_response = convert_manifest_code(&query.code).await.map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: format!("failed to create github app: {}", e),
-            }),
-        )
-    })?;
+    let app_response =
+        convert_manifest_code(&query.code).await.map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("failed to create github app: {}", e),
+                }),
+            )
+        })?;
 
     // encrypt sensitive data
-    let encrypted_secret =
-        encrypt_value(&config, &app_response.client_secret).map_err(internal_error)?;
+    let encrypted_secret = encrypt_value(&config, &app_response.client_secret)
+        .map_err(internal_error)?;
 
-    let encrypted_pem = encrypt_value(&config, &app_response.pem).map_err(internal_error)?;
+    let encrypted_pem =
+        encrypt_value(&config, &app_response.pem).map_err(internal_error)?;
 
     let encrypted_webhook =
-        encrypt_value(&config, &app_response.webhook_secret).map_err(internal_error)?;
+        encrypt_value(&config, &app_response.webhook_secret)
+            .map_err(internal_error)?;
 
     // create app config using builder pattern
-    let app_config = GithubAppConfig::builder(app_response.id, app_response.slug, user_id)
-        .client_id(app_response.client_id)
-        .client_secret(encrypted_secret)
-        .private_key(encrypted_pem)
-        .webhook_secret(encrypted_webhook)
-        .html_url(app_response.html_url)
-        .build();
+    let app_config =
+        GithubAppConfig::builder(app_response.id, app_response.slug, user_id)
+            .client_id(app_response.client_id)
+            .client_secret(encrypted_secret)
+            .private_key(encrypted_pem)
+            .webhook_secret(encrypted_webhook)
+            .html_url(app_response.html_url)
+            .build();
 
     // save to database
     state
@@ -339,7 +351,9 @@ pub async fn github_install_callback(
 
     if let Some(installation_id) = query.installation_id {
         // get app config
-        if let Some(mut app_config) = state.db.get_github_app(user_id).map_err(internal_error)? {
+        if let Some(mut app_config) =
+            state.db.get_github_app(user_id).map_err(internal_error)?
+        {
             // decrypt private key
             let pem = decrypt_value(
                 &config,
@@ -349,19 +363,22 @@ pub async fn github_install_callback(
             .map_err(internal_error)?;
 
             // generate jwt and get installation info
-            let jwt = generate_app_jwt(app_config.app_id, &pem).map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: format!("failed to generate jwt: {}", e),
-                    }),
-                )
-            })?;
+            let jwt =
+                generate_app_jwt(app_config.app_id, &pem).map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: format!("failed to generate jwt: {}", e),
+                        }),
+                    )
+                })?;
 
             // get installations from github
             if let Ok(installations) = list_app_installations(&jwt).await {
                 // find the new installation
-                if let Some(install) = installations.iter().find(|i| i.id == installation_id) {
+                if let Some(install) =
+                    installations.iter().find(|i| i.id == installation_id)
+                {
                     let new_install = GithubInstallation::new(
                         install.id,
                         install.account.login.clone(),
@@ -479,7 +496,10 @@ pub async fn get_app_repos(
                 (
                     StatusCode::BAD_GATEWAY,
                     Json(ErrorResponse {
-                        error: format!("failed to get installation token: {}", e),
+                        error: format!(
+                            "failed to get installation token: {}",
+                            e
+                        ),
                     }),
                 )
             })?;
@@ -500,7 +520,8 @@ pub async fn get_app_repos(
         }
     }
 
-    let mut repos: Vec<RepoInfo> = all_repos.into_values().map(RepoInfo::from).collect();
+    let mut repos: Vec<RepoInfo> =
+        all_repos.into_values().map(RepoInfo::from).collect();
     repos.sort_by(|left, right| left.full_name.cmp(&right.full_name));
 
     Ok(Json(AppReposResponse { repos }))
@@ -533,7 +554,9 @@ pub async fn delete_github_app(
 }
 
 /// helper for internal errors
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    e: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", e);
     (
         StatusCode::INTERNAL_SERVER_ERROR,

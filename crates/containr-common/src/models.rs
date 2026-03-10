@@ -68,6 +68,13 @@ impl Project {
         !self.services.is_empty()
     }
 
+    /// returns true when at least one service needs source checkout/build input
+    pub fn requires_source_checkout(&self) -> bool {
+        self.services
+            .iter()
+            .any(ContainerService::requires_source_checkout)
+    }
+
     /// returns the deterministic service id used when promoting a legacy app
     pub fn default_service_id(&self) -> Uuid {
         let seed = format!("containr-default-service:{}", self.id);
@@ -105,6 +112,7 @@ impl Project {
             command: None,
             entrypoint: None,
             working_dir: None,
+            schedule: None,
             mounts: Vec::new(),
             created_at: self.created_at,
             updated_at: self.updated_at,
@@ -133,7 +141,9 @@ impl Project {
     pub fn primary_public_service_index(&self) -> Option<usize> {
         self.services
             .iter()
-            .position(|service| service.is_public_http() && service.name == "web")
+            .position(|service| {
+                service.is_public_http() && service.name == "web"
+            })
             .or_else(|| {
                 self.services
                     .iter()
@@ -142,7 +152,9 @@ impl Project {
     }
 
     /// returns a mutable reference to the primary public service
-    pub fn primary_public_service_mut(&mut self) -> Option<&mut ContainerService> {
+    pub fn primary_public_service_mut(
+        &mut self,
+    ) -> Option<&mut ContainerService> {
         let index = self.primary_public_service_index()?;
         self.services.get_mut(index)
     }
@@ -187,6 +199,11 @@ impl Project {
         self.domain = domains.first().cloned();
         self.domains = domains;
     }
+
+    /// returns the docker network name for this project group
+    pub fn network_name(&self) -> String {
+        format!("containr-{}", self.id)
+    }
 }
 
 /// environment variable for an app
@@ -206,7 +223,9 @@ pub struct BuildArg {
 }
 
 /// restart policy for container services
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum RestartPolicy {
     /// never restart
@@ -219,7 +238,9 @@ pub enum RestartPolicy {
 }
 
 /// rollout strategy for replacing running containers
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum RolloutStrategy {
     /// stop old containers before starting new containers
@@ -280,7 +301,9 @@ pub struct ServiceRegistryAuth {
 }
 
 /// render-style service category
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceType {
     /// routed public http service
@@ -290,6 +313,18 @@ pub enum ServiceType {
     PrivateService,
     /// worker with no expected inbound traffic
     BackgroundWorker,
+    /// scheduled one-shot job
+    CronJob,
+    /// managed postgresql service
+    Postgres,
+    /// managed redis/valkey service
+    Redis,
+    /// managed mariadb service
+    Mariadb,
+    /// managed qdrant service
+    Qdrant,
+    /// managed rabbitmq service
+    RabbitMq,
 }
 
 /// container service definition for multi-container apps
@@ -339,6 +374,8 @@ pub struct ContainerService {
     #[serde(default)]
     pub working_dir: Option<String>,
     #[serde(default)]
+    pub schedule: Option<String>,
+    #[serde(default)]
     pub mounts: Vec<ServiceMount>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -377,15 +414,34 @@ impl ContainerService {
             command: None,
             entrypoint: None,
             working_dir: None,
+            schedule: None,
             mounts: Vec::new(),
             created_at: now,
             updated_at: now,
         }
     }
 
+    /// returns the stable api name for a service type
+    pub fn service_type_name(service_type: ServiceType) -> &'static str {
+        match service_type {
+            ServiceType::WebService => "web_service",
+            ServiceType::PrivateService => "private_service",
+            ServiceType::BackgroundWorker => "background_worker",
+            ServiceType::CronJob => "cron_job",
+            ServiceType::Postgres => "postgres",
+            ServiceType::Redis => "redis",
+            ServiceType::Mariadb => "mariadb",
+            ServiceType::Qdrant => "qdrant",
+            ServiceType::RabbitMq => "rabbitmq",
+        }
+    }
+
     /// returns true when the service expects an inbound port
     pub fn expects_inbound_port(&self) -> bool {
-        !matches!(self.service_type, ServiceType::BackgroundWorker)
+        !matches!(
+            self.service_type,
+            ServiceType::BackgroundWorker | ServiceType::CronJob
+        )
     }
 
     /// returns true when the service should be routed publicly
@@ -393,11 +449,23 @@ impl ContainerService {
         matches!(self.service_type, ServiceType::WebService)
     }
 
+    /// returns true when the service is triggered on a schedule
+    pub fn is_cron_job(&self) -> bool {
+        matches!(self.service_type, ServiceType::CronJob)
+    }
+
+    /// returns true when the service requires source checkout to build an image
+    pub fn requires_source_checkout(&self) -> bool {
+        self.image.trim().is_empty()
+    }
+
     /// returns the custom domains configured for this service
     pub fn custom_domains(&self) -> Vec<String> {
         let mut domains = Vec::new();
         for domain in &self.domains {
-            if !domain.trim().is_empty() && !domains.iter().any(|existing| existing == domain) {
+            if !domain.trim().is_empty()
+                && !domains.iter().any(|existing| existing == domain)
+            {
                 domains.push(domain.clone());
             }
         }
@@ -417,7 +485,9 @@ impl ContainerService {
 }
 
 /// health status of a service instance
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum ServiceHealth {
     #[default]
@@ -448,7 +518,11 @@ pub struct ServiceDeployment {
 
 impl ServiceDeployment {
     /// creates a new pending service deployment
-    pub fn new(service_id: Uuid, deployment_id: Uuid, replica_index: u32) -> Self {
+    pub fn new(
+        service_id: Uuid,
+        deployment_id: Uuid,
+        replica_index: u32,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
             service_id,
@@ -567,7 +641,11 @@ impl User {
     }
 
     // creates a new user via github oauth
-    pub fn new_with_github(email: String, github_id: i64, github_username: String) -> Self {
+    pub fn new_with_github(
+        email: String,
+        github_id: i64,
+        github_username: String,
+    ) -> Self {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
@@ -651,6 +729,7 @@ pub struct Route {
 pub enum DeploymentSource {
     RemoteGit { url: String, token: Option<String> },
     LocalPath { path: String },
+    None,
 }
 
 /// deployment job sent between api and worker
@@ -707,7 +786,11 @@ pub struct GithubAppConfigBuilder {
 
 impl GithubAppConfigBuilder {
     /// creates a new builder with required fields
-    pub fn new(app_id: i64, app_name: impl Into<String>, owner_id: Uuid) -> Self {
+    pub fn new(
+        app_id: i64,
+        app_name: impl Into<String>,
+        owner_id: Uuid,
+    ) -> Self {
         Self {
             app_id,
             app_name: app_name.into(),
@@ -872,6 +955,28 @@ mod tests {
     }
 
     #[test]
+    fn test_app_requires_source_checkout_for_built_services() {
+        let owner_id = Uuid::new_v4();
+        let mut app = App::new("test-app".to_string(), String::new(), owner_id);
+
+        app.services.push(ContainerService::new(
+            app.id,
+            "web".to_string(),
+            "nginx:stable".to_string(),
+            80,
+        ));
+        assert!(!app.requires_source_checkout());
+
+        app.services.push(ContainerService::new(
+            app.id,
+            "worker".to_string(),
+            String::new(),
+            0,
+        ));
+        assert!(app.requires_source_checkout());
+    }
+
+    #[test]
     fn test_app_ensure_service_model_promotes_legacy_app() {
         let owner_id = Uuid::new_v4();
         let mut app = App::new(
@@ -893,7 +998,8 @@ mod tests {
     }
 
     #[test]
-    fn test_app_normalized_for_service_model_moves_legacy_domains_to_web_service() {
+    fn test_app_normalized_for_service_model_moves_legacy_domains_to_web_service(
+    ) {
         let owner_id = Uuid::new_v4();
         let mut app = App::new(
             "test-app".to_string(),
@@ -964,7 +1070,12 @@ mod tests {
     #[test]
     fn test_container_service_new() {
         let app_id = Uuid::new_v4();
-        let service = ContainerService::new(app_id, "api".to_string(), "node:18".to_string(), 3000);
+        let service = ContainerService::new(
+            app_id,
+            "api".to_string(),
+            "node:18".to_string(),
+            3000,
+        );
 
         assert_eq!(service.app_id, app_id);
         assert_eq!(service.name, "api");
@@ -1014,6 +1125,24 @@ mod tests {
         assert!(service.command.is_none());
         assert!(service.entrypoint.is_none());
         assert!(service.working_dir.is_none());
+        assert!(service.schedule.is_none());
+    }
+
+    #[test]
+    fn test_cron_service_does_not_expect_inbound_port() {
+        let app_id = Uuid::new_v4();
+        let mut service = ContainerService::new(
+            app_id,
+            "cleanup".to_string(),
+            "alpine:3.22".to_string(),
+            0,
+        );
+        service.service_type = ServiceType::CronJob;
+        service.schedule = Some("*/5 * * * *".to_string());
+
+        assert!(service.is_cron_job());
+        assert!(!service.expects_inbound_port());
+        assert!(!service.requires_source_checkout());
     }
 
     #[test]
@@ -1082,8 +1211,10 @@ mod tests {
 
     #[test]
     fn test_user_new_with_password() {
-        let user =
-            User::new_with_password("test@example.com".to_string(), "password_hash".to_string());
+        let user = User::new_with_password(
+            "test@example.com".to_string(),
+            "password_hash".to_string(),
+        );
 
         assert_eq!(user.email, "test@example.com");
         assert_eq!(user.password_hash, Some("password_hash".to_string()));
@@ -1132,7 +1263,8 @@ mod tests {
     #[test]
     fn test_github_app_config_builder_minimal() {
         let owner_id = Uuid::new_v4();
-        let config = GithubAppConfig::builder(12345, "minimal-app", owner_id).build();
+        let config =
+            GithubAppConfig::builder(12345, "minimal-app", owner_id).build();
 
         assert_eq!(config.app_id, 12345);
         assert_eq!(config.app_name, "minimal-app");
@@ -1143,8 +1275,11 @@ mod tests {
 
     #[test]
     fn test_github_installation_new() {
-        let installation =
-            GithubInstallation::new(67890, "test-user".to_string(), "User".to_string());
+        let installation = GithubInstallation::new(
+            67890,
+            "test-user".to_string(),
+            "User".to_string(),
+        );
 
         assert_eq!(installation.id, 67890);
         assert_eq!(installation.account_login, "test-user");

@@ -97,8 +97,8 @@ mod tests {
         std::env::set_var(PRIMARY_ENV_NAME, "env-secret");
 
         let config = Config::default();
-        let encrypted =
-            encrypt_value(&config, "payload").expect("encryption should succeed with env override");
+        let encrypted = encrypt_value(&config, "payload")
+            .expect("encryption should succeed with env override");
         let decrypted = decrypt_value(&config, &encrypted, None)
             .expect("decryption should succeed with env override");
         assert_eq!(decrypted, "payload");
@@ -129,7 +129,8 @@ mod tests {
 
         let legacy = "legacy-secret";
         let key = derive_key(legacy);
-        let encrypted = encrypt("payload", &key).expect("legacy encryption should succeed");
+        let encrypted =
+            encrypt("payload", &key).expect("legacy encryption should succeed");
         let stored = format!("{}{}", ENCRYPTED_PREFIX, encrypted);
 
         let mut config = Config::default();

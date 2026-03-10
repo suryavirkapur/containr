@@ -17,32 +17,30 @@ requirements
 quick install
 -------------
 
-  cargo install --git https://github.com/suryavirkapur/containr-paas containr
-  ./install.sh
-  sudo containr
+  curl -fsSL https://github.com/suryavirkapur/containr/releases/latest/download/containr-install-vps.sh | sudo bash
 
 detailed installation
 ---------------------
 
 option 1: install from cargo (recommended)
 
-  cargo install --git https://github.com/suryavirkapur/containr-paas containr
+  cargo install --git https://github.com/suryavirkapur/containr --bin containr --bin containrctl
 
 with specific version/tag:
 
-  cargo install --git https://github.com/suryavirkapur/containr-paas --tag v0.1.0 containr
+  cargo install --git https://github.com/suryavirkapur/containr --tag v0.1.14-alpha --bin containr --bin containrctl
 
 option 2: build from source
 
-  git clone https://github.com/suryavirkapur/containr-paas.git
-  cd containr-paas
+  git clone https://github.com/suryavirkapur/containr.git
+  cd containr
   cargo build --release
   sudo cp target/release/containr /usr/local/bin/
 
 option 3: install to cargo bin
 
-  git clone https://github.com/suryavirkapur/containr-paas.git
-  cd containr-paas
+  git clone https://github.com/suryavirkapur/containr.git
+  cd containr
   cargo install --path crates/containr
 
 post-install configuration
@@ -59,16 +57,17 @@ option 2: create config manually
   cat > containr.toml << 'EOF'
   [server]
   host = "0.0.0.0"
-  port = 3000
+  port = 2077
 
   [database]
-  backend = "sled"
+  backend = "sqlite"
   path = "./data/containr.db"
 
   [proxy]
   http_port = 80
   https_port = 443
   base_domain = "your-domain.com"
+  public_ip = "203.0.113.10"
 
   [github]
   client_id = ""
@@ -105,18 +104,50 @@ with default ports (requires root for 80/443):
 
   sudo containr
 
+or explicitly:
+
+  sudo containr server
+
 with custom ports (no root required):
 
-  containr --http-port 8080 --https-port 8443 --api-port 3000
+  containr --http-port 8080 --https-port 8443 --api-port 2077
 
 command line options:
 
-  --config <path>      config file path (default: containr.toml)
-  --http-port <port>   http proxy port (default: 80)
-  --https-port <port>  https proxy port (default: 443)
-  --api-port <port>    api server port (default: 3000)
-  --version            print version
-  --help               print help
+  containr server
+      run the full api/proxy/worker stack
+
+  containr docker check
+      verify docker socket connectivity and print engine details
+
+  containr docker containers --all
+      list containers directly from the docker socket
+
+  containr generate-api-key --email you@example.com --raw
+      create a long-lived bearer api key for an existing user
+      note: with the default sled backend, stop containr first so the database lock is free
+
+  containr setup-systemd
+      render a systemd service unit file, optionally writing it to /etc/systemd/system
+
+client cli
+----------
+
+containr now ships a separate client binary:
+
+  containrctl init --url http://127.0.0.1:2077 --instance-id local
+  containrctl register --email you@example.com --password your-password
+  containrctl health
+  containrctl projects list
+  containrctl containers list
+  containrctl system stats
+
+client config is stored in:
+
+  $HOME/.containr/config.toml
+
+the config keeps the active instance, instance id, base url, bearer token/api key,
+timeout, and tls verification settings.
 
 frontend development
 --------------------
@@ -137,7 +168,16 @@ for production build:
 systemd service
 ---------------
 
-create /etc/systemd/system/containr.service:
+generate a unit file automatically:
+
+  sudo containr setup-systemd \
+    --binary-path /usr/local/bin/containr \
+    --working-directory /opt/containr \
+    --config-path /opt/containr/containr.toml \
+    --enable \
+    --start
+
+or create /etc/systemd/system/containr.service manually:
 
   [unit]
   description=containr paas
@@ -180,7 +220,7 @@ run with docker:
     --restart unless-stopped \
     -p 80:80 \
     -p 443:443 \
-    -p 3000:3000 \
+    -p 2077:2077 \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v $(pwd)/data:/app/data \
     -v $(pwd)/containr.toml:/app/containr.toml:ro \
@@ -196,7 +236,7 @@ docker compose:
       ports:
         - "80:80"
         - "443:443"
-        - "3000:3000"
+        - "2077:2077"
       volumes:
         - /var/run/docker.sock:/var/run/docker.sock
         - ./data:/app/data
@@ -211,7 +251,7 @@ check version:
 
 check health:
 
-  curl http://localhost:3000/health
+  curl http://localhost:2077/health
 
 expected response:
 
@@ -219,7 +259,7 @@ expected response:
 
 access dashboard:
 
-  open http://localhost:3000
+  open http://localhost:2077
 
 dns setup
 ---------
@@ -280,13 +320,16 @@ ssl certificate errors:
 database errors:
   ensure ./data directory exists and is writable
 
+sqlite is now the default backend for new installs.
+if you intentionally use sled, commands that open the database directly may require the service to be stopped first.
+
 more help:
   see docs/troubleshooting.txt
 
 next steps
 ----------
 
-1. create your first user at http://localhost:3000
+1. create your first user at http://localhost:2077
 2. connect your github account
 3. deploy your first app
 

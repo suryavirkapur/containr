@@ -1,11 +1,15 @@
 //! authentication module - jwt + password hashing
 
 use argon2::{
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{
+        PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
+    },
     Argon2,
 };
 use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{
+    decode, encode, DecodingKey, EncodingKey, Header, Validation,
+};
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -34,41 +38,61 @@ pub struct ExecTokenClaims {
 pub fn hash_password(password: &str) -> Result<String> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
-    let hash = argon2
-        .hash_password(password.as_bytes(), &salt)
-        .map_err(|e| Error::Internal(format!("failed to hash password: {}", e)))?;
+    let hash =
+        argon2
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|e| {
+                Error::Internal(format!("failed to hash password: {}", e))
+            })?;
     Ok(hash.to_string())
 }
 
 /// verifies a password against a hash
 pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
-    let parsed_hash = PasswordHash::new(hash)
-        .map_err(|e| Error::Internal(format!("invalid password hash: {}", e)))?;
+    let parsed_hash = PasswordHash::new(hash).map_err(|e| {
+        Error::Internal(format!("invalid password hash: {}", e))
+    })?;
     Ok(Argon2::default()
         .verify_password(password.as_bytes(), &parsed_hash)
         .is_ok())
 }
 
 /// creates a jwt token for a user
-pub fn create_token(user_id: Uuid, email: &str, secret: &str, expiry_hours: u64) -> Result<String> {
+pub fn create_token(
+    user_id: Uuid,
+    email: &str,
+    secret: &str,
+    expiry_hours: u64,
+) -> Result<String> {
     let now = Utc::now();
     let exp = now + Duration::hours(expiry_hours as i64);
 
-    let claims = Claims {
-        sub: user_id,
-        email: email.to_string(),
-        exp: exp.timestamp(),
-        iat: now.timestamp(),
-    };
-
-    let token = encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
+    create_claims_token(
+        user_id,
+        email,
+        secret,
+        now.timestamp(),
+        exp.timestamp(),
     )
-    .map_err(|e| Error::Internal(format!("failed to create token: {}", e)))?;
+}
 
-    Ok(token)
+/// creates a long-lived api key for a user
+pub fn create_api_key(
+    user_id: Uuid,
+    email: &str,
+    secret: &str,
+    expiry_days: u64,
+) -> Result<String> {
+    let now = Utc::now();
+    let exp = now + Duration::days(expiry_days as i64);
+
+    create_claims_token(
+        user_id,
+        email,
+        secret,
+        now.timestamp(),
+        exp.timestamp(),
+    )
 }
 
 pub fn create_exec_token(
@@ -93,7 +117,9 @@ pub fn create_exec_token(
         &claims,
         &EncodingKey::from_secret(secret.as_bytes()),
     )
-    .map_err(|e| Error::Internal(format!("failed to create exec token: {}", e)))?;
+    .map_err(|e| {
+        Error::Internal(format!("failed to create exec token: {}", e))
+    })?;
 
     Ok((token, exp.timestamp()))
 }
@@ -140,48 +166,28 @@ pub fn extract_bearer_token(auth_header: &str) -> Option<&str> {
     auth_header.strip_prefix("Bearer ")
 }
 
-#[cfg(test)]
-mod tests {
-    use uuid::Uuid;
+fn create_claims_token(
+    user_id: Uuid,
+    email: &str,
+    secret: &str,
+    issued_at: i64,
+    expires_at: i64,
+) -> Result<String> {
+    let claims = Claims {
+        sub: user_id,
+        email: email.to_string(),
+        exp: expires_at,
+        iat: issued_at,
+    };
 
-    use super::{create_exec_token, validate_exec_token};
-
-    #[test]
-    fn exec_token_round_trips_for_matching_container() {
-        let user_id = Uuid::new_v4();
-        let secret = "test-secret";
-
-        let (token, _) = match create_exec_token(user_id, "containr-demo", secret, 60) {
-            Ok(result) => result,
-            Err(error) => panic!("expected exec token to be created: {}", error),
-        };
-
-        let claims = match validate_exec_token(&token, "containr-demo", secret) {
-            Ok(claims) => claims,
-            Err(error) => panic!("expected exec token to validate: {}", error),
-        };
-
-        assert_eq!(claims.sub, user_id);
-        assert_eq!(claims.container_id, "containr-demo".to_string());
-        assert_eq!(claims.kind, "container_exec".to_string());
-    }
-
-    #[test]
-    fn exec_token_rejects_different_container_id() {
-        let user_id = Uuid::new_v4();
-        let secret = "test-secret";
-
-        let (token, _) = match create_exec_token(user_id, "containr-demo", secret, 60) {
-            Ok(result) => result,
-            Err(error) => panic!("expected exec token to be created: {}", error),
-        };
-
-        match validate_exec_token(&token, "containr-other", secret) {
-            Ok(_) => panic!("expected mismatched container id to be rejected"),
-            Err(error) => assert_eq!(
-                error.to_string(),
-                "unauthorized: exec token does not match container".to_string()
-            ),
-        }
-    }
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .map_err(|e| Error::Internal(format!("failed to create token: {}", e)))
 }
+
+#[cfg(test)]
+#[path = "auth_test.rs"]
+mod auth_test;

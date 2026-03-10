@@ -1,6 +1,16 @@
 import { Component, createEffect, createSignal, For, Show } from "solid-js";
 
 import { EditableKeyValueEntry } from "../utils/keyValueEntries";
+import {
+	Button,
+	Card,
+	CardContent,
+	CardHeader,
+	CardTitle,
+	Input,
+	Switch,
+	Textarea,
+} from "./ui";
 
 interface EnvVarEditorProps {
 	envVars: EditableKeyValueEntry[];
@@ -16,14 +26,6 @@ interface EnvVarEditorProps {
 const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
 	const [bulkEdit, setBulkEdit] = createSignal(false);
 	const [bulkText, setBulkText] = createSignal("");
-	const isDark = () => props.theme === "dark";
-
-	const inputClass = () =>
-		isDark()
-			? "bg-neutral-900 border-neutral-700 text-white focus:border-neutral-400"
-			: "bg-white border-neutral-300 text-black focus:border-black";
-	const subtleTextClass = () =>
-		isDark() ? "text-neutral-400" : "text-neutral-500";
 	const title = () => props.title ?? "environment variables";
 	const description = () =>
 		props.description ?? "shared across every service in this group";
@@ -70,107 +72,90 @@ const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
 	};
 
 	return (
-		<section class="border border-neutral-200 p-4">
-			<div class="flex justify-between items-center mb-4">
+		<Card variant="muted">
+			<CardHeader class="flex flex-wrap items-center justify-between gap-4">
 				<div>
-					<h3 class="text-xs text-neutral-500 uppercase tracking-wider">
-						{title()}
-					</h3>
-					<p class={`text-xs mt-2 ${subtleTextClass()}`}>{description()}</p>
+					<CardTitle class="text-base">{title()}</CardTitle>
+					<p class="mt-2 text-sm text-[var(--muted-foreground)]">
+						{description()}
+					</p>
 				</div>
-				<label class="flex items-center gap-2 cursor-pointer text-xs text-neutral-500">
+				<div class="flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
 					<span>bulk edit</span>
-					<button
-						type="button"
-						onClick={toggleBulkEdit}
-						class={`relative w-8 h-4 transition-colors ${
-							bulkEdit() ? "bg-black" : "bg-neutral-300"
-						}`}
-					>
-						<span
-							class={`absolute top-0.5 w-3 h-3 bg-white transition-transform ${
-								bulkEdit() ? "translate-x-4" : "translate-x-0.5"
-							}`}
-						/>
-					</button>
-				</label>
-			</div>
+					<Switch checked={bulkEdit()} onChange={() => toggleBulkEdit()} />
+				</div>
+			</CardHeader>
 
-			<Show when={bulkEdit()}>
-				<textarea
+			<CardContent class="space-y-4">
+				<Show when={bulkEdit()}>
+					<Textarea
+						label="bulk variables"
+						description={bulkHint()}
 					value={bulkText()}
 					onInput={(event) => setBulkText(event.currentTarget.value)}
-					placeholder={"export key=value\nanother_key=another_value"}
-					class={`w-full h-36 px-3 py-2 border focus:outline-none text-sm font-mono resize-none ${inputClass()}`}
-				/>
-				<p class={`text-xs mt-2 ${subtleTextClass()}`}>{bulkHint()}</p>
-			</Show>
-
-			<Show when={!bulkEdit()}>
-				<div class="space-y-2">
-					<For each={props.envVars}>
-						{(envVar, index) => (
-							<div class="flex gap-2">
-								<input
-									type="text"
-									placeholder="key"
-									value={envVar.key}
-									onInput={(event) =>
-										updateEnvVar(index(), "key", event.currentTarget.value)
-									}
-									class={`flex-1 px-3 py-2 border text-sm focus:outline-none font-mono ${inputClass()}`}
-								/>
-								<input
-									type={envVar.secret ? "password" : "text"}
-									placeholder="value"
-									value={envVar.value}
-									onInput={(event) =>
-										updateEnvVar(index(), "value", event.currentTarget.value)
-									}
-									class={`flex-[2] px-3 py-2 border text-sm focus:outline-none font-mono ${inputClass()}`}
-								/>
-								<button
-									type="button"
-									onClick={() =>
-										updateEnvVar(index(), "secret", !envVar.secret)
-									}
-									class={`px-3 py-1 text-xs border ${
-										envVar.secret
-											? "border-black bg-black text-white"
-											: "border-neutral-300 text-neutral-700 hover:border-neutral-400"
-									}`}
-								>
-									secret
-								</button>
-								<button
-									type="button"
-									onClick={() => removeEnvVar(index())}
-									class="px-3 py-1 text-neutral-500 hover:text-black border border-neutral-300"
-								>
-									remove
-								</button>
-							</div>
-						)}
-					</For>
-				</div>
-
-				<Show when={props.envVars.length === 0}>
-					<div
-						class={`text-center py-8 text-sm border border-dashed border-neutral-200 ${subtleTextClass()}`}
-					>
-						{emptyText()}
-					</div>
+						placeholder={"export key=value\nanother_key=another_value"}
+						class="h-40 resize-none font-mono"
+					/>
 				</Show>
 
-				<button
-					type="button"
-					onClick={addEnvVar}
-					class="mt-3 px-3 py-1.5 border border-neutral-300 text-neutral-700 hover:border-black hover:text-black text-xs"
-				>
-					{addLabel()}
-				</button>
-			</Show>
-		</section>
+				<Show when={!bulkEdit()}>
+					<div class="space-y-3">
+						<For each={props.envVars}>
+							{(envVar, index) => (
+								<div class="grid gap-3 border border-[var(--border)] bg-[var(--card)] p-3 md:grid-cols-[1fr_1.6fr_auto_auto]">
+									<Input
+										type="text"
+										placeholder="key"
+										value={envVar.key}
+										onInput={(event) =>
+											updateEnvVar(index(), "key", event.currentTarget.value)
+										}
+										class="font-mono"
+									/>
+									<Input
+										type={envVar.secret ? "password" : "text"}
+										placeholder="value"
+										value={envVar.value}
+										onInput={(event) =>
+											updateEnvVar(index(), "value", event.currentTarget.value)
+										}
+										class="font-mono"
+									/>
+									<Button
+										type="button"
+										variant={envVar.secret ? "primary" : "outline"}
+										size="sm"
+										onClick={() =>
+											updateEnvVar(index(), "secret", !envVar.secret)
+										}
+									>
+										secret
+									</Button>
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										onClick={() => removeEnvVar(index())}
+									>
+										remove
+									</Button>
+								</div>
+							)}
+						</For>
+					</div>
+
+					<Show when={props.envVars.length === 0}>
+						<div class="border border-dashed border-[var(--border-strong)] px-4 py-8 text-center text-sm text-[var(--muted-foreground)]">
+							{emptyText()}
+						</div>
+					</Show>
+
+					<Button type="button" variant="secondary" size="sm" onClick={addEnvVar}>
+						{addLabel()}
+					</Button>
+				</Show>
+			</CardContent>
+		</Card>
 	);
 };
 

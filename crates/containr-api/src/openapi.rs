@@ -4,8 +4,8 @@ use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
 use crate::handlers::{
-    apps, auth, certificates, containers, databases, deployments, github_app, health, projects,
-    queues, settings, storage, system,
+    apps, auth, certificates, containers, databases, deployments, github_app,
+    health, projects, queues, services, settings, storage, system,
 };
 
 /// api documentation
@@ -26,6 +26,7 @@ use crate::handlers::{
         (name = "certificates", description = "ssl certificate management"),
         (name = "databases", description = "managed databases"),
         (name = "queues", description = "managed queues"),
+        (name = "services", description = "unified service inventory"),
         (name = "storage", description = "s3-compatible storage buckets"),
         (name = "containers", description = "container monitoring and volumes"),
         (name = "github-app", description = "github app integration"),
@@ -112,6 +113,14 @@ use crate::handlers::{
         queues::start_queue,
         queues::stop_queue,
         queues::expose_queue,
+        // services
+        services::list_services,
+        services::get_service,
+        services::get_service_logs,
+        services::start_service,
+        services::stop_service,
+        services::restart_service,
+        services::delete_service,
         // storage
         storage::list_buckets,
         storage::create_bucket,
@@ -188,6 +197,9 @@ use crate::handlers::{
             queues::CreateQueueRequest,
             queues::QueueResponse,
             queues::ExposeQueueRequest,
+            // services
+            services::ServiceResponse,
+            services::ServiceLogsResponse,
             // storage
             storage::CreateBucketRequest,
             storage::BucketResponse,

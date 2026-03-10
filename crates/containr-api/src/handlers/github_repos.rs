@@ -186,27 +186,29 @@ pub async fn github_repos(
     })?;
 
     // decrypt token
-    let decrypted_token = decrypt_value(&config, &access_token, Some(&config.auth.jwt_secret))
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("failed to decrypt token: {}", e),
-                }),
-            )
-        })?;
+    let decrypted_token =
+        decrypt_value(&config, &access_token, Some(&config.auth.jwt_secret))
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: format!("failed to decrypt token: {}", e),
+                    }),
+                )
+            })?;
 
     let visibility = query.visibility.as_deref();
-    let repos = get_user_repos(&decrypted_token, visibility)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(ErrorResponse {
-                    error: format!("github api error: {}", e),
-                }),
-            )
-        })?;
+    let repos =
+        get_user_repos(&decrypted_token, visibility)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_GATEWAY,
+                    Json(ErrorResponse {
+                        error: format!("github api error: {}", e),
+                    }),
+                )
+            })?;
 
     Ok(Json(GithubReposResponse {
         repos: repos.into_iter().map(RepoInfo::from).collect(),
@@ -253,7 +255,9 @@ pub async fn github_disconnect(
 }
 
 /// helper for internal errors
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    e: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", e);
     (
         StatusCode::INTERNAL_SERVER_ERROR,

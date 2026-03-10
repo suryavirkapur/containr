@@ -1,30 +1,30 @@
-import { Component, JSX, splitProps } from 'solid-js';
+import { Component, JSX, splitProps } from "solid-js";
+
+import { cn } from "../../lib/cn";
 
 interface CardProps extends JSX.HTMLAttributes<HTMLDivElement> {
-    variant?: 'default' | 'hover';
+    variant?: "default" | "hover" | "muted";
 }
 
 /// reusable card component
 export const Card: Component<CardProps> = (props) => {
     const [local, others] = splitProps(props, [
-        'variant',
-        'class',
-        'children',
+        "variant",
+        "class",
+        "children",
     ]);
 
     const variants = {
-        default: 'bg-[#12121a] border border-neutral-800',
+        default:
+            "border border-[var(--border)] bg-[var(--card)] shadow-[0_0_0_1px_rgba(255,255,255,0.02)]",
         hover:
-            'bg-[#12121a] border border-neutral-800'
-            + ' hover:border-neutral-600 transition-colors cursor-pointer group',
+            "border border-[var(--border)] bg-[var(--card)] transition-colors hover:border-[var(--border-strong)] cursor-pointer group",
+        muted: "border border-[var(--border)] bg-[var(--surface-muted)]",
     };
 
     return (
         <div
-            class={`
-        ${variants[local.variant || 'default']}
-        ${local.class || ''}
-      `}
+            class={cn(variants[local.variant || "default"], local.class)}
             {...others}
         >
             {local.children}
@@ -35,51 +35,83 @@ export const Card: Component<CardProps> = (props) => {
 export const CardHeader: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
     props,
 ) => {
+    const [local, others] = splitProps(props, ["class", "children"]);
+
     return (
         <div
-            class={`p-6 border-b border-neutral-800 ${props.class || ''}`}
-            {...props}
-        />
+            class={cn(
+                "border-b border-[var(--border)] px-6 py-5",
+                local.class,
+            )}
+            {...others}
+        >
+            {local.children}
+        </div>
     );
 };
 
 export const CardTitle: Component<JSX.HTMLAttributes<HTMLHeadingElement>> = (
     props,
 ) => {
+    const [local, others] = splitProps(props, ["class", "children"]);
+
     return (
         <h3
-            class={`text-lg font-serif font-medium text-white ${props.class || ''
-                }`}
-            {...props}
-        />
+            class={cn(
+                "font-serif text-lg font-medium text-[var(--foreground)]",
+                local.class,
+            )}
+            {...others}
+        >
+            {local.children}
+        </h3>
     );
 };
 
 export const CardDescription: Component<
     JSX.HTMLAttributes<HTMLParagraphElement>
 > = (props) => {
+    const [local, others] = splitProps(props, ["class", "children"]);
+
     return (
         <p
-            class={`text-sm text-neutral-400 mt-1 ${props.class || ''}`}
-            {...props}
-        />
+            class={cn(
+                "mt-1 text-sm text-[var(--muted-foreground)]",
+                local.class,
+            )}
+            {...others}
+        >
+            {local.children}
+        </p>
     );
 };
 
 export const CardContent: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
     props,
 ) => {
-    return <div class={`p-6 ${props.class || ''}`} {...props} />;
+    const [local, others] = splitProps(props, ["class", "children"]);
+
+    return (
+        <div class={cn("px-6 py-5", local.class)} {...others}>
+            {local.children}
+        </div>
+    );
 };
 
 export const CardFooter: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
     props,
 ) => {
+    const [local, others] = splitProps(props, ["class", "children"]);
+
     return (
         <div
-            class={`p-6 border-t border-neutral-800 flex items-center ${props.class || ''
-                }`}
-            {...props}
-        />
+            class={cn(
+                "flex items-center border-t border-[var(--border)] px-6 py-5",
+                local.class,
+            )}
+            {...others}
+        >
+            {local.children}
+        </div>
     );
 };

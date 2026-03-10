@@ -16,6 +16,20 @@ pub async fn resolve_app_deployment_source(
     owner_id: Uuid,
     app: &App,
 ) -> Result<DeploymentSource, (StatusCode, Json<ErrorResponse>)> {
+    if !app.requires_source_checkout() {
+        return Ok(DeploymentSource::None);
+    }
+
+    if app.github_url.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "github_url is required when a service needs source checkout"
+                    .to_string(),
+            }),
+        ));
+    }
+
     resolve_source_deployment_source(state, owner_id, &app.github_url).await
 }
 
@@ -60,7 +74,9 @@ pub async fn resolve_remote_git_token(
 ) -> Result<Option<String>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
 
-    if let Some(app_config) = state.db.get_github_app(owner_id).map_err(internal_error)? {
+    if let Some(app_config) =
+        state.db.get_github_app(owner_id).map_err(internal_error)?
+    {
         let private_key_pem = decrypt_value(
             &config,
             &app_config.private_key,
@@ -68,16 +84,20 @@ pub async fn resolve_remote_git_token(
         )
         .map_err(internal_error)?;
 
-        let token = get_repo_installation_token(&app_config, &private_key_pem, repo_url)
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::BAD_GATEWAY,
-                    Json(ErrorResponse {
-                        error: format!("github api error: {}", e),
-                    }),
-                )
-            })?;
+        let token = get_repo_installation_token(
+            &app_config,
+            &private_key_pem,
+            repo_url,
+        )
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(ErrorResponse {
+                    error: format!("github api error: {}", e),
+                }),
+            )
+        })?;
 
         if token.is_some() {
             return Ok(token);
@@ -87,9 +107,12 @@ pub async fn resolve_remote_git_token(
     let user = state.db.get_user(owner_id).map_err(internal_error)?;
     if let Some(user) = user {
         if let Some(access_token) = user.github_access_token {
-            let decrypted_token =
-                decrypt_value(&config, &access_token, Some(&config.auth.jwt_secret))
-                    .map_err(internal_error)?;
+            let decrypted_token = decrypt_value(
+                &config,
+                &access_token,
+                Some(&config.auth.jwt_secret),
+            )
+            .map_err(internal_error)?;
             return Ok(Some(decrypted_token));
         }
     }
@@ -98,6 +121,10 @@ pub async fn resolve_remote_git_token(
 }
 
 fn is_local_source_path(source: &str) -> bool {
+    if source.trim().is_empty() {
+        return false;
+    }
+
     if source.contains("://") {
         return false;
     }
@@ -106,7 +133,9 @@ fn is_local_source_path(source: &str) -> bool {
     path.is_absolute() || path.exists()
 }
 
-fn internal_error<E: std::fmt::Display>(error: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    error: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", error);
     (
         StatusCode::INTERNAL_SERVER_ERROR,

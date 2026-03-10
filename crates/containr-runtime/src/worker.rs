@@ -13,13 +13,14 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::docker::{
-    DockerBindMount, DockerContainerConfig, DockerContainerManager, DockerNetworkAttachment,
-    INTERNAL_NETWORK_NAME,
+    DockerBindMount, DockerContainerConfig, DockerContainerManager,
+    DockerNetworkAttachment,
 };
 use crate::image::{ImageBuildConfig, ImageManager, RegistryCredentials};
 use crate::route_updates::ProxyRouteUpdate;
 use containr_common::models::{
-    ContainerService, Deployment, DeploymentSource, DeploymentStatus, RolloutStrategy,
+    ContainerService, Deployment, DeploymentSource, DeploymentStatus,
+    RolloutStrategy,
 };
 use containr_common::{decrypt, derive_key, Database};
 
@@ -119,12 +120,15 @@ impl DeploymentWorker {
                 );
 
                 // update deployment status to failed
-                if let Ok(Some(mut deployment)) = self.db.get_deployment(job.deployment_id) {
+                if let Ok(Some(mut deployment)) =
+                    self.db.get_deployment(job.deployment_id)
+                {
                     deployment.status = DeploymentStatus::Failed;
                     deployment.finished_at = Some(chrono::Utc::now());
-                    let _ = self
-                        .db
-                        .append_deployment_log(deployment.id, &format!("error: {}", e));
+                    let _ = self.db.append_deployment_log(
+                        deployment.id,
+                        &format!("error: {}", e),
+                    );
                     let _ = self.db.save_deployment(&deployment);
                 }
             }
@@ -151,14 +155,18 @@ impl DeploymentWorker {
             .get_app(job.app_id)?
             .ok_or_else(|| anyhow::anyhow!("app not found"))?;
 
-        let service_images = if let Some(source_deployment_id) = job.rollback_from_deployment_id {
-            let source = self
-                .db
-                .get_deployment(source_deployment_id)?
-                .ok_or_else(|| anyhow::anyhow!("rollback source deployment not found"))?;
+        let service_images = if let Some(source_deployment_id) =
+            job.rollback_from_deployment_id
+        {
+            let source =
+                self.db.get_deployment(source_deployment_id)?.ok_or_else(
+                    || anyhow::anyhow!("rollback source deployment not found"),
+                )?;
 
             if source.app_id != job.app_id {
-                return Err(anyhow::anyhow!("rollback source does not belong to app"));
+                return Err(anyhow::anyhow!(
+                    "rollback source does not belong to app"
+                ));
             }
 
             let _ = self.db.append_deployment_log(
@@ -170,20 +178,27 @@ impl DeploymentWorker {
             );
             self.resolve_rollback_service_images(&app, &source)?
         } else {
-            // update status to cloning
-            self.update_status(&deployment, DeploymentStatus::Cloning)?;
+            let repo_path = match &job.source {
+                DeploymentSource::None => None,
+                _ => {
+                    self.update_status(&deployment, DeploymentStatus::Cloning)?;
+                    Some(self.clone_repo(job).await?)
+                }
+            };
 
-            // clone repository
-            let repo_path = self.clone_repo(job).await?;
-
-            // update status to building
             self.update_status(&deployment, DeploymentStatus::Building)?;
             let service_images = self
-                .build_service_images(&app, &deployment, &repo_path, &job.commit_sha)
+                .build_service_images(
+                    &app,
+                    &deployment,
+                    repo_path.as_deref(),
+                    &job.commit_sha,
+                )
                 .await?;
 
-            // cleanup repo directory
-            let _ = tokio::fs::remove_dir_all(&repo_path).await;
+            if let Some(repo_path) = repo_path {
+                let _ = tokio::fs::remove_dir_all(&repo_path).await;
+            }
             service_images
         };
 
@@ -197,11 +212,8 @@ impl DeploymentWorker {
         }
 
         // create network for this app
-        let network_name = format!("containr-{}", job.app_id);
+        let network_name = app.network_name();
         self.docker_manager.create_network(&network_name).await?;
-        self.docker_manager
-            .create_network(INTERNAL_NETWORK_NAME)
-            .await?;
 
         self.deploy_services(
             &app,
@@ -236,21 +248,31 @@ impl DeploymentWorker {
 
         // topological sort services by dependencies
         let sorted_services = self.topological_sort_services(&app.services)?;
-        let previous_running = self.get_previous_running_deployment(app.id, deployment.id)?;
-        let legacy_previous_container = previous_running
-            .as_ref()
-            .and_then(|previous| previous.container_id.clone());
-        let mut old_containers: HashMap<(uuid::Uuid, u32), String> = HashMap::new();
-        if let Some(prev) = previous_running {
-            for sd in prev.service_deployments {
-                if let Some(container_id) = sd.container_id {
-                    old_containers.insert((sd.service_id, sd.replica_index), container_id);
+        let previous_running =
+            self.get_previous_running_deployments(app.id, deployment.id)?;
+        let legacy_previous_containers = previous_running
+            .iter()
+            .filter_map(|previous| previous.container_id.clone())
+            .collect::<Vec<_>>();
+        let mut old_containers: HashMap<(uuid::Uuid, u32), String> =
+            HashMap::new();
+        for previous in &previous_running {
+            for service_deployment in &previous.service_deployments {
+                if let Some(container_id) =
+                    service_deployment.container_id.clone()
+                {
+                    old_containers
+                        .entry((
+                            service_deployment.service_id,
+                            service_deployment.replica_index,
+                        ))
+                        .or_insert(container_id);
                 }
             }
         }
 
         if matches!(rollout_strategy, RolloutStrategy::StopFirst) {
-            if let Some(old) = legacy_previous_container.as_deref() {
+            for old in &legacy_previous_containers {
                 let _ = self.docker_manager.stop_container(old).await;
                 let _ = self.docker_manager.remove_container(old).await;
             }
@@ -273,13 +295,41 @@ impl DeploymentWorker {
                 "deploying service"
             );
 
+            let service_image =
+                service_images.get(&service.id).cloned().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "missing image for service {}",
+                        service.name
+                    )
+                })?;
+
+            if service.is_cron_job() {
+                let _ = self.db.append_deployment_log(
+                    deployment.id,
+                    &format!(
+                        "registered cron job {} on schedule {}",
+                        service.name,
+                        service.schedule.clone().unwrap_or_default()
+                    ),
+                );
+
+                let mut sd =
+                    ServiceDeployment::new(service.id, deployment.id, 0);
+                sd.image_id = Some(service_image);
+                sd.status = containr_common::models::DeploymentStatus::Stopped;
+                self.db.save_service_deployment(&sd)?;
+                service_deployments.push(sd);
+                continue;
+            }
+
             // deploy each replica
             for replica_idx in 0..service.replicas {
                 let container_id = format!(
                     "containr-{}-{}-{}-{}",
                     app.id, service.name, replica_idx, short_id
                 );
-                let old_container = old_containers.get(&(service.id, replica_idx)).cloned();
+                let old_container =
+                    old_containers.get(&(service.id, replica_idx)).cloned();
                 if matches!(rollout_strategy, RolloutStrategy::StopFirst) {
                     if let Some(old) = old_container.as_deref() {
                         let _ = self.docker_manager.stop_container(old).await;
@@ -289,32 +339,41 @@ impl DeploymentWorker {
 
                 // merge shared env vars with service-specific PORT
                 let mut env_vars = shared_env_vars.clone();
-                env_vars.insert("SERVICE_NAME".to_string(), service.name.clone());
-                env_vars.insert("REPLICA_INDEX".to_string(), replica_idx.to_string());
+                env_vars
+                    .insert("SERVICE_NAME".to_string(), service.name.clone());
+                env_vars.insert(
+                    "REPLICA_INDEX".to_string(),
+                    replica_idx.to_string(),
+                );
                 if service.port > 0 {
-                    env_vars.insert("PORT".to_string(), service.port.to_string());
+                    env_vars
+                        .insert("PORT".to_string(), service.port.to_string());
                 }
                 for env_var in &service.env_vars {
                     env_vars.insert(env_var.key.clone(), env_var.value.clone());
                 }
 
                 // convert health check if configured
-                let health_check = service.health_check.as_ref().and_then(|hc| {
-                    if service.port == 0 {
-                        return None;
-                    }
+                let health_check =
+                    service.health_check.as_ref().and_then(|hc| {
+                        if service.port == 0 {
+                            return None;
+                        }
 
-                    Some(crate::docker::HealthCheckCommand {
-                        cmd: vec![
-                            "curl".to_string(),
-                            "-f".to_string(),
-                            format!("http://localhost:{}{}", service.port, hc.path),
-                        ],
-                        interval_secs: hc.interval_secs,
-                        timeout_secs: hc.timeout_secs,
-                        retries: hc.retries,
-                    })
-                });
+                        Some(crate::docker::HealthCheckCommand {
+                            cmd: vec![
+                                "curl".to_string(),
+                                "-f".to_string(),
+                                format!(
+                                    "http://localhost:{}{}",
+                                    service.port, hc.path
+                                ),
+                            ],
+                            interval_secs: hc.interval_secs,
+                            timeout_secs: hc.timeout_secs,
+                            retries: hc.retries,
+                        })
+                    });
 
                 // convert restart policy
                 let restart_policy = match service.restart_policy {
@@ -323,19 +382,18 @@ impl DeploymentWorker {
                     RestartPolicy::OnFailure => "on-failure".to_string(),
                 };
 
-                let service_image = service_images
-                    .get(&service.id)
-                    .cloned()
-                    .ok_or_else(|| anyhow::anyhow!("missing image for service {}", service.name))?;
-
                 if !service.image.is_empty() {
-                    let registry_credentials = self.resolve_service_registry_auth(&service)?;
+                    let registry_credentials =
+                        self.resolve_service_registry_auth(&service)?;
                     let _ = self.db.append_deployment_log(
                         deployment.id,
                         &format!("pulling service image {}", service_image),
                     );
                     self.image_manager
-                        .pull_image_with_credentials(&service_image, registry_credentials.as_ref())
+                        .pull_image_with_credentials(
+                            &service_image,
+                            registry_credentials.as_ref(),
+                        )
                         .await?;
                 }
 
@@ -352,18 +410,19 @@ impl DeploymentWorker {
                     cpu_limit: service.cpu_limit,
                     network: Some(DockerNetworkAttachment {
                         name: network_name.to_string(),
-                        aliases: self.service_network_aliases(&service.name, replica_idx),
+                        aliases: self.service_network_aliases(
+                            &service.name,
+                            replica_idx,
+                        ),
                     }),
                     mounts: self.build_service_mounts(app.id, &service)?,
-                    additional_networks: vec![DockerNetworkAttachment {
-                        name: INTERNAL_NETWORK_NAME.to_string(),
-                        aliases: Vec::new(),
-                    }],
+                    additional_networks: Vec::new(),
                     health_check,
                     restart_policy,
                 };
 
-                let container_info = self.docker_manager.create_container(config).await?;
+                let container_info =
+                    self.docker_manager.create_container(config).await?;
 
                 // wait for dependencies to be healthy before continuing
                 if service.health_check.is_some() {
@@ -372,8 +431,14 @@ impl DeploymentWorker {
                         .wait_for_healthy(&container_id, 60)
                         .await?
                     {
-                        let _ = self.docker_manager.stop_container(&container_id).await;
-                        let _ = self.docker_manager.remove_container(&container_id).await;
+                        let _ = self
+                            .docker_manager
+                            .stop_container(&container_id)
+                            .await;
+                        let _ = self
+                            .docker_manager
+                            .remove_container(&container_id)
+                            .await;
                         return Err(anyhow::anyhow!(
                             "service {} replica {} failed health check",
                             service.name,
@@ -383,7 +448,11 @@ impl DeploymentWorker {
                 }
 
                 // create service deployment record
-                let mut sd = ServiceDeployment::new(service.id, deployment.id, replica_idx);
+                let mut sd = ServiceDeployment::new(
+                    service.id,
+                    deployment.id,
+                    replica_idx,
+                );
                 sd.container_id = Some(container_info.id);
                 sd.image_id = Some(service_image.clone());
                 sd.status = containr_common::models::DeploymentStatus::Running;
@@ -397,9 +466,11 @@ impl DeploymentWorker {
 
         // update main deployment
         let mut updated_deployment = deployment.clone();
-        updated_deployment.status = containr_common::models::DeploymentStatus::Running;
+        updated_deployment.status =
+            containr_common::models::DeploymentStatus::Running;
         updated_deployment.service_deployments = service_deployments;
-        updated_deployment.image_id = self.primary_deployment_image_id(service_images);
+        updated_deployment.image_id =
+            self.primary_deployment_image_id(service_images);
         updated_deployment.started_at = Some(chrono::Utc::now());
         updated_deployment.finished_at = Some(chrono::Utc::now());
         self.db.save_deployment(&updated_deployment)?;
@@ -412,12 +483,16 @@ impl DeploymentWorker {
                     let _ = self.docker_manager.remove_container(old).await;
                 }
             }
-            if let Some(old) = legacy_previous_container.as_deref() {
+            for old in &legacy_previous_containers {
                 if !new_container_ids.contains(old) {
                     let _ = self.docker_manager.stop_container(old).await;
                     let _ = self.docker_manager.remove_container(old).await;
                 }
             }
+        }
+
+        for previous in &previous_running {
+            self.mark_deployment_stopped(previous)?;
         }
 
         Ok(())
@@ -427,7 +502,7 @@ impl DeploymentWorker {
         &self,
         app: &containr_common::models::App,
         deployment: &Deployment,
-        repo_path: &Path,
+        repo_path: Option<&Path>,
         commit_sha: &str,
     ) -> anyhow::Result<HashMap<Uuid, String>> {
         let commit_prefix = if commit_sha.len() >= 8 {
@@ -444,8 +519,16 @@ impl DeploymentWorker {
                 continue;
             }
 
-            let build_config = self.resolve_service_build_config(repo_path, service)?;
-            let build_key = self.service_build_cache_key(service, &build_config);
+            let repo_path = repo_path.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "service {} requires source checkout but no source was provided",
+                    service.name
+                )
+            })?;
+            let build_config =
+                self.resolve_service_build_config(repo_path, service)?;
+            let build_key =
+                self.service_build_cache_key(service, &build_config);
             if let Some(existing_image) = built_by_key.get(&build_key) {
                 service_images.insert(service.id, existing_image.clone());
                 continue;
@@ -462,9 +545,14 @@ impl DeploymentWorker {
                 &format!("building image for service {}", service.name),
             );
             self.image_manager
-                .build_image_config_with_logs(&image_name, &build_config, |line| {
-                    let _ = self.db.append_deployment_log(deployment.id, line);
-                })
+                .build_image_config_with_logs(
+                    &image_name,
+                    &build_config,
+                    |line| {
+                        let _ =
+                            self.db.append_deployment_log(deployment.id, line);
+                    },
+                )
                 .await?;
 
             built_by_key.insert(build_key, image_name.clone());
@@ -497,7 +585,9 @@ impl DeploymentWorker {
         }
 
         let dockerfile = match service.dockerfile_path.as_deref() {
-            Some(path) => Some(self.resolve_context_dockerfile_path(context_rel, path)?),
+            Some(path) => {
+                Some(self.resolve_context_dockerfile_path(context_rel, path)?)
+            }
             None => None,
         };
         if let Some(ref dockerfile) = dockerfile {
@@ -644,16 +734,39 @@ impl DeploymentWorker {
         }
     }
 
-    fn get_previous_running_deployment(
+    fn get_previous_running_deployments(
         &self,
         app_id: Uuid,
         current_deployment_id: Uuid,
-    ) -> anyhow::Result<Option<Deployment>> {
+    ) -> anyhow::Result<Vec<Deployment>> {
         let deployments = self.db.list_deployments_by_app(app_id)?;
         Ok(deployments
             .into_iter()
-            .filter(|d| d.id != current_deployment_id && d.status == DeploymentStatus::Running)
-            .next())
+            .filter(|d| {
+                d.id != current_deployment_id
+                    && d.status == DeploymentStatus::Running
+            })
+            .collect())
+    }
+
+    fn mark_deployment_stopped(
+        &self,
+        deployment: &Deployment,
+    ) -> anyhow::Result<()> {
+        let finished_at = chrono::Utc::now();
+        let mut stopped = deployment.clone();
+        stopped.status = DeploymentStatus::Stopped;
+        stopped.finished_at = Some(finished_at);
+
+        for service_deployment in &mut stopped.service_deployments {
+            service_deployment.status = DeploymentStatus::Stopped;
+            if service_deployment.finished_at.is_none() {
+                service_deployment.finished_at = Some(finished_at);
+            }
+        }
+
+        self.db.save_deployment(&stopped)?;
+        Ok(())
     }
 
     fn build_service_mounts(
@@ -686,13 +799,16 @@ impl DeploymentWorker {
         let payload = trimmed.strip_prefix("enc:").unwrap_or(trimmed);
 
         if trimmed.starts_with("enc:") {
-            let secret = self
-                .encryption_secret
-                .as_deref()
-                .ok_or_else(|| anyhow::anyhow!("encryption key is not configured"))?;
+            let secret =
+                self.encryption_secret.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("encryption key is not configured")
+                })?;
             let key = derive_key(secret);
             return decrypt(payload, &key).map_err(|error| {
-                anyhow::anyhow!("failed to decrypt registry password: {}", error)
+                anyhow::anyhow!(
+                    "failed to decrypt registry password: {}",
+                    error
+                )
             });
         }
 
@@ -723,8 +839,10 @@ impl DeploymentWorker {
     ) -> anyhow::Result<Vec<containr_common::models::ContainerService>> {
         use std::collections::{HashSet, VecDeque};
 
-        let name_to_service: HashMap<String, &containr_common::models::ContainerService> =
-            services.iter().map(|s| (s.name.clone(), s)).collect();
+        let name_to_service: HashMap<
+            String,
+            &containr_common::models::ContainerService,
+        > = services.iter().map(|s| (s.name.clone(), s)).collect();
 
         let mut in_degree: HashMap<String, usize> = HashMap::new();
         let mut adj_list: HashMap<String, Vec<String>> = HashMap::new();
@@ -780,7 +898,9 @@ impl DeploymentWorker {
         }
 
         if sorted.len() != services.len() {
-            return Err(anyhow::anyhow!("circular dependency detected in services"));
+            return Err(anyhow::anyhow!(
+                "circular dependency detected in services"
+            ));
         }
 
         Ok(sorted)
@@ -804,6 +924,11 @@ impl DeploymentWorker {
         let source_url = match &source {
             DeploymentSource::LocalPath { path } => path.clone(),
             DeploymentSource::RemoteGit { url, .. } => url.clone(),
+            DeploymentSource::None => {
+                return Err(anyhow::anyhow!(
+                    "clone_repo called for deployment without source checkout"
+                ));
+            }
         };
 
         info!(
@@ -877,7 +1002,11 @@ impl DeploymentWorker {
         }
     }
 
-    fn service_network_aliases(&self, service_name: &str, replica_index: u32) -> Vec<String> {
+    fn service_network_aliases(
+        &self,
+        service_name: &str,
+        replica_index: u32,
+    ) -> Vec<String> {
         vec![
             service_name.to_string(),
             format!("{}-{}", service_name, replica_index),
@@ -892,7 +1021,8 @@ mod tests {
     use containr_common::{encrypt, DatabaseBackendKind, DatabaseConfig};
 
     fn make_worker() -> DeploymentWorker {
-        let root = std::env::temp_dir().join(format!("containr-test-{}", Uuid::new_v4()));
+        let root = std::env::temp_dir()
+            .join(format!("containr-test-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let db = Database::open(&DatabaseConfig {
             backend: DatabaseBackendKind::Sled,
@@ -900,7 +1030,13 @@ mod tests {
         })
         .unwrap();
         let work_dir = root.join("work");
-        DeploymentWorker::new_stub(db, work_dir, Some("test-secret".to_string()), None).unwrap()
+        DeploymentWorker::new_stub(
+            db,
+            work_dir,
+            Some("test-secret".to_string()),
+            None,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -908,8 +1044,18 @@ mod tests {
         let worker = make_worker();
         let app_id = Uuid::new_v4();
 
-        let web = ContainerService::new(app_id, "web".to_string(), "".to_string(), 8080);
-        let mut api = ContainerService::new(app_id, "api".to_string(), "".to_string(), 8081);
+        let web = ContainerService::new(
+            app_id,
+            "web".to_string(),
+            "".to_string(),
+            8080,
+        );
+        let mut api = ContainerService::new(
+            app_id,
+            "api".to_string(),
+            "".to_string(),
+            8081,
+        );
         api.depends_on = vec!["web".to_string()];
 
         let sorted = worker
@@ -925,8 +1071,18 @@ mod tests {
         let worker = make_worker();
         let app_id = Uuid::new_v4();
 
-        let mut web = ContainerService::new(app_id, "web".to_string(), "".to_string(), 8080);
-        let mut api = ContainerService::new(app_id, "api".to_string(), "".to_string(), 8081);
+        let mut web = ContainerService::new(
+            app_id,
+            "web".to_string(),
+            "".to_string(),
+            8080,
+        );
+        let mut api = ContainerService::new(
+            app_id,
+            "api".to_string(),
+            "".to_string(),
+            8081,
+        );
         web.depends_on = vec!["api".to_string()];
         api.depends_on = vec!["web".to_string()];
 
@@ -947,13 +1103,15 @@ mod tests {
             "ghcr.io/demo/private:1".to_string(),
             8080,
         );
-        service.registry_auth = Some(containr_common::models::ServiceRegistryAuth {
-            server: Some("ghcr.io".to_string()),
-            username: "demo-user".to_string(),
-            password: format!("enc:{}", encrypted_password),
-        });
+        service.registry_auth =
+            Some(containr_common::models::ServiceRegistryAuth {
+                server: Some("ghcr.io".to_string()),
+                username: "demo-user".to_string(),
+                password: format!("enc:{}", encrypted_password),
+            });
 
-        let registry_auth = worker.resolve_service_registry_auth(&service).unwrap();
+        let registry_auth =
+            worker.resolve_service_registry_auth(&service).unwrap();
         assert!(registry_auth.is_some());
         let registry_auth = registry_auth.unwrap();
         assert_eq!(registry_auth.username, "demo-user");

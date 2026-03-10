@@ -43,6 +43,7 @@ base64 = { workspace = true }
 url = { workspace = true }
 trust-dns-resolver = { workspace = true }
 git2 = { workspace = true }
+croner = { workspace = true }
 
 # embedded static files
 rust-embed = "8.9"

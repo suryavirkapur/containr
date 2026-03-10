@@ -22,8 +22,13 @@ pub struct StorageManager {
 
 impl StorageManager {
     /// creates a new storage manager connected to rustfs
-    pub async fn new(endpoint: &str, access_key: &str, secret_key: &str) -> Result<Self> {
-        let creds = Credentials::new(access_key, secret_key, None, None, "containr");
+    pub async fn new(
+        endpoint: &str,
+        access_key: &str,
+        secret_key: &str,
+    ) -> Result<Self> {
+        let creds =
+            Credentials::new(access_key, secret_key, None, None, "containr");
 
         let config = Config::builder()
             .endpoint_url(endpoint)
@@ -51,7 +56,10 @@ impl StorageManager {
             .await
             .map_err(|e| {
                 error!("failed to create bucket: {}", e);
-                ClientError::Operation(format!("failed to create bucket: {}", e))
+                ClientError::Operation(format!(
+                    "failed to create bucket: {}",
+                    e
+                ))
             })?;
 
         info!("bucket created: {}", bucket.name);
@@ -69,7 +77,9 @@ impl StorageManager {
             .bucket(bucket_name)
             .send()
             .await
-            .map_err(|e| ClientError::Operation(format!("failed to list objects: {}", e)))?;
+            .map_err(|e| {
+                ClientError::Operation(format!("failed to list objects: {}", e))
+            })?;
 
         if let Some(contents) = objects.contents {
             for obj in contents {
@@ -81,7 +91,10 @@ impl StorageManager {
                         .send()
                         .await
                         .map_err(|e| {
-                            ClientError::Operation(format!("failed to delete object: {}", e))
+                            ClientError::Operation(format!(
+                                "failed to delete object: {}",
+                                e
+                            ))
                         })?;
                 }
             }
@@ -95,7 +108,10 @@ impl StorageManager {
             .await
             .map_err(|e| {
                 error!("failed to delete bucket: {}", e);
-                ClientError::Operation(format!("failed to delete bucket: {}", e))
+                ClientError::Operation(format!(
+                    "failed to delete bucket: {}",
+                    e
+                ))
             })?;
 
         info!("bucket deleted: {}", bucket_name);
@@ -104,12 +120,9 @@ impl StorageManager {
 
     /// lists all buckets
     pub async fn list_buckets(&self) -> Result<Vec<String>> {
-        let resp = self
-            .client
-            .list_buckets()
-            .send()
-            .await
-            .map_err(|e| ClientError::Operation(format!("failed to list buckets: {}", e)))?;
+        let resp = self.client.list_buckets().send().await.map_err(|e| {
+            ClientError::Operation(format!("failed to list buckets: {}", e))
+        })?;
 
         let names = resp
             .buckets
@@ -147,7 +160,9 @@ impl StorageManager {
             .bucket(bucket_name)
             .send()
             .await
-            .map_err(|e| ClientError::Operation(format!("failed to list objects: {}", e)))?;
+            .map_err(|e| {
+                ClientError::Operation(format!("failed to list objects: {}", e))
+            })?;
 
         let size = objects
             .contents
@@ -160,10 +175,21 @@ impl StorageManager {
     }
 
     /// uploads a file into a bucket
-    pub async fn upload_file(&self, bucket_name: &str, key: &str, path: &Path) -> Result<()> {
-        let body = ByteStream::from_path(path.to_path_buf())
-            .await
-            .map_err(|e| ClientError::Operation(format!("failed to read upload file: {}", e)))?;
+    pub async fn upload_file(
+        &self,
+        bucket_name: &str,
+        key: &str,
+        path: &Path,
+    ) -> Result<()> {
+        let body =
+            ByteStream::from_path(path.to_path_buf())
+                .await
+                .map_err(|e| {
+                    ClientError::Operation(format!(
+                        "failed to read upload file: {}",
+                        e
+                    ))
+                })?;
 
         self.client
             .put_object()
@@ -172,13 +198,22 @@ impl StorageManager {
             .body(body)
             .send()
             .await
-            .map_err(|e| ClientError::Operation(format!("failed to upload object: {}", e)))?;
+            .map_err(|e| {
+                ClientError::Operation(format!(
+                    "failed to upload object: {}",
+                    e
+                ))
+            })?;
 
         Ok(())
     }
 
     /// checks if an object exists inside a bucket
-    pub async fn object_exists(&self, bucket_name: &str, key: &str) -> Result<bool> {
+    pub async fn object_exists(
+        &self,
+        bucket_name: &str,
+        key: &str,
+    ) -> Result<bool> {
         match self
             .client
             .head_object()

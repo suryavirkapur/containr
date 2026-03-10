@@ -83,8 +83,9 @@ pub async fn github_start(State(state): State<AppState>) -> Redirect {
     state.oauth_states.insert(state_value.clone(), expires_at);
 
     let config = state.config.read().await;
-    let mut auth_url = url::Url::parse("https://github.com/login/oauth/authorize")
-        .expect("valid github oauth url");
+    let mut auth_url =
+        url::Url::parse("https://github.com/login/oauth/authorize")
+            .expect("valid github oauth url");
     auth_url
         .query_pairs_mut()
         .append_pair("client_id", &config.github.client_id)
@@ -203,7 +204,8 @@ pub async fn login(
         )
     })?;
 
-    let valid = verify_password(&req.password, password_hash).map_err(internal_error)?;
+    let valid = verify_password(&req.password, password_hash)
+        .map_err(internal_error)?;
     if !valid {
         return Err((
             StatusCode::UNAUTHORIZED,
@@ -252,7 +254,8 @@ pub async fn github_callback(
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
     // verify state
     let now = chrono::Utc::now().timestamp();
-    let expires_at = state.oauth_states.remove(&query.state).map(|entry| entry.1);
+    let expires_at =
+        state.oauth_states.remove(&query.state).map(|entry| entry.1);
     if expires_at.is_none() || expires_at.unwrap_or(0) < now {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -292,7 +295,8 @@ pub async fn github_callback(
         })?;
 
     // find or create user
-    let token_to_store = encrypt_value(&config, &token_response.access_token).map_err(|e| {
+    let token_to_store = encrypt_value(&config, &token_response.access_token)
+        .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -306,7 +310,9 @@ pub async fn github_callback(
         .get_user_by_github_id(github_user.id)
         .map_err(internal_error)?
     {
-        if !user.is_admin && !state.db.has_admin_user().map_err(internal_error)? {
+        if !user.is_admin
+            && !state.db.has_admin_user().map_err(internal_error)?
+        {
             user.is_admin = true;
         }
 
@@ -319,7 +325,8 @@ pub async fn github_callback(
         let email = github_user
             .email
             .unwrap_or_else(|| format!("{}@github.local", github_user.login));
-        let mut user = User::new_with_github(email, github_user.id, github_user.login);
+        let mut user =
+            User::new_with_github(email, github_user.id, github_user.login);
         if !state.db.has_admin_user().map_err(internal_error)? {
             user.is_admin = true;
         }
@@ -349,7 +356,9 @@ pub async fn github_callback(
 }
 
 /// helper to convert errors to internal server error
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    e: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", e);
     (
         StatusCode::INTERNAL_SERVER_ERROR,

@@ -1,19 +1,21 @@
 //! managed queues api handlers
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
-use containr_common::managed_services::{ManagedQueue, QueueType, ServiceStatus};
+use containr_common::managed_services::{
+    ManagedQueue, QueueType, ServiceStatus,
+};
 use containr_runtime::QueueManager;
 
 /// queue creation request
@@ -29,6 +31,8 @@ pub struct CreateQueueRequest {
     pub memory_limit_mb: Option<u64>,
     /// cpu limit (optional)
     pub cpu_limit: Option<f64>,
+    /// attach this service to a project group
+    pub group_id: Option<String>,
 }
 
 /// queue response
@@ -37,11 +41,16 @@ pub struct QueueResponse {
     pub id: String,
     pub name: String,
     pub queue_type: String,
+    pub service_type: String,
+    pub group_id: Option<String>,
+    pub network_name: String,
     pub version: String,
     pub status: String,
     pub internal_host: String,
     pub port: u16,
     pub external_port: Option<u16>,
+    pub public_ip: Option<String>,
+    pub public_connection_string: Option<String>,
     pub connection_string: String,
     pub username: String,
     pub password: String,
@@ -52,15 +61,28 @@ pub struct QueueResponse {
 
 impl From<&ManagedQueue> for QueueResponse {
     fn from(queue: &ManagedQueue) -> Self {
+        Self::from_queue(queue, None)
+    }
+}
+
+impl QueueResponse {
+    fn from_queue(queue: &ManagedQueue, public_ip: Option<&str>) -> Self {
         Self {
             id: queue.id.to_string(),
             name: queue.name.clone(),
-            queue_type: format!("{:?}", queue.queue_type).to_lowercase(),
+            queue_type: queue.queue_type.api_name().to_string(),
+            service_type: queue.service_type_name().to_string(),
+            group_id: queue.group_id.map(|value| value.to_string()),
+            network_name: queue.network_name(),
             version: queue.version.clone(),
             status: format!("{:?}", queue.status).to_lowercase(),
             internal_host: queue.normalized_internal_host(),
             port: queue.port,
             external_port: queue.external_port,
+            public_ip: public_ip.map(|value| value.to_string()),
+            public_connection_string: queue.external_port.and_then(|port| {
+                build_public_queue_connection_string(queue, public_ip, port)
+            }),
             connection_string: queue.connection_string(),
             username: queue.credentials.username.clone(),
             password: queue.credentials.password.clone(),
@@ -110,7 +132,9 @@ fn get_user_id(
 }
 
 /// helper for internal errors
-fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse>) {
+fn internal_error<E: std::fmt::Display>(
+    e: E,
+) -> (StatusCode, Json<ErrorResponse>) {
     tracing::error!("internal error: {}", e);
     (
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -118,6 +142,11 @@ fn internal_error<E: std::fmt::Display>(e: E) -> (StatusCode, Json<ErrorResponse
             error: "internal server error".to_string(),
         }),
     )
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct ListQueuesQuery {
+    pub group_id: Option<String>,
 }
 
 fn allocate_public_port(
@@ -128,7 +157,8 @@ fn allocate_public_port(
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: "external_port must be between 1024 and 65535".to_string(),
+                    error: "external_port must be between 1024 and 65535"
+                        .to_string(),
                 }),
             ));
         }
@@ -161,8 +191,84 @@ fn allocate_public_port(
     ))
 }
 
-fn should_restart_service(status: ServiceStatus, container_id: &Option<String>) -> bool {
-    container_id.is_some() || matches!(status, ServiceStatus::Running | ServiceStatus::Starting)
+fn should_restart_service(
+    status: ServiceStatus,
+    container_id: &Option<String>,
+) -> bool {
+    container_id.is_some()
+        || matches!(status, ServiceStatus::Running | ServiceStatus::Starting)
+}
+
+fn resolve_group_id(
+    state: &AppState,
+    user_id: Uuid,
+    group_id: Option<&str>,
+) -> Result<Option<Uuid>, (StatusCode, Json<ErrorResponse>)> {
+    let Some(group_id) =
+        group_id.map(str::trim).filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+
+    let group_id = Uuid::parse_str(group_id).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "group_id must be a valid uuid".to_string(),
+            }),
+        )
+    })?;
+    let group = state
+        .db
+        .get_app(group_id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "group not found".to_string(),
+                }),
+            )
+        })?;
+
+    if group.owner_id != user_id {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "access denied".to_string(),
+            }),
+        ));
+    }
+
+    Ok(Some(group_id))
+}
+
+fn build_public_queue_connection_string(
+    queue: &ManagedQueue,
+    public_ip: Option<&str>,
+    port: u16,
+) -> Option<String> {
+    let public_ip = public_ip?.trim();
+    if public_ip.is_empty() {
+        return None;
+    }
+
+    Some(match queue.queue_type {
+        QueueType::Rabbitmq => format!(
+            "amqp://{}:{}@{}:{}",
+            queue.credentials.username,
+            queue.credentials.password,
+            public_ip,
+            port
+        ),
+        QueueType::Nats => format!(
+            "nats://{}:{}@{}:{}",
+            queue.credentials.username,
+            queue.credentials.password,
+            public_ip,
+            port
+        ),
+    })
 }
 
 /// list all queues for the authenticated user
@@ -170,6 +276,7 @@ fn should_restart_service(status: ServiceStatus, container_id: &Option<String>) 
     get,
     path = "/api/queues",
     tag = "queues",
+    params(ListQueuesQuery),
     security(("bearer" = [])),
     responses(
         (status = 200, description = "list of queues", body = Vec<QueueResponse>),
@@ -179,16 +286,30 @@ fn should_restart_service(status: ServiceStatus, container_id: &Option<String>) 
 pub async fn list_queues(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<ListQueuesQuery>,
 ) -> Result<Json<Vec<QueueResponse>>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+    let public_ip = config.proxy.public_ip.clone();
+    drop(config);
+    let group_id =
+        resolve_group_id(&state, user_id, query.group_id.as_deref())?;
 
     let queues = state
         .db
         .list_managed_queues_by_owner(user_id)
-        .map_err(internal_error)?;
+        .map_err(internal_error)?
+        .into_iter()
+        .filter(|queue| match group_id {
+            Some(group_id) => queue.group_id == Some(group_id),
+            None => true,
+        })
+        .collect::<Vec<_>>();
 
-    let responses: Vec<QueueResponse> = queues.iter().map(QueueResponse::from).collect();
+    let responses = queues
+        .iter()
+        .map(|queue| QueueResponse::from_queue(queue, public_ip.as_deref()))
+        .collect::<Vec<_>>();
     Ok(Json(responses))
 }
 
@@ -209,7 +330,8 @@ pub async fn create_queue(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(req): Json<CreateQueueRequest>,
-) -> Result<(StatusCode, Json<QueueResponse>), (StatusCode, Json<ErrorResponse>)> {
+) -> Result<(StatusCode, Json<QueueResponse>), (StatusCode, Json<ErrorResponse>)>
+{
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
@@ -226,20 +348,24 @@ pub async fn create_queue(
     // parse queue type
     let queue_type = match req.queue_type.to_lowercase().as_str() {
         "rabbitmq" => QueueType::Rabbitmq,
-        "nats" => QueueType::Nats,
         _ => {
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: "invalid queue_type. supported: rabbitmq, nats".to_string(),
+                    error: "invalid queue_type. supported: rabbitmq"
+                        .to_string(),
                 }),
             ));
         }
     };
 
     // create queue
-    let mut queue =
-        ManagedQueue::new_with_path(user_id, req.name, queue_type, &config.storage.data_dir);
+    let mut queue = ManagedQueue::new_with_path(
+        user_id,
+        req.name,
+        queue_type,
+        &config.storage.data_dir,
+    );
 
     if let Some(version) = req.version {
         queue.version = version;
@@ -250,6 +376,8 @@ pub async fn create_queue(
     if let Some(cpu) = req.cpu_limit {
         queue.cpu_limit = cpu;
     }
+    queue.group_id =
+        resolve_group_id(&state, user_id, req.group_id.as_deref())?;
 
     state
         .db
@@ -282,7 +410,13 @@ pub async fn create_queue(
         .save_managed_queue(&queue)
         .map_err(internal_error)?;
 
-    Ok((StatusCode::CREATED, Json(QueueResponse::from(&queue))))
+    Ok((
+        StatusCode::CREATED,
+        Json(QueueResponse::from_queue(
+            &queue,
+            config.proxy.public_ip.as_deref(),
+        )),
+    ))
 }
 
 /// get a single queue by id
@@ -329,7 +463,10 @@ pub async fn get_queue(
         ));
     }
 
-    Ok(Json(QueueResponse::from(&queue)))
+    Ok(Json(QueueResponse::from_queue(
+        &queue,
+        config.proxy.public_ip.as_deref(),
+    )))
 }
 
 /// delete a managed queue
@@ -450,7 +587,10 @@ pub async fn start_queue(
         .db
         .save_managed_queue(&queue)
         .map_err(internal_error)?;
-    Ok(Json(QueueResponse::from(&queue)))
+    Ok(Json(QueueResponse::from_queue(
+        &queue,
+        config.proxy.public_ip.as_deref(),
+    )))
 }
 
 /// stop a queue
@@ -513,7 +653,10 @@ pub async fn stop_queue(
         .db
         .save_managed_queue(&queue)
         .map_err(internal_error)?;
-    Ok(Json(QueueResponse::from(&queue)))
+    Ok(Json(QueueResponse::from_queue(
+        &queue,
+        config.proxy.public_ip.as_deref(),
+    )))
 }
 
 /// queue expose request
@@ -575,7 +718,8 @@ pub async fn expose_queue(
         queue.external_port = None;
     }
 
-    let restart_required = should_restart_service(queue.status, &queue.container_id);
+    let restart_required =
+        should_restart_service(queue.status, &queue.container_id);
     let queue_manager = QueueManager::new();
 
     if restart_required {
@@ -607,5 +751,8 @@ pub async fn expose_queue(
         .save_managed_queue(&queue)
         .map_err(internal_error)?;
 
-    Ok(Json(QueueResponse::from(&queue)))
+    Ok(Json(QueueResponse::from_queue(
+        &queue,
+        config.proxy.public_ip.as_deref(),
+    )))
 }

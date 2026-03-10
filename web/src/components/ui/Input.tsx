@@ -1,52 +1,51 @@
-import { Component, JSX, splitProps } from 'solid-js';
+import { Component, JSX, splitProps } from "solid-js";
+
+import { cn } from "../../lib/cn";
+import { Label } from "./Label";
 
 interface InputProps extends JSX.InputHTMLAttributes<HTMLInputElement> {
     label?: string;
     error?: string;
+    description?: string;
 }
 
 /// reusable input component
 export const Input: Component<InputProps> = (props) => {
     const [local, others] = splitProps(props, [
-        'label',
-        'error',
-        'class',
-        'id',
+        "label",
+        "error",
+        "description",
+        "class",
+        "id",
     ]);
 
     const inputId =
         local.id || `input-${Math.random().toString(36).substring(2, 9)}`;
 
     return (
-        <div class="w-full">
-            {local.label && (
-                <label
-                    for={inputId}
-                    class="block text-sm font-medium text-neutral-200 mb-1.5"
-                >
-                    {local.label}
-                </label>
-            )}
+        <div class="w-full space-y-2">
+            {local.label ? <Label for={inputId}>{local.label}</Label> : null}
+            {local.description ? (
+                <p class="text-xs text-[var(--muted-foreground)]">
+                    {local.description}
+                </p>
+            ) : null}
             <input
                 id={inputId}
-                class={`
-          flex w-full border bg-[#12121a] px-3 py-2 text-sm text-neutral-200
-          placeholder:text-neutral-500
-          focus:outline-none focus:border-purple-500
-          focus:ring-1 focus:ring-purple-500
-          disabled:cursor-not-allowed disabled:opacity-50
-          transition-colors
-          ${local.error
-                        ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
-                        : 'border-neutral-700'
-                    }
-          ${local.class || ''}
-        `}
+                class={cn(
+                    "flex h-11 w-full border px-3 py-2 text-sm font-medium",
+                    "bg-[var(--input)] text-[var(--foreground)]",
+                    "border-[var(--border)] placeholder:text-[var(--muted-foreground)]/70",
+                    "focus:border-[var(--ring)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)]",
+                    "disabled:cursor-not-allowed disabled:opacity-50",
+                    local.error
+                        ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+                        : "",
+                    local.class,
+                )}
                 {...others}
             />
-            {local.error && (
-                <p class="mt-1 text-xs text-red-400">{local.error}</p>
-            )}
+            {local.error ? <p class="text-xs text-red-300">{local.error}</p> : null}
         </div>
     );
 };
