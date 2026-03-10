@@ -30,11 +30,35 @@ type Project = components["schemas"]["AppResponse"];
 type Deployment = components["schemas"]["DeploymentResponse"];
 type CertificateStatus = components["schemas"]["CertificateResponse"];
 type ContainerListItem = components["schemas"]["ContainerListItem"];
+type RuntimeStatus =
+	| "pending"
+	| "starting"
+	| "running"
+	| "partial"
+	| "stopped"
+	| "failed";
+
+interface ServiceInventoryItem {
+	id: string;
+	group_id?: string | null;
+	project_id?: string | null;
+	resource_kind: string;
+	service_type: string;
+	name: string;
+	status: RuntimeStatus;
+	desired_instances: number;
+	running_instances: number;
+	default_urls: string[];
+	container_ids: string[];
+	schedule?: string | null;
+	updated_at: string;
+}
 
 const serviceTypeOptions: ServiceType[] = [
 	"web_service",
 	"private_service",
 	"background_worker",
+	"cron_job",
 ];
 
 function nextServiceName(
@@ -46,7 +70,9 @@ function nextServiceName(
 			? "web"
 			: serviceType === "private_service"
 				? "private"
-				: "worker";
+				: serviceType === "background_worker"
+					? "worker"
+					: "cron";
 
 	if (!services.some((service) => service.name === baseName)) {
 		return baseName;
@@ -106,6 +132,52 @@ const fetchContainers = async (): Promise<ContainerListItem[]> => {
 	return data;
 };
 
+const buildAuthHeaders = (): Headers => {
+	const headers = new Headers();
+	const token = localStorage.getItem("containr_token");
+
+	if (token) {
+		headers.set("Authorization", `Bearer ${token}`);
+	}
+
+	return headers;
+};
+
+const handleUnauthorized = (response: Response) => {
+	if (response.status !== 401) {
+		return;
+	}
+
+	localStorage.removeItem("containr_token");
+	window.location.href = "/login";
+};
+
+const readRequestError = async (response: Response): Promise<string> => {
+	try {
+		const data = (await response.json()) as { error?: string };
+		if (typeof data.error === "string" && data.error.trim()) {
+			return data.error;
+		}
+	} catch {
+		// ignore malformed json and use a generic fallback below
+	}
+
+	return `request failed with status ${response.status}`;
+};
+
+const fetchServices = async (): Promise<ServiceInventoryItem[]> => {
+	const response = await fetch("/api/services", {
+		headers: buildAuthHeaders(),
+	});
+
+	handleUnauthorized(response);
+	if (!response.ok) {
+		throw new Error(await readRequestError(response));
+	}
+
+	return (await response.json()) as ServiceInventoryItem[];
+};
+
 /**
  * project detail page
  */
@@ -142,6 +214,8 @@ const AppDetail: Component = () => {
 		() => params.id,
 		fetchCertificate,
 	);
+	const [serviceInventory, { refetch: refetchServiceInventory }] =
+		createResource(fetchServices);
 
 	const [containers, { refetch: refetchContainers }] =
 		createResource(fetchContainers);
@@ -154,11 +228,26 @@ const AppDetail: Component = () => {
 		),
 	);
 	const projectServices = createMemo(() => app()?.services || []);
+	const projectRuntimeServices = createMemo(() =>
+		(serviceInventory() || []).filter(
+			(service) =>
+				service.resource_kind === "app_service" &&
+				(service.project_id === params.id || service.group_id === params.id),
+		),
+	);
+	const serviceRuntimeById = createMemo(() => {
+		const entries = projectRuntimeServices().map((service) => [
+			service.id,
+			service,
+		]);
+		return new Map(entries);
+	});
 	const selectedProjectService = createMemo(
 		() =>
 			projectServices().find((service) => service.id === selectedServiceId()) ||
 			projectServices()[0],
 	);
+	const latestDeployment = createMemo(() => deployments()?.[0] || null);
 
 	createEffect(() => {
 		if (
@@ -198,6 +287,7 @@ const AppDetail: Component = () => {
 		const interval = setInterval(() => {
 			refetchDeployments();
 			refetchContainers();
+			refetchServiceInventory();
 		}, 3000);
 
 		onCleanup(() => clearInterval(interval));
@@ -250,7 +340,7 @@ const AppDetail: Component = () => {
 			) {
 				return body.error;
 			}
-		} catch { }
+		} catch {}
 		return "operation failed";
 	};
 
@@ -369,7 +459,11 @@ const AppDetail: Component = () => {
 	});
 
 	const formatServicePorts = (service: Project["services"][number]) => {
-		if (service.service_type === "background_worker" || service.port === 0) {
+		if (
+			service.service_type === "background_worker" ||
+			service.service_type === "cron_job" ||
+			service.port === 0
+		) {
 			if (service.additional_ports.length === 0) {
 				return "no inbound port";
 			}
@@ -385,7 +479,10 @@ const AppDetail: Component = () => {
 	};
 
 	const formatServiceHealth = (service: Project["services"][number]) => {
-		if (service.service_type === "background_worker") {
+		if (
+			service.service_type === "background_worker" ||
+			service.service_type === "cron_job"
+		) {
 			return service.health_check ? "custom" : "not used";
 		}
 
@@ -397,10 +494,13 @@ const AppDetail: Component = () => {
 	};
 
 	const formatServiceHealthDetail = (service: Project["services"][number]) => {
-		if (service.service_type === "background_worker") {
+		if (
+			service.service_type === "background_worker" ||
+			service.service_type === "cron_job"
+		) {
 			return service.health_check
 				? "custom worker health check"
-				: "not used for worker services";
+				: "not used for worker or cron services";
 		}
 
 		if (!service.health_check) {
@@ -408,8 +508,9 @@ const AppDetail: Component = () => {
 		}
 
 		const healthCheck = service.health_check;
-		return `${healthCheck.path} / ${healthCheck.interval_secs}s / ${healthCheck.timeout_secs
-			}s / ${healthCheck.retries} retries`;
+		return `${healthCheck.path} / ${healthCheck.interval_secs}s / ${
+			healthCheck.timeout_secs
+		}s / ${healthCheck.retries} retries`;
 	};
 
 	const formatServiceRegistry = (service: Project["services"][number]) => {
@@ -432,8 +533,9 @@ const AppDetail: Component = () => {
 			return "service subdomain";
 		}
 
-		return `service subdomain + ${service.domains.length} custom domain${service.domains.length === 1 ? "" : "s"
-			}`;
+		return `service subdomain + ${service.domains.length} custom domain${
+			service.domains.length === 1 ? "" : "s"
+		}`;
 	};
 
 	const appDomains = createMemo(() => {
@@ -466,8 +568,126 @@ const AppDetail: Component = () => {
 			workers: services.filter(
 				(service) => service.service_type === "background_worker",
 			).length,
+			cron: services.filter((service) => service.service_type === "cron_job")
+				.length,
 		};
 	});
+
+	const projectRuntimeStatus = createMemo<RuntimeStatus>(() => {
+		const runtimeServices = projectRuntimeServices();
+		if (runtimeServices.length > 0) {
+			if (runtimeServices.every((service) => service.status === "running")) {
+				return "running";
+			}
+
+			if (runtimeServices.some((service) => service.status === "running")) {
+				return "partial";
+			}
+
+			if (runtimeServices.some((service) => service.status === "failed")) {
+				return "failed";
+			}
+
+			if (
+				runtimeServices.some(
+					(service) =>
+						service.status === "starting" || service.status === "pending",
+				)
+			) {
+				return "starting";
+			}
+
+			if (runtimeServices.every((service) => service.status === "stopped")) {
+				return "stopped";
+			}
+
+			return runtimeServices[0].status;
+		}
+
+		const deployment = latestDeployment();
+		if (!deployment) {
+			return "pending";
+		}
+
+		switch (deployment.status) {
+			case "running":
+				return appContainers().length > 0 ? "running" : "stopped";
+			case "failed":
+				return "failed";
+			case "stopped":
+				return "stopped";
+			case "pending":
+				return "pending";
+			case "cloning":
+			case "building":
+			case "pushing":
+			case "starting":
+				return "starting";
+		}
+	});
+
+	const projectRuntimeText = createMemo(() => {
+		switch (projectRuntimeStatus()) {
+			case "running":
+				return "running";
+			case "partial":
+				return "partially running";
+			case "starting":
+				return "deploying";
+			case "failed":
+				return "failed";
+			case "stopped":
+				return "stopped";
+			case "pending":
+			default:
+				return "pending";
+		}
+	});
+
+	const projectRuntimeDetail = createMemo(() => {
+		const runtimeServices = projectRuntimeServices();
+		if (runtimeServices.length > 0) {
+			const running = runtimeServices.reduce(
+				(total, service) => total + service.running_instances,
+				0,
+			);
+			const desired = runtimeServices.reduce(
+				(total, service) => total + service.desired_instances,
+				0,
+			);
+			if (desired === 0) {
+				return "no active instances";
+			}
+			return `${running}/${desired} instances ready`;
+		}
+
+		const deployment = latestDeployment();
+		if (!deployment) {
+			return "no deployment recorded";
+		}
+
+		return `latest deployment ${deployment.status}`;
+	});
+
+	const runtimeStatusDotClass = (status: RuntimeStatus) => {
+		switch (status) {
+			case "running":
+				return "bg-emerald-400";
+			case "partial":
+				return "bg-blue-400";
+			case "starting":
+			case "pending":
+				return "bg-yellow-400 animate-pulse";
+			case "failed":
+				return "bg-red-400";
+			case "stopped":
+			default:
+				return "bg-neutral-500";
+		}
+	};
+
+	const serviceRuntime = (serviceId: string) =>
+		serviceRuntimeById().get(serviceId);
 
 	const certificateStatusLabel = (status: CertificateStatus["status"]) => {
 		switch (status) {
@@ -509,11 +729,11 @@ const AppDetail: Component = () => {
 				currentApp.services.length > 0
 					? currentApp.services.map(mapServiceResponseToForm)
 					: [
-						{
-							...createPrimaryService(),
-							port: currentApp.port,
-						},
-					];
+							{
+								...createPrimaryService(),
+								port: currentApp.port,
+							},
+						];
 			setEditForm({
 				github_url: currentApp.github_url,
 				branch: currentApp.branch,
@@ -601,6 +821,7 @@ const AppDetail: Component = () => {
 			refetchApp();
 			refetchCertificate();
 			refetchContainers();
+			refetchServiceInventory();
 		} catch (err) {
 			setEditError(readErrorMessage(err));
 		} finally {
@@ -800,6 +1021,7 @@ const AppDetail: Component = () => {
 
 			refetchDeployments();
 			refetchContainers();
+			refetchServiceInventory();
 		} catch (err) {
 			console.error(err);
 			if (typeof err === "object" && err && "error" in err) {
@@ -859,12 +1081,36 @@ const AppDetail: Component = () => {
 	const [activeSection, setActiveSection] = createSignal("overview");
 
 	const sidebarItems = [
-		{ id: "overview", label: "overview", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
-		{ id: "services", label: "services", icon: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" },
-		{ id: "logs", label: "logs", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
-		{ id: "monitor", label: "monitor", icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" },
-		{ id: "deployments", label: "deployments", icon: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" },
-		{ id: "settings", label: "settings", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" },
+		{
+			id: "overview",
+			label: "overview",
+			icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
+		},
+		{
+			id: "services",
+			label: "services",
+			icon: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10",
+		},
+		{
+			id: "logs",
+			label: "logs",
+			icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
+		},
+		{
+			id: "monitor",
+			label: "monitor",
+			icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
+		},
+		{
+			id: "deployments",
+			label: "deployments",
+			icon: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15",
+		},
+		{
+			id: "settings",
+			label: "settings",
+			icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z",
+		},
 	];
 
 	return (
@@ -895,11 +1141,21 @@ const AppDetail: Component = () => {
 						</p>
 						<div class="flex items-center gap-3 mt-2">
 							<span class="flex items-center gap-1.5 text-xs text-neutral-400">
-								<span class="w-1.5 h-1.5 bg-emerald-400"></span>
-								running
+								<span
+									class={`w-1.5 h-1.5 ${runtimeStatusDotClass(
+										projectRuntimeStatus(),
+									)}`}
+								></span>
+								{projectRuntimeText()}
 							</span>
 							<span class="text-neutral-600">·</span>
-							<span class="text-xs text-neutral-400 font-mono">{app()!.branch}</span>
+							<span class="text-xs text-neutral-400 font-mono">
+								{app()!.branch}
+							</span>
+							<span class="text-neutral-600">·</span>
+							<span class="text-xs text-neutral-400">
+								{projectRuntimeDetail()}
+							</span>
 						</div>
 					</div>
 					<div class="flex gap-2">
@@ -921,7 +1177,6 @@ const AppDetail: Component = () => {
 
 				{/* sidebar + content layout */}
 				<div class="flex gap-6">
-
 					{/* info grid */}
 					<div class="grid grid-cols-4 gap-px bg-neutral-200 mb-8">
 						{/* status */}
@@ -930,9 +1185,16 @@ const AppDetail: Component = () => {
 								status
 							</h3>
 							<div class="flex items-center gap-2">
-								<span class="w-2 h-2 bg-black"></span>
-								<span class="text-black text-sm">running</span>
+								<span
+									class={`w-2 h-2 ${runtimeStatusDotClass(
+										projectRuntimeStatus(),
+									)}`}
+								></span>
+								<span class="text-black text-sm">{projectRuntimeText()}</span>
 							</div>
+							<p class="mt-2 text-xs text-neutral-500">
+								{projectRuntimeDetail()}
+							</p>
 						</div>
 
 						{/* custom domains */}
@@ -1027,7 +1289,7 @@ const AppDetail: Component = () => {
 											(total, service) => total + service.replicas,
 											0,
 										)}{" "}
-										total running slots
+										total desired slots
 									</p>
 								</div>
 								<div class="flex flex-wrap gap-2 text-xs text-neutral-500">
@@ -1039,6 +1301,9 @@ const AppDetail: Component = () => {
 									</span>
 									<span class="border border-neutral-200 px-2 py-1">
 										workers {serviceTypeCounts().workers}
+									</span>
+									<span class="border border-neutral-200 px-2 py-1">
+										cron {serviceTypeCounts().cron}
 									</span>
 									<span class="border border-neutral-200 px-2 py-1">
 										with mounts{" "}
@@ -1058,27 +1323,53 @@ const AppDetail: Component = () => {
 											<button
 												type="button"
 												onClick={() => setSelectedServiceId(service.id)}
-												class={`border px-3 py-2 text-left min-w-[220px] transition-colors ${selectedProjectService()?.id === service.id
+												class={`border px-3 py-2 text-left min-w-[220px] transition-colors ${
+													selectedProjectService()?.id === service.id
 														? "border-black bg-black text-white"
 														: "border-neutral-200 text-black hover:border-neutral-400"
-													}`}
+												}`}
 											>
 												<div class="flex items-center justify-between gap-3">
-													<span class="text-sm font-medium">{service.name}</span>
+													<span class="text-sm font-medium">
+														{service.name}
+													</span>
 													<span
-														class={`text-[10px] uppercase tracking-wide ${selectedProjectService()?.id === service.id
+														class={`text-[10px] uppercase tracking-wide ${
+															selectedProjectService()?.id === service.id
 																? "text-neutral-200"
 																: "text-neutral-500"
-															}`}
+														}`}
 													>
 														{serviceTypeLabel(service.service_type)}
 													</span>
 												</div>
 												<div
-													class={`mt-2 flex items-center justify-between text-xs ${selectedProjectService()?.id === service.id
+													class={`mt-2 flex items-center gap-2 text-[11px] ${
+														selectedProjectService()?.id === service.id
 															? "text-neutral-200"
 															: "text-neutral-500"
-														}`}
+													}`}
+												>
+													<span
+														class={`h-2 w-2 ${runtimeStatusDotClass(
+															serviceRuntime(service.id)?.status || "pending",
+														)}`}
+													></span>
+													<span>
+														{serviceRuntime(service.id)?.status || "pending"}
+													</span>
+													<span>
+														{serviceRuntime(service.id)
+															? `${serviceRuntime(service.id)!.running_instances}/${serviceRuntime(service.id)!.desired_instances}`
+															: "0/0"}
+													</span>
+												</div>
+												<div
+													class={`mt-2 flex items-center justify-between text-xs ${
+														selectedProjectService()?.id === service.id
+															? "text-neutral-200"
+															: "text-neutral-500"
+													}`}
 												>
 													<span>{formatServicePorts(service)}</span>
 													<span>
@@ -1108,6 +1399,16 @@ const AppDetail: Component = () => {
 															<span class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
 																{serviceTypeLabel(service().service_type)}
 															</span>
+															<span class="inline-flex items-center gap-2 border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
+																<span
+																	class={`h-2 w-2 ${runtimeStatusDotClass(
+																		serviceRuntime(service().id)?.status ||
+																			"pending",
+																	)}`}
+																></span>
+																{serviceRuntime(service().id)?.status ||
+																	"pending"}
+															</span>
 														</div>
 														<p class="mt-2 text-sm text-neutral-500 font-mono">
 															{service().image || "built from repository"}
@@ -1121,6 +1422,24 @@ const AppDetail: Component = () => {
 											</div>
 
 											<div class="grid grid-cols-2 gap-3">
+												<div class="border border-neutral-200 p-3">
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														status
+													</p>
+													<p class="mt-2 text-sm font-mono text-black">
+														{serviceRuntime(service().id)?.status || "pending"}
+													</p>
+												</div>
+												<div class="border border-neutral-200 p-3">
+													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
+														instances
+													</p>
+													<p class="mt-2 text-sm font-mono text-black">
+														{serviceRuntime(service().id)
+															? `${serviceRuntime(service().id)!.running_instances}/${serviceRuntime(service().id)!.desired_instances}`
+															: "0/0"}
+													</p>
+												</div>
 												<div class="border border-neutral-200 p-3">
 													<p class="text-[10px] uppercase tracking-wide text-neutral-400">
 														listen
@@ -1180,7 +1499,9 @@ const AppDetail: Component = () => {
 														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
 															default route
 														</p>
-														<p class="mt-1">{formatPublicUrlStatus(service())}</p>
+														<p class="mt-1">
+															{formatPublicUrlStatus(service())}
+														</p>
 													</div>
 													<div>
 														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
@@ -1281,7 +1602,9 @@ const AppDetail: Component = () => {
 														<p class="text-[10px] uppercase tracking-wide text-neutral-400">
 															registry
 														</p>
-														<p class="mt-1">{formatServiceRegistry(service())}</p>
+														<p class="mt-1">
+															{formatServiceRegistry(service())}
+														</p>
 													</div>
 													<Show
 														when={
@@ -1291,7 +1614,9 @@ const AppDetail: Component = () => {
 													>
 														<div class="space-y-2 text-xs text-neutral-500 font-mono">
 															<Show when={service().entrypoint.length > 0}>
-																<p>entrypoint {service().entrypoint.join(" ")}</p>
+																<p>
+																	entrypoint {service().entrypoint.join(" ")}
+																</p>
 															</Show>
 															<Show when={service().command.length > 0}>
 																<p>cmd {service().command.join(" ")}</p>
@@ -1330,25 +1655,28 @@ const AppDetail: Component = () => {
 																	void downloadServiceMounts(service().name)
 																}
 																disabled={
-																	serviceMountAction()?.service === service().name
+																	serviceMountAction()?.service ===
+																	service().name
 																}
 																class="border border-neutral-300 px-2 py-1 text-neutral-700 hover:border-neutral-400 disabled:opacity-50"
 															>
 																{serviceMountAction()?.service ===
 																	service().name &&
-																	serviceMountAction()?.kind === "backup"
+																serviceMountAction()?.kind === "backup"
 																	? "backing up..."
 																	: "backup mounts"}
 															</button>
 															<label
-																class={`border px-2 py-1 ${serviceMountAction()?.service === service().name
+																class={`border px-2 py-1 ${
+																	serviceMountAction()?.service ===
+																	service().name
 																		? "border-neutral-200 text-neutral-300 cursor-not-allowed"
 																		: "border-neutral-300 text-neutral-700 hover:border-neutral-400 cursor-pointer"
-																	}`}
+																}`}
 															>
 																{serviceMountAction()?.service ===
 																	service().name &&
-																	serviceMountAction()?.kind === "restore"
+																serviceMountAction()?.kind === "restore"
 																	? "restoring..."
 																	: "restore mounts"}
 																<input
@@ -1490,7 +1818,9 @@ const AppDetail: Component = () => {
 
 						<Show
 							when={
-								!deployments.loading && deployments() && deployments()!.length > 0
+								!deployments.loading &&
+								deployments() &&
+								deployments()!.length > 0
 							}
 						>
 							<div class="divide-y divide-neutral-200">
@@ -1511,7 +1841,9 @@ const AppDetail: Component = () => {
 												</div>
 											</div>
 											<div class="flex items-center gap-4 text-xs">
-												<span class="text-neutral-500">{deployment.status}</span>
+												<span class="text-neutral-500">
+													{deployment.status}
+												</span>
 												<span class="text-neutral-400">
 													{new Date(deployment.created_at).toLocaleString()}
 												</span>

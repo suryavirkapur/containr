@@ -141,6 +141,24 @@ changelog
 - add a global `select` and `textarea` radius bridge in `web/src/index.css`
   so older pages with raw form controls also respond to the sharp vs rounded
   theme switch
+- remove the duplicate app-service type chooser from the `/projects/new`
+  service-definition form by letting `web/src/components/ServiceForm.tsx`
+  hide its internal type picker when the page-level runtime selector already
+  owns that choice
+- align `web/src/components/ServiceForm.tsx` with the current app model by
+  teaching it about `cron_job` alongside web/private/worker behavior so the
+  shared service editor no longer lags the page-level create flow
+- fix `web/src/pages/AppDetail.tsx` so project detail status is no longer
+  hard-coded or inferred from stale app-era heuristics; the page now reads
+  `/api/services` for app-service runtime status and shows real running,
+  partial, stopped, failed, or deploying state in the header and service cards
+- update the project detail page to count cron services alongside web/private/
+  worker services, expose per-service runtime instance counts, and stop
+  labeling desired replica counts as "running slots"
+- verify against copied prod metadata that project
+  `32a2e361-2e6c-473d-ab01-f1827188282b` had a failed deployment
+  (`fcb479a4-d833-426f-bbd9-17caedb7daa0`) rather than an active deployment,
+  so the page issue was a frontend truthfulness bug
 
 0.1.13-alpha - 2026-03-09
 - add first-class `containr` subcommands for docker socket checks, long-lived api key generation, and systemd unit generation

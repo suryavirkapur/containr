@@ -735,6 +735,7 @@ const NewApp: Component = () => {
 						service={service()}
 						index={0}
 						allServices={[service()]}
+						showServiceTypePicker={false}
 						onUpdate={(_, next) => {
 							setSelectedType(next.service_type);
 							setService(next);

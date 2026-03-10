@@ -7,7 +7,8 @@ import { EditableKeyValueEntry } from "../utils/keyValueEntries";
 export type ServiceType =
 	| "web_service"
 	| "private_service"
-	| "background_worker";
+	| "background_worker"
+	| "cron_job";
 
 export function normalizeServiceType(
 	serviceType: string | null | undefined,
@@ -16,6 +17,7 @@ export function normalizeServiceType(
 		case "web_service":
 		case "private_service":
 		case "background_worker":
+		case "cron_job":
 			return serviceType;
 		default:
 			return "private_service";
@@ -108,6 +110,8 @@ export function serviceTypeLabel(serviceType: string | null | undefined) {
 			return "private service";
 		case "background_worker":
 			return "background worker";
+		case "cron_job":
+			return "cron job";
 	}
 }
 
@@ -119,6 +123,8 @@ export function serviceTypeDescription(serviceType: string | null | undefined) {
 			return "internal-only service with a stable network address inside the group";
 		case "background_worker":
 			return "no inbound traffic, intended for queues, jobs, and long-running workers";
+		case "cron_job":
+			return "scheduled execution with no inbound traffic and a cron expression";
 	}
 }
 
@@ -132,7 +138,7 @@ export function applyServiceType(
 		expose_http: serviceType === "web_service",
 	};
 
-	if (serviceType === "background_worker") {
+	if (serviceType === "background_worker" || serviceType === "cron_job") {
 		next.port = 0;
 		next.health_check_path = "";
 	} else if (next.port === 0) {
@@ -157,6 +163,7 @@ interface ServiceFormProps {
 	onUpdate: (index: number, service: Service) => void;
 	onRemove: (index: number) => void;
 	allowRemove?: boolean;
+	showServiceTypePicker?: boolean;
 }
 
 /**
@@ -171,7 +178,9 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 		() => props.service.image.trim().length === 0,
 	);
 	const expectsInboundPort = createMemo(
-		() => props.service.service_type !== "background_worker",
+		() =>
+			props.service.service_type !== "background_worker" &&
+			props.service.service_type !== "cron_job",
 	);
 
 	const argsToText = (value: string[]) => value.join("\n");
@@ -302,9 +311,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 						<Badge variant="secondary">
 							{serviceTypeLabel(props.service.service_type)}
 						</Badge>
-						<Badge variant="outline">
-							{modeLabel()}
-						</Badge>
+						<Badge variant="outline">{modeLabel()}</Badge>
 					</div>
 					<div class="mt-2 flex flex-wrap gap-2 text-xs text-[var(--muted-foreground)]">
 						<span class="border border-[var(--border)] px-2 py-1 font-mono">
@@ -381,47 +388,50 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 			<div class="p-4">
 				<Show when={activeTab() === "overview"}>
 					<div class="grid gap-4 md:grid-cols-2">
-						<div class="md:col-span-2">
-							<label class="mb-2 block text-xs text-neutral-600">
-								service type
-							</label>
-							<div class="grid gap-2 md:grid-cols-3">
-								<For
-									each={
-										[
-											"web_service",
-											"private_service",
-											"background_worker",
-										] as ServiceType[]
-									}
-								>
-									{(serviceType) => (
-										<button
-											type="button"
-											onClick={() => selectServiceType(serviceType)}
-											class={`border px-3 py-3 text-left transition-colors ${
-												props.service.service_type === serviceType
-													? "border-black bg-black text-white"
-													: "border-neutral-200 bg-white text-black hover:border-neutral-400"
-											}`}
-										>
-											<p class="text-xs uppercase tracking-wide">
-												{serviceTypeLabel(serviceType)}
-											</p>
-											<p
-												class={`mt-2 text-xs leading-relaxed ${
+						<Show when={props.showServiceTypePicker !== false}>
+							<div class="md:col-span-2">
+								<label class="mb-2 block text-xs text-neutral-600">
+									service type
+								</label>
+								<div class="grid gap-2 md:grid-cols-4">
+									<For
+										each={
+											[
+												"web_service",
+												"private_service",
+												"background_worker",
+												"cron_job",
+											] as ServiceType[]
+										}
+									>
+										{(serviceType) => (
+											<button
+												type="button"
+												onClick={() => selectServiceType(serviceType)}
+												class={`border px-3 py-3 text-left transition-colors ${
 													props.service.service_type === serviceType
-														? "text-neutral-200"
-														: "text-neutral-500"
+														? "border-black bg-black text-white"
+														: "border-neutral-200 bg-white text-black hover:border-neutral-400"
 												}`}
 											>
-												{serviceTypeDescription(serviceType)}
-											</p>
-										</button>
-									)}
-								</For>
+												<p class="text-xs uppercase tracking-wide">
+													{serviceTypeLabel(serviceType)}
+												</p>
+												<p
+													class={`mt-2 text-xs leading-relaxed ${
+														props.service.service_type === serviceType
+															? "text-neutral-200"
+															: "text-neutral-500"
+													}`}
+												>
+													{serviceTypeDescription(serviceType)}
+												</p>
+											</button>
+										)}
+									</For>
+								</div>
 							</div>
-						</div>
+						</Show>
 
 						<div>
 							<label class="mb-1 block text-xs text-neutral-600">name</label>
@@ -461,7 +471,9 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 									? "public web service with its own generated service subdomain and optional custom domains."
 									: props.service.service_type === "private_service"
 										? "internal-only service with no public url but a stable group network address."
-										: "background worker with no inbound traffic and no routed url."}
+										: props.service.service_type === "background_worker"
+											? "background worker with no inbound traffic and no routed url."
+											: "cron job with scheduled runs and no routed url."}
 							</p>
 						</div>
 
@@ -778,8 +790,8 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 
 							<Show when={!expectsInboundPort()}>
 								<div class="md:col-span-2 border border-neutral-200 bg-neutral-50 px-3 py-3 text-xs text-neutral-500">
-									background workers do not use http health checks unless you
-									switch them to a web or private service.
+									background workers and cron jobs do not use http health checks
+									unless you switch them to a web or private service.
 								</div>
 							</Show>
 
