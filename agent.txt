@@ -1,4 +1,11 @@
 current context:
+- the sidebar no longer owns theme controls; appearance configuration now lives
+  on `web/src/pages/Settings.tsx` and includes color mode, accent, and corner
+  controls that apply immediately from the shared client theme context
+- `web/src/context/ThemeContext.tsx` now persists a `colorMode` value and
+  drives both light and dark palettes through shared css variables, while
+  `web/src/components/Layout.tsx` uses those variables for the mobile header
+  and footer instead of hard-coded dark overlays
 - the runtime bug behind `docker start failed ... sethostname: invalid
   argument` was in `crates/containr-runtime/src/docker.rs`: the generic app
   service path reused the full container id as the Linux hostname even though

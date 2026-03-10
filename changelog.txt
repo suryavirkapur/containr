@@ -2,6 +2,12 @@ changelog
 =========
 
 0.1.14-alpha - 2026-03-09
+- move the dashboard appearance controls out of the sidebar and into
+  `web/src/pages/Settings.tsx`, and add explicit light/dark mode switching
+  alongside accent and corner controls
+- extend `web/src/context/ThemeContext.tsx` with persistent `colorMode`
+  support so the dashboard now applies both dark and light palettes through
+  shared css variables instead of assuming one hard-coded dark shell
 - fix app-service container startup failures that surfaced as
   `sethostname: invalid argument` by sanitizing and truncating the Linux
   hostname derived from the container id in

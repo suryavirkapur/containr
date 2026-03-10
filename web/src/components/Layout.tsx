@@ -1,16 +1,9 @@
 import { A, useLocation, useNavigate } from "@solidjs/router";
 import { Component, For, JSX, Show, createSignal } from "solid-js";
 
-import {
-	type ColorScheme,
-	colorSchemes,
-	useTheme,
-} from "../context/ThemeContext";
 import { AuthProvider, useAuth } from "../context/AuthContext";
 import {
 	Button,
-	Card,
-	CardContent,
 	Sidebar,
 	SidebarContent,
 	SidebarFooter,
@@ -90,74 +83,11 @@ const navSections: NavSection[] = [
 	},
 ];
 
-const accentOptions: ColorScheme[] = ["blue", "green", "orange", "red"];
-
 const Layout: Component<{ children?: JSX.Element }> = (props) => {
 	return (
 		<AuthProvider>
 			<LayoutContent>{props.children}</LayoutContent>
 		</AuthProvider>
-	);
-};
-
-const ThemePanel: Component = () => {
-	const { theme, setColorScheme, setRoundness } = useTheme();
-
-	return (
-		<Card class="bg-[var(--muted)]/60">
-			<CardContent class="space-y-4">
-				<div>
-					<p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
-						theme
-					</p>
-					<p class="mt-2 text-sm text-[var(--muted-foreground)]">
-						switch between the current sharp shell and a rounded variant.
-					</p>
-				</div>
-
-				<div class="grid grid-cols-2 gap-2">
-					<Button
-						variant={theme().roundness === "none" ? "primary" : "outline"}
-						size="sm"
-						onClick={() => setRoundness("none")}
-					>
-						sharp
-					</Button>
-					<Button
-						variant={theme().roundness === "medium" ? "primary" : "outline"}
-						size="sm"
-						onClick={() => setRoundness("medium")}
-					>
-						rounded
-					</Button>
-				</div>
-
-				<div class="space-y-2">
-					<p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
-						accent
-					</p>
-					<div class="flex items-center gap-2">
-						<For each={accentOptions}>
-							{(scheme) => (
-								<button
-									type="button"
-									aria-label={`switch accent to ${scheme}`}
-									onClick={() => setColorScheme(scheme)}
-									class="h-8 w-8 rounded-[calc(var(--radius)+4px)] border transition-transform hover:scale-105"
-									style={{
-										"background-color": colorSchemes[scheme].accent,
-										"border-color":
-											theme().colorScheme === scheme
-												? "var(--foreground)"
-												: "var(--border)",
-									}}
-								/>
-							)}
-						</For>
-					</div>
-				</div>
-			</CardContent>
-		</Card>
 	);
 };
 
@@ -191,7 +121,6 @@ const AppSidebar: Component<{
 					service-first control plane with grouped networking and managed
 					runtimes.
 				</p>
-				<ThemePanel />
 			</SidebarHeader>
 
 			<SidebarContent>
@@ -281,7 +210,7 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
 				</Show>
 
 				<SidebarInset>
-					<header class="sticky top-0 z-30 border-b border-[var(--border)] bg-[rgba(9,9,11,0.88)] backdrop-blur lg:hidden">
+					<header class="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--background-overlay)] backdrop-blur lg:hidden">
 						<div class="flex items-center justify-between px-4 py-4">
 							<div class="flex items-center gap-3">
 								<Button
@@ -317,7 +246,7 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
 						</div>
 					</main>
 
-					<footer class="border-t border-[var(--border)] bg-[rgba(10,12,18,0.88)]">
+					<footer class="border-t border-[var(--border)] bg-[var(--background-overlay)]">
 						<div class="mx-auto flex w-full max-w-7xl flex-col gap-3 px-5 py-5 text-sm text-[var(--muted-foreground)] lg:px-10 lg:flex-row lg:items-center lg:justify-between">
 							<div class="font-serif text-base text-[var(--foreground)]">
 								containr
