@@ -6,6 +6,7 @@ import {
 	createSignal,
 	For,
 	Show,
+	untrack,
 } from "solid-js";
 import { useNavigate, useSearchParams } from "@solidjs/router";
 
@@ -144,9 +145,27 @@ const queueOptions: RuntimeOption[] = [
 ];
 
 const selectClass =
-	"flex h-11 w-full border px-3 py-2 text-sm font-medium bg-[var(--input)] " +
-	"text-[var(--foreground)] border-[var(--border)] focus:border-[var(--ring)] " +
-	"focus:outline-none focus:ring-1 focus:ring-[var(--ring)]";
+	"flex h-11 w-full rounded-[var(--radius)] border px-3 py-2 text-sm " +
+	"font-medium bg-[var(--input)] text-[var(--foreground)] " +
+	"border-[var(--border)] focus:border-[var(--ring)] focus:outline-none " +
+	"focus:ring-1 focus:ring-[var(--ring)]";
+
+const selectionCardClass = (selected: boolean): string =>
+	`rounded-[var(--radius)] border p-4 text-left transition-colors ${
+		selected
+			? "border-[var(--foreground)] bg-[var(--foreground)] " +
+				"text-[var(--background)]"
+			: "border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] " +
+				"hover:border-[var(--border-strong)]"
+	}`;
+
+const repoButtonClass = (selected: boolean): string =>
+	"flex w-full items-center justify-between border-b border-[var(--border)] " +
+	`px-4 py-3 text-left transition-colors last:border-b-0 ${
+		selected
+			? "bg-[var(--surface-muted)]"
+			: "bg-[var(--card)] hover:bg-[var(--muted)]"
+	}`;
 
 const buildAuthHeaders = (): Headers => {
 	const headers = new Headers({
@@ -310,63 +329,63 @@ const NewApp: Component = () => {
 		const requestedServiceType = searchParams.service_type;
 		const requestedGroupId = searchParams.group_id;
 
-		if (requestedKind === "app") {
-			setMode("app");
-		} else if (requestedKind === "database") {
-			setMode("database");
-		} else if (requestedKind === "queue") {
-			setMode("queue");
-		}
+		untrack(() => {
+			if (requestedKind === "app") {
+				setMode("app");
+			} else if (requestedKind === "database") {
+				setMode("database");
+			} else if (requestedKind === "queue") {
+				setMode("queue");
+			}
 
-		if (
-			requestedServiceType === "web_service" ||
-			requestedServiceType === "private_service" ||
-			requestedServiceType === "background_worker" ||
-			requestedServiceType === "cron_job"
-		) {
-			setMode("app");
-			if (requestedServiceType !== selectedType()) {
+			if (
+				requestedServiceType === "web_service" ||
+				requestedServiceType === "private_service" ||
+				requestedServiceType === "background_worker" ||
+				requestedServiceType === "cron_job"
+			) {
+				setMode("app");
 				switchServiceType(requestedServiceType);
 			}
-		}
 
-		if (
-			requestedType === "postgres" ||
-			requestedType === "postgresql" ||
-			requestedType === "redis" ||
-			requestedType === "valkey" ||
-			requestedType === "mariadb" ||
-			requestedType === "mysql" ||
-			requestedType === "qdrant"
-		) {
-			setMode("database");
-			switch (requestedType) {
-				case "postgres":
-				case "postgresql":
-					setDatabaseType("postgresql");
-					break;
-				case "redis":
-				case "valkey":
-					setDatabaseType("redis");
-					break;
-				case "mariadb":
-				case "mysql":
-					setDatabaseType("mariadb");
-					break;
-				case "qdrant":
-					setDatabaseType("qdrant");
-					break;
+			if (
+				requestedType === "postgres" ||
+				requestedType === "postgresql" ||
+				requestedType === "redis" ||
+				requestedType === "valkey" ||
+				requestedType === "mariadb" ||
+				requestedType === "mysql" ||
+				requestedType === "qdrant"
+			) {
+				setMode("database");
+				switch (requestedType) {
+					case "postgres":
+					case "postgresql":
+						setDatabaseType("postgresql");
+						break;
+					case "redis":
+					case "valkey":
+						setDatabaseType("redis");
+						break;
+					case "mariadb":
+					case "mysql":
+						setDatabaseType("mariadb");
+						break;
+					case "qdrant":
+						setDatabaseType("qdrant");
+						break;
+				}
 			}
-		}
 
-		if (requestedType === "rabbitmq") {
-			setMode("queue");
-			setQueueType("rabbitmq");
-		}
+			if (requestedType === "rabbitmq") {
+				setMode("queue");
+				setQueueType("rabbitmq");
+			}
 
-		if (requestedGroupId && requestedGroupId !== selectedGroupId()) {
-			setSelectedGroupId(requestedGroupId);
-		}
+			if (requestedGroupId) {
+				setSelectedGroupId(requestedGroupId);
+			}
+		});
 	});
 
 	const pageDescription = createMemo(() => {
@@ -519,11 +538,7 @@ const NewApp: Component = () => {
 							<button
 								type="button"
 								onClick={() => setMode(option.mode)}
-								class={`border p-4 text-left transition-colors ${
-									mode() === option.mode
-										? "border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]"
-										: "border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] hover:border-[var(--border-strong)]"
-								}`}
+								class={selectionCardClass(mode() === option.mode)}
 							>
 								<p class="text-[11px] font-semibold uppercase tracking-[0.22em]">
 									{option.badge}
@@ -561,11 +576,7 @@ const NewApp: Component = () => {
 								<button
 									type="button"
 									onClick={() => switchServiceType(option.value as ServiceType)}
-									class={`border p-4 text-left transition-colors ${
-										selectedType() === option.value
-											? "border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]"
-											: "border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] hover:border-[var(--border-strong)]"
-									}`}
+									class={selectionCardClass(selectedType() === option.value)}
 								>
 									<p class="text-[11px] font-semibold uppercase tracking-[0.22em]">
 										{option.icon}
@@ -613,7 +624,7 @@ const NewApp: Component = () => {
 									onInput={(event) => setRepoFilter(event.currentTarget.value)}
 									placeholder="search repositories"
 								/>
-								<div class="max-h-72 overflow-y-auto border border-[var(--border)]">
+								<div class="max-h-72 overflow-y-auto rounded-[var(--radius)] border border-[var(--border)]">
 									<Show when={githubRepos.loading}>
 										<div class="px-4 py-6 text-sm text-[var(--muted-foreground)]">
 											loading repositories...
@@ -636,11 +647,7 @@ const NewApp: Component = () => {
 														repo.default_branch,
 													)
 												}
-												class={`flex w-full items-center justify-between border-b border-[var(--border)] px-4 py-3 text-left transition-colors last:border-b-0 ${
-													githubUrl() === repo.clone_url
-														? "bg-[var(--surface-muted)]"
-														: "bg-[var(--card)] hover:bg-[var(--muted)]"
-												}`}
+												class={repoButtonClass(githubUrl() === repo.clone_url)}
 											>
 												<div>
 													<p class="text-sm font-semibold text-[var(--foreground)]">
@@ -772,13 +779,11 @@ const NewApp: Component = () => {
 
 										setQueueType(option.value as ManagedQueueType);
 									}}
-									class={`border p-4 text-left transition-colors ${
-										(
-											mode() === "database" && databaseType() === option.value
-										) || (mode() === "queue" && queueType() === option.value)
-											? "border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]"
-											: "border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] hover:border-[var(--border-strong)]"
-									}`}
+									class={selectionCardClass(
+										(mode() === "database" &&
+											databaseType() === option.value) ||
+											(mode() === "queue" && queueType() === option.value),
+									)}
 								>
 									<p class="text-[11px] font-semibold uppercase tracking-[0.22em]">
 										{option.icon}
@@ -786,9 +791,9 @@ const NewApp: Component = () => {
 									<p class="mt-4 font-serif text-xl">{option.label}</p>
 									<p
 										class={`mt-3 text-sm leading-6 ${
-											(mode() === "database" &&
-												databaseType() === option.value) ||
-											(mode() === "queue" && queueType() === option.value)
+											(
+												mode() === "database" && databaseType() === option.value
+											) || (mode() === "queue" && queueType() === option.value)
 												? "text-[var(--background)]/80"
 												: "text-[var(--muted-foreground)]"
 										}`}
