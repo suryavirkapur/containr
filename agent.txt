@@ -1,4 +1,12 @@
 current context:
+- the runtime bug behind `docker start failed ... sethostname: invalid
+  argument` was in `crates/containr-runtime/src/docker.rs`: the generic app
+  service path reused the full container id as the Linux hostname even though
+  container names may contain hostname-invalid characters or exceed 63 chars
+- that path now sanitizes and truncates the hostname before container create,
+  and `crates/containr-runtime/tests/integration.rs` includes a real Docker
+  regression test that starts a container with an intentionally bad hostname
+  source to prove the runtime fix works end to end
 - `web/src/pages/AppDetail.tsx` now uses three explicit tabs:
   `overview`, `services`, and `activity`, with `useSearchParams()` making the
   selected tab, selected service, and selected container part of the route url
