@@ -17,6 +17,9 @@
 :root {
   --radius: 0px;
   --background: #09090b;
+  --background-end: #0b0f16;
+  --background-glow: rgba(30, 41, 59, 0.28);
+  --background-overlay: rgba(9, 9, 11, 0.88);
   --foreground: #f5f7fa;
   --card: #101319;
   --card-foreground: #f5f7fa;
@@ -33,6 +36,8 @@
   --success: #14532d;
   --warning: #78350f;
   --destructive: #7f1d1d;
+  --selection-bg: #334155;
+  --selection-fg: #f5f7fa;
   font-family: "space grotesk", "ibm plex sans", "avenir next", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -47,8 +52,8 @@ body {
 
 body {
   background:
-    radial-gradient(circle at top, rgba(30, 41, 59, 0.28), transparent 32%),
-    linear-gradient(180deg, #09090b 0%, #0b0f16 100%);
+    radial-gradient(circle at top, var(--background-glow), transparent 32%),
+    linear-gradient(180deg, var(--background) 0%, var(--background-end) 100%);
   color: var(--foreground);
   min-height: 100vh;
 }
@@ -147,6 +152,6 @@ textarea {
 }
 
 ::selection {
-  background: #334155;
-  color: var(--foreground);
+  background: var(--selection-bg);
+  color: var(--selection-fg);
 }
