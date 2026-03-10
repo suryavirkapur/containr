@@ -8,7 +8,7 @@ pub mod managed_services;
 pub mod models;
 pub mod service_inventory;
 
-pub use config::{Config, DatabaseBackendKind, DatabaseConfig};
+pub use config::{CacheConfig, Config, DatabaseConfig, LoggingConfig};
 pub use db::Database;
 pub use encryption::{decrypt, derive_key, encrypt};
 pub use error::{Error, Result};

@@ -8,6 +8,10 @@ use std::path::PathBuf;
 pub struct Config {
     pub server: ServerConfig,
     pub database: DatabaseConfig,
+    #[serde(default)]
+    pub cache: CacheConfig,
+    #[serde(default)]
+    pub logging: LoggingConfig,
     pub proxy: ProxyConfig,
     pub github: GithubConfig,
     pub auth: AuthConfig,
@@ -34,32 +38,64 @@ impl Default for ServerConfig {
     }
 }
 
-/// supported metadata database backends
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum DatabaseBackendKind {
-    Sled,
-    #[default]
-    Sqlite,
-}
-
 /// metadata database configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseConfig {
-    #[serde(default)]
-    pub backend: DatabaseBackendKind,
     pub path: String,
 }
 
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
-            backend: DatabaseBackendKind::Sqlite,
-            path: "./data/containr.db".to_string(),
+            path: "./data/containr.sqlite3".to_string(),
         }
     }
+}
+
+impl DatabaseConfig {
+    /// returns the effective sqlite file path
+    pub fn sqlite_path(&self) -> PathBuf {
+        let path = PathBuf::from(self.path.trim());
+        if path.is_dir() {
+            return path.join("containr.sqlite3");
+        }
+        path
+    }
+}
+
+/// ephemeral cache configuration backed by sled
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheConfig {
+    pub path: String,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            path: "./data/cache".to_string(),
+        }
+    }
+}
+
+/// append-only file logging configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoggingConfig {
+    pub dir: String,
+    #[serde(default = "default_log_retention_days")]
+    pub retention_days: u32,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            dir: "./data/logs".to_string(),
+            retention_days: default_log_retention_days(),
+        }
+    }
+}
+
+fn default_log_retention_days() -> u32 {
+    14
 }
 
 /// reverse proxy configuration
@@ -293,8 +329,7 @@ host = "0.0.0.0"
 port = 2077
 
 [database]
-backend = "sqlite"
-path = "./data/containr.db"
+path = "./data/containr.sqlite3"
 
 [proxy]
 http_port = 80
@@ -319,7 +354,10 @@ staging = true
         .unwrap();
 
         assert!(config.security.encryption_key.is_empty());
-        assert_eq!(config.database.backend, DatabaseBackendKind::Sqlite);
+        assert_eq!(config.database.path, "./data/containr.sqlite3");
+        assert_eq!(config.cache.path, "./data/cache");
+        assert_eq!(config.logging.dir, "./data/logs");
+        assert_eq!(config.logging.retention_days, 14);
         assert!(config
             .security
             .cors_allowed_origins
@@ -391,7 +429,6 @@ host = "0.0.0.0"
 port = 2077
 
 [database]
-backend = "sqlite"
 path = "./data/containr.sqlite3"
 
 [proxy]
@@ -416,7 +453,28 @@ staging = true
         )
         .unwrap();
 
-        assert_eq!(config.database.backend, DatabaseBackendKind::Sqlite);
         assert_eq!(config.database.path, "./data/containr.sqlite3");
+    }
+
+    #[test]
+    fn directory_database_path_resolves_to_sqlite_file() {
+        let config = DatabaseConfig {
+            path: "/var/lib/containr/containr.sqlite3".to_string(),
+        };
+        let root = std::env::temp_dir().join("containr-config-dir-test");
+        let _ = std::fs::create_dir_all(&root);
+
+        let directory_config = DatabaseConfig {
+            path: root.to_string_lossy().to_string(),
+        };
+
+        assert_eq!(
+            config.sqlite_path(),
+            PathBuf::from("/var/lib/containr/containr.sqlite3")
+        );
+        assert_eq!(
+            directory_config.sqlite_path(),
+            root.join("containr.sqlite3")
+        );
     }
 }

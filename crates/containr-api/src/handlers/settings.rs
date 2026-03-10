@@ -35,6 +35,10 @@ pub struct SettingsResponse {
     pub storage_internal_host: String,
     /// rustfs service port
     pub storage_port: u16,
+    /// directory for append-only containr logs
+    pub log_dir: String,
+    /// number of days rotated logs are retained (0 disables cleanup)
+    pub log_retention_days: u32,
     /// http port for proxy
     pub http_port: u16,
     /// https port for proxy
@@ -60,6 +64,8 @@ pub struct UpdateSettingsRequest {
     pub storage_internal_host: Option<String>,
     /// rustfs service port
     pub storage_port: Option<u16>,
+    /// number of days rotated logs are retained (0 disables cleanup)
+    pub log_retention_days: Option<u32>,
     /// new acme email (optional)
     pub acme_email: Option<String>,
     /// use acme staging (optional)
@@ -110,6 +116,8 @@ pub async fn get_settings(
             .clone(),
         storage_internal_host: config.storage.rustfs_internal_host.clone(),
         storage_port: config.storage.rustfs_port,
+        log_dir: config.logging.dir.clone(),
+        log_retention_days: config.logging.retention_days,
         http_port: config.proxy.http_port,
         https_port: config.proxy.https_port,
         acme_email: config.acme.email.clone(),
@@ -198,6 +206,10 @@ pub async fn update_settings(
             config.storage.rustfs_port = storage_port;
         }
 
+        if let Some(log_retention_days) = req.log_retention_days {
+            config.logging.retention_days = log_retention_days;
+        }
+
         if let Some(acme_email) = req.acme_email {
             config.acme.email = acme_email;
         }
@@ -237,6 +249,8 @@ pub async fn update_settings(
             .clone(),
         storage_internal_host: config.storage.rustfs_internal_host.clone(),
         storage_port: config.storage.rustfs_port,
+        log_dir: config.logging.dir.clone(),
+        log_retention_days: config.logging.retention_days,
         http_port: config.proxy.http_port,
         https_port: config.proxy.https_port,
         acme_email: config.acme.email.clone(),

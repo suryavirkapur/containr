@@ -79,8 +79,19 @@ pub struct GithubCallbackQuery {
 )]
 pub async fn github_start(State(state): State<AppState>) -> Redirect {
     let state_value = generate_oauth_state();
-    let expires_at = chrono::Utc::now().timestamp() + 600;
-    state.oauth_states.insert(state_value.clone(), expires_at);
+    let now = chrono::Utc::now().timestamp();
+    let expires_at = now + 600;
+    if let Ok(cache) = state.cache.lock() {
+        let _ = cache.cleanup_expired_oauth_states(now);
+        if let Err(error) = cache.insert_oauth_state(&state_value, expires_at) {
+            tracing::warn!(
+                error = %error,
+                "failed to persist github oauth state"
+            );
+        }
+    } else {
+        tracing::warn!("failed to lock github oauth state cache");
+    }
 
     let config = state.config.read().await;
     let mut auth_url =
@@ -254,8 +265,12 @@ pub async fn github_callback(
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
     // verify state
     let now = chrono::Utc::now().timestamp();
-    let expires_at =
-        state.oauth_states.remove(&query.state).map(|entry| entry.1);
+    let expires_at = {
+        let cache = state.cache.lock().map_err(internal_error)?;
+        cache
+            .take_oauth_state(&query.state)
+            .map_err(internal_error)?
+    };
     if expires_at.is_none() || expires_at.unwrap_or(0) < now {
         return Err((
             StatusCode::BAD_REQUEST,

@@ -2207,6 +2207,19 @@
         ],
         "summary": "list all databases for the authenticated user",
         "operationId": "list_databases",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "list of databases",
@@ -4799,6 +4812,19 @@
         ],
         "summary": "list all queues for the authenticated user",
         "operationId": "list_queues",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "list of queues",
@@ -5210,6 +5236,429 @@
           },
           "404": {
             "description": "queue not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/services": {
+      "get": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "list_services",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "list of services",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/services/{id}": {
+      "get": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "get_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "service details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "delete_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "service deleted"
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/services/{id}/logs": {
+      "get": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "get_service_logs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tail",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "service logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceLogsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/services/{id}/restart": {
+      "post": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "restart_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "service restarted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/services/{id}/start": {
+      "post": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "start_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "service started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/services/{id}/stop": {
+      "post": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "stop_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "service stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "service not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -6058,6 +6507,13 @@
             "type": "string",
             "description": "database type"
           },
+          "group_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "attach this service to a project group"
+          },
           "memory_limit_mb": {
             "type": [
               "integer",
@@ -6095,6 +6551,13 @@
             ],
             "format": "double",
             "description": "cpu limit (optional)"
+          },
+          "group_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "attach this service to a project group"
           },
           "memory_limit_mb": {
             "type": [
@@ -6162,6 +6625,8 @@
           "id",
           "name",
           "db_type",
+          "service_type",
+          "network_name",
           "version",
           "status",
           "internal_host",
@@ -6201,6 +6666,12 @@
             "format": "int32",
             "minimum": 0
           },
+          "group_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "type": "string"
           },
@@ -6213,6 +6684,9 @@
             "minimum": 0
           },
           "name": {
+            "type": "string"
+          },
+          "network_name": {
             "type": "string"
           },
           "password": {
@@ -6262,6 +6736,27 @@
             ],
             "format": "int32",
             "minimum": 0
+          },
+          "public_connection_string": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "public_ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "public_proxy_connection_string": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_type": {
+            "type": "string"
           },
           "status": {
             "type": "string"
@@ -6710,6 +7205,8 @@
           "id",
           "name",
           "queue_type",
+          "service_type",
+          "network_name",
           "version",
           "status",
           "internal_host",
@@ -6740,6 +7237,12 @@
             "format": "int32",
             "minimum": 0
           },
+          "group_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "type": "string"
           },
@@ -6754,6 +7257,9 @@
           "name": {
             "type": "string"
           },
+          "network_name": {
+            "type": "string"
+          },
           "password": {
             "type": "string"
           },
@@ -6762,7 +7268,22 @@
             "format": "int32",
             "minimum": 0
           },
+          "public_connection_string": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "public_ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "queue_type": {
+            "type": "string"
+          },
+          "service_type": {
             "type": "string"
           },
           "status": {
@@ -6937,6 +7458,17 @@
               "null"
             ],
             "description": "rollout strategy override (stop_first or start_first)"
+          }
+        }
+      },
+      "ServiceLogsResponse": {
+        "type": "object",
+        "required": [
+          "logs"
+        ],
+        "properties": {
+          "logs": {
+            "type": "string"
           }
         }
       },
@@ -7258,6 +7790,13 @@
             ],
             "description": "restart policy"
           },
+          "schedule": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "cron expression used for scheduled jobs"
+          },
           "service_type": {
             "type": [
               "string",
@@ -7276,193 +7815,177 @@
       },
       "ServiceResponse": {
         "type": "object",
-        "description": "service response for multi-container apps",
         "required": [
           "id",
-          "name",
-          "image",
+          "resource_kind",
           "service_type",
-          "port",
-          "expose_http",
+          "name",
+          "status",
+          "network_name",
           "domains",
-          "additional_ports",
-          "replicas",
-          "depends_on",
-          "restart_policy",
-          "env_vars",
-          "build_args",
-          "command",
-          "entrypoint",
-          "mounts"
+          "default_urls",
+          "public_http",
+          "desired_instances",
+          "running_instances",
+          "container_ids",
+          "pitr_enabled",
+          "proxy_enabled",
+          "created_at",
+          "updated_at"
         ],
         "properties": {
-          "additional_ports": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            },
-            "description": "additional container ports"
-          },
-          "build_args": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EnvVarResponse"
-            },
-            "description": "docker build arguments"
-          },
-          "build_context": {
+          "connection_string": {
             "type": [
               "string",
               "null"
-            ],
-            "description": "relative repo path used as the docker build context"
+            ]
           },
-          "build_target": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "docker build target stage"
-          },
-          "command": {
+          "container_ids": {
             "type": "array",
             "items": {
               "type": "string"
-            },
-            "description": "command arguments override"
+            }
           },
-          "cpu_limit": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "description": "cpu limit"
+          "created_at": {
+            "type": "string"
           },
-          "depends_on": {
+          "default_urls": {
             "type": "array",
             "items": {
               "type": "string"
-            },
-            "description": "dependencies"
+            }
           },
-          "dockerfile_path": {
+          "deployment_id": {
             "type": [
               "string",
               "null"
-            ],
-            "description": "relative path to the dockerfile within the repo"
+            ]
           },
-          "domain": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "primary custom domain"
+          "desired_instances": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           },
           "domains": {
             "type": "array",
             "items": {
               "type": "string"
-            },
-            "description": "service-specific custom domains"
+            }
           },
-          "entrypoint": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "entrypoint override"
-          },
-          "env_vars": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EnvVarResponse"
-            },
-            "description": "service-specific environment variables"
-          },
-          "expose_http": {
-            "type": "boolean",
-            "description": "whether this service receives public http traffic"
-          },
-          "health_check": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/HealthCheckResponse",
-                "description": "health check config"
-              }
-            ]
-          },
-          "id": {
-            "type": "string",
-            "description": "service id"
-          },
-          "image": {
-            "type": "string",
-            "description": "docker image"
-          },
-          "memory_limit_mb": {
+          "external_port": {
             "type": [
               "integer",
               "null"
             ],
-            "format": "int64",
-            "description": "memory limit in mb",
-            "minimum": 0
-          },
-          "mounts": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ServiceMountResponse"
-            },
-            "description": "persistent mounts"
-          },
-          "name": {
-            "type": "string",
-            "description": "service name"
-          },
-          "port": {
-            "type": "integer",
             "format": "int32",
-            "description": "container port",
             "minimum": 0
           },
-          "registry_auth": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ServiceRegistryAuthResponse",
-                "description": "private registry credentials metadata"
-              }
-            ]
-          },
-          "replicas": {
-            "type": "integer",
-            "format": "int32",
-            "description": "number of replicas",
-            "minimum": 0
-          },
-          "restart_policy": {
-            "type": "string",
-            "description": "restart policy"
-          },
-          "service_type": {
-            "type": "string",
-            "description": "render-style service category"
-          },
-          "working_dir": {
+          "group_id": {
             "type": [
               "string",
               "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "internal_host": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "network_name": {
+            "type": "string"
+          },
+          "pitr_enabled": {
+            "type": "boolean"
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
             ],
-            "description": "working directory override"
+            "format": "int32",
+            "minimum": 0
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proxy_connection_string": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proxy_enabled": {
+            "type": "boolean"
+          },
+          "proxy_external_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "proxy_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "public_http": {
+            "type": "boolean"
+          },
+          "public_ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_kind": {
+            "type": "string"
+          },
+          "running_instances": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "schedule": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
           }
         }
       },
@@ -7470,10 +7993,13 @@
         "type": "object",
         "description": "settings response - only exposes safe fields",
         "required": [
+          "api_port",
           "base_domain",
           "storage_management_endpoint",
           "storage_internal_host",
           "storage_port",
+          "log_dir",
+          "log_retention_days",
           "http_port",
           "https_port",
           "acme_email",
@@ -7488,9 +8014,22 @@
             "type": "boolean",
             "description": "whether to use acme staging"
           },
+          "api_port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "configured api port",
+            "minimum": 0
+          },
           "base_domain": {
             "type": "string",
             "description": "base domain for all apps"
+          },
+          "dashboard_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "dashboard url served by the proxy"
           },
           "http_port": {
             "type": "integer",
@@ -7503,6 +8042,30 @@
             "format": "int32",
             "description": "https port for proxy",
             "minimum": 0
+          },
+          "log_dir": {
+            "type": "string",
+            "description": "directory for append-only containr logs"
+          },
+          "log_retention_days": {
+            "type": "integer",
+            "format": "int32",
+            "description": "number of days rotated logs are retained (0 disables cleanup)",
+            "minimum": 0
+          },
+          "public_ip": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "public ip used for direct port access and domain validation"
+          },
+          "service_wildcard_domain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "wildcard suffix used for default service subdomains"
           },
           "storage_internal_host": {
             "type": "string",
@@ -7683,6 +8246,22 @@
             ],
             "description": "new base domain (optional)"
           },
+          "log_retention_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "number of days rotated logs are retained (0 disables cleanup)",
+            "minimum": 0
+          },
+          "public_ip": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "public ip used for direct access and domain validation"
+          },
           "storage_internal_host": {
             "type": [
               "string",
@@ -7816,6 +8395,10 @@
     {
       "name": "queues",
       "description": "managed queues"
+    },
+    {
+      "name": "services",
+      "description": "unified service inventory"
     },
     {
       "name": "storage",

@@ -27,22 +27,52 @@ database section
 --------------------------------------------------------------------------------
 
 [database]
-backend = "sqlite"
-path = "./data/containr.db"
+path = "./data/containr.sqlite3"
+
+[cache]
+path = "./data/cache"
+
+[logging]
+dir = "./data/logs"
+retention_days = 14
 
 options:
-    backend (string)
-        metadata database backend.
-        default: "sqlite"
-        options:
-            - sqlite: sqlite database with wal journal mode
-            - sled: embedded key-value store
-
     path (string)
-        path to the selected metadata database.
-        default: "./data/containr.db"
+        path to the sqlite metadata database.
+        default: "./data/containr.sqlite3"
         can be absolute or relative to working directory.
         parent directory is created automatically if it doesn't exist.
+
+--------------------------------------------------------------------------------
+cache section
+--------------------------------------------------------------------------------
+
+[cache]
+path = "./data/cache"
+
+options:
+    path (string)
+        path to the sled cache directory.
+        default: "./data/cache"
+        used for short-lived platform cache entries such as oauth state.
+
+--------------------------------------------------------------------------------
+logging section
+--------------------------------------------------------------------------------
+
+[logging]
+dir = "./data/logs"
+retention_days = 14
+
+options:
+    dir (string)
+        directory for append-only rotated containr logs.
+        default: "./data/logs"
+
+    retention_days (u32)
+        days to retain rotated logs.
+        default: 14
+        set to 0 to disable automatic cleanup.
 
 --------------------------------------------------------------------------------
 proxy section
@@ -244,8 +274,14 @@ host = "0.0.0.0"
 port = 2077
 
 [database]
-backend = "sqlite"
-path = "/var/lib/containr/containr.db"
+path = "/var/lib/containr/containr.sqlite3"
+
+[cache]
+path = "/var/lib/containr/cache"
+
+[logging]
+dir = "/var/lib/containr/logs"
+retention_days = 14
 
 [proxy]
 http_port = 80

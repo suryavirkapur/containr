@@ -42,14 +42,14 @@ pub enum Error {
     Internal(String),
 }
 
-impl From<sled::Error> for Error {
-    fn from(error: sled::Error) -> Self {
+impl From<sqlx::Error> for Error {
+    fn from(error: sqlx::Error) -> Self {
         Self::Database(error.to_string())
     }
 }
 
-impl From<rusqlite::Error> for Error {
-    fn from(error: rusqlite::Error) -> Self {
+impl From<sqlx::migrate::MigrateError> for Error {
+    fn from(error: sqlx::migrate::MigrateError) -> Self {
         Self::Database(error.to_string())
     }
 }

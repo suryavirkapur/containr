@@ -210,7 +210,9 @@ data directory structure
 ------------------------
 
     /var/lib/containr/
-    ├── containr.db/           # sled database
+    ├── containr.sqlite3       # sqlite metadata database
+    ├── cache/                 # sled cache data
+    ├── logs/                  # rotated append-only containr logs
     ├── certs/              # acme certificates
     └── data/
         ├── databases/      # managed database volumes

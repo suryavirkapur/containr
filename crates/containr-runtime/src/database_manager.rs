@@ -13,8 +13,8 @@ use std::sync::Arc;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use bollard::models::{
     ContainerCreateBody, EndpointSettings, HealthConfig, HealthStatusEnum,
-    HostConfig, Mount, MountTypeEnum, NetworkCreateRequest, NetworkingConfig,
-    PortBinding, RestartPolicy, RestartPolicyNameEnum,
+    HostConfig, Mount, MountTypeEnum, NetworkingConfig, PortBinding,
+    RestartPolicy, RestartPolicyNameEnum,
 };
 use bollard::query_parameters::{
     CreateContainerOptions, InspectContainerOptions, InspectNetworkOptions,
@@ -24,8 +24,9 @@ use bollard::query_parameters::{
 use bollard::Docker;
 use chrono::Utc;
 use futures::StreamExt;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
+use crate::docker::create_bridge_network;
 use crate::error::{ClientError, Result};
 use crate::ImageManager;
 use containr_common::managed_services::{
@@ -577,25 +578,7 @@ impl DatabaseManager {
         }
 
         info!("creating docker network: {}", name);
-
-        let options = NetworkCreateRequest {
-            name: name.to_string(),
-            driver: Some("bridge".to_string()),
-            ..Default::default()
-        };
-
-        match self.docker.create_network(options).await {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                let err_str = e.to_string();
-                if err_str.contains("already exists") {
-                    Ok(())
-                } else {
-                    warn!("failed to create network: {}", err_str);
-                    Ok(())
-                }
-            }
-        }
+        create_bridge_network(&self.docker, name).await
     }
 
     async fn remove_network_if_exists(&self, name: &str) -> Result<()> {

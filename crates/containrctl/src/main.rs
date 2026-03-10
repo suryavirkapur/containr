@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser, Subcommand};
-use containr::api_client::ApiClient;
-use containr::client_config::ClientConfig;
+use containrctl::api_client::ApiClient;
+use containrctl::client_config::ClientConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -1372,7 +1372,7 @@ fn resolve_instance_name(
 fn resolve_instance_mut<'a>(
     config: &'a mut ClientConfig,
     selected_instance: Option<&str>,
-) -> Result<&'a mut containr::client_config::ClientInstanceConfig> {
+) -> Result<&'a mut containrctl::client_config::ClientInstanceConfig> {
     let name = resolve_instance_name(config, selected_instance);
     config.instance_mut(&name)
 }

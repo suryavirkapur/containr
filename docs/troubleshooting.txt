@@ -174,7 +174,7 @@ problem: sled database corruption
     solution:
         1. stop containr
         2. remove corrupted database:
-           rm -rf /var/lib/containr/containr.db
+           rm -rf /var/lib/containr/containr.sqlite3
         3. restart containr (creates fresh database)
         4. restore from backup if available
 

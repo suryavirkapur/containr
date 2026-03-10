@@ -2,6 +2,57 @@ changelog
 =========
 
 0.1.14-alpha - 2026-03-10
+- expand `scripts/e2e-services.sh` into a full docker-backed `containrctl`
+  sweep that exercises config/auth, projects, services, databases, queues,
+  containers, and system commands against a disposable local server
+- fix rollback correctness by storing an `app_snapshot` on deployments and
+  making the runtime deploy from that snapshot, so rollback restores the prior
+  service spec instead of only reusing old image artifacts
+- make docker bridge network creation resilient on saturated hosts by falling
+  back to an explicit free `10.x.x.0/24` subnet when docker reports exhausted
+  predefined address pools, and return real errors instead of silently
+  ignoring failed standalone network creation in the database/queue managers
+- update the `containers list` harness lookup to follow the current api
+  payload shape (`resource_id` + label) rather than an old `service_id` field
+- verify with:
+  `scripts/e2e-services.sh`
+  `cargo test -p containr-runtime`
+  `cargo test -p containrctl`
+
+0.1.14-alpha - 2026-03-10
+- split `containrctl` into its own workspace crate at `crates/containrctl`,
+  move the client-only `api_client` and `client_config` modules there, and
+  remove the extra `containrctl` bin target from `crates/containr`
+- update install/release docs so cargo installation targets the explicit
+  `containr` and `containrctl` packages after the crate split
+- drop the unused legacy sqlite backend implementation in
+  `crates/containr-common/src/sqlite_relational.rs` and move the metadata
+  store to a single sqlite/sqlx path with embedded migrations under
+  `crates/containr-common/sqlx_migrations/`
+- replace the old backend-selection config model with sqlite-only metadata
+  config plus explicit `[cache]` and `[logging]` sections, and make the main
+  binary normalize default paths under the chosen data directory
+- run sqlite metadata through a dedicated internal tokio runtime so the
+  current synchronous `Database` api can safely drive async sqlx queries from
+  both plain tests and async axum/runtime call sites
+- add append-only daily rotated tracing logs in `crates/containr/src/logging.rs`
+  and a background retention cleanup task keyed off `logging.retention_days`
+- move oauth state storage from an in-memory dashmap to a sled-backed cache in
+  `crates/containr-api/src/cache.rs` and `crates/containr-api/src/state.rs`
+- remove deployment-log legacy fallbacks from the api websocket/http handlers
+  so deployment logs now come only from the dedicated deployment log store
+- extend `/api/settings` and `web/src/pages/Settings.tsx` with log directory
+  visibility and log retention control, regenerate the openapi schema/client,
+  and update shipped config/docs/install text to the sqlite/cache/logging
+  layout
+- verify with:
+  `cargo test -p containr-common`
+  `cargo test -p containr-api --features skip-web-build`
+  `cargo test -p containr-runtime`
+  `cargo test -p containr --features openapi-only`
+  `pnpm --dir web build`
+
+0.1.14-alpha - 2026-03-10
 - fix managed PostgreSQL startup for version 18+ by switching the runtime to a
   version-aware mount layout, setting `PGDATA` explicitly, and updating PITR
   helpers to use the computed data directory instead of hard-coded legacy

@@ -24,11 +24,13 @@ detailed installation
 
 option 1: install from cargo (recommended)
 
-  cargo install --git https://github.com/suryavirkapur/containr --bin containr --bin containrctl
+  cargo install --git https://github.com/suryavirkapur/containr --package containr --bin containr
+  cargo install --git https://github.com/suryavirkapur/containr --package containrctl --bin containrctl
 
 with specific version/tag:
 
-  cargo install --git https://github.com/suryavirkapur/containr --tag v0.1.14-alpha --bin containr --bin containrctl
+  cargo install --git https://github.com/suryavirkapur/containr --tag v0.1.14-alpha --package containr --bin containr
+  cargo install --git https://github.com/suryavirkapur/containr --tag v0.1.14-alpha --package containrctl --bin containrctl
 
 option 2: build from source
 
@@ -42,6 +44,7 @@ option 3: install to cargo bin
   git clone https://github.com/suryavirkapur/containr.git
   cd containr
   cargo install --path crates/containr
+  cargo install --path crates/containrctl
 
 post-install configuration
 --------------------------
@@ -60,8 +63,14 @@ option 2: create config manually
   port = 2077
 
   [database]
-  backend = "sqlite"
-  path = "./data/containr.db"
+  path = "./data/containr.sqlite3"
+
+  [cache]
+  path = "./data/cache"
+
+  [logging]
+  dir = "./data/logs"
+  retention_days = 14
 
   [proxy]
   http_port = 80

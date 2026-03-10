@@ -126,8 +126,14 @@ create containr.toml:
   port = 2077
 
   [database]
-  backend = "sqlite"
-  path = "./data/containr.db"
+  path = "./data/containr.sqlite3"
+
+  [cache]
+  path = "./data/cache"
+
+  [logging]
+  dir = "./data/logs"
+  retention_days = 14
 
   [proxy]
   http_port = 80
@@ -152,7 +158,9 @@ create containr.toml:
   certs_dir = "./data/certs"
   staging = true
 
-sqlite is the default backend for fresh installs.
+sqlite is the only metadata backend for fresh installs.
+oauth and other ephemeral cache state is stored in sled at `cache.path`.
+containr writes append-only rotated logs to `logging.dir`.
 use ./install.sh to generate config with random secrets.
 
 release flow
@@ -162,7 +170,8 @@ build and publish a github release with the bundled binaries and vps installer:
 
   scripts/release-gh.sh
 
-the release script builds `containr` and `containrctl`, creates
+the release script builds the separate `containr` and `containrctl` crates,
+creates
 `dist/containr-linux-amd64.tar.gz`, writes a sha256 file, and publishes a
 prerelease automatically when the version contains `alpha`, `beta`, or `rc`.
 

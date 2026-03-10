@@ -43,8 +43,14 @@ create configuration file:
     port = 2077
 
     [database]
-    backend = "sqlite"
-    path = "/var/lib/containr/containr.db"
+    path = "/var/lib/containr/containr.sqlite3"
+
+    [cache]
+    path = "/var/lib/containr/cache"
+
+    [logging]
+    dir = "/var/lib/containr/logs"
+    retention_days = 14
 
     [proxy]
     http_port = 80
