@@ -1,79 +1,55 @@
-import {
-	Component,
-	createEffect,
-	createResource,
-	createSignal,
-	For,
-	Show,
-} from "solid-js";
-import { A, useSearchParams } from "@solidjs/router";
+import { A, useNavigate } from "@solidjs/router";
+import { Component, createResource, createSignal, For, Show } from "solid-js";
+
 import { api } from "../api";
 import type { components } from "../api";
-import { Alert, Button, PageHeader } from "../components/ui";
+import { Button, PageHeader } from "../components/ui";
 
 type Queue = components["schemas"]["QueueResponse"];
 
-/**
- * fetches user's queues
- */
+const buildAuthHeaders = (): Headers => {
+	const headers = new Headers();
+	const token = localStorage.getItem("containr_token");
+
+	if (token) {
+		headers.set("Authorization", `Bearer ${token}`);
+	}
+
+	return headers;
+};
+
+const handleUnauthorized = (response: Response) => {
+	if (response.status !== 401) {
+		return;
+	}
+
+	localStorage.removeItem("containr_token");
+	window.location.href = "/login";
+};
+
+const readErrorMessage = async (response: Response): Promise<string> => {
+	try {
+		const data = (await response.json()) as { error?: string };
+		if (typeof data.error === "string" && data.error.trim()) {
+			return data.error;
+		}
+	} catch {
+		// ignore malformed json and use the fallback below
+	}
+
+	return `request failed with status ${response.status}`;
+};
+
 const fetchQueues = async (): Promise<Queue[]> => {
 	const { data, error } = await api.GET("/api/queues");
 	if (error) throw error;
 	return data ?? [];
 };
 
-/**
- * queues management page
- */
 const Queues: Component = () => {
-	const [searchParams] = useSearchParams();
+	const navigate = useNavigate();
 	const [queues, { refetch }] = createResource(fetchQueues);
-	const [showCreate, setShowCreate] = createSignal(false);
-	const [creating, setCreating] = createSignal(false);
-	const [error, setError] = createSignal("");
 	const [copiedId, setCopiedId] = createSignal<string | null>(null);
-
-	// create form
-	const [name, setName] = createSignal("");
-	const [queueType, setQueueType] = createSignal("rabbitmq");
-	const [memoryMb, setMemoryMb] = createSignal("512");
-	const [cpuLimit, setCpuLimit] = createSignal("1.0");
-
-	createEffect(() => {
-		if (searchParams.create === "1") {
-			setShowCreate(true);
-		}
-
-		if (searchParams.type === "rabbitmq") {
-			setQueueType("rabbitmq");
-		}
-	});
-
-	const handleCreate = async (e: Event) => {
-		e.preventDefault();
-		setError("");
-		setCreating(true);
-
-		try {
-			const { error } = await api.POST("/api/queues", {
-				body: {
-					name: name(),
-					queue_type: queueType(),
-					memory_limit_mb: parseInt(memoryMb()) || 512,
-					cpu_limit: parseFloat(cpuLimit()) || 1.0,
-				},
-			});
-			if (error) throw error;
-
-			setShowCreate(false);
-			setName("");
-			refetch();
-		} catch (err: any) {
-			setError(err.message);
-		} finally {
-			setCreating(false);
-		}
-	};
 
 	const handleDelete = async (id: string) => {
 		if (!confirm("delete this queue? data will be lost.")) return;
@@ -82,7 +58,7 @@ const Queues: Component = () => {
 			params: { path: { id } },
 		});
 		if (error) throw error;
-		refetch();
+		await refetch();
 	};
 
 	const handleStart = async (id: string) => {
@@ -90,7 +66,7 @@ const Queues: Component = () => {
 			params: { path: { id } },
 		});
 		if (error) throw error;
-		refetch();
+		await refetch();
 	};
 
 	const handleStop = async (id: string) => {
@@ -98,11 +74,25 @@ const Queues: Component = () => {
 			params: { path: { id } },
 		});
 		if (error) throw error;
-		refetch();
+		await refetch();
+	};
+
+	const handleRestart = async (id: string) => {
+		const response = await fetch(`/api/services/${id}/restart`, {
+			method: "POST",
+			headers: buildAuthHeaders(),
+		});
+
+		handleUnauthorized(response);
+		if (!response.ok) {
+			throw new Error(await readErrorMessage(response));
+		}
+
+		await refetch();
 	};
 
 	const copyToClipboard = (id: string, text: string) => {
-		navigator.clipboard.writeText(text);
+		void navigator.clipboard.writeText(text);
 		setCopiedId(id);
 		setTimeout(() => setCopiedId(null), 2000);
 	};
@@ -112,7 +102,7 @@ const Queues: Component = () => {
 			case "running":
 				return "bg-black";
 			case "starting":
-				return "bg-neutral-400 animate-pulse";
+				return "animate-pulse bg-neutral-400";
 			case "stopped":
 				return "bg-neutral-200";
 			case "failed":
@@ -128,43 +118,48 @@ const Queues: Component = () => {
 				title="queues"
 				description="managed rabbitmq instances"
 				actions={
-					<Button onClick={() => setShowCreate(true)}>create queue</Button>
+					<Button
+						onClick={() => navigate("/projects/new?kind=queue&type=rabbitmq")}
+					>
+						create queue
+					</Button>
 				}
 			/>
 
-			{/* loading */}
 			<Show when={queues.loading}>
-				<div class="animate-pulse space-y-4">
-					<div class="h-20 bg-neutral-50 border border-neutral-200"></div>
-					<div class="h-20 bg-neutral-50 border border-neutral-200"></div>
+				<div class="mt-10 animate-pulse space-y-4">
+					<div class="h-20 border border-neutral-200 bg-neutral-50"></div>
+					<div class="h-20 border border-neutral-200 bg-neutral-50"></div>
 				</div>
 			</Show>
 
-			{/* empty */}
 			<Show when={!queues.loading && queues()?.length === 0}>
 				<div class="mt-10 border border-dashed border-neutral-200 p-12 text-center">
-					<p class="text-neutral-400 text-sm">no queues yet</p>
-					<Button variant="ghost" size="sm" onClick={() => setShowCreate(true)}>
+					<p class="text-sm text-neutral-400">no queues yet</p>
+					<Button
+						variant="ghost"
+						size="sm"
+						onClick={() => navigate("/projects/new?kind=queue&type=rabbitmq")}
+					>
 						create your first queue
 					</Button>
 				</div>
 			</Show>
 
-			{/* list */}
 			<Show when={!queues.loading && queues() && queues()!.length > 0}>
 				<div class="mt-10 space-y-4">
 					<For each={queues()}>
 						{(queue) => (
 							<div class="border border-neutral-200 p-5">
-								<div class="flex justify-between items-start">
+								<div class="flex items-start justify-between gap-4">
 									<div>
 										<div class="flex items-center gap-3">
 											<span
-												class={`w-2 h-2 ${statusIndicator(queue.status)}`}
+												class={`h-2 w-2 ${statusIndicator(queue.status)}`}
 											></span>
 											<A
 												href={`/queues/${queue.id}`}
-												class="text-black font-medium hover:underline"
+												class="font-medium text-black hover:underline"
 											>
 												{queue.name}
 											</A>
@@ -172,23 +167,29 @@ const Queues: Component = () => {
 												{queue.queue_type} {queue.version}
 											</span>
 										</div>
-										<p class="text-xs text-neutral-500 mt-2 font-mono">
+										<p class="mt-2 font-mono text-xs text-neutral-500">
 											{queue.internal_host}:{queue.port}
 										</p>
 									</div>
-									<div class="flex gap-2">
+									<div class="flex flex-wrap gap-2">
 										<button
 											onClick={() =>
 												copyToClipboard(queue.id, queue.connection_string)
 											}
-											class="px-3 py-1 text-xs border border-neutral-300 text-neutral-700 hover:border-neutral-400"
+											class="border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:border-neutral-400"
 										>
 											{copiedId() === queue.id ? "copied!" : "copy url"}
+										</button>
+										<button
+											onClick={() => void handleRestart(queue.id)}
+											class="border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:border-neutral-400"
+										>
+											restart
 										</button>
 										<Show when={queue.status === "stopped"}>
 											<button
 												onClick={() => handleStart(queue.id)}
-												class="px-3 py-1 text-xs border border-neutral-300 text-neutral-700 hover:border-neutral-400"
+												class="border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:border-neutral-400"
 											>
 												start
 											</button>
@@ -196,20 +197,20 @@ const Queues: Component = () => {
 										<Show when={queue.status === "running"}>
 											<button
 												onClick={() => handleStop(queue.id)}
-												class="px-3 py-1 text-xs border border-neutral-300 text-neutral-700 hover:border-neutral-400"
+												class="border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:border-neutral-400"
 											>
 												stop
 											</button>
 										</Show>
 										<button
 											onClick={() => handleDelete(queue.id)}
-											class="px-3 py-1 text-xs border border-neutral-300 text-neutral-500 hover:text-black hover:border-neutral-400"
+											class="border border-neutral-300 px-3 py-1 text-xs text-neutral-500 hover:border-neutral-400 hover:text-black"
 										>
 											delete
 										</button>
 									</div>
 								</div>
-								<div class="mt-3 pt-3 border-t border-neutral-100 flex gap-6 text-xs text-neutral-500">
+								<div class="mt-3 flex gap-6 border-t border-neutral-100 pt-3 text-xs text-neutral-500">
 									<span>{queue.memory_limit_mb}mb ram</span>
 									<span>{queue.cpu_limit} cpu</span>
 									<span>user: {queue.username}</span>
@@ -217,90 +218,6 @@ const Queues: Component = () => {
 							</div>
 						)}
 					</For>
-				</div>
-			</Show>
-
-			{/* create modal */}
-			<Show when={showCreate()}>
-				<div class="fixed inset-0 bg-white/90 flex items-center justify-center z-50">
-					<div class="bg-white border border-neutral-300 p-6 w-full max-w-md">
-						<h2 class="text-lg font-serif text-black mb-6">create queue</h2>
-
-						{error() && (
-							<Alert variant="destructive" title="create failed">
-								{error()}
-							</Alert>
-						)}
-
-						<form onSubmit={handleCreate} class="space-y-5">
-							<div>
-								<label class="block text-xs text-neutral-500 uppercase tracking-wider mb-2">
-									name
-								</label>
-								<input
-									type="text"
-									value={name()}
-									onInput={(e) => setName(e.currentTarget.value)}
-									class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
-									placeholder="my-queue"
-									required
-								/>
-							</div>
-
-							<div>
-								<label class="block text-xs text-neutral-500 uppercase tracking-wider mb-2">
-									type
-								</label>
-								<select
-									value={queueType()}
-									onChange={(e) => setQueueType(e.currentTarget.value)}
-									class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
-								>
-									<option value="rabbitmq">rabbitmq</option>
-								</select>
-							</div>
-
-							<div class="grid grid-cols-2 gap-4">
-								<div>
-									<label class="block text-xs text-neutral-500 uppercase tracking-wider mb-2">
-										memory (mb)
-									</label>
-									<input
-										type="number"
-										value={memoryMb()}
-										onInput={(e) => setMemoryMb(e.currentTarget.value)}
-										class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
-									/>
-								</div>
-								<div>
-									<label class="block text-xs text-neutral-500 uppercase tracking-wider mb-2">
-										cpu cores
-									</label>
-									<input
-										type="number"
-										step="0.1"
-										value={cpuLimit()}
-										onInput={(e) => setCpuLimit(e.currentTarget.value)}
-										class="w-full px-3 py-2 bg-white border border-neutral-300 text-black focus:border-black focus:outline-none text-sm"
-									/>
-								</div>
-							</div>
-
-							<div class="flex gap-2 pt-2">
-								<Button
-									type="button"
-									variant="outline"
-									onClick={() => setShowCreate(false)}
-									class="flex-1"
-								>
-									cancel
-								</Button>
-								<Button type="submit" disabled={creating()} class="flex-1">
-									{creating() ? "creating..." : "create"}
-								</Button>
-							</div>
-						</form>
-					</div>
 				</div>
 			</Show>
 		</div>
