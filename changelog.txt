@@ -2,6 +2,8 @@ changelog
 =========
 
 0.1.14-alpha - 2026-03-09
+- fix the remaining project-detail frontend crash by restoring the missing
+  `Badge` import in `web/src/pages/AppDetail.tsx`
 - add a canonical `/api/services` surface that lists app services, managed
   databases, and managed queues through one backend inventory model with
   shared status, network, grouping, and lifecycle metadata

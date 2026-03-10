@@ -1,4 +1,8 @@
 current context:
+- the live project detail route had one follow-up frontend regression after the
+  status refactor: `web/src/pages/AppDetail.tsx` still rendered `<Badge>` for
+  the source pill but the import had been dropped, which crashed pages with
+  `Badge is not defined` until the import was restored
 - the backend runtime now treats the project/group as the network boundary:
   grouped managed services join the project network, while ungrouped managed
   services get a dedicated private `containr-svc-*` network
