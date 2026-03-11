@@ -1,0 +1,51 @@
+product requirements document
+=============================
+
+product name: containr
+intent: a hybrid platform-as-a-service (paas) combining the elegant, intuitive user experience of render with the unopinionated, raw power of caprover.
+
+1. current state & problem definition
+---------------------------------------
+the current iteration is unified around `/services`, but the underlying concept of "groups" or "projects" has become overly complex and confusing. the platform tries to enforce boundaries that go beyond simple networking, creating a rigid structure for apps, databases, and queues. the user interface feels broken because it forces a top-down "project > service" hierarchy when all the user really wants is to deploy a service quickly. there is friction in how different types of services (web, workers, databases) are managed inside these rigid groups.
+
+2. desired state & core philosophy
+------------------------------------
+the fundamental unit of the platform is the **service**.
+everything is a service: a web app, a worker, a postgres database, a redis cache.
+
+a. rendering the ui (the "render" side)
+   - single pane of glass: all services exist in one unified view.
+   - ease of use: intuitive creation flows (e.g., click "new service" -> select type -> deploy).
+   - beautiful, modern design utilizing the solid.js and tailwind css stack.
+   - simple configuration forms where complex docker settings are hidden until requested.
+
+b. raw functionality (the "caprover" side)
+   - full power: one-click apps, docker image deployments, raw dockerfiles.
+   - unopinionated execution: if it runs in docker, it runs on containr.
+   - persistent directories and simple volume mounts without complex pvc logic.
+   - easy port mapping, custom domains, and automated ssl via acme.
+
+3. the "group" concept redefined
+----------------------------------
+groups are simply network boundaries.
+- when services are assigned to the same group, they can communicate with each other over a shared internal network (e.g., a web service talking to a database using an internal hostname).
+- groups do not create hard container isolation or orchestration boundaries.
+- a service can be ungrouped (standalone) or it can join a group.
+- destroying a group simply destroys the shared network, not necessarily the containers themselves (or handles their networks gracefully).
+
+4. key features to build/fix next
+-----------------------------------
+- ui rewrite: remove the heavy "project" scaffolding from the solid.js frontend. flatten the hierarchy into an intuitive service list.
+- service grouping form: during creation or editing, a user just picks a "network group" from a dropdown.
+- network routing: ensure pingora proxies requests perfectly to single services without requiring a "primary project domain". domains belong to the service.
+
+5. technical specifications
+---------------------------
+- frontend: solid.js with tailwind css (flowbite references).
+- backend: rust, tokio async runtime, explicitly handling errors (no unwrap()).
+- configuration: all settings stored in toml files.
+- metadata & state: agent.txt and changelog.txt maintain context per global rules.
+
+conclusion
+------------
+containr is about getting out of the user's way. if they want to run a docker container and attach a domain to it, it should take 3 clicks. if they want that container to talk to a database, they put them in the same group. no artificial project boundaries, just pure utility.
