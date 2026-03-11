@@ -40,7 +40,7 @@ pub struct ReissueResponse {
     pub domains: Vec<String>,
 }
 
-/// Get certificate status for an app
+/// Get certificate status for a service
 #[utoipa::path(
     get,
     path = "/api/services/{id}/certificate",
@@ -96,7 +96,7 @@ pub async fn get_certificate(
     Ok(Json(responses))
 }
 
-/// Trigger certificate reissue for an app
+/// Trigger certificate reissue for a service
 #[utoipa::path(
     post,
     path = "/api/services/{id}/certificate/reissue",
