@@ -4,6435 +4,3090 @@
  */
 
 export interface paths {
-	"/api/apps": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** list all apps for the authenticated user */
-		get: operations["list_apps"];
-		put?: never;
-		/** create a new app */
-		post: operations["create_app"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/apps/{app_id}/deployments/{id}": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get a single deployment */
-		get: operations["get_deployment"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/apps/{app_id}/deployments/{id}/logs": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get deployment logs */
-		get: operations["get_deployment_logs"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/apps/{app_id}/deployments/{id}/rollback": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** rollback to a previous deployment */
-		post: operations["rollback_deployment"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/apps/{id}": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get a single app by id */
-		get: operations["get_app"];
-		/** update an app */
-		put: operations["update_app"];
-		post?: never;
-		/** delete an app */
-		delete: operations["delete_app"];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/apps/{id}/certificate": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** Get certificate status for an app */
-		get: operations["get_certificate"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/apps/{id}/certificate/reissue": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Trigger certificate reissue for an app */
-		post: operations["reissue_certificate"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/apps/{id}/deployments": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** list deployments for an app */
-		get: operations["list_deployments"];
-		put?: never;
-		/** trigger a new deployment */
-		post: operations["trigger_deployment"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/apps/{id}/metrics": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get app container metrics */
-		get: operations["get_app_metrics"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/apps/{id}/services/{service_name}/mounts/backup": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** download a tar archive of all persistent mounts for a service */
-		get: operations["backup_service_mounts"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/apps/{id}/services/{service_name}/mounts/restore": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** restore all persistent mounts for a service from a tar archive */
-		post: operations["restore_service_mounts"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/auth/github": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** start github oauth flow */
-		get: operations["github_start"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/auth/github/callback": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** github oauth callback */
-		get: operations["github_callback"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/auth/login": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** login with email/password */
-		post: operations["login"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/auth/register": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** register a new user with email/password */
-		post: operations["register"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/buckets": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** list all buckets for the authenticated user */
-		get: operations["list_buckets"];
-		put?: never;
-		/** create a new storage bucket */
-		post: operations["create_bucket"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/buckets/{id}": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get a single bucket by id */
-		get: operations["get_bucket"];
-		put?: never;
-		post?: never;
-		/** delete a storage bucket */
-		delete: operations["delete_bucket"];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/buckets/{id}/connection": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get s3 connection details for a bucket */
-		get: operations["get_bucket_connection"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/containers": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations["list_containers"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/containers/{id}/exec/token": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations["issue_exec_token"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/containers/{id}/files": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations["list_volume_entries"];
-		put?: never;
-		post?: never;
-		delete: operations["delete_volume_entry"];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/containers/{id}/files/download": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations["download_volume_entry"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/containers/{id}/files/mkdir": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations["create_volume_directory"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/containers/{id}/files/upload": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations["upload_volume_entry"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/containers/{id}/logs": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations["get_container_logs"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/containers/{id}/mounts": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations["list_container_mounts"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/containers/{id}/status": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations["get_container_status"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** list all databases for the authenticated user */
-		get: operations["list_databases"];
-		put?: never;
-		/** create a new managed database */
-		post: operations["create_database"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get a single database by id */
-		get: operations["get_database"];
-		put?: never;
-		post?: never;
-		/** delete a managed database */
-		delete: operations["delete_database"];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}/backups": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** list database backups */
-		get: operations["list_backups"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}/backups/download": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** download a backup file */
-		get: operations["download_backup"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}/export": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** export database backup */
-		post: operations["export_database"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}/expose": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** toggle external exposure for a database */
-		post: operations["expose_database"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}/logs": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get database container logs */
-		get: operations["get_database_logs"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}/pitr": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** configure postgres point in time recovery */
-		post: operations["configure_pitr"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}/pitr/base-backup": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** create a postgres base backup for pitr */
-		post: operations["create_pitr_base_backup"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}/pitr/recover": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** recover a postgres database from local pitr backups and wal */
-		post: operations["recover_database"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}/pitr/restore-point": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** create a postgres restore point */
-		post: operations["create_restore_point"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}/proxy": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** configure postgres proxy frontend */
-		post: operations["configure_proxy"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}/restart": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** restart a database */
-		post: operations["restart_database"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}/start": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** update database status (start/stop) */
-		post: operations["start_database"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/databases/{id}/stop": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** stop a database */
-		post: operations["stop_database"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/github/app": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get github app status and installations */
-		get: operations["get_github_app"];
-		put?: never;
-		post?: never;
-		/** delete github app configuration */
-		delete: operations["delete_github_app"];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/github/app/callback": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** handles the github app manifest callback */
-		get: operations["github_app_callback"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/github/app/install/callback": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** handles the installation callback */
-		get: operations["github_install_callback"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/github/app/manifest": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** generates the github app manifest and returns the creation url */
-		get: operations["get_app_manifest"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/github/app/repos": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get repos from github app installations */
-		get: operations["get_app_repos"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/projects": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** list all projects for the authenticated user */
-		get: operations["project_list_projects"];
-		put?: never;
-		/** create a new project */
-		post: operations["project_create_project"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/projects/{id}": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get a single project by id */
-		get: operations["project_get_project"];
-		/** update a project */
-		put: operations["project_update_project"];
-		post?: never;
-		/** delete a project */
-		delete: operations["project_delete_project"];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/projects/{id}/certificate": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get certificate status for a project */
-		get: operations["project_get_certificate"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/projects/{id}/certificate/reissue": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** trigger certificate reissue for a project */
-		post: operations["project_reissue_certificate"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/projects/{id}/deployments": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** list deployments for a project */
-		get: operations["project_list_deployments"];
-		put?: never;
-		/** trigger a new deployment for a project */
-		post: operations["project_trigger_deployment"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/projects/{id}/metrics": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get project container metrics */
-		get: operations["project_get_project_metrics"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/projects/{id}/services/{service_name}/mounts/backup": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** download a tar archive of all persistent mounts for a service */
-		get: operations["project_backup_service_mounts"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/projects/{id}/services/{service_name}/mounts/restore": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** restore all persistent mounts for a service from a tar archive */
-		post: operations["project_restore_service_mounts"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/projects/{project_id}/deployments/{id}": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get a single project deployment */
-		get: operations["project_get_deployment"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/projects/{project_id}/deployments/{id}/logs": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get logs for a project deployment */
-		get: operations["project_get_deployment_logs"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/projects/{project_id}/deployments/{id}/rollback": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** roll back a project to a previous deployment */
-		post: operations["project_rollback_deployment"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/queues": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** list all queues for the authenticated user */
-		get: operations["list_queues"];
-		put?: never;
-		/** create a new managed queue */
-		post: operations["create_queue"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/queues/{id}": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get a single queue by id */
-		get: operations["get_queue"];
-		put?: never;
-		post?: never;
-		/** delete a managed queue */
-		delete: operations["delete_queue"];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/queues/{id}/expose": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** toggle external exposure for a queue */
-		post: operations["expose_queue"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/queues/{id}/start": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** start a queue */
-		post: operations["start_queue"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/queues/{id}/stop": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** stop a queue */
-		post: operations["stop_queue"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/services": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations["list_services"];
-		put?: never;
-		post: operations["create_service"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/services/{id}": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations["get_service"];
-		put?: never;
-		post?: never;
-		delete: operations["delete_service"];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/services/{id}/logs": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations["get_service_logs"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/services/{id}/restart": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations["restart_service"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/services/{id}/start": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations["start_service"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/services/{id}/stop": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations["stop_service"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/settings": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get current server settings */
-		get: operations["get_settings"];
-		/** update server settings */
-		put: operations["update_settings"];
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/settings/certificate": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** request certificate for dashboard domain */
-		post: operations["issue_dashboard_certificate"];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/api/system/stats": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** get system statistics */
-		get: operations["get_system_stats"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	"/health": {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** health check endpoint */
-		get: operations["health"];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
+    "/api/auth/github": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** start github oauth flow */
+        get: operations["github_start"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/github/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** github oauth callback */
+        get: operations["github_callback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** login with email/password */
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** register a new user with email/password */
+        post: operations["register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/buckets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** list all buckets for the authenticated user */
+        get: operations["list_buckets"];
+        put?: never;
+        /** create a new storage bucket */
+        post: operations["create_bucket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/buckets/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** get a single bucket by id */
+        get: operations["get_bucket"];
+        put?: never;
+        post?: never;
+        /** delete a storage bucket */
+        delete: operations["delete_bucket"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/buckets/{id}/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** get s3 connection details for a bucket */
+        get: operations["get_bucket_connection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/containers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_containers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/containers/{id}/exec/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["issue_exec_token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/containers/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_volume_entries"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_volume_entry"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/containers/{id}/files/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["download_volume_entry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/containers/{id}/files/mkdir": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_volume_directory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/containers/{id}/files/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["upload_volume_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/containers/{id}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_container_logs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/containers/{id}/mounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_container_mounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/containers/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_container_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/app": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** get github app status and installations */
+        get: operations["get_github_app"];
+        put?: never;
+        post?: never;
+        /** delete github app configuration */
+        delete: operations["delete_github_app"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/app/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** handles the github app manifest callback */
+        get: operations["github_app_callback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/app/install/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** handles the installation callback */
+        get: operations["github_install_callback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/app/manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** generates the github app manifest and returns the creation url */
+        get: operations["get_app_manifest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/app/repos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** get repos from github app installations */
+        get: operations["get_app_repos"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_services"];
+        put?: never;
+        post: operations["create_service"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_service"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_service"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_service_logs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** get current server settings */
+        get: operations["get_settings"];
+        /** update server settings */
+        put: operations["update_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/certificate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** request certificate for dashboard domain */
+        post: operations["issue_dashboard_certificate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** get system statistics */
+        get: operations["get_system_stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** health check endpoint */
+        get: operations["health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["run_service_action"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_service_deployments"];
+        put?: never;
+        post: operations["trigger_service_deployment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/deployments/{deployment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_service_deployment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/deployments/{deployment_id}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rollback_service_deployment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/deployments/{deployment_id}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_service_deployment_logs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-	schemas: {
-		/** @description app details */
-		AppDetails: {
-			/** Format: int64 */
-			app_id: number;
-			app_name: string;
-			html_url: string;
-		};
-		/** @description app container metrics response */
-		AppMetricsResponse: {
-			container: string;
-			/** Format: double */
-			cpu_percent: number;
-			/** Format: int64 */
-			mem_limit_bytes: number;
-			/** Format: int64 */
-			mem_usage_bytes: number;
-		};
-		/** @description repos response */
-		AppReposResponse: {
-			repos: components["schemas"]["RepoInfo"][];
-		};
-		/** @description app response */
-		AppResponse: {
-			/** @description branch being deployed */
-			branch: string;
-			/** @description creation timestamp */
-			created_at: string;
-			/** @description custom domain */
-			domain?: string | null;
-			/** @description custom domains */
-			domains: string[];
-			/** @description environment variables */
-			env_vars: components["schemas"]["EnvVarResponse"][];
-			/** @description repository url */
-			github_url: string;
-			/**
-			 * Format: uuid
-			 * @description unique app id
-			 */
-			id: string;
-			/** @description app name */
-			name: string;
-			/**
-			 * Format: int32
-			 * @description app port (deprecated)
-			 */
-			port: number;
-			/** @description rollout strategy */
-			rollout_strategy: string;
-			/** @description container services */
-			services: components["schemas"]["ServiceResponse"][];
-		};
-		/** @description auth response with token */
-		AuthResponse: {
-			/** @description jwt authentication token */
-			token: string;
-			/** @description authenticated user info */
-			user: components["schemas"]["UserResponse"];
-		};
-		/** @description backup info */
-		BackupInfo: {
-			created_at: string;
-			filename: string;
-			/** Format: int64 */
-			size_bytes: number;
-		};
-		/** @description base backup response */
-		BaseBackupResponse: {
-			backup_path: string;
-			created_at: string;
-			label: string;
-		};
-		/** @description per-bucket s3 connection details */
-		BucketConnectionResponse: {
-			access_key: string;
-			bucket_name: string;
-			endpoint: string;
-			internal_endpoint: string;
-			internal_host: string;
-			note: string;
-			/** Format: int32 */
-			port: number;
-			public_endpoint?: string | null;
-			secret_key: string;
-			uses_shared_credentials: boolean;
-		};
-		/** @description bucket response */
-		BucketResponse: {
-			created_at: string;
-			endpoint: string;
-			id: string;
-			internal_endpoint: string;
-			internal_host: string;
-			managed_by_server: boolean;
-			name: string;
-			/** Format: int32 */
-			port: number;
-			public_endpoint?: string | null;
-			publicly_exposed: boolean;
-			/** Format: int64 */
-			size_bytes: number;
-		};
-		/** @description Certificate status response */
-		CertificateResponse: {
-			domain: string;
-			expires_at?: string | null;
-			issued_at?: string | null;
-			status: string;
-		};
-		/** @description pitr configuration request */
-		ConfigurePitrRequest: {
-			enabled: boolean;
-		};
-		/** @description proxy configuration request */
-		ConfigureProxyRequest: {
-			enabled: boolean;
-			/** Format: int32 */
-			external_port?: number | null;
-		};
-		ContainerListItem: {
-			id: string;
-			name: string;
-			resource_id: string;
-			resource_type: string;
-		};
-		ContainerLogsResponse: {
-			logs: string;
-		};
-		ContainerMountResponse: {
-			destination: string;
-			mount_type: string;
-			name?: string | null;
-			read_only: boolean;
-		};
-		ContainerStatusResponse: {
-			/** Format: double */
-			cpu_percent: number;
-			finished_at?: string | null;
-			health_status?: string | null;
-			/** Format: int64 */
-			mem_limit_bytes: number;
-			/** Format: int64 */
-			mem_usage_bytes: number;
-			/** Format: int64 */
-			restart_count: number;
-			started_at?: string | null;
-			status: string;
-		};
-		/** @description create app request */
-		CreateAppRequest: {
-			/** @description branch to deploy (defaults to main) */
-			branch?: string | null;
-			/** @description custom domain */
-			domain?: string | null;
-			/** @description custom domains */
-			domains?: string[] | null;
-			/** @description environment variables (shared across all services) */
-			env_vars?: components["schemas"]["EnvVarRequest"][] | null;
-			/** @description repository url */
-			github_url: string;
-			/** @description app name */
-			name: string;
-			/**
-			 * Format: int32
-			 * @description port for the app (deprecated, use services)
-			 */
-			port?: number | null;
-			/** @description rollout strategy (stop_first or start_first) */
-			rollout_strategy?: string | null;
-			/** @description container services for multi-container apps */
-			services?: components["schemas"]["ServiceRequest"][] | null;
-		};
-		/** @description base backup request */
-		CreateBaseBackupRequest: {
-			label?: string | null;
-		};
-		/** @description bucket creation request */
-		CreateBucketRequest: {
-			/** @description bucket name */
-			name: string;
-		};
-		/** @description database creation request */
-		CreateDatabaseRequest: {
-			/**
-			 * Format: double
-			 * @description cpu limit (optional)
-			 */
-			cpu_limit?: number | null;
-			/** @description database type */
-			db_type: string;
-			/** @description attach this service to a project group */
-			group_id?: string | null;
-			/**
-			 * Format: int64
-			 * @description memory limit in mb (optional)
-			 */
-			memory_limit_mb?: number | null;
-			/** @description database name */
-			name: string;
-			/** @description version (optional, uses default) */
-			version?: string | null;
-		};
-		/** @description queue creation request */
-		CreateQueueRequest: {
-			/**
-			 * Format: double
-			 * @description cpu limit (optional)
-			 */
-			cpu_limit?: number | null;
-			/** @description attach this service to a project group */
-			group_id?: string | null;
-			/**
-			 * Format: int64
-			 * @description memory limit in mb (optional)
-			 */
-			memory_limit_mb?: number | null;
-			/** @description queue name */
-			name: string;
-			/** @description queue type */
-			queue_type: string;
-			/** @description version (optional, uses default) */
-			version?: string | null;
-		};
-		/** @description restore point request */
-		CreateRestorePointRequest: {
-			restore_point?: string | null;
-		};
-		CreateServiceRequest:
-			| {
-					branch?: string | null;
-					env_vars?: components["schemas"]["EnvVarRequest"][] | null;
-					github_url: string;
-					name: string;
-					rollout_strategy?: string | null;
-					service: components["schemas"]["ServiceRequest"];
-					/** @enum {string} */
-					source: "git_repository";
-			  }
-			| {
-					/** Format: double */
-					cpu_limit?: number | null;
-					group_id?: string | null;
-					/** Format: int64 */
-					memory_limit_mb?: number | null;
-					name: string;
-					/** @enum {string} */
-					source: "template";
-					template: string;
-					version?: string | null;
-			  };
-		/** @description certificate issuance response */
-		DashboardCertResponse: {
-			/** @description domains queued for issuance */
-			domains: string[];
-			/** @description status message */
-			message: string;
-		};
-		/** @description database response */
-		DatabaseResponse: {
-			connection_string: string;
-			/** Format: double */
-			cpu_limit: number;
-			created_at: string;
-			database_name: string;
-			db_type: string;
-			/** Format: int32 */
-			external_port?: number | null;
-			group_id?: string | null;
-			id: string;
-			internal_host: string;
-			/** Format: int64 */
-			memory_limit_mb: number;
-			name: string;
-			network_name: string;
-			password: string;
-			pitr_enabled: boolean;
-			pitr_last_base_backup_at?: string | null;
-			pitr_last_base_backup_label?: string | null;
-			/** Format: int32 */
-			port: number;
-			proxy_connection_string?: string | null;
-			proxy_enabled: boolean;
-			/** Format: int32 */
-			proxy_external_port?: number | null;
-			/** Format: int32 */
-			proxy_port?: number | null;
-			public_connection_string?: string | null;
-			public_ip?: string | null;
-			public_proxy_connection_string?: string | null;
-			service_type: string;
-			status: string;
-			username: string;
-			version: string;
-		};
-		/** @description deployment response */
-		DeploymentResponse: {
-			/** Format: uuid */
-			app_id: string;
-			commit_message?: string | null;
-			commit_sha: string;
-			container_id?: string | null;
-			created_at: string;
-			finished_at?: string | null;
-			/** Format: uuid */
-			id: string;
-			started_at?: string | null;
-			status: string;
-		};
-		/** @description deployment trigger request (optional) */
-		DeploymentTriggerRequest: {
-			/** @description branch to deploy */
-			branch?: string | null;
-			/** @description commit message to record */
-			commit_message?: string | null;
-			/** @description commit sha to record */
-			commit_sha?: string | null;
-			/** @description rollout strategy override (stop_first or start_first) */
-			rollout_strategy?: string | null;
-		};
-		/** @description env var in request */
-		EnvVarRequest: {
-			/** @description variable key */
-			key: string;
-			/** @description mark as secret (hides value) */
-			secret?: boolean | null;
-			/** @description variable value */
-			value: string;
-		};
-		/** @description env var in response (hides secret values) */
-		EnvVarResponse: {
-			/** @description variable key */
-			key: string;
-			/** @description whether value is secret */
-			secret: boolean;
-			/** @description variable value (masked if secret) */
-			value: string;
-		};
-		/** @description error response */
-		ErrorResponse: {
-			/** @description error message */
-			error: string;
-		};
-		ExecTokenResponse: {
-			expires_at: string;
-			token: string;
-		};
-		/** @description export request */
-		ExportRequest: {
-			/** Format: uuid */
-			bucket_id?: string | null;
-			object_key_prefix?: string | null;
-		};
-		/** @description export response */
-		ExportResponse: {
-			backup_path: string;
-			bucket_name?: string | null;
-			object_key?: string | null;
-		};
-		/** @description queue expose request */
-		ExposeQueueRequest: {
-			enabled: boolean;
-			/** Format: int32 */
-			external_port?: number | null;
-		};
-		/** @description expose request */
-		ExposeRequest: {
-			enabled: boolean;
-			/** Format: int32 */
-			external_port?: number | null;
-		};
-		/** @description github app status response */
-		GithubAppStatusResponse: {
-			app?: null | components["schemas"]["AppDetails"];
-			/** @description whether a github app is configured */
-			configured: boolean;
-			/** @description list of installations */
-			installations: components["schemas"]["InstallationDetails"][];
-		};
-		/** @description health check configuration request */
-		HealthCheckRequest: {
-			/**
-			 * Format: int32
-			 * @description interval in seconds
-			 */
-			interval_secs?: number | null;
-			/** @description http path to check */
-			path: string;
-			/**
-			 * Format: int32
-			 * @description retries before unhealthy
-			 */
-			retries?: number | null;
-			/**
-			 * Format: int32
-			 * @description timeout in seconds
-			 */
-			timeout_secs?: number | null;
-		};
-		/** @description health check configuration response */
-		HealthCheckResponse: {
-			/**
-			 * Format: int32
-			 * @description interval in seconds
-			 */
-			interval_secs: number;
-			/** @description http path to check */
-			path: string;
-			/**
-			 * Format: int32
-			 * @description retries before unhealthy
-			 */
-			retries: number;
-			/**
-			 * Format: int32
-			 * @description timeout in seconds
-			 */
-			timeout_secs: number;
-		};
-		/** @description health check response */
-		HealthResponse: {
-			/** @description current service status */
-			status: string;
-			/** @description api version string */
-			version: string;
-		};
-		/** @description installation details */
-		InstallationDetails: {
-			account_login: string;
-			account_type: string;
-			/** Format: int64 */
-			id: number;
-			/** Format: int32 */
-			repository_count?: number | null;
-		};
-		InventoryServiceResponse: {
-			connection_string?: string | null;
-			container_ids: string[];
-			created_at: string;
-			default_urls: string[];
-			deployment_id?: string | null;
-			/** Format: int32 */
-			desired_instances: number;
-			domains: string[];
-			/** Format: int32 */
-			external_port?: number | null;
-			group_id?: string | null;
-			id: string;
-			image?: string | null;
-			internal_host?: string | null;
-			name: string;
-			network_name: string;
-			pitr_enabled: boolean;
-			/** Format: int32 */
-			port?: number | null;
-			project_id?: string | null;
-			project_name?: string | null;
-			proxy_connection_string?: string | null;
-			proxy_enabled: boolean;
-			/** Format: int32 */
-			proxy_external_port?: number | null;
-			/** Format: int32 */
-			proxy_port?: number | null;
-			public_http: boolean;
-			public_ip?: string | null;
-			resource_kind: string;
-			/** Format: int32 */
-			running_instances: number;
-			schedule?: string | null;
-			service_type: string;
-			status: string;
-			updated_at: string;
-		};
-		/** @description login request body */
-		LoginRequest: {
-			/** @description user email address */
-			email: string;
-			/** @description user password */
-			password: string;
-		};
-		/** @description logs response */
-		LogsResponse: {
-			logs: string;
-		};
-		/** @description queue response */
-		QueueResponse: {
-			connection_string: string;
-			/** Format: double */
-			cpu_limit: number;
-			created_at: string;
-			/** Format: int32 */
-			external_port?: number | null;
-			group_id?: string | null;
-			id: string;
-			internal_host: string;
-			/** Format: int64 */
-			memory_limit_mb: number;
-			name: string;
-			network_name: string;
-			password: string;
-			/** Format: int32 */
-			port: number;
-			public_connection_string?: string | null;
-			public_ip?: string | null;
-			queue_type: string;
-			service_type: string;
-			status: string;
-			username: string;
-			version: string;
-		};
-		/** @description recover request */
-		RecoverDatabaseRequest: {
-			restore_point?: string | null;
-			target_time?: string | null;
-		};
-		/** @description recover response */
-		RecoverDatabaseResponse: {
-			base_backup_label: string;
-			recovered: boolean;
-			recovery_target: string;
-		};
-		/** @description register request body */
-		RegisterRequest: {
-			/** @description user email address */
-			email: string;
-			/** @description password (min 8 characters) */
-			password: string;
-		};
-		/** @description reissue request */
-		ReissueRequest: {
-			/** @description specific domain to reissue (optional) */
-			domain?: string | null;
-		};
-		/** @description Reissue certificate response */
-		ReissueResponse: {
-			domains: string[];
-			message: string;
-		};
-		/** @description repo info */
-		RepoInfo: {
-			clone_url: string;
-			default_branch: string;
-			description?: string | null;
-			full_name: string;
-			html_url: string;
-			/** Format: int64 */
-			id: number;
-			name: string;
-			private: boolean;
-		};
-		/** @description restore point response */
-		RestorePointResponse: {
-			created_at: string;
-			restore_point: string;
-			wal_lsn: string;
-		};
-		/** @description rollback request */
-		RollbackRequest: {
-			/** @description rollout strategy override (stop_first or start_first) */
-			rollout_strategy?: string | null;
-		};
-		ServiceLogsResponse: {
-			logs: string;
-		};
-		/** @description persistent mount configuration request */
-		ServiceMountRequest: {
-			/** @description unique mount name within the service */
-			name: string;
-			/** @description whether the mount is read-only */
-			read_only?: boolean | null;
-			/** @description absolute container path where the mount is attached */
-			target: string;
-		};
-		/** @description persistent mount configuration response */
-		ServiceMountResponse: {
-			/** @description unique mount name within the service */
-			name: string;
-			/** @description whether the mount is read-only */
-			read_only: boolean;
-			/** @description absolute container path where the mount is attached */
-			target: string;
-		};
-		/** @description service mount restore response */
-		ServiceMountRestoreResponse: {
-			/** @description restored mount names */
-			mounts: string[];
-			/** @description restore timestamp */
-			restored_at: string;
-			/** @description service name */
-			service: string;
-		};
-		/** @description private registry credentials request */
-		ServiceRegistryAuthRequest: {
-			/** @description registry password */
-			password?: string | null;
-			/** @description optional registry server override */
-			server?: string | null;
-			/** @description registry username */
-			username?: string | null;
-		};
-		/** @description private registry credentials response */
-		ServiceRegistryAuthResponse: {
-			/** @description optional registry server override */
-			server?: string | null;
-			/** @description registry username */
-			username: string;
-		};
-		/** @description service request for multi-container apps */
-		ServiceRequest: {
-			/** @description additional container ports */
-			additional_ports?: number[] | null;
-			/** @description docker build arguments */
-			build_args?: components["schemas"]["EnvVarRequest"][] | null;
-			/** @description relative repo path used as the docker build context */
-			build_context?: string | null;
-			/** @description docker build target stage */
-			build_target?: string | null;
-			/** @description command arguments override */
-			command?: string[] | null;
-			/**
-			 * Format: double
-			 * @description cpu limit (1.0 = 1 core)
-			 */
-			cpu_limit?: number | null;
-			/** @description service names this depends on */
-			depends_on?: string[] | null;
-			/** @description relative path to the dockerfile within the repo */
-			dockerfile_path?: string | null;
-			/** @description service-specific custom domain */
-			domain?: string | null;
-			/** @description service-specific custom domains */
-			domains?: string[] | null;
-			/** @description entrypoint override */
-			entrypoint?: string[] | null;
-			/** @description service-specific environment variables */
-			env_vars?: components["schemas"]["EnvVarRequest"][] | null;
-			/** @description whether this service receives public http traffic */
-			expose_http?: boolean | null;
-			health_check?: null | components["schemas"]["HealthCheckRequest"];
-			/** @description docker image (empty = use built image) */
-			image?: string | null;
-			/**
-			 * Format: int64
-			 * @description memory limit in mb
-			 */
-			memory_limit_mb?: number | null;
-			/** @description persistent mounts attached to the service */
-			mounts?: components["schemas"]["ServiceMountRequest"][] | null;
-			/** @description service name (e.g. "web", "api", "db") */
-			name: string;
-			/**
-			 * Format: int32
-			 * @description container port
-			 */
-			port: number;
-			registry_auth?: null | components["schemas"]["ServiceRegistryAuthRequest"];
-			/**
-			 * Format: int32
-			 * @description number of replicas
-			 */
-			replicas?: number | null;
-			/** @description restart policy */
-			restart_policy?: string | null;
-			/** @description cron expression used for scheduled jobs */
-			schedule?: string | null;
-			/** @description render-style service category */
-			service_type?: string | null;
-			/** @description working directory override */
-			working_dir?: string | null;
-		};
-		/** @description service response for multi-container apps */
-		ServiceResponse: {
-			/** @description additional container ports */
-			additional_ports: number[];
-			/** @description docker build arguments */
-			build_args: components["schemas"]["EnvVarResponse"][];
-			/** @description relative repo path used as the docker build context */
-			build_context?: string | null;
-			/** @description docker build target stage */
-			build_target?: string | null;
-			/** @description command arguments override */
-			command: string[];
-			/**
-			 * Format: double
-			 * @description cpu limit
-			 */
-			cpu_limit?: number | null;
-			/** @description dependencies */
-			depends_on: string[];
-			/** @description relative path to the dockerfile within the repo */
-			dockerfile_path?: string | null;
-			/** @description primary custom domain */
-			domain?: string | null;
-			/** @description service-specific custom domains */
-			domains: string[];
-			/** @description entrypoint override */
-			entrypoint: string[];
-			/** @description service-specific environment variables */
-			env_vars: components["schemas"]["EnvVarResponse"][];
-			/** @description whether this service receives public http traffic */
-			expose_http: boolean;
-			health_check?: null | components["schemas"]["HealthCheckResponse"];
-			/** @description service id */
-			id: string;
-			/** @description docker image */
-			image: string;
-			/**
-			 * Format: int64
-			 * @description memory limit in mb
-			 */
-			memory_limit_mb?: number | null;
-			/** @description persistent mounts */
-			mounts: components["schemas"]["ServiceMountResponse"][];
-			/** @description service name */
-			name: string;
-			/**
-			 * Format: int32
-			 * @description container port
-			 */
-			port: number;
-			registry_auth?: null | components["schemas"]["ServiceRegistryAuthResponse"];
-			/**
-			 * Format: int32
-			 * @description number of replicas
-			 */
-			replicas: number;
-			/** @description restart policy */
-			restart_policy: string;
-			/** @description cron expression used for scheduled jobs */
-			schedule?: string | null;
-			/** @description render-style service category */
-			service_type: string;
-			/** @description working directory override */
-			working_dir?: string | null;
-		};
-		/** @description settings response - only exposes safe fields */
-		SettingsResponse: {
-			/** @description email for acme certificates */
-			acme_email: string;
-			/** @description whether to use acme staging */
-			acme_staging: boolean;
-			/**
-			 * Format: int32
-			 * @description configured api port
-			 */
-			api_port: number;
-			/** @description base domain for all apps */
-			base_domain: string;
-			/** @description dashboard url served by the proxy */
-			dashboard_url?: string | null;
-			/**
-			 * Format: int32
-			 * @description http port for proxy
-			 */
-			http_port: number;
-			/**
-			 * Format: int32
-			 * @description https port for proxy
-			 */
-			https_port: number;
-			/** @description directory for append-only containr logs */
-			log_dir: string;
-			/**
-			 * Format: int32
-			 * @description number of days rotated logs are retained (0 disables cleanup)
-			 */
-			log_retention_days: number;
-			/** @description public ip used for direct port access and domain validation */
-			public_ip?: string | null;
-			/** @description wildcard suffix used for default service subdomains */
-			service_wildcard_domain?: string | null;
-			/** @description rustfs hostname exposed on the shared docker network */
-			storage_internal_host: string;
-			/** @description rustfs endpoint used by containr for management operations */
-			storage_management_endpoint: string;
-			/**
-			 * Format: int32
-			 * @description rustfs service port
-			 */
-			storage_port: number;
-			/** @description optional public s3 hostname routed to rustfs */
-			storage_public_hostname?: string | null;
-		};
-		/** @description system statistics response */
-		SystemStats: {
-			/** Format: double */
-			cpu_percent: number;
-			load_avg: number[];
-			/** Format: int64 */
-			memory_total_bytes: number;
-			/** Format: int64 */
-			memory_used_bytes: number;
-			/** Format: int64 */
-			network_rx_bytes: number;
-			/** Format: int64 */
-			network_tx_bytes: number;
-			/** Format: int64 */
-			uptime_seconds: number;
-		};
-		/** @description update app request */
-		UpdateAppRequest: {
-			/** @description new branch */
-			branch?: string | null;
-			/** @description new domain */
-			domain?: string | null;
-			/** @description new domains */
-			domains?: string[] | null;
-			/** @description updated env vars */
-			env_vars?: components["schemas"]["EnvVarRequest"][] | null;
-			/** @description new repository url */
-			github_url?: string | null;
-			/** @description new app name */
-			name?: string | null;
-			/**
-			 * Format: int32
-			 * @description new port (deprecated, use services)
-			 */
-			port?: number | null;
-			/** @description rollout strategy (stop_first or start_first) */
-			rollout_strategy?: string | null;
-			/** @description updated services */
-			services?: components["schemas"]["ServiceRequest"][] | null;
-		};
-		/** @description update settings request */
-		UpdateSettingsRequest: {
-			/** @description new acme email (optional) */
-			acme_email?: string | null;
-			/** @description use acme staging (optional) */
-			acme_staging?: boolean | null;
-			/** @description new base domain (optional) */
-			base_domain?: string | null;
-			/**
-			 * Format: int32
-			 * @description number of days rotated logs are retained (0 disables cleanup)
-			 */
-			log_retention_days?: number | null;
-			/** @description public ip used for direct access and domain validation */
-			public_ip?: string | null;
-			/** @description rustfs hostname exposed on the shared docker network */
-			storage_internal_host?: string | null;
-			/** @description rustfs endpoint used by containr for management operations */
-			storage_management_endpoint?: string | null;
-			/**
-			 * Format: int32
-			 * @description rustfs service port
-			 */
-			storage_port?: number | null;
-			/** @description optional public s3 hostname */
-			storage_public_hostname?: string | null;
-		};
-		/** @description user info in responses */
-		UserResponse: {
-			/** @description user email */
-			email: string;
-			/** @description github username if linked */
-			github_username?: string | null;
-			/**
-			 * Format: uuid
-			 * @description unique user id
-			 */
-			id: string;
-		};
-		VolumeEntry: {
-			is_dir: boolean;
-			modified_at?: string | null;
-			name: string;
-			path: string;
-			/** Format: int64 */
-			size_bytes: number;
-		};
-	};
-	responses: never;
-	parameters: never;
-	requestBodies: never;
-	headers: never;
-	pathItems: never;
+    schemas: {
+        /** @description app details */
+        AppDetails: {
+            /** Format: int64 */
+            app_id: number;
+            app_name: string;
+            html_url: string;
+        };
+        /** @description app container metrics response */
+        AppMetricsResponse: {
+            container: string;
+            /** Format: double */
+            cpu_percent: number;
+            /** Format: int64 */
+            mem_limit_bytes: number;
+            /** Format: int64 */
+            mem_usage_bytes: number;
+        };
+        /** @description repos response */
+        AppReposResponse: {
+            repos: components["schemas"]["RepoInfo"][];
+        };
+        /** @description app response */
+        AppResponse: {
+            /** @description branch being deployed */
+            branch: string;
+            /** @description creation timestamp */
+            created_at: string;
+            /** @description custom domain */
+            domain?: string | null;
+            /** @description custom domains */
+            domains: string[];
+            /** @description environment variables */
+            env_vars: components["schemas"]["EnvVarResponse"][];
+            /** @description repository url */
+            github_url: string;
+            /**
+             * Format: uuid
+             * @description unique app id
+             */
+            id: string;
+            /** @description app name */
+            name: string;
+            /**
+             * Format: int32
+             * @description app port (deprecated)
+             */
+            port: number;
+            /** @description rollout strategy */
+            rollout_strategy: string;
+            /** @description container services */
+            services: components["schemas"]["ServiceResponse"][];
+        };
+        /** @description auth response with token */
+        AuthResponse: {
+            /** @description jwt authentication token */
+            token: string;
+            /** @description authenticated user info */
+            user: components["schemas"]["UserResponse"];
+        };
+        /** @description backup info */
+        BackupInfo: {
+            created_at: string;
+            filename: string;
+            /** Format: int64 */
+            size_bytes: number;
+        };
+        /** @description base backup response */
+        BaseBackupResponse: {
+            backup_path: string;
+            created_at: string;
+            label: string;
+        };
+        /** @description per-bucket s3 connection details */
+        BucketConnectionResponse: {
+            access_key: string;
+            bucket_name: string;
+            endpoint: string;
+            internal_endpoint: string;
+            internal_host: string;
+            note: string;
+            /** Format: int32 */
+            port: number;
+            public_endpoint?: string | null;
+            secret_key: string;
+            uses_shared_credentials: boolean;
+        };
+        /** @description bucket response */
+        BucketResponse: {
+            created_at: string;
+            endpoint: string;
+            id: string;
+            internal_endpoint: string;
+            internal_host: string;
+            managed_by_server: boolean;
+            name: string;
+            /** Format: int32 */
+            port: number;
+            public_endpoint?: string | null;
+            publicly_exposed: boolean;
+            /** Format: int64 */
+            size_bytes: number;
+        };
+        /** @description Certificate status response */
+        CertificateResponse: {
+            domain: string;
+            expires_at?: string | null;
+            issued_at?: string | null;
+            status: string;
+        };
+        /** @description pitr configuration request */
+        ConfigurePitrRequest: {
+            enabled: boolean;
+        };
+        /** @description proxy configuration request */
+        ConfigureProxyRequest: {
+            enabled: boolean;
+            /** Format: int32 */
+            external_port?: number | null;
+        };
+        ContainerListItem: {
+            id: string;
+            name: string;
+            resource_id: string;
+            resource_type: string;
+        };
+        ContainerLogsResponse: {
+            logs: string;
+        };
+        ContainerMountResponse: {
+            destination: string;
+            mount_type: string;
+            name?: string | null;
+            read_only: boolean;
+        };
+        ContainerStatusResponse: {
+            /** Format: double */
+            cpu_percent: number;
+            finished_at?: string | null;
+            health_status?: string | null;
+            /** Format: int64 */
+            mem_limit_bytes: number;
+            /** Format: int64 */
+            mem_usage_bytes: number;
+            /** Format: int64 */
+            restart_count: number;
+            started_at?: string | null;
+            status: string;
+        };
+        /** @description create app request */
+        CreateAppRequest: {
+            /** @description branch to deploy (defaults to main) */
+            branch?: string | null;
+            /** @description custom domain */
+            domain?: string | null;
+            /** @description custom domains */
+            domains?: string[] | null;
+            /** @description environment variables (shared across all services) */
+            env_vars?: components["schemas"]["EnvVarRequest"][] | null;
+            /** @description repository url */
+            github_url: string;
+            /** @description app name */
+            name: string;
+            /**
+             * Format: int32
+             * @description port for the app (deprecated, use services)
+             */
+            port?: number | null;
+            /** @description rollout strategy (stop_first or start_first) */
+            rollout_strategy?: string | null;
+            /** @description container services for multi-container apps */
+            services?: components["schemas"]["ServiceRequest"][] | null;
+        };
+        /** @description base backup request */
+        CreateBaseBackupRequest: {
+            label?: string | null;
+        };
+        /** @description bucket creation request */
+        CreateBucketRequest: {
+            /** @description bucket name */
+            name: string;
+        };
+        /** @description database creation request */
+        CreateDatabaseRequest: {
+            /**
+             * Format: double
+             * @description cpu limit (optional)
+             */
+            cpu_limit?: number | null;
+            /** @description database type */
+            db_type: string;
+            /** @description attach this service to a project group */
+            group_id?: string | null;
+            /**
+             * Format: int64
+             * @description memory limit in mb (optional)
+             */
+            memory_limit_mb?: number | null;
+            /** @description database name */
+            name: string;
+            /** @description version (optional, uses default) */
+            version?: string | null;
+        };
+        /** @description queue creation request */
+        CreateQueueRequest: {
+            /**
+             * Format: double
+             * @description cpu limit (optional)
+             */
+            cpu_limit?: number | null;
+            /** @description attach this service to a project group */
+            group_id?: string | null;
+            /**
+             * Format: int64
+             * @description memory limit in mb (optional)
+             */
+            memory_limit_mb?: number | null;
+            /** @description queue name */
+            name: string;
+            /** @description queue type */
+            queue_type: string;
+            /** @description version (optional, uses default) */
+            version?: string | null;
+        };
+        /** @description restore point request */
+        CreateRestorePointRequest: {
+            restore_point?: string | null;
+        };
+        CreateServiceRequest: {
+            branch?: string | null;
+            env_vars?: components["schemas"]["EnvVarRequest"][] | null;
+            github_url: string;
+            name: string;
+            rollout_strategy?: string | null;
+            service: components["schemas"]["ServiceRequest"];
+            /** @enum {string} */
+            source: "git_repository";
+        } | {
+            /** Format: double */
+            cpu_limit?: number | null;
+            group_id?: string | null;
+            /** Format: int64 */
+            memory_limit_mb?: number | null;
+            name: string;
+            /** @enum {string} */
+            source: "template";
+            template: string;
+            version?: string | null;
+        };
+        /** @description certificate issuance response */
+        DashboardCertResponse: {
+            /** @description domains queued for issuance */
+            domains: string[];
+            /** @description status message */
+            message: string;
+        };
+        /** @description database response */
+        DatabaseResponse: {
+            connection_string: string;
+            /** Format: double */
+            cpu_limit: number;
+            created_at: string;
+            database_name: string;
+            db_type: string;
+            /** Format: int32 */
+            external_port?: number | null;
+            group_id?: string | null;
+            id: string;
+            internal_host: string;
+            /** Format: int64 */
+            memory_limit_mb: number;
+            name: string;
+            network_name: string;
+            password: string;
+            pitr_enabled: boolean;
+            pitr_last_base_backup_at?: string | null;
+            pitr_last_base_backup_label?: string | null;
+            /** Format: int32 */
+            port: number;
+            proxy_connection_string?: string | null;
+            proxy_enabled: boolean;
+            /** Format: int32 */
+            proxy_external_port?: number | null;
+            /** Format: int32 */
+            proxy_port?: number | null;
+            public_connection_string?: string | null;
+            public_ip?: string | null;
+            public_proxy_connection_string?: string | null;
+            service_type: string;
+            status: string;
+            username: string;
+            version: string;
+        };
+        /** @description deployment response */
+        DeploymentResponse: {
+            /** Format: uuid */
+            app_id: string;
+            commit_message?: string | null;
+            commit_sha: string;
+            container_id?: string | null;
+            created_at: string;
+            finished_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            started_at?: string | null;
+            status: string;
+        };
+        /** @description deployment trigger request (optional) */
+        DeploymentTriggerRequest: {
+            /** @description branch to deploy */
+            branch?: string | null;
+            /** @description commit message to record */
+            commit_message?: string | null;
+            /** @description commit sha to record */
+            commit_sha?: string | null;
+            /** @description rollout strategy override (stop_first or start_first) */
+            rollout_strategy?: string | null;
+        };
+        /** @description env var in request */
+        EnvVarRequest: {
+            /** @description variable key */
+            key: string;
+            /** @description mark as secret (hides value) */
+            secret?: boolean | null;
+            /** @description variable value */
+            value: string;
+        };
+        /** @description env var in response (hides secret values) */
+        EnvVarResponse: {
+            /** @description variable key */
+            key: string;
+            /** @description whether value is secret */
+            secret: boolean;
+            /** @description variable value (masked if secret) */
+            value: string;
+        };
+        /** @description error response */
+        ErrorResponse: {
+            /** @description error message */
+            error: string;
+        };
+        ExecTokenResponse: {
+            expires_at: string;
+            token: string;
+        };
+        /** @description export request */
+        ExportRequest: {
+            /** Format: uuid */
+            bucket_id?: string | null;
+            object_key_prefix?: string | null;
+        };
+        /** @description export response */
+        ExportResponse: {
+            backup_path: string;
+            bucket_name?: string | null;
+            object_key?: string | null;
+        };
+        /** @description queue expose request */
+        ExposeQueueRequest: {
+            enabled: boolean;
+            /** Format: int32 */
+            external_port?: number | null;
+        };
+        /** @description expose request */
+        ExposeRequest: {
+            enabled: boolean;
+            /** Format: int32 */
+            external_port?: number | null;
+        };
+        /** @description github app status response */
+        GithubAppStatusResponse: {
+            app?: null | components["schemas"]["AppDetails"];
+            /** @description whether a github app is configured */
+            configured: boolean;
+            /** @description list of installations */
+            installations: components["schemas"]["InstallationDetails"][];
+        };
+        /** @description health check configuration request */
+        HealthCheckRequest: {
+            /**
+             * Format: int32
+             * @description interval in seconds
+             */
+            interval_secs?: number | null;
+            /** @description http path to check */
+            path: string;
+            /**
+             * Format: int32
+             * @description retries before unhealthy
+             */
+            retries?: number | null;
+            /**
+             * Format: int32
+             * @description timeout in seconds
+             */
+            timeout_secs?: number | null;
+        };
+        /** @description health check configuration response */
+        HealthCheckResponse: {
+            /**
+             * Format: int32
+             * @description interval in seconds
+             */
+            interval_secs: number;
+            /** @description http path to check */
+            path: string;
+            /**
+             * Format: int32
+             * @description retries before unhealthy
+             */
+            retries: number;
+            /**
+             * Format: int32
+             * @description timeout in seconds
+             */
+            timeout_secs: number;
+        };
+        /** @description health check response */
+        HealthResponse: {
+            /** @description current service status */
+            status: string;
+            /** @description api version string */
+            version: string;
+        };
+        /** @description installation details */
+        InstallationDetails: {
+            account_login: string;
+            account_type: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int32 */
+            repository_count?: number | null;
+        };
+        InventoryServiceResponse: {
+            connection_string?: string | null;
+            container_ids: string[];
+            created_at: string;
+            default_urls: string[];
+            deployment_id?: string | null;
+            /** Format: int32 */
+            desired_instances: number;
+            domains: string[];
+            /** Format: int32 */
+            external_port?: number | null;
+            group_id?: string | null;
+            id: string;
+            image?: string | null;
+            internal_host?: string | null;
+            name: string;
+            network_name: string;
+            pitr_enabled: boolean;
+            /** Format: int32 */
+            port?: number | null;
+            project_id?: string | null;
+            project_name?: string | null;
+            proxy_connection_string?: string | null;
+            proxy_enabled: boolean;
+            /** Format: int32 */
+            proxy_external_port?: number | null;
+            /** Format: int32 */
+            proxy_port?: number | null;
+            public_http: boolean;
+            public_ip?: string | null;
+            resource_kind: string;
+            /** Format: int32 */
+            running_instances: number;
+            schedule?: string | null;
+            service_type: string;
+            status: string;
+            updated_at: string;
+        };
+        /** @description login request body */
+        LoginRequest: {
+            /** @description user email address */
+            email: string;
+            /** @description user password */
+            password: string;
+        };
+        /** @description logs response */
+        LogsResponse: {
+            logs: string;
+        };
+        /** @description queue response */
+        QueueResponse: {
+            connection_string: string;
+            /** Format: double */
+            cpu_limit: number;
+            created_at: string;
+            /** Format: int32 */
+            external_port?: number | null;
+            group_id?: string | null;
+            id: string;
+            internal_host: string;
+            /** Format: int64 */
+            memory_limit_mb: number;
+            name: string;
+            network_name: string;
+            password: string;
+            /** Format: int32 */
+            port: number;
+            public_connection_string?: string | null;
+            public_ip?: string | null;
+            queue_type: string;
+            service_type: string;
+            status: string;
+            username: string;
+            version: string;
+        };
+        /** @description recover request */
+        RecoverDatabaseRequest: {
+            restore_point?: string | null;
+            target_time?: string | null;
+        };
+        /** @description recover response */
+        RecoverDatabaseResponse: {
+            base_backup_label: string;
+            recovered: boolean;
+            recovery_target: string;
+        };
+        /** @description register request body */
+        RegisterRequest: {
+            /** @description user email address */
+            email: string;
+            /** @description password (min 8 characters) */
+            password: string;
+        };
+        /** @description reissue request */
+        ReissueRequest: {
+            /** @description specific domain to reissue (optional) */
+            domain?: string | null;
+        };
+        /** @description Reissue certificate response */
+        ReissueResponse: {
+            domains: string[];
+            message: string;
+        };
+        /** @description repo info */
+        RepoInfo: {
+            clone_url: string;
+            default_branch: string;
+            description?: string | null;
+            full_name: string;
+            html_url: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            private: boolean;
+        };
+        /** @description restore point response */
+        RestorePointResponse: {
+            created_at: string;
+            restore_point: string;
+            wal_lsn: string;
+        };
+        /** @description rollback request */
+        RollbackRequest: {
+            /** @description rollout strategy override (stop_first or start_first) */
+            rollout_strategy?: string | null;
+        };
+        ServiceLogsResponse: {
+            logs: string;
+        };
+        /** @description persistent mount configuration request */
+        ServiceMountRequest: {
+            /** @description unique mount name within the service */
+            name: string;
+            /** @description whether the mount is read-only */
+            read_only?: boolean | null;
+            /** @description absolute container path where the mount is attached */
+            target: string;
+        };
+        /** @description persistent mount configuration response */
+        ServiceMountResponse: {
+            /** @description unique mount name within the service */
+            name: string;
+            /** @description whether the mount is read-only */
+            read_only: boolean;
+            /** @description absolute container path where the mount is attached */
+            target: string;
+        };
+        /** @description service mount restore response */
+        ServiceMountRestoreResponse: {
+            /** @description restored mount names */
+            mounts: string[];
+            /** @description restore timestamp */
+            restored_at: string;
+            /** @description service name */
+            service: string;
+        };
+        /** @description private registry credentials request */
+        ServiceRegistryAuthRequest: {
+            /** @description registry password */
+            password?: string | null;
+            /** @description optional registry server override */
+            server?: string | null;
+            /** @description registry username */
+            username?: string | null;
+        };
+        /** @description private registry credentials response */
+        ServiceRegistryAuthResponse: {
+            /** @description optional registry server override */
+            server?: string | null;
+            /** @description registry username */
+            username: string;
+        };
+        /** @description service request for multi-container apps */
+        ServiceRequest: {
+            /** @description additional container ports */
+            additional_ports?: number[] | null;
+            /** @description docker build arguments */
+            build_args?: components["schemas"]["EnvVarRequest"][] | null;
+            /** @description relative repo path used as the docker build context */
+            build_context?: string | null;
+            /** @description docker build target stage */
+            build_target?: string | null;
+            /** @description command arguments override */
+            command?: string[] | null;
+            /**
+             * Format: double
+             * @description cpu limit (1.0 = 1 core)
+             */
+            cpu_limit?: number | null;
+            /** @description service names this depends on */
+            depends_on?: string[] | null;
+            /** @description relative path to the dockerfile within the repo */
+            dockerfile_path?: string | null;
+            /** @description service-specific custom domain */
+            domain?: string | null;
+            /** @description service-specific custom domains */
+            domains?: string[] | null;
+            /** @description entrypoint override */
+            entrypoint?: string[] | null;
+            /** @description service-specific environment variables */
+            env_vars?: components["schemas"]["EnvVarRequest"][] | null;
+            /** @description whether this service receives public http traffic */
+            expose_http?: boolean | null;
+            health_check?: null | components["schemas"]["HealthCheckRequest"];
+            /** @description docker image (empty = use built image) */
+            image?: string | null;
+            /**
+             * Format: int64
+             * @description memory limit in mb
+             */
+            memory_limit_mb?: number | null;
+            /** @description persistent mounts attached to the service */
+            mounts?: components["schemas"]["ServiceMountRequest"][] | null;
+            /** @description service name (e.g. "web", "api", "db") */
+            name: string;
+            /**
+             * Format: int32
+             * @description container port
+             */
+            port: number;
+            registry_auth?: null | components["schemas"]["ServiceRegistryAuthRequest"];
+            /**
+             * Format: int32
+             * @description number of replicas
+             */
+            replicas?: number | null;
+            /** @description restart policy */
+            restart_policy?: string | null;
+            /** @description cron expression used for scheduled jobs */
+            schedule?: string | null;
+            /** @description render-style service category */
+            service_type?: string | null;
+            /** @description working directory override */
+            working_dir?: string | null;
+        };
+        /** @description service response for multi-container apps */
+        ServiceResponse: {
+            /** @description additional container ports */
+            additional_ports: number[];
+            /** @description docker build arguments */
+            build_args: components["schemas"]["EnvVarResponse"][];
+            /** @description relative repo path used as the docker build context */
+            build_context?: string | null;
+            /** @description docker build target stage */
+            build_target?: string | null;
+            /** @description command arguments override */
+            command: string[];
+            /**
+             * Format: double
+             * @description cpu limit
+             */
+            cpu_limit?: number | null;
+            /** @description dependencies */
+            depends_on: string[];
+            /** @description relative path to the dockerfile within the repo */
+            dockerfile_path?: string | null;
+            /** @description primary custom domain */
+            domain?: string | null;
+            /** @description service-specific custom domains */
+            domains: string[];
+            /** @description entrypoint override */
+            entrypoint: string[];
+            /** @description service-specific environment variables */
+            env_vars: components["schemas"]["EnvVarResponse"][];
+            /** @description whether this service receives public http traffic */
+            expose_http: boolean;
+            health_check?: null | components["schemas"]["HealthCheckResponse"];
+            /** @description service id */
+            id: string;
+            /** @description docker image */
+            image: string;
+            /**
+             * Format: int64
+             * @description memory limit in mb
+             */
+            memory_limit_mb?: number | null;
+            /** @description persistent mounts */
+            mounts: components["schemas"]["ServiceMountResponse"][];
+            /** @description service name */
+            name: string;
+            /**
+             * Format: int32
+             * @description container port
+             */
+            port: number;
+            registry_auth?: null | components["schemas"]["ServiceRegistryAuthResponse"];
+            /**
+             * Format: int32
+             * @description number of replicas
+             */
+            replicas: number;
+            /** @description restart policy */
+            restart_policy: string;
+            /** @description cron expression used for scheduled jobs */
+            schedule?: string | null;
+            /** @description render-style service category */
+            service_type: string;
+            /** @description working directory override */
+            working_dir?: string | null;
+        };
+        /** @description settings response - only exposes safe fields */
+        SettingsResponse: {
+            /** @description email for acme certificates */
+            acme_email: string;
+            /** @description whether to use acme staging */
+            acme_staging: boolean;
+            /**
+             * Format: int32
+             * @description configured api port
+             */
+            api_port: number;
+            /** @description base domain for all apps */
+            base_domain: string;
+            /** @description dashboard url served by the proxy */
+            dashboard_url?: string | null;
+            /**
+             * Format: int32
+             * @description http port for proxy
+             */
+            http_port: number;
+            /**
+             * Format: int32
+             * @description https port for proxy
+             */
+            https_port: number;
+            /** @description directory for append-only containr logs */
+            log_dir: string;
+            /**
+             * Format: int32
+             * @description number of days rotated logs are retained (0 disables cleanup)
+             */
+            log_retention_days: number;
+            /** @description public ip used for direct port access and domain validation */
+            public_ip?: string | null;
+            /** @description wildcard suffix used for default service subdomains */
+            service_wildcard_domain?: string | null;
+            /** @description rustfs hostname exposed on the shared docker network */
+            storage_internal_host: string;
+            /** @description rustfs endpoint used by containr for management operations */
+            storage_management_endpoint: string;
+            /**
+             * Format: int32
+             * @description rustfs service port
+             */
+            storage_port: number;
+            /** @description optional public s3 hostname routed to rustfs */
+            storage_public_hostname?: string | null;
+        };
+        /** @description system statistics response */
+        SystemStats: {
+            /** Format: double */
+            cpu_percent: number;
+            load_avg: number[];
+            /** Format: int64 */
+            memory_total_bytes: number;
+            /** Format: int64 */
+            memory_used_bytes: number;
+            /** Format: int64 */
+            network_rx_bytes: number;
+            /** Format: int64 */
+            network_tx_bytes: number;
+            /** Format: int64 */
+            uptime_seconds: number;
+        };
+        /** @description update app request */
+        UpdateAppRequest: {
+            /** @description new branch */
+            branch?: string | null;
+            /** @description new domain */
+            domain?: string | null;
+            /** @description new domains */
+            domains?: string[] | null;
+            /** @description updated env vars */
+            env_vars?: components["schemas"]["EnvVarRequest"][] | null;
+            /** @description new repository url */
+            github_url?: string | null;
+            /** @description new app name */
+            name?: string | null;
+            /**
+             * Format: int32
+             * @description new port (deprecated, use services)
+             */
+            port?: number | null;
+            /** @description rollout strategy (stop_first or start_first) */
+            rollout_strategy?: string | null;
+            /** @description updated services */
+            services?: components["schemas"]["ServiceRequest"][] | null;
+        };
+        /** @description update settings request */
+        UpdateSettingsRequest: {
+            /** @description new acme email (optional) */
+            acme_email?: string | null;
+            /** @description use acme staging (optional) */
+            acme_staging?: boolean | null;
+            /** @description new base domain (optional) */
+            base_domain?: string | null;
+            /**
+             * Format: int32
+             * @description number of days rotated logs are retained (0 disables cleanup)
+             */
+            log_retention_days?: number | null;
+            /** @description public ip used for direct access and domain validation */
+            public_ip?: string | null;
+            /** @description rustfs hostname exposed on the shared docker network */
+            storage_internal_host?: string | null;
+            /** @description rustfs endpoint used by containr for management operations */
+            storage_management_endpoint?: string | null;
+            /**
+             * Format: int32
+             * @description rustfs service port
+             */
+            storage_port?: number | null;
+            /** @description optional public s3 hostname */
+            storage_public_hostname?: string | null;
+        };
+        /** @description user info in responses */
+        UserResponse: {
+            /** @description user email */
+            email: string;
+            /** @description github username if linked */
+            github_username?: string | null;
+            /**
+             * Format: uuid
+             * @description unique user id
+             */
+            id: string;
+        };
+        VolumeEntry: {
+            is_dir: boolean;
+            modified_at?: string | null;
+            name: string;
+            path: string;
+            /** Format: int64 */
+            size_bytes: number;
+        };
+    };
+    responses: never;
+    parameters: never;
+    requestBodies: never;
+    headers: never;
+    pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-	list_apps: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description list of apps */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AppResponse"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	create_app: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["CreateAppRequest"];
-			};
-		};
-		responses: {
-			/** @description app created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AppResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description domain conflict */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_deployment: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description app id */
-				app_id: string;
-				/** @description deployment id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description deployment details */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DeploymentResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_deployment_logs: {
-		parameters: {
-			query?: {
-				/** @description lines limit */
-				limit?: number;
-				/** @description lines offset */
-				offset?: number;
-			};
-			header?: never;
-			path: {
-				/** @description app id */
-				app_id: string;
-				/** @description deployment id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description deployment logs */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": string[];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	rollback_deployment: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description app id */
-				app_id: string;
-				/** @description deployment id to rollback to */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["RollbackRequest"];
-			};
-		};
-		responses: {
-			/** @description rollback deployment queued */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DeploymentResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_app: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description app id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description app details */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AppResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	update_app: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description app id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["UpdateAppRequest"];
-			};
-		};
-		responses: {
-			/** @description app updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AppResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description domain conflict */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	delete_app: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description app id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description app deleted */
-			204: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_certificate: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description app id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description certificate status */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["CertificateResponse"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description app not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	reissue_certificate: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description app id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["ReissueRequest"];
-			};
-		};
-		responses: {
-			/** @description certificate reissue initiated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ReissueResponse"];
-				};
-			};
-			/** @description bad request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description app not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description service unavailable */
-			503: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	list_deployments: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description app id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description list of deployments */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DeploymentResponse"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description app not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	trigger_deployment: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description app id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["DeploymentTriggerRequest"];
-			};
-		};
-		responses: {
-			/** @description deployment triggered */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DeploymentResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description app not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_app_metrics: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description app id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description container metrics */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AppMetricsResponse"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	backup_service_mounts: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description app id */
-				id: string;
-				/** @description service name */
-				service_name: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description service mount backup archive */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	restore_service_mounts: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description app id */
-				id: string;
-				/** @description service name */
-				service_name: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description service mount archive restored */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ServiceMountRestoreResponse"];
-				};
-			};
-			/** @description invalid archive */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	github_start: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description redirect to github oauth */
-			302: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-		};
-	};
-	github_callback: {
-		parameters: {
-			query: {
-				/** @description github oauth authorization code */
-				code: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description successfully authenticated with github */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AuthResponse"];
-				};
-			};
-			/** @description invalid oauth code */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	login: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["LoginRequest"];
-			};
-		};
-		responses: {
-			/** @description successfully logged in */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AuthResponse"];
-				};
-			};
-			/** @description invalid credentials */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	register: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["RegisterRequest"];
-			};
-		};
-		responses: {
-			/** @description successfully registered */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AuthResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description email already registered */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	list_buckets: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description list of buckets */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["BucketResponse"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	create_bucket: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["CreateBucketRequest"];
-			};
-		};
-		responses: {
-			/** @description bucket created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["BucketResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_bucket: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description bucket id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description bucket details */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["BucketResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	delete_bucket: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description bucket id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description bucket deleted */
-			204: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_bucket_connection: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description bucket id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description bucket connection details */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["BucketConnectionResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	list_containers: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description list of containers */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ContainerListItem"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	issue_exec_token: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description container id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description short-lived exec token */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ExecTokenResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	list_volume_entries: {
-		parameters: {
-			query: {
-				/** @description mount point */
-				mount: string;
-				/** @description relative path within mount */
-				path?: string;
-			};
-			header?: never;
-			path: {
-				/** @description container id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description volume entries */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["VolumeEntry"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	delete_volume_entry: {
-		parameters: {
-			query: {
-				/** @description mount point */
-				mount: string;
-				/** @description relative path within mount */
-				path?: string;
-			};
-			header?: never;
-			path: {
-				/** @description container id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description entry deleted */
-			204: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	download_volume_entry: {
-		parameters: {
-			query: {
-				/** @description mount point */
-				mount: string;
-				/** @description relative path within mount */
-				path?: string;
-			};
-			header?: never;
-			path: {
-				/** @description container id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description file download */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	create_volume_directory: {
-		parameters: {
-			query: {
-				/** @description mount point */
-				mount: string;
-				/** @description directory path to create */
-				path: string;
-			};
-			header?: never;
-			path: {
-				/** @description container id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description directory created */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	upload_volume_entry: {
-		parameters: {
-			query: {
-				/** @description mount point */
-				mount: string;
-				/** @description relative path within mount */
-				path?: string;
-			};
-			header?: never;
-			path: {
-				/** @description container id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description file uploaded */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_container_logs: {
-		parameters: {
-			query?: {
-				/** @description number of log lines */
-				tail?: number;
-			};
-			header?: never;
-			path: {
-				/** @description container id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description container logs */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ContainerLogsResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	list_container_mounts: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description container id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description container mounts */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ContainerMountResponse"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_container_status: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description container id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description container status */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ContainerStatusResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	list_databases: {
-		parameters: {
-			query?: {
-				group_id?: string | null;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description list of databases */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DatabaseResponse"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	create_database: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["CreateDatabaseRequest"];
-			};
-		};
-		responses: {
-			/** @description database created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DatabaseResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_database: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description database details */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DatabaseResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	delete_database: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description database deleted */
-			204: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	list_backups: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description list of backups */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["BackupInfo"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	download_backup: {
-		parameters: {
-			query: {
-				/** @description backup filename */
-				filename: string;
-			};
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description backup file */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/octet-stream": unknown;
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	export_database: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["ExportRequest"];
-			};
-		};
-		responses: {
-			/** @description backup created */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ExportResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	expose_database: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["ExposeRequest"];
-			};
-		};
-		responses: {
-			/** @description exposure toggled */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DatabaseResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_database_logs: {
-		parameters: {
-			query?: {
-				/** @description number of log lines */
-				tail?: number;
-			};
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description container logs */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["LogsResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	configure_pitr: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["ConfigurePitrRequest"];
-			};
-		};
-		responses: {
-			/** @description pitr updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DatabaseResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	create_pitr_base_backup: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["CreateBaseBackupRequest"];
-			};
-		};
-		responses: {
-			/** @description base backup created */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["BaseBackupResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	recover_database: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["RecoverDatabaseRequest"];
-			};
-		};
-		responses: {
-			/** @description database recovered */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["RecoverDatabaseResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	create_restore_point: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["CreateRestorePointRequest"];
-			};
-		};
-		responses: {
-			/** @description restore point created */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["RestorePointResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	configure_proxy: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["ConfigureProxyRequest"];
-			};
-		};
-		responses: {
-			/** @description proxy updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DatabaseResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	restart_database: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description database restarted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DatabaseResponse"];
-				};
-			};
-			/** @description database is not running */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	start_database: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description database started */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DatabaseResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	stop_database: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description database id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description database stopped */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DatabaseResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_github_app: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description github app status */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["GithubAppStatusResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	delete_github_app: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description github app deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	github_app_callback: {
-		parameters: {
-			query: {
-				/** @description manifest conversion code */
-				code: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description redirect to settings */
-			302: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description conversion failed */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	github_install_callback: {
-		parameters: {
-			query?: {
-				/** @description installation id */
-				installation_id?: number;
-				/** @description setup action */
-				setup_action?: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description redirect to settings */
-			302: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-		};
-	};
-	get_app_manifest: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description app manifest payload */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": unknown;
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_app_repos: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description list of repositories */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AppReposResponse"];
-				};
-			};
-			/** @description no github app configured */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_list_projects: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description list of projects */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AppResponse"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_create_project: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["CreateAppRequest"];
-			};
-		};
-		responses: {
-			/** @description project created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AppResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description domain conflict */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_get_project: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description project id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description project details */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AppResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_update_project: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description project id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["UpdateAppRequest"];
-			};
-		};
-		responses: {
-			/** @description project updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AppResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description domain conflict */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_delete_project: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description project id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description project deleted */
-			204: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_get_certificate: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description project id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description certificate status */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["CertificateResponse"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description project not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_reissue_certificate: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description project id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["ReissueRequest"];
-			};
-		};
-		responses: {
-			/** @description certificate reissue initiated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ReissueResponse"];
-				};
-			};
-			/** @description bad request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description project not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description service unavailable */
-			503: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_list_deployments: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description project id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description list of deployments */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DeploymentResponse"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description project not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_trigger_deployment: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description project id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["DeploymentTriggerRequest"];
-			};
-		};
-		responses: {
-			/** @description deployment triggered */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DeploymentResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description project not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_get_project_metrics: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description project id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description container metrics */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["AppMetricsResponse"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_backup_service_mounts: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description project id */
-				id: string;
-				/** @description service name */
-				service_name: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description service mount backup archive */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_restore_service_mounts: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description project id */
-				id: string;
-				/** @description service name */
-				service_name: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description service mount archive restored */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ServiceMountRestoreResponse"];
-				};
-			};
-			/** @description invalid archive */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_get_deployment: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description project id */
-				project_id: string;
-				/** @description deployment id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description deployment details */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DeploymentResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_get_deployment_logs: {
-		parameters: {
-			query?: {
-				/** @description lines limit */
-				limit?: number;
-				/** @description lines offset */
-				offset?: number;
-			};
-			header?: never;
-			path: {
-				/** @description project id */
-				project_id: string;
-				/** @description deployment id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description deployment logs */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": string[];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	project_rollback_deployment: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description project id */
-				project_id: string;
-				/** @description deployment id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["RollbackRequest"];
-			};
-		};
-		responses: {
-			/** @description rollback deployment queued */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DeploymentResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	list_queues: {
-		parameters: {
-			query?: {
-				group_id?: string | null;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description list of queues */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["QueueResponse"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	create_queue: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["CreateQueueRequest"];
-			};
-		};
-		responses: {
-			/** @description queue created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["QueueResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_queue: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description queue id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description queue details */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["QueueResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description queue not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	delete_queue: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description queue id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description queue deleted */
-			204: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description queue not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	expose_queue: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description queue id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["ExposeQueueRequest"];
-			};
-		};
-		responses: {
-			/** @description exposure toggled */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["QueueResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description queue not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	start_queue: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description queue id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description queue started */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["QueueResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description queue not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	stop_queue: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description queue id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description queue stopped */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["QueueResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description queue not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	list_services: {
-		parameters: {
-			query?: {
-				group_id?: string | null;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description list of services */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["InventoryServiceResponse"][];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	create_service: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["CreateServiceRequest"];
-			};
-		};
-		responses: {
-			/** @description service created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["InventoryServiceResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description conflict */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_service: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description service id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description service details */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["InventoryServiceResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description service not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	delete_service: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description service id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description service deleted */
-			204: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description service not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_service_logs: {
-		parameters: {
-			query?: {
-				tail?: number;
-			};
-			header?: never;
-			path: {
-				/** @description service id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description service logs */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ServiceLogsResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description service not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	restart_service: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description service id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description service restarted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["InventoryServiceResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description service not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	start_service: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description service id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description service started */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["InventoryServiceResponse"];
-				};
-			};
-			/** @description invalid request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description service not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	stop_service: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description service id */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description service stopped */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["InventoryServiceResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description service not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_settings: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description current settings */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["SettingsResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	update_settings: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				"application/json": components["schemas"]["UpdateSettingsRequest"];
-			};
-		};
-		responses: {
-			/** @description updated settings */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["SettingsResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	issue_dashboard_certificate: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description certificate issuance initiated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["DashboardCertResponse"];
-				};
-			};
-			/** @description bad request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	get_system_stats: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description system statistics */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["SystemStats"];
-				};
-			};
-			/** @description unauthorized */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-			/** @description forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["ErrorResponse"];
-				};
-			};
-		};
-	};
-	health: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description service is healthy */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					"application/json": components["schemas"]["HealthResponse"];
-				};
-			};
-		};
-	};
+    github_start: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description redirect to github oauth */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    github_callback: {
+        parameters: {
+            query: {
+                /** @description github oauth authorization code */
+                code: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description successfully authenticated with github */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+            /** @description invalid oauth code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description successfully logged in */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+            /** @description invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description successfully registered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description email already registered */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_buckets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description list of buckets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BucketResponse"][];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_bucket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBucketRequest"];
+            };
+        };
+        responses: {
+            /** @description bucket created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BucketResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_bucket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description bucket id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description bucket details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BucketResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_bucket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description bucket id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description bucket deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_bucket_connection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description bucket id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description bucket connection details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BucketConnectionResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_containers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description list of containers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContainerListItem"][];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    issue_exec_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description container id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description short-lived exec token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecTokenResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_volume_entries: {
+        parameters: {
+            query: {
+                /** @description mount point */
+                mount: string;
+                /** @description relative path within mount */
+                path?: string;
+            };
+            header?: never;
+            path: {
+                /** @description container id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description volume entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VolumeEntry"][];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_volume_entry: {
+        parameters: {
+            query: {
+                /** @description mount point */
+                mount: string;
+                /** @description relative path within mount */
+                path?: string;
+            };
+            header?: never;
+            path: {
+                /** @description container id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description entry deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    download_volume_entry: {
+        parameters: {
+            query: {
+                /** @description mount point */
+                mount: string;
+                /** @description relative path within mount */
+                path?: string;
+            };
+            header?: never;
+            path: {
+                /** @description container id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description file download */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_volume_directory: {
+        parameters: {
+            query: {
+                /** @description mount point */
+                mount: string;
+                /** @description directory path to create */
+                path: string;
+            };
+            header?: never;
+            path: {
+                /** @description container id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description directory created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upload_volume_entry: {
+        parameters: {
+            query: {
+                /** @description mount point */
+                mount: string;
+                /** @description relative path within mount */
+                path?: string;
+            };
+            header?: never;
+            path: {
+                /** @description container id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description file uploaded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_container_logs: {
+        parameters: {
+            query?: {
+                /** @description number of log lines */
+                tail?: number;
+            };
+            header?: never;
+            path: {
+                /** @description container id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description container logs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContainerLogsResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_container_mounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description container id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description container mounts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContainerMountResponse"][];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_container_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description container id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description container status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContainerStatusResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_github_app: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description github app status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GithubAppStatusResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_github_app: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description github app deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    github_app_callback: {
+        parameters: {
+            query: {
+                /** @description manifest conversion code */
+                code: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description redirect to settings */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conversion failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    github_install_callback: {
+        parameters: {
+            query?: {
+                /** @description installation id */
+                installation_id?: number;
+                /** @description setup action */
+                setup_action?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description redirect to settings */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_app_manifest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description app manifest payload */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_app_repos: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description list of repositories */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppReposResponse"];
+                };
+            };
+            /** @description no github app configured */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_services: {
+        parameters: {
+            query?: {
+                group_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description list of services */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryServiceResponse"][];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_service: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateServiceRequest"];
+            };
+        };
+        responses: {
+            /** @description service created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryServiceResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_service: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description service details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryServiceResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_service: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description service deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_service_logs: {
+        parameters: {
+            query?: {
+                tail?: number;
+            };
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description service logs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceLogsResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description current settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description updated settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    issue_dashboard_certificate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description certificate issuance initiated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardCertResponse"];
+                };
+            };
+            /** @description bad request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_system_stats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description system statistics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemStats"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description service is healthy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    run_service_action: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+                /** @description service action: start | stop | restart */
+                action: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description service action completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryServiceResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_service_deployments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description list of service deployments */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentResponse"][];
+                };
+            };
+            /** @description deployments not supported for this service */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    trigger_service_deployment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeploymentTriggerRequest"];
+            };
+        };
+        responses: {
+            /** @description deployment triggered */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentResponse"];
+                };
+            };
+            /** @description deployments not supported for this service */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_service_deployment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+                /** @description deployment id */
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description service deployment details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentResponse"];
+                };
+            };
+            /** @description deployments not supported for this service */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description deployment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rollback_service_deployment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+                /** @description deployment id to rollback to */
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RollbackRequest"];
+            };
+        };
+        responses: {
+            /** @description rollback deployment queued */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description deployment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_service_deployment_logs: {
+        parameters: {
+            query?: {
+                /** @description lines limit */
+                limit?: number;
+                /** @description lines offset */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+                /** @description deployment id */
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description deployment logs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+            /** @description deployments not supported for this service */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description deployment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
 }

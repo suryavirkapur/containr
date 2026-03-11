@@ -2,1123 +2,18 @@
 	"openapi": "3.1.0",
 	"info": {
 		"title": "containr api",
-		"description": "containr paas api for managing projects, services, and deployments",
+		"description": "containr paas api for managing services, deployments, and infrastructure",
 		"license": {
 			"name": ""
 		},
 		"version": "1.0.0"
 	},
 	"paths": {
-		"/api/apps": {
-			"get": {
-				"tags": ["apps"],
-				"summary": "list all apps for the authenticated user",
-				"operationId": "list_apps",
-				"responses": {
-					"200": {
-						"description": "list of apps",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "array",
-									"items": {
-										"$ref": "#/components/schemas/AppResponse"
-									}
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			},
-			"post": {
-				"tags": ["apps"],
-				"summary": "create a new app",
-				"operationId": "create_app",
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/CreateAppRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"201": {
-						"description": "app created",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/AppResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"409": {
-						"description": "domain conflict",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/apps/{app_id}/deployments/{id}": {
-			"get": {
-				"tags": ["deployments"],
-				"summary": "get a single deployment",
-				"operationId": "get_deployment",
-				"parameters": [
-					{
-						"name": "app_id",
-						"in": "path",
-						"description": "app id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "id",
-						"in": "path",
-						"description": "deployment id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "deployment details",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DeploymentResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/apps/{app_id}/deployments/{id}/logs": {
-			"get": {
-				"tags": ["deployments"],
-				"summary": "get deployment logs",
-				"operationId": "get_deployment_logs",
-				"parameters": [
-					{
-						"name": "app_id",
-						"in": "path",
-						"description": "app id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "id",
-						"in": "path",
-						"description": "deployment id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "limit",
-						"in": "query",
-						"description": "lines limit",
-						"required": false,
-						"schema": {
-							"type": "integer",
-							"minimum": 0
-						}
-					},
-					{
-						"name": "offset",
-						"in": "query",
-						"description": "lines offset",
-						"required": false,
-						"schema": {
-							"type": "integer",
-							"minimum": 0
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "deployment logs",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "array",
-									"items": {
-										"type": "string"
-									}
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/apps/{app_id}/deployments/{id}/rollback": {
-			"post": {
-				"tags": ["deployments"],
-				"summary": "rollback to a previous deployment",
-				"operationId": "rollback_deployment",
-				"parameters": [
-					{
-						"name": "app_id",
-						"in": "path",
-						"description": "app id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "id",
-						"in": "path",
-						"description": "deployment id to rollback to",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/RollbackRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"201": {
-						"description": "rollback deployment queued",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DeploymentResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/apps/{id}": {
-			"get": {
-				"tags": ["apps"],
-				"summary": "get a single app by id",
-				"operationId": "get_app",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "app id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "app details",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/AppResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			},
-			"put": {
-				"tags": ["apps"],
-				"summary": "update an app",
-				"operationId": "update_app",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "app id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/UpdateAppRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "app updated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/AppResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"409": {
-						"description": "domain conflict",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			},
-			"delete": {
-				"tags": ["apps"],
-				"summary": "delete an app",
-				"operationId": "delete_app",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "app id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"204": {
-						"description": "app deleted"
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/apps/{id}/certificate": {
-			"get": {
-				"tags": ["certificates"],
-				"summary": "Get certificate status for an app",
-				"operationId": "get_certificate",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "app id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "certificate status",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "array",
-									"items": {
-										"$ref": "#/components/schemas/CertificateResponse"
-									}
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "app not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/apps/{id}/certificate/reissue": {
-			"post": {
-				"tags": ["certificates"],
-				"summary": "Trigger certificate reissue for an app",
-				"operationId": "reissue_certificate",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "app id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/ReissueRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "certificate reissue initiated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ReissueResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "bad request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "app not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"503": {
-						"description": "service unavailable",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/apps/{id}/deployments": {
-			"get": {
-				"tags": ["deployments"],
-				"summary": "list deployments for an app",
-				"operationId": "list_deployments",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "app id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "list of deployments",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "array",
-									"items": {
-										"$ref": "#/components/schemas/DeploymentResponse"
-									}
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "app not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			},
-			"post": {
-				"tags": ["deployments"],
-				"summary": "trigger a new deployment",
-				"operationId": "trigger_deployment",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "app id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/DeploymentTriggerRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"201": {
-						"description": "deployment triggered",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DeploymentResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "app not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/apps/{id}/metrics": {
-			"get": {
-				"tags": ["apps"],
-				"summary": "get app container metrics",
-				"operationId": "get_app_metrics",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "app id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "container metrics",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "array",
-									"items": {
-										"$ref": "#/components/schemas/AppMetricsResponse"
-									}
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/apps/{id}/services/{service_name}/mounts/backup": {
-			"get": {
-				"tags": ["apps"],
-				"summary": "download a tar archive of all persistent mounts for a service",
-				"operationId": "backup_service_mounts",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "app id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "service_name",
-						"in": "path",
-						"description": "service name",
-						"required": true,
-						"schema": {
-							"type": "string"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "service mount backup archive"
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/apps/{id}/services/{service_name}/mounts/restore": {
-			"post": {
-				"tags": ["apps"],
-				"summary": "restore all persistent mounts for a service from a tar archive",
-				"operationId": "restore_service_mounts",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "app id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "service_name",
-						"in": "path",
-						"description": "service name",
-						"required": true,
-						"schema": {
-							"type": "string"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "service mount archive restored",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ServiceMountRestoreResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid archive",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
 		"/api/auth/github": {
 			"get": {
-				"tags": ["auth"],
+				"tags": [
+					"auth"
+				],
 				"summary": "start github oauth flow",
 				"operationId": "github_start",
 				"responses": {
@@ -1130,7 +25,9 @@
 		},
 		"/api/auth/github/callback": {
 			"get": {
-				"tags": ["auth"],
+				"tags": [
+					"auth"
+				],
 				"summary": "github oauth callback",
 				"operationId": "github_callback",
 				"parameters": [
@@ -1170,7 +67,9 @@
 		},
 		"/api/auth/login": {
 			"post": {
-				"tags": ["auth"],
+				"tags": [
+					"auth"
+				],
 				"summary": "login with email/password",
 				"operationId": "login",
 				"requestBody": {
@@ -1209,7 +108,9 @@
 		},
 		"/api/auth/register": {
 			"post": {
-				"tags": ["auth"],
+				"tags": [
+					"auth"
+				],
 				"summary": "register a new user with email/password",
 				"operationId": "register",
 				"requestBody": {
@@ -1258,7 +159,9 @@
 		},
 		"/api/buckets": {
 			"get": {
-				"tags": ["storage"],
+				"tags": [
+					"storage"
+				],
 				"summary": "list all buckets for the authenticated user",
 				"operationId": "list_buckets",
 				"responses": {
@@ -1293,7 +196,9 @@
 				]
 			},
 			"post": {
-				"tags": ["storage"],
+				"tags": [
+					"storage"
+				],
 				"summary": "create a new storage bucket",
 				"operationId": "create_bucket",
 				"requestBody": {
@@ -1347,7 +252,9 @@
 		},
 		"/api/buckets/{id}": {
 			"get": {
-				"tags": ["storage"],
+				"tags": [
+					"storage"
+				],
 				"summary": "get a single bucket by id",
 				"operationId": "get_bucket",
 				"parameters": [
@@ -1411,7 +318,9 @@
 				]
 			},
 			"delete": {
-				"tags": ["storage"],
+				"tags": [
+					"storage"
+				],
 				"summary": "delete a storage bucket",
 				"operationId": "delete_bucket",
 				"parameters": [
@@ -1470,7 +379,9 @@
 		},
 		"/api/buckets/{id}/connection": {
 			"get": {
-				"tags": ["storage"],
+				"tags": [
+					"storage"
+				],
 				"summary": "get s3 connection details for a bucket",
 				"operationId": "get_bucket_connection",
 				"parameters": [
@@ -1536,7 +447,9 @@
 		},
 		"/api/containers": {
 			"get": {
-				"tags": ["containers"],
+				"tags": [
+					"containers"
+				],
 				"operationId": "list_containers",
 				"responses": {
 					"200": {
@@ -1572,7 +485,9 @@
 		},
 		"/api/containers/{id}/exec/token": {
 			"post": {
-				"tags": ["containers"],
+				"tags": [
+					"containers"
+				],
 				"operationId": "issue_exec_token",
 				"parameters": [
 					{
@@ -1626,7 +541,9 @@
 		},
 		"/api/containers/{id}/files": {
 			"get": {
-				"tags": ["containers"],
+				"tags": [
+					"containers"
+				],
 				"operationId": "list_volume_entries",
 				"parameters": [
 					{
@@ -1699,7 +616,9 @@
 				]
 			},
 			"delete": {
-				"tags": ["containers"],
+				"tags": [
+					"containers"
+				],
 				"operationId": "delete_volume_entry",
 				"parameters": [
 					{
@@ -1764,7 +683,9 @@
 		},
 		"/api/containers/{id}/files/download": {
 			"get": {
-				"tags": ["containers"],
+				"tags": [
+					"containers"
+				],
 				"operationId": "download_volume_entry",
 				"parameters": [
 					{
@@ -1829,7 +750,9 @@
 		},
 		"/api/containers/{id}/files/mkdir": {
 			"post": {
-				"tags": ["containers"],
+				"tags": [
+					"containers"
+				],
 				"operationId": "create_volume_directory",
 				"parameters": [
 					{
@@ -1894,7 +817,9 @@
 		},
 		"/api/containers/{id}/files/upload": {
 			"post": {
-				"tags": ["containers"],
+				"tags": [
+					"containers"
+				],
 				"operationId": "upload_volume_entry",
 				"parameters": [
 					{
@@ -1959,7 +884,9 @@
 		},
 		"/api/containers/{id}/logs": {
 			"get": {
-				"tags": ["containers"],
+				"tags": [
+					"containers"
+				],
 				"operationId": "get_container_logs",
 				"parameters": [
 					{
@@ -2023,7 +950,9 @@
 		},
 		"/api/containers/{id}/mounts": {
 			"get": {
-				"tags": ["containers"],
+				"tags": [
+					"containers"
+				],
 				"operationId": "list_container_mounts",
 				"parameters": [
 					{
@@ -2080,7 +1009,9 @@
 		},
 		"/api/containers/{id}/status": {
 			"get": {
-				"tags": ["containers"],
+				"tags": [
+					"containers"
+				],
 				"operationId": "get_container_status",
 				"parameters": [
 					{
@@ -2132,1237 +1063,11 @@
 				]
 			}
 		},
-		"/api/databases": {
-			"get": {
-				"tags": ["databases"],
-				"summary": "list all databases for the authenticated user",
-				"operationId": "list_databases",
-				"parameters": [
-					{
-						"name": "group_id",
-						"in": "query",
-						"required": false,
-						"schema": {
-							"type": ["string", "null"]
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "list of databases",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "array",
-									"items": {
-										"$ref": "#/components/schemas/DatabaseResponse"
-									}
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			},
-			"post": {
-				"tags": ["databases"],
-				"summary": "create a new managed database",
-				"operationId": "create_database",
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/CreateDatabaseRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"201": {
-						"description": "database created",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DatabaseResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}": {
-			"get": {
-				"tags": ["databases"],
-				"summary": "get a single database by id",
-				"operationId": "get_database",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "database details",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DatabaseResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			},
-			"delete": {
-				"tags": ["databases"],
-				"summary": "delete a managed database",
-				"operationId": "delete_database",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"204": {
-						"description": "database deleted"
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}/backups": {
-			"get": {
-				"tags": ["databases"],
-				"summary": "list database backups",
-				"operationId": "list_backups",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "list of backups",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "array",
-									"items": {
-										"$ref": "#/components/schemas/BackupInfo"
-									}
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}/backups/download": {
-			"get": {
-				"tags": ["databases"],
-				"summary": "download a backup file",
-				"operationId": "download_backup",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "filename",
-						"in": "query",
-						"description": "backup filename",
-						"required": true,
-						"schema": {
-							"type": "string"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "backup file",
-						"content": {
-							"application/octet-stream": {}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}/export": {
-			"post": {
-				"tags": ["databases"],
-				"summary": "export database backup",
-				"operationId": "export_database",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/ExportRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "backup created",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ExportResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}/expose": {
-			"post": {
-				"tags": ["databases"],
-				"summary": "toggle external exposure for a database",
-				"operationId": "expose_database",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/ExposeRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "exposure toggled",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DatabaseResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}/logs": {
-			"get": {
-				"tags": ["databases"],
-				"summary": "get database container logs",
-				"operationId": "get_database_logs",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "tail",
-						"in": "query",
-						"description": "number of log lines",
-						"required": false,
-						"schema": {
-							"type": "integer",
-							"minimum": 0
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "container logs",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/LogsResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}/pitr": {
-			"post": {
-				"tags": ["databases"],
-				"summary": "configure postgres point in time recovery",
-				"operationId": "configure_pitr",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/ConfigurePitrRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "pitr updated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DatabaseResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}/pitr/base-backup": {
-			"post": {
-				"tags": ["databases"],
-				"summary": "create a postgres base backup for pitr",
-				"operationId": "create_pitr_base_backup",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/CreateBaseBackupRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "base backup created",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/BaseBackupResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}/pitr/recover": {
-			"post": {
-				"tags": ["databases"],
-				"summary": "recover a postgres database from local pitr backups and wal",
-				"operationId": "recover_database",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/RecoverDatabaseRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "database recovered",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/RecoverDatabaseResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}/pitr/restore-point": {
-			"post": {
-				"tags": ["databases"],
-				"summary": "create a postgres restore point",
-				"operationId": "create_restore_point",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/CreateRestorePointRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "restore point created",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/RestorePointResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}/proxy": {
-			"post": {
-				"tags": ["databases"],
-				"summary": "configure postgres proxy frontend",
-				"operationId": "configure_proxy",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/ConfigureProxyRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "proxy updated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DatabaseResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}/restart": {
-			"post": {
-				"tags": ["databases"],
-				"summary": "restart a database",
-				"operationId": "restart_database",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "database restarted",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DatabaseResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "database is not running",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}/start": {
-			"post": {
-				"tags": ["databases"],
-				"summary": "update database status (start/stop)",
-				"operationId": "start_database",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "database started",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DatabaseResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/databases/{id}/stop": {
-			"post": {
-				"tags": ["databases"],
-				"summary": "stop a database",
-				"operationId": "stop_database",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "database id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "database stopped",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DatabaseResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
 		"/api/github/app": {
 			"get": {
-				"tags": ["github-app"],
+				"tags": [
+					"github-app"
+				],
 				"summary": "get github app status and installations",
 				"operationId": "get_github_app",
 				"responses": {
@@ -3394,7 +1099,9 @@
 				]
 			},
 			"delete": {
-				"tags": ["github-app"],
+				"tags": [
+					"github-app"
+				],
 				"summary": "delete github app configuration",
 				"operationId": "delete_github_app",
 				"responses": {
@@ -3421,7 +1128,9 @@
 		},
 		"/api/github/app/callback": {
 			"get": {
-				"tags": ["github-app"],
+				"tags": [
+					"github-app"
+				],
 				"summary": "handles the github app manifest callback",
 				"operationId": "github_app_callback",
 				"parameters": [
@@ -3454,7 +1163,9 @@
 		},
 		"/api/github/app/install/callback": {
 			"get": {
-				"tags": ["github-app"],
+				"tags": [
+					"github-app"
+				],
 				"summary": "handles the installation callback",
 				"operationId": "github_install_callback",
 				"parameters": [
@@ -3487,7 +1198,9 @@
 		},
 		"/api/github/app/manifest": {
 			"get": {
-				"tags": ["github-app"],
+				"tags": [
+					"github-app"
+				],
 				"summary": "generates the github app manifest and returns the creation url",
 				"operationId": "get_app_manifest",
 				"responses": {
@@ -3519,7 +1232,9 @@
 		},
 		"/api/github/app/repos": {
 			"get": {
-				"tags": ["github-app"],
+				"tags": [
+					"github-app"
+				],
 				"summary": "get repos from github app installations",
 				"operationId": "get_app_repos",
 				"responses": {
@@ -3561,1536 +1276,11 @@
 				]
 			}
 		},
-		"/api/projects": {
-			"get": {
-				"tags": ["projects"],
-				"summary": "list all projects for the authenticated user",
-				"operationId": "project_list_projects",
-				"responses": {
-					"200": {
-						"description": "list of projects",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "array",
-									"items": {
-										"$ref": "#/components/schemas/AppResponse"
-									}
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			},
-			"post": {
-				"tags": ["projects"],
-				"summary": "create a new project",
-				"operationId": "project_create_project",
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/CreateAppRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"201": {
-						"description": "project created",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/AppResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"409": {
-						"description": "domain conflict",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/projects/{id}": {
-			"get": {
-				"tags": ["projects"],
-				"summary": "get a single project by id",
-				"operationId": "project_get_project",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "project id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "project details",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/AppResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			},
-			"put": {
-				"tags": ["projects"],
-				"summary": "update a project",
-				"operationId": "project_update_project",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "project id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/UpdateAppRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "project updated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/AppResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"409": {
-						"description": "domain conflict",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			},
-			"delete": {
-				"tags": ["projects"],
-				"summary": "delete a project",
-				"operationId": "project_delete_project",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "project id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"204": {
-						"description": "project deleted"
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/projects/{id}/certificate": {
-			"get": {
-				"tags": ["projects"],
-				"summary": "get certificate status for a project",
-				"operationId": "project_get_certificate",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "project id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "certificate status",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "array",
-									"items": {
-										"$ref": "#/components/schemas/CertificateResponse"
-									}
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "project not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/projects/{id}/certificate/reissue": {
-			"post": {
-				"tags": ["projects"],
-				"summary": "trigger certificate reissue for a project",
-				"operationId": "project_reissue_certificate",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "project id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/ReissueRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "certificate reissue initiated",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ReissueResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "bad request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "project not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"503": {
-						"description": "service unavailable",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/projects/{id}/deployments": {
-			"get": {
-				"tags": ["projects"],
-				"summary": "list deployments for a project",
-				"operationId": "project_list_deployments",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "project id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "list of deployments",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "array",
-									"items": {
-										"$ref": "#/components/schemas/DeploymentResponse"
-									}
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "project not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			},
-			"post": {
-				"tags": ["projects"],
-				"summary": "trigger a new deployment for a project",
-				"operationId": "project_trigger_deployment",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "project id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/DeploymentTriggerRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"201": {
-						"description": "deployment triggered",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DeploymentResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "project not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/projects/{id}/metrics": {
-			"get": {
-				"tags": ["projects"],
-				"summary": "get project container metrics",
-				"operationId": "project_get_project_metrics",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "project id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "container metrics",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "array",
-									"items": {
-										"$ref": "#/components/schemas/AppMetricsResponse"
-									}
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/projects/{id}/services/{service_name}/mounts/backup": {
-			"get": {
-				"tags": ["projects"],
-				"summary": "download a tar archive of all persistent mounts for a service",
-				"operationId": "project_backup_service_mounts",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "project id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "service_name",
-						"in": "path",
-						"description": "service name",
-						"required": true,
-						"schema": {
-							"type": "string"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "service mount backup archive"
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/projects/{id}/services/{service_name}/mounts/restore": {
-			"post": {
-				"tags": ["projects"],
-				"summary": "restore all persistent mounts for a service from a tar archive",
-				"operationId": "project_restore_service_mounts",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "project id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "service_name",
-						"in": "path",
-						"description": "service name",
-						"required": true,
-						"schema": {
-							"type": "string"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "service mount archive restored",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ServiceMountRestoreResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid archive",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/projects/{project_id}/deployments/{id}": {
-			"get": {
-				"tags": ["projects"],
-				"summary": "get a single project deployment",
-				"operationId": "project_get_deployment",
-				"parameters": [
-					{
-						"name": "project_id",
-						"in": "path",
-						"description": "project id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "id",
-						"in": "path",
-						"description": "deployment id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "deployment details",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DeploymentResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/projects/{project_id}/deployments/{id}/logs": {
-			"get": {
-				"tags": ["projects"],
-				"summary": "get logs for a project deployment",
-				"operationId": "project_get_deployment_logs",
-				"parameters": [
-					{
-						"name": "project_id",
-						"in": "path",
-						"description": "project id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "id",
-						"in": "path",
-						"description": "deployment id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "limit",
-						"in": "query",
-						"description": "lines limit",
-						"required": false,
-						"schema": {
-							"type": "integer",
-							"minimum": 0
-						}
-					},
-					{
-						"name": "offset",
-						"in": "query",
-						"description": "lines offset",
-						"required": false,
-						"schema": {
-							"type": "integer",
-							"minimum": 0
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "deployment logs",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "array",
-									"items": {
-										"type": "string"
-									}
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/projects/{project_id}/deployments/{id}/rollback": {
-			"post": {
-				"tags": ["projects"],
-				"summary": "roll back a project to a previous deployment",
-				"operationId": "project_rollback_deployment",
-				"parameters": [
-					{
-						"name": "project_id",
-						"in": "path",
-						"description": "project id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					},
-					{
-						"name": "id",
-						"in": "path",
-						"description": "deployment id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/RollbackRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"201": {
-						"description": "rollback deployment queued",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/DeploymentResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/queues": {
-			"get": {
-				"tags": ["queues"],
-				"summary": "list all queues for the authenticated user",
-				"operationId": "list_queues",
-				"parameters": [
-					{
-						"name": "group_id",
-						"in": "query",
-						"required": false,
-						"schema": {
-							"type": ["string", "null"]
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "list of queues",
-						"content": {
-							"application/json": {
-								"schema": {
-									"type": "array",
-									"items": {
-										"$ref": "#/components/schemas/QueueResponse"
-									}
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			},
-			"post": {
-				"tags": ["queues"],
-				"summary": "create a new managed queue",
-				"operationId": "create_queue",
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/CreateQueueRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"201": {
-						"description": "queue created",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/QueueResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/queues/{id}": {
-			"get": {
-				"tags": ["queues"],
-				"summary": "get a single queue by id",
-				"operationId": "get_queue",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "queue id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "queue details",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/QueueResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "queue not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			},
-			"delete": {
-				"tags": ["queues"],
-				"summary": "delete a managed queue",
-				"operationId": "delete_queue",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "queue id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"204": {
-						"description": "queue deleted"
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "queue not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/queues/{id}/expose": {
-			"post": {
-				"tags": ["queues"],
-				"summary": "toggle external exposure for a queue",
-				"operationId": "expose_queue",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "queue id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"requestBody": {
-					"content": {
-						"application/json": {
-							"schema": {
-								"$ref": "#/components/schemas/ExposeQueueRequest"
-							}
-						}
-					},
-					"required": true
-				},
-				"responses": {
-					"200": {
-						"description": "exposure toggled",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/QueueResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "queue not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/queues/{id}/start": {
-			"post": {
-				"tags": ["queues"],
-				"summary": "start a queue",
-				"operationId": "start_queue",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "queue id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "queue started",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/QueueResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "queue not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/queues/{id}/stop": {
-			"post": {
-				"tags": ["queues"],
-				"summary": "stop a queue",
-				"operationId": "stop_queue",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "queue id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "queue stopped",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/QueueResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"403": {
-						"description": "forbidden",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "queue not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
 		"/api/services": {
 			"get": {
-				"tags": ["services"],
+				"tags": [
+					"services"
+				],
 				"operationId": "list_services",
 				"parameters": [
 					{
@@ -5098,7 +1288,10 @@
 						"in": "query",
 						"required": false,
 						"schema": {
-							"type": ["string", "null"]
+							"type": [
+								"string",
+								"null"
+							]
 						}
 					}
 				],
@@ -5134,7 +1327,9 @@
 				]
 			},
 			"post": {
-				"tags": ["services"],
+				"tags": [
+					"services"
+				],
 				"operationId": "create_service",
 				"requestBody": {
 					"content": {
@@ -5197,7 +1392,9 @@
 		},
 		"/api/services/{id}": {
 			"get": {
-				"tags": ["services"],
+				"tags": [
+					"services"
+				],
 				"operationId": "get_service",
 				"parameters": [
 					{
@@ -5250,7 +1447,9 @@
 				]
 			},
 			"delete": {
-				"tags": ["services"],
+				"tags": [
+					"services"
+				],
 				"operationId": "delete_service",
 				"parameters": [
 					{
@@ -5308,7 +1507,9 @@
 		},
 		"/api/services/{id}/logs": {
 			"get": {
-				"tags": ["services"],
+				"tags": [
+					"services"
+				],
 				"operationId": "get_service_logs",
 				"parameters": [
 					{
@@ -5370,194 +1571,11 @@
 				]
 			}
 		},
-		"/api/services/{id}/restart": {
-			"post": {
-				"tags": ["services"],
-				"operationId": "restart_service",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "service id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "service restarted",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/InventoryServiceResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "service not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/services/{id}/start": {
-			"post": {
-				"tags": ["services"],
-				"operationId": "start_service",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "service id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "service started",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/InventoryServiceResponse"
-								}
-							}
-						}
-					},
-					"400": {
-						"description": "invalid request",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "service not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
-		"/api/services/{id}/stop": {
-			"post": {
-				"tags": ["services"],
-				"operationId": "stop_service",
-				"parameters": [
-					{
-						"name": "id",
-						"in": "path",
-						"description": "service id",
-						"required": true,
-						"schema": {
-							"type": "string",
-							"format": "uuid"
-						}
-					}
-				],
-				"responses": {
-					"200": {
-						"description": "service stopped",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/InventoryServiceResponse"
-								}
-							}
-						}
-					},
-					"401": {
-						"description": "unauthorized",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					},
-					"404": {
-						"description": "service not found",
-						"content": {
-							"application/json": {
-								"schema": {
-									"$ref": "#/components/schemas/ErrorResponse"
-								}
-							}
-						}
-					}
-				},
-				"security": [
-					{
-						"bearer": []
-					}
-				]
-			}
-		},
 		"/api/settings": {
 			"get": {
-				"tags": ["settings"],
+				"tags": [
+					"settings"
+				],
 				"summary": "get current server settings",
 				"operationId": "get_settings",
 				"responses": {
@@ -5599,7 +1617,9 @@
 				]
 			},
 			"put": {
-				"tags": ["settings"],
+				"tags": [
+					"settings"
+				],
 				"summary": "update server settings",
 				"operationId": "update_settings",
 				"requestBody": {
@@ -5653,7 +1673,9 @@
 		},
 		"/api/settings/certificate": {
 			"post": {
-				"tags": ["settings"],
+				"tags": [
+					"settings"
+				],
 				"summary": "request certificate for dashboard domain",
 				"operationId": "issue_dashboard_certificate",
 				"responses": {
@@ -5707,7 +1729,9 @@
 		},
 		"/api/system/stats": {
 			"get": {
-				"tags": ["system"],
+				"tags": [
+					"system"
+				],
 				"summary": "get system statistics",
 				"operationId": "get_system_stats",
 				"responses": {
@@ -5751,7 +1775,9 @@
 		},
 		"/health": {
 			"get": {
-				"tags": ["health"],
+				"tags": [
+					"health"
+				],
 				"summary": "health check endpoint",
 				"operationId": "health",
 				"responses": {
@@ -5767,6 +1793,491 @@
 					}
 				}
 			}
+		},
+		"/api/services/{id}/actions/{action}": {
+			"post": {
+				"tags": [
+					"services"
+				],
+				"operationId": "run_service_action",
+				"parameters": [
+					{
+						"name": "id",
+						"in": "path",
+						"description": "service id",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid"
+						}
+					},
+					{
+						"name": "action",
+						"in": "path",
+						"description": "service action: start | stop | restart",
+						"required": true,
+						"schema": {
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "service action completed",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/InventoryServiceResponse"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "invalid request",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "unauthorized",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "service not found",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"bearer": []
+					}
+				]
+			}
+		},
+		"/api/services/{id}/deployments": {
+			"get": {
+				"tags": [
+					"services"
+				],
+				"operationId": "list_service_deployments",
+				"parameters": [
+					{
+						"name": "id",
+						"in": "path",
+						"description": "service id",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "list of service deployments",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/DeploymentResponse"
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "deployments not supported for this service",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "unauthorized",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "service not found",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"bearer": []
+					}
+				]
+			},
+			"post": {
+				"tags": [
+					"services"
+				],
+				"operationId": "trigger_service_deployment",
+				"parameters": [
+					{
+						"name": "id",
+						"in": "path",
+						"description": "service id",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/DeploymentTriggerRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"description": "deployment triggered",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/DeploymentResponse"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "deployments not supported for this service",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "unauthorized",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "service not found",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"bearer": []
+					}
+				]
+			}
+		},
+		"/api/services/{id}/deployments/{deployment_id}": {
+			"get": {
+				"tags": [
+					"services"
+				],
+				"operationId": "get_service_deployment",
+				"parameters": [
+					{
+						"name": "id",
+						"in": "path",
+						"description": "service id",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid"
+						}
+					},
+					{
+						"name": "deployment_id",
+						"in": "path",
+						"description": "deployment id",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "service deployment details",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/DeploymentResponse"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "deployments not supported for this service",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "unauthorized",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "deployment not found",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"bearer": []
+					}
+				]
+			}
+		},
+		"/api/services/{id}/deployments/{deployment_id}/rollback": {
+			"post": {
+				"tags": [
+					"services"
+				],
+				"operationId": "rollback_service_deployment",
+				"parameters": [
+					{
+						"name": "id",
+						"in": "path",
+						"description": "service id",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid"
+						}
+					},
+					{
+						"name": "deployment_id",
+						"in": "path",
+						"description": "deployment id to rollback to",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/RollbackRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"description": "rollback deployment queued",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/DeploymentResponse"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "invalid request",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "unauthorized",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "deployment not found",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"bearer": []
+					}
+				]
+			}
+		},
+		"/api/services/{id}/deployments/{deployment_id}/logs": {
+			"get": {
+				"tags": [
+					"services"
+				],
+				"operationId": "get_service_deployment_logs",
+				"parameters": [
+					{
+						"name": "id",
+						"in": "path",
+						"description": "service id",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid"
+						}
+					},
+					{
+						"name": "deployment_id",
+						"in": "path",
+						"description": "deployment id",
+						"required": true,
+						"schema": {
+							"type": "string",
+							"format": "uuid"
+						}
+					},
+					{
+						"name": "limit",
+						"in": "query",
+						"description": "lines limit",
+						"required": false,
+						"schema": {
+							"type": "integer",
+							"minimum": 0
+						}
+					},
+					{
+						"name": "offset",
+						"in": "query",
+						"description": "lines offset",
+						"required": false,
+						"schema": {
+							"type": "integer",
+							"minimum": 0
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "deployment logs",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "deployments not supported for this service",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					},
+					"401": {
+						"description": "unauthorized",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "deployment not found",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorResponse"
+								}
+							}
+						}
+					}
+				},
+				"security": [
+					{
+						"bearer": []
+					}
+				]
+			}
 		}
 	},
 	"components": {
@@ -5774,7 +2285,11 @@
 			"AppDetails": {
 				"type": "object",
 				"description": "app details",
-				"required": ["app_id", "app_name", "html_url"],
+				"required": [
+					"app_id",
+					"app_name",
+					"html_url"
+				],
 				"properties": {
 					"app_id": {
 						"type": "integer",
@@ -5791,7 +2306,12 @@
 			"AppMetricsResponse": {
 				"type": "object",
 				"description": "app container metrics response",
-				"required": ["container", "cpu_percent", "mem_usage_bytes", "mem_limit_bytes"],
+				"required": [
+					"container",
+					"cpu_percent",
+					"mem_usage_bytes",
+					"mem_limit_bytes"
+				],
 				"properties": {
 					"container": {
 						"type": "string"
@@ -5815,7 +2335,9 @@
 			"AppReposResponse": {
 				"type": "object",
 				"description": "repos response",
-				"required": ["repos"],
+				"required": [
+					"repos"
+				],
 				"properties": {
 					"repos": {
 						"type": "array",
@@ -5850,7 +2372,10 @@
 						"description": "creation timestamp"
 					},
 					"domain": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "custom domain"
 					},
 					"domains": {
@@ -5902,7 +2427,10 @@
 			"AuthResponse": {
 				"type": "object",
 				"description": "auth response with token",
-				"required": ["token", "user"],
+				"required": [
+					"token",
+					"user"
+				],
 				"properties": {
 					"token": {
 						"type": "string",
@@ -5917,7 +2445,11 @@
 			"BackupInfo": {
 				"type": "object",
 				"description": "backup info",
-				"required": ["filename", "size_bytes", "created_at"],
+				"required": [
+					"filename",
+					"size_bytes",
+					"created_at"
+				],
 				"properties": {
 					"created_at": {
 						"type": "string"
@@ -5935,7 +2467,11 @@
 			"BaseBackupResponse": {
 				"type": "object",
 				"description": "base backup response",
-				"required": ["label", "backup_path", "created_at"],
+				"required": [
+					"label",
+					"backup_path",
+					"created_at"
+				],
 				"properties": {
 					"backup_path": {
 						"type": "string"
@@ -5987,7 +2523,10 @@
 						"minimum": 0
 					},
 					"public_endpoint": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"secret_key": {
 						"type": "string"
@@ -6040,7 +2579,10 @@
 						"minimum": 0
 					},
 					"public_endpoint": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"publicly_exposed": {
 						"type": "boolean"
@@ -6055,16 +2597,25 @@
 			"CertificateResponse": {
 				"type": "object",
 				"description": "Certificate status response",
-				"required": ["domain", "status"],
+				"required": [
+					"domain",
+					"status"
+				],
 				"properties": {
 					"domain": {
 						"type": "string"
 					},
 					"expires_at": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"issued_at": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"status": {
 						"type": "string"
@@ -6074,7 +2625,9 @@
 			"ConfigurePitrRequest": {
 				"type": "object",
 				"description": "pitr configuration request",
-				"required": ["enabled"],
+				"required": [
+					"enabled"
+				],
 				"properties": {
 					"enabled": {
 						"type": "boolean"
@@ -6084,13 +2637,18 @@
 			"ConfigureProxyRequest": {
 				"type": "object",
 				"description": "proxy configuration request",
-				"required": ["enabled"],
+				"required": [
+					"enabled"
+				],
 				"properties": {
 					"enabled": {
 						"type": "boolean"
 					},
 					"external_port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"minimum": 0
 					}
@@ -6098,7 +2656,12 @@
 			},
 			"ContainerListItem": {
 				"type": "object",
-				"required": ["id", "resource_type", "resource_id", "name"],
+				"required": [
+					"id",
+					"resource_type",
+					"resource_id",
+					"name"
+				],
 				"properties": {
 					"id": {
 						"type": "string"
@@ -6116,7 +2679,9 @@
 			},
 			"ContainerLogsResponse": {
 				"type": "object",
-				"required": ["logs"],
+				"required": [
+					"logs"
+				],
 				"properties": {
 					"logs": {
 						"type": "string"
@@ -6125,7 +2690,11 @@
 			},
 			"ContainerMountResponse": {
 				"type": "object",
-				"required": ["destination", "mount_type", "read_only"],
+				"required": [
+					"destination",
+					"mount_type",
+					"read_only"
+				],
 				"properties": {
 					"destination": {
 						"type": "string"
@@ -6134,7 +2703,10 @@
 						"type": "string"
 					},
 					"name": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"read_only": {
 						"type": "boolean"
@@ -6156,10 +2728,16 @@
 						"format": "double"
 					},
 					"finished_at": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"health_status": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"mem_limit_bytes": {
 						"type": "integer",
@@ -6177,7 +2755,10 @@
 						"minimum": 0
 					},
 					"started_at": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"status": {
 						"type": "string"
@@ -6187,25 +2768,40 @@
 			"CreateAppRequest": {
 				"type": "object",
 				"description": "create app request",
-				"required": ["name", "github_url"],
+				"required": [
+					"name",
+					"github_url"
+				],
 				"properties": {
 					"branch": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "branch to deploy (defaults to main)"
 					},
 					"domain": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "custom domain"
 					},
 					"domains": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"type": "string"
 						},
 						"description": "custom domains"
 					},
 					"env_vars": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"$ref": "#/components/schemas/EnvVarRequest"
 						},
@@ -6220,17 +2816,26 @@
 						"description": "app name"
 					},
 					"port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"description": "port for the app (deprecated, use services)",
 						"minimum": 0
 					},
 					"rollout_strategy": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "rollout strategy (stop_first or start_first)"
 					},
 					"services": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"$ref": "#/components/schemas/ServiceRequest"
 						},
@@ -6243,14 +2848,19 @@
 				"description": "base backup request",
 				"properties": {
 					"label": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					}
 				}
 			},
 			"CreateBucketRequest": {
 				"type": "object",
 				"description": "bucket creation request",
-				"required": ["name"],
+				"required": [
+					"name"
+				],
 				"properties": {
 					"name": {
 						"type": "string",
@@ -6261,10 +2871,16 @@
 			"CreateDatabaseRequest": {
 				"type": "object",
 				"description": "database creation request",
-				"required": ["name", "db_type"],
+				"required": [
+					"name",
+					"db_type"
+				],
 				"properties": {
 					"cpu_limit": {
-						"type": ["number", "null"],
+						"type": [
+							"number",
+							"null"
+						],
 						"format": "double",
 						"description": "cpu limit (optional)"
 					},
@@ -6273,11 +2889,17 @@
 						"description": "database type"
 					},
 					"group_id": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "attach this service to a project group"
 					},
 					"memory_limit_mb": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int64",
 						"description": "memory limit in mb (optional)",
 						"minimum": 0
@@ -6287,7 +2909,10 @@
 						"description": "database name"
 					},
 					"version": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "version (optional, uses default)"
 					}
 				}
@@ -6295,19 +2920,31 @@
 			"CreateQueueRequest": {
 				"type": "object",
 				"description": "queue creation request",
-				"required": ["name", "queue_type"],
+				"required": [
+					"name",
+					"queue_type"
+				],
 				"properties": {
 					"cpu_limit": {
-						"type": ["number", "null"],
+						"type": [
+							"number",
+							"null"
+						],
 						"format": "double",
 						"description": "cpu limit (optional)"
 					},
 					"group_id": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "attach this service to a project group"
 					},
 					"memory_limit_mb": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int64",
 						"description": "memory limit in mb (optional)",
 						"minimum": 0
@@ -6321,7 +2958,10 @@
 						"description": "queue type"
 					},
 					"version": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "version (optional, uses default)"
 					}
 				}
@@ -6331,7 +2971,10 @@
 				"description": "restore point request",
 				"properties": {
 					"restore_point": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					}
 				}
 			},
@@ -6339,13 +2982,24 @@
 				"oneOf": [
 					{
 						"type": "object",
-						"required": ["name", "github_url", "service", "source"],
+						"required": [
+							"name",
+							"github_url",
+							"service",
+							"source"
+						],
 						"properties": {
 							"branch": {
-								"type": ["string", "null"]
+								"type": [
+									"string",
+									"null"
+								]
 							},
 							"env_vars": {
-								"type": ["array", "null"],
+								"type": [
+									"array",
+									"null"
+								],
 								"items": {
 									"$ref": "#/components/schemas/EnvVarRequest"
 								}
@@ -6357,30 +3011,48 @@
 								"type": "string"
 							},
 							"rollout_strategy": {
-								"type": ["string", "null"]
+								"type": [
+									"string",
+									"null"
+								]
 							},
 							"service": {
 								"$ref": "#/components/schemas/ServiceRequest"
 							},
 							"source": {
 								"type": "string",
-								"enum": ["git_repository"]
+								"enum": [
+									"git_repository"
+								]
 							}
 						}
 					},
 					{
 						"type": "object",
-						"required": ["name", "template", "source"],
+						"required": [
+							"name",
+							"template",
+							"source"
+						],
 						"properties": {
 							"cpu_limit": {
-								"type": ["number", "null"],
+								"type": [
+									"number",
+									"null"
+								],
 								"format": "double"
 							},
 							"group_id": {
-								"type": ["string", "null"]
+								"type": [
+									"string",
+									"null"
+								]
 							},
 							"memory_limit_mb": {
-								"type": ["integer", "null"],
+								"type": [
+									"integer",
+									"null"
+								],
 								"format": "int64",
 								"minimum": 0
 							},
@@ -6389,13 +3061,18 @@
 							},
 							"source": {
 								"type": "string",
-								"enum": ["template"]
+								"enum": [
+									"template"
+								]
 							},
 							"template": {
 								"type": "string"
 							},
 							"version": {
-								"type": ["string", "null"]
+								"type": [
+									"string",
+									"null"
+								]
 							}
 						}
 					}
@@ -6404,7 +3081,10 @@
 			"DashboardCertResponse": {
 				"type": "object",
 				"description": "certificate issuance response",
-				"required": ["message", "domains"],
+				"required": [
+					"message",
+					"domains"
+				],
 				"properties": {
 					"domains": {
 						"type": "array",
@@ -6460,12 +3140,18 @@
 						"type": "string"
 					},
 					"external_port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"minimum": 0
 					},
 					"group_id": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"id": {
 						"type": "string"
@@ -6491,10 +3177,16 @@
 						"type": "boolean"
 					},
 					"pitr_last_base_backup_at": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"pitr_last_base_backup_label": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"port": {
 						"type": "integer",
@@ -6502,29 +3194,47 @@
 						"minimum": 0
 					},
 					"proxy_connection_string": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"proxy_enabled": {
 						"type": "boolean"
 					},
 					"proxy_external_port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"minimum": 0
 					},
 					"proxy_port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"minimum": 0
 					},
 					"public_connection_string": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"public_ip": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"public_proxy_connection_string": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"service_type": {
 						"type": "string"
@@ -6543,33 +3253,51 @@
 			"DeploymentResponse": {
 				"type": "object",
 				"description": "deployment response",
-				"required": ["id", "app_id", "commit_sha", "status", "created_at"],
+				"required": [
+					"id",
+					"app_id",
+					"commit_sha",
+					"status",
+					"created_at"
+				],
 				"properties": {
 					"app_id": {
 						"type": "string",
 						"format": "uuid"
 					},
 					"commit_message": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"commit_sha": {
 						"type": "string"
 					},
 					"container_id": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"created_at": {
 						"type": "string"
 					},
 					"finished_at": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"id": {
 						"type": "string",
 						"format": "uuid"
 					},
 					"started_at": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"status": {
 						"type": "string"
@@ -6581,19 +3309,31 @@
 				"description": "deployment trigger request (optional)",
 				"properties": {
 					"branch": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "branch to deploy"
 					},
 					"commit_message": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "commit message to record"
 					},
 					"commit_sha": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "commit sha to record"
 					},
 					"rollout_strategy": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "rollout strategy override (stop_first or start_first)"
 					}
 				}
@@ -6601,14 +3341,20 @@
 			"EnvVarRequest": {
 				"type": "object",
 				"description": "env var in request",
-				"required": ["key", "value"],
+				"required": [
+					"key",
+					"value"
+				],
 				"properties": {
 					"key": {
 						"type": "string",
 						"description": "variable key"
 					},
 					"secret": {
-						"type": ["boolean", "null"],
+						"type": [
+							"boolean",
+							"null"
+						],
 						"description": "mark as secret (hides value)"
 					},
 					"value": {
@@ -6620,7 +3366,11 @@
 			"EnvVarResponse": {
 				"type": "object",
 				"description": "env var in response (hides secret values)",
-				"required": ["key", "value", "secret"],
+				"required": [
+					"key",
+					"value",
+					"secret"
+				],
 				"properties": {
 					"key": {
 						"type": "string",
@@ -6639,7 +3389,9 @@
 			"ErrorResponse": {
 				"type": "object",
 				"description": "error response",
-				"required": ["error"],
+				"required": [
+					"error"
+				],
 				"properties": {
 					"error": {
 						"type": "string",
@@ -6649,7 +3401,10 @@
 			},
 			"ExecTokenResponse": {
 				"type": "object",
-				"required": ["token", "expires_at"],
+				"required": [
+					"token",
+					"expires_at"
+				],
 				"properties": {
 					"expires_at": {
 						"type": "string"
@@ -6664,40 +3419,59 @@
 				"description": "export request",
 				"properties": {
 					"bucket_id": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"format": "uuid"
 					},
 					"object_key_prefix": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					}
 				}
 			},
 			"ExportResponse": {
 				"type": "object",
 				"description": "export response",
-				"required": ["backup_path"],
+				"required": [
+					"backup_path"
+				],
 				"properties": {
 					"backup_path": {
 						"type": "string"
 					},
 					"bucket_name": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"object_key": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					}
 				}
 			},
 			"ExposeQueueRequest": {
 				"type": "object",
 				"description": "queue expose request",
-				"required": ["enabled"],
+				"required": [
+					"enabled"
+				],
 				"properties": {
 					"enabled": {
 						"type": "boolean"
 					},
 					"external_port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"minimum": 0
 					}
@@ -6706,13 +3480,18 @@
 			"ExposeRequest": {
 				"type": "object",
 				"description": "expose request",
-				"required": ["enabled"],
+				"required": [
+					"enabled"
+				],
 				"properties": {
 					"enabled": {
 						"type": "boolean"
 					},
 					"external_port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"minimum": 0
 					}
@@ -6721,7 +3500,10 @@
 			"GithubAppStatusResponse": {
 				"type": "object",
 				"description": "github app status response",
-				"required": ["configured", "installations"],
+				"required": [
+					"configured",
+					"installations"
+				],
 				"properties": {
 					"app": {
 						"oneOf": [
@@ -6750,10 +3532,15 @@
 			"HealthCheckRequest": {
 				"type": "object",
 				"description": "health check configuration request",
-				"required": ["path"],
+				"required": [
+					"path"
+				],
 				"properties": {
 					"interval_secs": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"description": "interval in seconds",
 						"minimum": 0
@@ -6763,13 +3550,19 @@
 						"description": "http path to check"
 					},
 					"retries": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"description": "retries before unhealthy",
 						"minimum": 0
 					},
 					"timeout_secs": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"description": "timeout in seconds",
 						"minimum": 0
@@ -6779,7 +3572,12 @@
 			"HealthCheckResponse": {
 				"type": "object",
 				"description": "health check configuration response",
-				"required": ["path", "interval_secs", "timeout_secs", "retries"],
+				"required": [
+					"path",
+					"interval_secs",
+					"timeout_secs",
+					"retries"
+				],
 				"properties": {
 					"interval_secs": {
 						"type": "integer",
@@ -6808,7 +3606,10 @@
 			"HealthResponse": {
 				"type": "object",
 				"description": "health check response",
-				"required": ["status", "version"],
+				"required": [
+					"status",
+					"version"
+				],
 				"properties": {
 					"status": {
 						"type": "string",
@@ -6823,7 +3624,11 @@
 			"InstallationDetails": {
 				"type": "object",
 				"description": "installation details",
-				"required": ["id", "account_login", "account_type"],
+				"required": [
+					"id",
+					"account_login",
+					"account_type"
+				],
 				"properties": {
 					"account_login": {
 						"type": "string"
@@ -6836,7 +3641,10 @@
 						"format": "int64"
 					},
 					"repository_count": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32"
 					}
 				}
@@ -6863,7 +3671,10 @@
 				],
 				"properties": {
 					"connection_string": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"container_ids": {
 						"type": "array",
@@ -6881,7 +3692,10 @@
 						}
 					},
 					"deployment_id": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"desired_instances": {
 						"type": "integer",
@@ -6895,21 +3709,33 @@
 						}
 					},
 					"external_port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"minimum": 0
 					},
 					"group_id": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"id": {
 						"type": "string"
 					},
 					"image": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"internal_host": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"name": {
 						"type": "string"
@@ -6921,29 +3747,47 @@
 						"type": "boolean"
 					},
 					"port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"minimum": 0
 					},
 					"project_id": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"project_name": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"proxy_connection_string": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"proxy_enabled": {
 						"type": "boolean"
 					},
 					"proxy_external_port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"minimum": 0
 					},
 					"proxy_port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"minimum": 0
 					},
@@ -6951,7 +3795,10 @@
 						"type": "boolean"
 					},
 					"public_ip": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"resource_kind": {
 						"type": "string"
@@ -6962,7 +3809,10 @@
 						"minimum": 0
 					},
 					"schedule": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"service_type": {
 						"type": "string"
@@ -6978,7 +3828,10 @@
 			"LoginRequest": {
 				"type": "object",
 				"description": "login request body",
-				"required": ["email", "password"],
+				"required": [
+					"email",
+					"password"
+				],
 				"properties": {
 					"email": {
 						"type": "string",
@@ -6993,7 +3846,9 @@
 			"LogsResponse": {
 				"type": "object",
 				"description": "logs response",
-				"required": ["logs"],
+				"required": [
+					"logs"
+				],
 				"properties": {
 					"logs": {
 						"type": "string"
@@ -7032,12 +3887,18 @@
 						"type": "string"
 					},
 					"external_port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"minimum": 0
 					},
 					"group_id": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"id": {
 						"type": "string"
@@ -7065,10 +3926,16 @@
 						"minimum": 0
 					},
 					"public_connection_string": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"public_ip": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"queue_type": {
 						"type": "string"
@@ -7092,17 +3959,27 @@
 				"description": "recover request",
 				"properties": {
 					"restore_point": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"target_time": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					}
 				}
 			},
 			"RecoverDatabaseResponse": {
 				"type": "object",
 				"description": "recover response",
-				"required": ["recovered", "recovery_target", "base_backup_label"],
+				"required": [
+					"recovered",
+					"recovery_target",
+					"base_backup_label"
+				],
 				"properties": {
 					"base_backup_label": {
 						"type": "string"
@@ -7118,7 +3995,10 @@
 			"RegisterRequest": {
 				"type": "object",
 				"description": "register request body",
-				"required": ["email", "password"],
+				"required": [
+					"email",
+					"password"
+				],
 				"properties": {
 					"email": {
 						"type": "string",
@@ -7135,7 +4015,10 @@
 				"description": "reissue request",
 				"properties": {
 					"domain": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "specific domain to reissue (optional)"
 					}
 				}
@@ -7143,7 +4026,10 @@
 			"ReissueResponse": {
 				"type": "object",
 				"description": "Reissue certificate response",
-				"required": ["message", "domains"],
+				"required": [
+					"message",
+					"domains"
+				],
 				"properties": {
 					"domains": {
 						"type": "array",
@@ -7176,7 +4062,10 @@
 						"type": "string"
 					},
 					"description": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"full_name": {
 						"type": "string"
@@ -7199,7 +4088,11 @@
 			"RestorePointResponse": {
 				"type": "object",
 				"description": "restore point response",
-				"required": ["restore_point", "wal_lsn", "created_at"],
+				"required": [
+					"restore_point",
+					"wal_lsn",
+					"created_at"
+				],
 				"properties": {
 					"created_at": {
 						"type": "string"
@@ -7217,14 +4110,19 @@
 				"description": "rollback request",
 				"properties": {
 					"rollout_strategy": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "rollout strategy override (stop_first or start_first)"
 					}
 				}
 			},
 			"ServiceLogsResponse": {
 				"type": "object",
-				"required": ["logs"],
+				"required": [
+					"logs"
+				],
 				"properties": {
 					"logs": {
 						"type": "string"
@@ -7234,14 +4132,20 @@
 			"ServiceMountRequest": {
 				"type": "object",
 				"description": "persistent mount configuration request",
-				"required": ["name", "target"],
+				"required": [
+					"name",
+					"target"
+				],
 				"properties": {
 					"name": {
 						"type": "string",
 						"description": "unique mount name within the service"
 					},
 					"read_only": {
-						"type": ["boolean", "null"],
+						"type": [
+							"boolean",
+							"null"
+						],
 						"description": "whether the mount is read-only"
 					},
 					"target": {
@@ -7253,7 +4157,11 @@
 			"ServiceMountResponse": {
 				"type": "object",
 				"description": "persistent mount configuration response",
-				"required": ["name", "target", "read_only"],
+				"required": [
+					"name",
+					"target",
+					"read_only"
+				],
 				"properties": {
 					"name": {
 						"type": "string",
@@ -7272,7 +4180,11 @@
 			"ServiceMountRestoreResponse": {
 				"type": "object",
 				"description": "service mount restore response",
-				"required": ["service", "mounts", "restored_at"],
+				"required": [
+					"service",
+					"mounts",
+					"restored_at"
+				],
 				"properties": {
 					"mounts": {
 						"type": "array",
@@ -7296,15 +4208,24 @@
 				"description": "private registry credentials request",
 				"properties": {
 					"password": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "registry password"
 					},
 					"server": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "optional registry server override"
 					},
 					"username": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "registry username"
 					}
 				}
@@ -7312,10 +4233,15 @@
 			"ServiceRegistryAuthResponse": {
 				"type": "object",
 				"description": "private registry credentials response",
-				"required": ["username"],
+				"required": [
+					"username"
+				],
 				"properties": {
 					"server": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "optional registry server override"
 					},
 					"username": {
@@ -7327,10 +4253,16 @@
 			"ServiceRequest": {
 				"type": "object",
 				"description": "service request for multi-container apps",
-				"required": ["name", "port"],
+				"required": [
+					"name",
+					"port"
+				],
 				"properties": {
 					"additional_ports": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"type": "integer",
 							"format": "int32",
@@ -7339,70 +4271,106 @@
 						"description": "additional container ports"
 					},
 					"build_args": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"$ref": "#/components/schemas/EnvVarRequest"
 						},
 						"description": "docker build arguments"
 					},
 					"build_context": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "relative repo path used as the docker build context"
 					},
 					"build_target": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "docker build target stage"
 					},
 					"command": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"type": "string"
 						},
 						"description": "command arguments override"
 					},
 					"cpu_limit": {
-						"type": ["number", "null"],
+						"type": [
+							"number",
+							"null"
+						],
 						"format": "double",
 						"description": "cpu limit (1.0 = 1 core)"
 					},
 					"depends_on": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"type": "string"
 						},
 						"description": "service names this depends on"
 					},
 					"dockerfile_path": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "relative path to the dockerfile within the repo"
 					},
 					"domain": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "service-specific custom domain"
 					},
 					"domains": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"type": "string"
 						},
 						"description": "service-specific custom domains"
 					},
 					"entrypoint": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"type": "string"
 						},
 						"description": "entrypoint override"
 					},
 					"env_vars": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"$ref": "#/components/schemas/EnvVarRequest"
 						},
 						"description": "service-specific environment variables"
 					},
 					"expose_http": {
-						"type": ["boolean", "null"],
+						"type": [
+							"boolean",
+							"null"
+						],
 						"description": "whether this service receives public http traffic"
 					},
 					"health_check": {
@@ -7417,17 +4385,26 @@
 						]
 					},
 					"image": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "docker image (empty = use built image)"
 					},
 					"memory_limit_mb": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int64",
 						"description": "memory limit in mb",
 						"minimum": 0
 					},
 					"mounts": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"$ref": "#/components/schemas/ServiceMountRequest"
 						},
@@ -7455,25 +4432,40 @@
 						]
 					},
 					"replicas": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"description": "number of replicas",
 						"minimum": 0
 					},
 					"restart_policy": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "restart policy"
 					},
 					"schedule": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "cron expression used for scheduled jobs"
 					},
 					"service_type": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "render-style service category"
 					},
 					"working_dir": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "working directory override"
 					}
 				}
@@ -7517,11 +4509,17 @@
 						"description": "docker build arguments"
 					},
 					"build_context": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "relative repo path used as the docker build context"
 					},
 					"build_target": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "docker build target stage"
 					},
 					"command": {
@@ -7532,7 +4530,10 @@
 						"description": "command arguments override"
 					},
 					"cpu_limit": {
-						"type": ["number", "null"],
+						"type": [
+							"number",
+							"null"
+						],
 						"format": "double",
 						"description": "cpu limit"
 					},
@@ -7544,11 +4545,17 @@
 						"description": "dependencies"
 					},
 					"dockerfile_path": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "relative path to the dockerfile within the repo"
 					},
 					"domain": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "primary custom domain"
 					},
 					"domains": {
@@ -7596,7 +4603,10 @@
 						"description": "docker image"
 					},
 					"memory_limit_mb": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int64",
 						"description": "memory limit in mb",
 						"minimum": 0
@@ -7640,7 +4650,10 @@
 						"description": "restart policy"
 					},
 					"schedule": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "cron expression used for scheduled jobs"
 					},
 					"service_type": {
@@ -7648,7 +4661,10 @@
 						"description": "render-style service category"
 					},
 					"working_dir": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "working directory override"
 					}
 				}
@@ -7689,7 +4705,10 @@
 						"description": "base domain for all apps"
 					},
 					"dashboard_url": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "dashboard url served by the proxy"
 					},
 					"http_port": {
@@ -7715,11 +4734,17 @@
 						"minimum": 0
 					},
 					"public_ip": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "public ip used for direct port access and domain validation"
 					},
 					"service_wildcard_domain": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "wildcard suffix used for default service subdomains"
 					},
 					"storage_internal_host": {
@@ -7737,7 +4762,10 @@
 						"minimum": 0
 					},
 					"storage_public_hostname": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "optional public s3 hostname routed to rustfs"
 					}
 				}
@@ -7798,47 +4826,74 @@
 				"description": "update app request",
 				"properties": {
 					"branch": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "new branch"
 					},
 					"domain": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "new domain"
 					},
 					"domains": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"type": "string"
 						},
 						"description": "new domains"
 					},
 					"env_vars": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"$ref": "#/components/schemas/EnvVarRequest"
 						},
 						"description": "updated env vars"
 					},
 					"github_url": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "new repository url"
 					},
 					"name": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "new app name"
 					},
 					"port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"description": "new port (deprecated, use services)",
 						"minimum": 0
 					},
 					"rollout_strategy": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "rollout strategy (stop_first or start_first)"
 					},
 					"services": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"$ref": "#/components/schemas/ServiceRequest"
 						},
@@ -7851,43 +4906,70 @@
 				"description": "update settings request",
 				"properties": {
 					"acme_email": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "new acme email (optional)"
 					},
 					"acme_staging": {
-						"type": ["boolean", "null"],
+						"type": [
+							"boolean",
+							"null"
+						],
 						"description": "use acme staging (optional)"
 					},
 					"base_domain": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "new base domain (optional)"
 					},
 					"log_retention_days": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"description": "number of days rotated logs are retained (0 disables cleanup)",
 						"minimum": 0
 					},
 					"public_ip": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "public ip used for direct access and domain validation"
 					},
 					"storage_internal_host": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "rustfs hostname exposed on the shared docker network"
 					},
 					"storage_management_endpoint": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "rustfs endpoint used by containr for management operations"
 					},
 					"storage_port": {
-						"type": ["integer", "null"],
+						"type": [
+							"integer",
+							"null"
+						],
 						"format": "int32",
 						"description": "rustfs service port",
 						"minimum": 0
 					},
 					"storage_public_hostname": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "optional public s3 hostname"
 					}
 				}
@@ -7895,14 +4977,20 @@
 			"UserResponse": {
 				"type": "object",
 				"description": "user info in responses",
-				"required": ["id", "email"],
+				"required": [
+					"id",
+					"email"
+				],
 				"properties": {
 					"email": {
 						"type": "string",
 						"description": "user email"
 					},
 					"github_username": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "github username if linked"
 					},
 					"id": {
@@ -7914,13 +5002,21 @@
 			},
 			"VolumeEntry": {
 				"type": "object",
-				"required": ["name", "path", "is_dir", "size_bytes"],
+				"required": [
+					"name",
+					"path",
+					"is_dir",
+					"size_bytes"
+				],
 				"properties": {
 					"is_dir": {
 						"type": "boolean"
 					},
 					"modified_at": {
-						"type": ["string", "null"]
+						"type": [
+							"string",
+							"null"
+						]
 					},
 					"name": {
 						"type": "string"
@@ -7957,28 +5053,8 @@
 			"description": "server settings management"
 		},
 		{
-			"name": "apps",
-			"description": "application management"
-		},
-		{
-			"name": "projects",
-			"description": "project management"
-		},
-		{
 			"name": "deployments",
-			"description": "deployment management"
-		},
-		{
-			"name": "certificates",
-			"description": "ssl certificate management"
-		},
-		{
-			"name": "databases",
-			"description": "managed databases"
-		},
-		{
-			"name": "queues",
-			"description": "managed queues"
+			"description": "service deployment management"
 		},
 		{
 			"name": "services",

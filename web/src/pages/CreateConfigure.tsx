@@ -1,6 +1,6 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { type Component, createEffect, createSignal, Show } from "solid-js";
-import { api, components } from "../api";
+import { createService } from "../api/services";
 import EnvVarEditor from "../components/EnvVarEditor";
 import ServiceForm, {
 	applyServiceType,
@@ -81,18 +81,14 @@ const CreateConfigure: Component = () => {
 				throw new Error("service name is required");
 			}
 
-			const { data, error: apiError } = await api.POST("/api/services", {
-				body: {
-					source: "git_repository",
-					name: currentService.name.trim(),
-					github_url: githubUrl().trim(),
-					branch: branch().trim() || "main",
-					env_vars: envVars().length > 0 ? envVars() : null,
-					service: mapServiceToRequest(currentService),
-				},
+			const data = await createService({
+				source: "git_repository",
+				name: currentService.name.trim(),
+				github_url: githubUrl().trim(),
+				branch: branch().trim() || "main",
+				env_vars: envVars().length > 0 ? envVars() : null,
+				service: mapServiceToRequest(currentService),
 			});
-
-			if (apiError) throw apiError;
 			navigate(`/services/${data.id}`);
 		} catch (err) {
 			if (err instanceof Error) {

@@ -1,7 +1,7 @@
 import { A } from "@solidjs/router";
 import { type Component, createMemo, createResource, createSignal, For, Show } from "solid-js";
 
-import { api, type components } from "../api";
+import { listServices, runServiceAction, type Service } from "../api/services";
 import {
 	Alert,
 	Badge,
@@ -20,17 +20,7 @@ import {
 	TabsTrigger,
 } from "../components/ui";
 
-type Service = components["schemas"]["InventoryServiceResponse"];
 type FilterTab = "all" | "repository" | "template" | "public";
-
-const fetchServices = async (): Promise<Service[]> => {
-	const { data, error } = await api.GET("/api/services");
-	if (error) {
-		throw error;
-	}
-
-	return data ?? [];
-};
 
 const describeError = (error: unknown): string => {
 	if (error instanceof Error) {
@@ -194,7 +184,7 @@ const networkLabel = (service: Service): string => {
 };
 
 const Services: Component = () => {
-	const [services, { refetch }] = createResource(fetchServices);
+	const [services, { refetch }] = createResource(() => true, () => listServices());
 	const [filter, setFilter] = createSignal<FilterTab>("all");
 	const [search, setSearch] = createSignal("");
 	const [pendingServiceId, setPendingServiceId] = createSignal<string | null>(null);
@@ -251,13 +241,7 @@ const Services: Component = () => {
 		setActionError("");
 
 		try {
-			const { error } = await api.POST("/api/services/{id}/restart", {
-				params: { path: { id: serviceId } },
-			});
-			if (error) {
-				throw error;
-			}
-
+			await runServiceAction(serviceId, "restart");
 			await refetch();
 		} catch (error) {
 			setActionError(describeError(error));

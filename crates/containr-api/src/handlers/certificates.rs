@@ -43,48 +43,28 @@ pub struct ReissueResponse {
 /// Get certificate status for an app
 #[utoipa::path(
     get,
-    path = "/api/apps/{id}/certificate",
-    tag = "certificates",
-    params(("id" = Uuid, Path, description = "app id")),
+    path = "/api/services/{id}/certificate",
+    tag = "services",
+    params(("id" = Uuid, Path, description = "service id")),
     security(("bearer" = [])),
     responses(
         (status = 200, description = "certificate status", body = Vec<CertificateResponse>),
         (status = 401, description = "unauthorized", body = ErrorResponse),
         (status = 403, description = "forbidden", body = ErrorResponse),
-        (status = 404, description = "app not found", body = ErrorResponse)
+        (status = 404, description = "service not found", body = ErrorResponse)
     )
 )]
 pub async fn get_certificate(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(app_id): Path<Uuid>,
+    Path(service_id): Path<Uuid>,
 ) -> Result<Json<Vec<CertificateResponse>>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
-    // Get the app
-    let app = state
-        .db
-        .get_app(app_id)
-        .map_err(internal_error)?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "app not found".to_string(),
-                }),
-            )
-        })?;
-
-    // Check ownership
-    if app.owner_id != user_id {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(ErrorResponse {
-                error: "access denied".to_string(),
-            }),
-        ));
-    }
+    let svc = crate::domain::services::ServiceSvc::new(state.clone());
+    let (app, _container_service) =
+        svc.resolve_owned_app_service(user_id, service_id)?;
 
     let domains = app.custom_domains();
     if domains.is_empty() {
@@ -119,9 +99,9 @@ pub async fn get_certificate(
 /// Trigger certificate reissue for an app
 #[utoipa::path(
     post,
-    path = "/api/apps/{id}/certificate/reissue",
-    tag = "certificates",
-    params(("id" = Uuid, Path, description = "app id")),
+    path = "/api/services/{id}/certificate/reissue",
+    tag = "services",
+    params(("id" = Uuid, Path, description = "service id")),
     security(("bearer" = [])),
     request_body = ReissueRequest,
     responses(
@@ -129,49 +109,28 @@ pub async fn get_certificate(
         (status = 400, description = "bad request", body = ErrorResponse),
         (status = 401, description = "unauthorized", body = ErrorResponse),
         (status = 403, description = "forbidden", body = ErrorResponse),
-        (status = 404, description = "app not found", body = ErrorResponse),
+        (status = 404, description = "service not found", body = ErrorResponse),
         (status = 503, description = "service unavailable", body = ErrorResponse)
     )
 )]
 pub async fn reissue_certificate(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(app_id): Path<Uuid>,
+    Path(service_id): Path<Uuid>,
     body: Option<Json<ReissueRequest>>,
 ) -> Result<Json<ReissueResponse>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
-
-    // Get the app
-    let app = state
-        .db
-        .get_app(app_id)
-        .map_err(internal_error)?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "app not found".to_string(),
-                }),
-            )
-        })?;
-
-    // Check ownership
-    if app.owner_id != user_id {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(ErrorResponse {
-                error: "access denied".to_string(),
-            }),
-        ));
-    }
+    let svc = crate::domain::services::ServiceSvc::new(state.clone());
+    let (app, _container_service) =
+        svc.resolve_owned_app_service(user_id, service_id)?;
 
     let mut domains = app.custom_domains();
     if domains.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: "app has no domains configured".to_string(),
+                error: "service has no domains configured".to_string(),
             }),
         ));
     }
@@ -185,7 +144,7 @@ pub async fn reissue_certificate(
                 return Err((
                     StatusCode::BAD_REQUEST,
                     Json(ErrorResponse {
-                        error: "domain not found on app".to_string(),
+                        error: "domain not found on service".to_string(),
                     }),
                 ));
             }
