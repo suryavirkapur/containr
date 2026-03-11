@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
+use crate::handlers::{apps, databases, queues};
 use crate::security::resolve_encryption_secret;
 use crate::state::AppState;
 use containr_common::managed_services::{
@@ -43,7 +44,7 @@ fn default_tail() -> usize {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct ServiceResponse {
+pub struct InventoryServiceResponse {
     pub id: String,
     pub group_id: Option<String>,
     pub project_id: Option<String>,
@@ -81,13 +82,70 @@ pub struct ServiceLogsResponse {
     pub logs: String,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(tag = "source", rename_all = "snake_case")]
+pub enum CreateServiceRequest {
+    GitRepository {
+        name: String,
+        github_url: String,
+        branch: Option<String>,
+        env_vars: Option<Vec<apps::EnvVarRequest>>,
+        service: apps::ServiceRequest,
+        rollout_strategy: Option<String>,
+    },
+    Template {
+        name: String,
+        template: String,
+        version: Option<String>,
+        memory_limit_mb: Option<u64>,
+        cpu_limit: Option<f64>,
+        group_id: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TemplateKind {
+    Postgresql,
+    Redis,
+    Mariadb,
+    Qdrant,
+    Rabbitmq,
+}
+
+impl TemplateKind {
+    fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "postgres" | "postgresql" => Some(Self::Postgresql),
+            "redis" | "valkey" => Some(Self::Redis),
+            "mariadb" | "mysql" => Some(Self::Mariadb),
+            "qdrant" => Some(Self::Qdrant),
+            "rabbitmq" => Some(Self::Rabbitmq),
+            _ => None,
+        }
+    }
+
+    fn api_name(self) -> &'static str {
+        match self {
+            Self::Postgresql => "postgresql",
+            Self::Redis => "redis",
+            Self::Mariadb => "mariadb",
+            Self::Qdrant => "qdrant",
+            Self::Rabbitmq => "rabbitmq",
+        }
+    }
+
+    fn is_queue(self) -> bool {
+        matches!(self, Self::Rabbitmq)
+    }
+}
+
 enum OwnedServiceRecord {
     App { app: App, service: ContainerService },
     ManagedDatabase(ManagedDatabase),
     ManagedQueue(ManagedQueue),
 }
 
-impl ServiceResponse {
+impl InventoryServiceResponse {
     fn from_inventory(
         service: &ServiceInventoryItem,
         base_domain: &str,
@@ -264,6 +322,26 @@ fn service_manager_error<E: std::fmt::Display>(
     )
 }
 
+fn supported_template_message() -> &'static str {
+    "invalid template. supported: postgresql, redis, mariadb, qdrant, rabbitmq"
+}
+
+fn parse_created_service_id(
+    id: &str,
+) -> Result<Uuid, (StatusCode, Json<ErrorResponse>)> {
+    Uuid::parse_str(id).map_err(internal_error)
+}
+
+fn first_app_service_id(
+    app: &apps::AppResponse,
+) -> Result<Uuid, (StatusCode, Json<ErrorResponse>)> {
+    let service = app.services.first().ok_or_else(|| {
+        internal_error("created project did not return a service")
+    })?;
+
+    parse_created_service_id(&service.id)
+}
+
 fn ensure_database_not_starting(
     database: &ManagedDatabase,
 ) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
@@ -406,7 +484,7 @@ fn resolve_service_response(
     service_id: Uuid,
     base_domain: &str,
     public_ip: Option<&str>,
-) -> Result<ServiceResponse, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<InventoryServiceResponse, (StatusCode, Json<ErrorResponse>)> {
     let inventory = state
         .db
         .get_service_inventory_by_id(user_id, service_id)
@@ -420,7 +498,7 @@ fn resolve_service_response(
             )
         })?;
 
-    Ok(ServiceResponse::from_inventory(
+    Ok(InventoryServiceResponse::from_inventory(
         &inventory,
         base_domain,
         public_ip,
@@ -837,13 +915,126 @@ async fn delete_app_service(
 }
 
 #[utoipa::path(
+    post,
+    path = "/api/services",
+    tag = "services",
+    security(("bearer" = [])),
+    request_body = CreateServiceRequest,
+    responses(
+        (status = 201, description = "service created", body = InventoryServiceResponse),
+        (status = 400, description = "invalid request", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 409, description = "conflict", body = ErrorResponse)
+    )
+)]
+pub async fn create_service(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<CreateServiceRequest>,
+) -> Result<
+    (StatusCode, Json<InventoryServiceResponse>),
+    (StatusCode, Json<ErrorResponse>),
+> {
+    let config = state.config.read().await.clone();
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+    let created_service_id = match req {
+        CreateServiceRequest::GitRepository {
+            name,
+            github_url,
+            branch,
+            env_vars,
+            mut service,
+            rollout_strategy,
+        } => {
+            if service.name.trim().is_empty() {
+                service.name = name.clone();
+            }
+
+            let (_, Json(app)) = apps::create_app(
+                State(state.clone()),
+                headers.clone(),
+                Json(apps::CreateAppRequest {
+                    name,
+                    github_url,
+                    branch,
+                    domains: None,
+                    domain: None,
+                    port: None,
+                    env_vars,
+                    services: Some(vec![service]),
+                    rollout_strategy,
+                }),
+            )
+            .await?;
+
+            first_app_service_id(&app)?
+        }
+        CreateServiceRequest::Template {
+            name,
+            template,
+            version,
+            memory_limit_mb,
+            cpu_limit,
+            group_id,
+        } => {
+            let template = TemplateKind::parse(&template)
+                .ok_or_else(|| bad_request(supported_template_message()))?;
+
+            if template.is_queue() {
+                let (_, Json(queue)) = queues::create_queue(
+                    State(state.clone()),
+                    headers.clone(),
+                    Json(queues::CreateQueueRequest {
+                        name,
+                        queue_type: template.api_name().to_string(),
+                        version,
+                        memory_limit_mb,
+                        cpu_limit,
+                        group_id,
+                    }),
+                )
+                .await?;
+
+                parse_created_service_id(&queue.id)?
+            } else {
+                let (_, Json(database)) = databases::create_database(
+                    State(state.clone()),
+                    headers.clone(),
+                    Json(databases::CreateDatabaseRequest {
+                        name,
+                        db_type: template.api_name().to_string(),
+                        version,
+                        memory_limit_mb,
+                        cpu_limit,
+                        group_id,
+                    }),
+                )
+                .await?;
+
+                parse_created_service_id(&database.id)?
+            }
+        }
+    };
+
+    let response = resolve_service_response(
+        &state,
+        user_id,
+        created_service_id,
+        &config.proxy.base_domain,
+        config.proxy.public_ip.as_deref(),
+    )?;
+
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+#[utoipa::path(
     get,
     path = "/api/services",
     tag = "services",
     params(ListServicesQuery),
     security(("bearer" = [])),
     responses(
-        (status = 200, description = "list of services", body = Vec<ServiceResponse>),
+        (status = 200, description = "list of services", body = Vec<InventoryServiceResponse>),
         (status = 401, description = "unauthorized", body = ErrorResponse)
     )
 )]
@@ -851,7 +1042,10 @@ pub async fn list_services(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(query): Query<ListServicesQuery>,
-) -> Result<Json<Vec<ServiceResponse>>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<
+    Json<Vec<InventoryServiceResponse>>,
+    (StatusCode, Json<ErrorResponse>),
+> {
     let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     let group_id =
@@ -863,7 +1057,7 @@ pub async fn list_services(
     let responses = inventory
         .iter()
         .map(|service| {
-            ServiceResponse::from_inventory(
+            InventoryServiceResponse::from_inventory(
                 service,
                 &config.proxy.base_domain,
                 config.proxy.public_ip.as_deref(),
@@ -881,7 +1075,7 @@ pub async fn list_services(
     params(("id" = Uuid, Path, description = "service id")),
     security(("bearer" = [])),
     responses(
-        (status = 200, description = "service details", body = ServiceResponse),
+        (status = 200, description = "service details", body = InventoryServiceResponse),
         (status = 401, description = "unauthorized", body = ErrorResponse),
         (status = 404, description = "service not found", body = ErrorResponse)
     )
@@ -890,7 +1084,7 @@ pub async fn get_service(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-) -> Result<Json<ServiceResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<InventoryServiceResponse>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     let response = resolve_service_response(
@@ -969,7 +1163,7 @@ pub async fn get_service_logs(
     params(("id" = Uuid, Path, description = "service id")),
     security(("bearer" = [])),
     responses(
-        (status = 200, description = "service started", body = ServiceResponse),
+        (status = 200, description = "service started", body = InventoryServiceResponse),
         (status = 400, description = "invalid request", body = ErrorResponse),
         (status = 401, description = "unauthorized", body = ErrorResponse),
         (status = 404, description = "service not found", body = ErrorResponse)
@@ -979,7 +1173,7 @@ pub async fn start_service(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-) -> Result<Json<ServiceResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<InventoryServiceResponse>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
@@ -1045,7 +1239,7 @@ pub async fn start_service(
     params(("id" = Uuid, Path, description = "service id")),
     security(("bearer" = [])),
     responses(
-        (status = 200, description = "service stopped", body = ServiceResponse),
+        (status = 200, description = "service stopped", body = InventoryServiceResponse),
         (status = 401, description = "unauthorized", body = ErrorResponse),
         (status = 404, description = "service not found", body = ErrorResponse)
     )
@@ -1054,7 +1248,7 @@ pub async fn stop_service(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-) -> Result<Json<ServiceResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<InventoryServiceResponse>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
@@ -1108,7 +1302,7 @@ pub async fn stop_service(
     params(("id" = Uuid, Path, description = "service id")),
     security(("bearer" = [])),
     responses(
-        (status = 200, description = "service restarted", body = ServiceResponse),
+        (status = 200, description = "service restarted", body = InventoryServiceResponse),
         (status = 400, description = "invalid request", body = ErrorResponse),
         (status = 401, description = "unauthorized", body = ErrorResponse),
         (status = 404, description = "service not found", body = ErrorResponse)
@@ -1118,7 +1312,7 @@ pub async fn restart_service(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-) -> Result<Json<ServiceResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<InventoryServiceResponse>, (StatusCode, Json<ErrorResponse>)> {
     let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
@@ -1253,3 +1447,7 @@ pub async fn delete_service(
 
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[cfg(test)]
+#[path = "services_test.rs"]
+mod services_test;

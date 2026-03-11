@@ -331,6 +331,7 @@ pub async fn run_server(
         .route("/api/queues/{id}/expose", post(queues::expose_queue))
         // unified services
         .route("/api/services", get(services::list_services))
+        .route("/api/services", post(services::create_service))
         .route("/api/services/{id}", get(services::get_service))
         .route("/api/services/{id}", delete(services::delete_service))
         .route("/api/services/{id}/logs", get(services::get_service_logs))

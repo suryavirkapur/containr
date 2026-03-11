@@ -2,12 +2,15 @@ current context:
 - containr (formerly znskr) is a paas managing docker containers, pingora proxy routing, and acme certs.
 - metadata uses sqlite via sqlx (wal mode, relational schema); sled is supported as legacy.
 - dashboard is a solidjs spa (pnpm/node) with a dark theme; cli is `containrctl`.
+- frontend routing is now service-first: `/services`, `/services/new`, and
+  `/services/:id` are the primary inventory/create/detail routes, while
+  legacy database/queue/project pages remain only as compatibility fallbacks.
 - managed services include postgres (with pitr/pgdog), valkey, mariadb, qdrant, and rabbitmq.
 - recent refactors centralized service lifecycle, separated the cli, added persistent mounts, and verified routing with live docker e2e tests.
 
 pending tasks:
 - publish 0.1.14-alpha release through `gh` cli
-- platform roadmap: surface deployment state, expose public urls, harden startup replay, generic repository terminology
+- platform roadmap: surface deployment state, expose public urls, harden startup replay
 - implement per-bucket rustfs credentials instead of shared keys
 - add queue logs and health visibility in the dashboard
 - extend postgres pitr with remote archive shipping and retention rules
@@ -17,6 +20,9 @@ pending tasks:
 
 important decisions:
 - service model is authoritative: image-only apps, cron jobs, and background workers are first-class runtime types.
+- service creation now flows through `post /api/services`, which dispatches
+  to either a repository-backed deployment or a template-backed managed
+  service launch from a tagged `source` payload.
 - no auto-migration for legacy sqlite json blobs; database runs in relational mode.
 - single-container deployments fall back to replicated `web` service if scaled > 1.
 - acme cert renewal runs entirely in-binary with pingora reloading certs from disk without restarts.
@@ -26,5 +32,8 @@ important decisions:
 architectural notes:
 - internal network isolates database/service traffic, per-app network limits application scopes.
 - pingora handles both api and web frontend routing seamlessly, forwarding the base dashboard hostname directly to the api.
+- the unified service detail page renders connection values, environment
+  values, and logs from the common `/api/services` surface, while database
+  exposure/proxy/pitr controls still defer to the legacy specialized routes.
 - rustfs buckets use server-managed credentials; metadata tracks endpoints (management, internal, public).
 - frontend dependencies rigidly use repo-pinned node/pnpm.

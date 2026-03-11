@@ -33,35 +33,33 @@ const navSections: NavSection[] = [
 		label: "control plane",
 		links: [
 			{
-				href: "/",
+				href: "/services",
 				label: "services",
 				icon: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10",
 				matches: (path) =>
-					path === "/" || path === "/projects" || path === "/apps",
+					path === "/" ||
+					path === "/apps" ||
+					path === "/projects" ||
+					path.startsWith("/services") ||
+					path.startsWith("/databases") ||
+					path.startsWith("/queues"),
 			},
 			{
-				href: "/projects/new",
+				href: "/services/new",
 				label: "new service",
 				icon: "M12 4v16m8-8H4",
-				matches: (path) => path === "/projects/new" || path === "/apps/new",
+				matches: (path) =>
+					path === "/projects/new" ||
+					path === "/apps/new" ||
+					path === "/services/new" ||
+					path === "/databases/new" ||
+					path === "/queues/new",
 			},
 		],
 	},
 	{
 		label: "infrastructure",
 		links: [
-			{
-				href: "/databases",
-				label: "databases",
-				icon: "M12 3C7 3 4 5 4 8v8c0 3 3 5 8 5s8-2 8-5V8c0-3-3-5-8-5z",
-				matches: (path) => path.startsWith("/databases"),
-			},
-			{
-				href: "/queues",
-				label: "queues",
-				icon: "M6 8h12v8H6zm2-3h8v3H8z",
-				matches: (path) => path.startsWith("/queues"),
-			},
 			{
 				href: "/storage",
 				label: "storage",
@@ -111,14 +109,18 @@ const AppSidebar: Component<{
 					<p class="text-[11px] font-semibold uppercase tracking-[0.32em] text-[var(--muted-foreground)]">
 						internal paas
 					</p>
-					<A href="/" class="block" onClick={() => props.onNavigate?.()}>
+					<A
+						href="/services"
+						class="block"
+						onClick={() => props.onNavigate?.()}
+					>
 						<div class="font-serif text-2xl tracking-tight text-[var(--foreground)]">
 							containr
 						</div>
 					</A>
 				</div>
 				<p class="mt-3 text-sm leading-6 text-[var(--muted-foreground)]">
-					service-first control plane with grouped networking and managed
+					service-first control plane with shared service networks and managed
 					runtimes.
 				</p>
 			</SidebarHeader>
@@ -230,11 +232,11 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
 										<path d="M3 6h18M3 12h18M3 18h18" />
 									</svg>
 								</Button>
-								<A href="/" class="font-serif text-xl tracking-tight">
+								<A href="/services" class="font-serif text-xl tracking-tight">
 									containr
 								</A>
 							</div>
-							<A href="/projects/new">
+							<A href="/services/new">
 								<Button size="sm">new service</Button>
 							</A>
 						</div>
@@ -252,7 +254,7 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
 								containr
 							</div>
 							<p class="text-xs uppercase tracking-[0.18em]">
-								services, databases, queues, and storage from one control plane
+								services and storage from one control plane
 							</p>
 						</div>
 					</footer>

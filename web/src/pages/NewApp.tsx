@@ -6,7 +6,6 @@ import {
 	createSignal,
 	For,
 	Show,
-	untrack,
 } from "solid-js";
 import { useNavigate, useSearchParams } from "@solidjs/router";
 
@@ -36,16 +35,15 @@ import {
 	mapServiceToRequest,
 } from "../utils/projectEditor";
 
-type CreationMode = "app" | "database" | "queue";
-type ManagedDatabaseType = "postgresql" | "redis" | "mariadb" | "qdrant";
-type ManagedQueueType = "rabbitmq";
+type CreationSource = "git_repository" | "template";
+type TemplateType = "postgresql" | "redis" | "mariadb" | "qdrant" | "rabbitmq";
 
 type GithubAppStatus = components["schemas"]["GithubAppStatusResponse"];
 type Project = components["schemas"]["AppResponse"];
 type RepoInfo = components["schemas"]["RepoInfo"];
 
 interface ModeOption {
-	mode: CreationMode;
+	mode: CreationSource;
 	title: string;
 	description: string;
 	badge: string;
@@ -60,24 +58,18 @@ interface RuntimeOption {
 
 const modeOptions: ModeOption[] = [
 	{
-		mode: "app",
-		title: "application service",
+		mode: "git_repository",
+		title: "git repository",
 		description:
-			"create a new group with a web, private, worker, or cron service.",
+			"build a service from a repository and choose the runtime shape.",
 		badge: "repository",
 	},
 	{
-		mode: "database",
-		title: "managed database",
+		mode: "template",
+		title: "service template",
 		description:
-			"launch postgres, valkey, mariadb, or qdrant and attach it to a group if needed.",
-		badge: "managed",
-	},
-	{
-		mode: "queue",
-		title: "managed queue",
-		description: "launch rabbitmq with the same full-page creation flow.",
-		badge: "managed",
+			"launch postgres, valkey, mariadb, qdrant, or rabbitmq from a template.",
+		badge: "template",
 	},
 ];
 
@@ -91,7 +83,7 @@ const appServiceOptions: RuntimeOption[] = [
 	{
 		value: "private_service",
 		label: "private service",
-		description: "internal-only service reachable only from the same group.",
+		description: "internal-only service inside the same service network.",
 		icon: "private",
 	},
 	{
@@ -108,7 +100,7 @@ const appServiceOptions: RuntimeOption[] = [
 	},
 ];
 
-const databaseOptions: RuntimeOption[] = [
+const templateOptions: RuntimeOption[] = [
 	{
 		value: "postgresql",
 		label: "containr postgres",
@@ -130,16 +122,13 @@ const databaseOptions: RuntimeOption[] = [
 	{
 		value: "qdrant",
 		label: "containr qdrant",
-		description: "vector database with direct http access when exposed.",
+		description: "vector service with direct http access when exposed.",
 		icon: "vector",
 	},
-];
-
-const queueOptions: RuntimeOption[] = [
 	{
 		value: "rabbitmq",
 		label: "rabbitmq",
-		description: "managed rabbitmq broker for queues and events.",
+		description: "managed rabbitmq broker for queues, events, and workers.",
 		icon: "queue",
 	},
 ];
@@ -166,41 +155,6 @@ const repoButtonClass = (selected: boolean): string =>
 			? "bg-[var(--surface-muted)]"
 			: "bg-[var(--card)] hover:bg-[var(--muted)]"
 	}`;
-
-const buildAuthHeaders = (): Headers => {
-	const headers = new Headers({
-		"Content-Type": "application/json",
-	});
-	const token = localStorage.getItem("containr_token");
-
-	if (token) {
-		headers.set("Authorization", `Bearer ${token}`);
-	}
-
-	return headers;
-};
-
-const handleUnauthorized = (response: Response) => {
-	if (response.status !== 401) {
-		return;
-	}
-
-	localStorage.removeItem("containr_token");
-	window.location.href = "/login";
-};
-
-const readErrorMessage = async (response: Response): Promise<string> => {
-	try {
-		const data = (await response.json()) as { error?: string };
-		if (typeof data.error === "string" && data.error.trim()) {
-			return data.error;
-		}
-	} catch {
-		// ignore malformed json and fall back to a generic message below
-	}
-
-	return `request failed with status ${response.status}`;
-};
 
 const fetchGithubApp = async (): Promise<GithubAppStatus> => {
 	try {
@@ -240,40 +194,25 @@ const inferServiceName = (sourceUrl: string): string => {
 	return segments[segments.length - 1] || "";
 };
 
-const managedTypeLabel = (
-	mode: CreationMode,
-	databaseType: ManagedDatabaseType,
-	queueType: ManagedQueueType,
-): string => {
-	if (mode === "database") {
-		return (
-			databaseOptions.find((option) => option.value === databaseType)?.label ||
-			"managed database"
-		);
-	}
+const searchParamValue = (
+	value: string | string[] | undefined,
+): string | undefined => (Array.isArray(value) ? value[0] : value);
 
-	if (mode === "queue") {
-		return (
-			queueOptions.find((option) => option.value === queueType)?.label ||
-			"managed queue"
-		);
-	}
-
-	return "service";
-};
+const templateLabel = (templateType: TemplateType): string =>
+	templateOptions.find((option) => option.value === templateType)?.label ||
+	"template service";
 
 const NewApp: Component = () => {
 	const navigate = useNavigate();
 	const [searchParams] = useSearchParams();
-	const [mode, setMode] = createSignal<CreationMode>("app");
+	const [mode, setMode] = createSignal<CreationSource>("git_repository");
 	const [selectedType, setSelectedType] =
 		createSignal<ServiceType>("web_service");
 	const [service, setService] = createSignal<Service>(
 		createServiceForType("web_service"),
 	);
-	const [databaseType, setDatabaseType] =
-		createSignal<ManagedDatabaseType>("postgresql");
-	const [queueType, setQueueType] = createSignal<ManagedQueueType>("rabbitmq");
+	const [templateType, setTemplateType] =
+		createSignal<TemplateType>("postgresql");
 	const [selectedGroupId, setSelectedGroupId] = createSignal("");
 	const [managedName, setManagedName] = createSignal("");
 	const [managedVersion, setManagedVersion] = createSignal("");
@@ -324,100 +263,59 @@ const NewApp: Component = () => {
 	};
 
 	createEffect(() => {
-		const requestedKind = searchParams.kind;
-		const requestedType = searchParams.type;
-		const requestedServiceType = searchParams.service_type;
-		const requestedGroupId = searchParams.group_id;
+		const requestedSource = searchParamValue(searchParams.source);
+		const requestedTemplate = searchParamValue(searchParams.template);
+		const requestedServiceType = searchParamValue(searchParams.service_type);
+		const requestedGroupId = searchParamValue(searchParams.group_id);
 
-		untrack(() => {
-			if (requestedKind === "app") {
-				setMode("app");
-			} else if (requestedKind === "database") {
-				setMode("database");
-			} else if (requestedKind === "queue") {
-				setMode("queue");
-			}
+		if (requestedSource === "template") {
+			setMode("template");
+		}
 
-			if (
-				requestedServiceType === "web_service" ||
-				requestedServiceType === "private_service" ||
-				requestedServiceType === "background_worker" ||
-				requestedServiceType === "cron_job"
-			) {
-				setMode("app");
-				switchServiceType(requestedServiceType);
-			}
+		if (
+			requestedServiceType === "web_service" ||
+			requestedServiceType === "private_service" ||
+			requestedServiceType === "background_worker" ||
+			requestedServiceType === "cron_job"
+		) {
+			setMode("git_repository");
+			switchServiceType(requestedServiceType);
+		}
 
-			if (
-				requestedType === "postgres" ||
-				requestedType === "postgresql" ||
-				requestedType === "redis" ||
-				requestedType === "valkey" ||
-				requestedType === "mariadb" ||
-				requestedType === "mysql" ||
-				requestedType === "qdrant"
-			) {
-				setMode("database");
-				switch (requestedType) {
-					case "postgres":
-					case "postgresql":
-						setDatabaseType("postgresql");
-						break;
-					case "redis":
-					case "valkey":
-						setDatabaseType("redis");
-						break;
-					case "mariadb":
-					case "mysql":
-						setDatabaseType("mariadb");
-						break;
-					case "qdrant":
-						setDatabaseType("qdrant");
-						break;
-				}
-			}
+		if (
+			requestedTemplate === "postgresql" ||
+			requestedTemplate === "redis" ||
+			requestedTemplate === "mariadb" ||
+			requestedTemplate === "qdrant" ||
+			requestedTemplate === "rabbitmq"
+		) {
+			setMode("template");
+			setTemplateType(requestedTemplate);
+		}
 
-			if (requestedType === "rabbitmq") {
-				setMode("queue");
-				setQueueType("rabbitmq");
-			}
-
-			if (requestedGroupId) {
-				setSelectedGroupId(requestedGroupId);
-			}
-		});
+		if (requestedGroupId) {
+			setSelectedGroupId(requestedGroupId);
+		}
 	});
 
 	const pageDescription = createMemo(() => {
-		if (mode() === "app") {
-			return "create a new group and deploy its first application service from a repository.";
+		if (mode() === "git_repository") {
+			return "select a repository first, then choose the runtime shape for the service.";
 		}
 
-		if (mode() === "database") {
-			return "create a managed data service with the same full-page workflow and optionally attach it to an existing group.";
-		}
-
-		return "create a managed queue with the same full-page workflow and optionally attach it to an existing group.";
+		return "select a template first, then attach the service to an existing service network or keep it standalone.";
 	});
 
-	const submitLabel = createMemo(() => {
-		if (mode() === "app") {
-			return "create and deploy";
-		}
-
-		if (mode() === "database") {
-			return "create database";
-		}
-
-		return "create queue";
-	});
+	const submitLabel = createMemo(() =>
+		mode() === "git_repository" ? "create and deploy" : "create service",
+	);
 
 	const runtimeBadge = createMemo(() => {
-		if (mode() === "app") {
+		if (mode() === "git_repository") {
 			return serviceTypeLabel(selectedType());
 		}
 
-		return managedTypeLabel(mode(), databaseType(), queueType());
+		return templateLabel(templateType());
 	});
 
 	const handleSubmit = async (event: Event) => {
@@ -426,7 +324,7 @@ const NewApp: Component = () => {
 		setLoading(true);
 
 		try {
-			if (mode() === "app") {
+			if (mode() === "git_repository") {
 				const currentService = service();
 				if (!currentService.name.trim()) {
 					throw new Error("service name is required");
@@ -435,18 +333,22 @@ const NewApp: Component = () => {
 					throw new Error("repository url is required");
 				}
 
-				const { data, error: apiError } = await api.POST("/api/projects", {
+				const { data, error: apiError } = await api.POST("/api/services", {
 					body: {
+						source: "git_repository",
 						name: currentService.name.trim(),
 						github_url: githubUrl().trim(),
 						branch: branch().trim() || "main",
 						env_vars: envVars().length > 0 ? envVars() : null,
-						services: [mapServiceToRequest(currentService)],
+						service: mapServiceToRequest(currentService),
 					},
 				});
 
-				if (apiError) throw apiError;
-				navigate(`/projects/${data.id}`);
+				if (apiError) {
+					throw apiError;
+				}
+
+				navigate(`/services/${data.id}`);
 				return;
 			}
 
@@ -454,35 +356,22 @@ const NewApp: Component = () => {
 				throw new Error("service name is required");
 			}
 
-			const body = {
-				name: managedName().trim(),
-				version: managedVersion().trim() || null,
-				memory_limit_mb: parseInt(managedMemoryMb(), 10) || 512,
-				cpu_limit: parseFloat(managedCpuLimit()) || 1.0,
-				group_id: selectedGroupId().trim() || null,
-				db_type: mode() === "database" ? databaseType() : undefined,
-				queue_type: mode() === "queue" ? queueType() : undefined,
-			};
-
-			const endpoint = mode() === "database" ? "/api/databases" : "/api/queues";
-			const response = await fetch(endpoint, {
-				method: "POST",
-				headers: buildAuthHeaders(),
-				body: JSON.stringify(body),
+			const { data, error: apiError } = await api.POST("/api/services", {
+				body: {
+					source: "template",
+					name: managedName().trim(),
+					template: templateType(),
+					version: managedVersion().trim() || null,
+					memory_limit_mb: parseInt(managedMemoryMb(), 10) || 512,
+					cpu_limit: parseFloat(managedCpuLimit()) || 1.0,
+					group_id: selectedGroupId().trim() || null,
+				},
 			});
-
-			handleUnauthorized(response);
-			if (!response.ok) {
-				throw new Error(await readErrorMessage(response));
+			if (apiError) {
+				throw apiError;
 			}
 
-			const data = (await response.json()) as { id: string };
-			if (mode() === "database") {
-				navigate(`/databases/${data.id}`);
-				return;
-			}
-
-			navigate(`/queues/${data.id}`);
+			navigate(`/services/${data.id}`);
 		} catch (err) {
 			if (err instanceof Error) {
 				setError(err.message);
@@ -526,13 +415,13 @@ const NewApp: Component = () => {
 				<CardHeader class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
 					<div>
 						<p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
-							service family
+							source
 						</p>
-						<CardTitle class="mt-2">choose what you are creating</CardTitle>
+						<CardTitle class="mt-2">choose how this service starts</CardTitle>
 					</div>
 					<Badge variant="outline">{runtimeBadge()}</Badge>
 				</CardHeader>
-				<CardContent class="grid gap-3 md:grid-cols-3">
+				<CardContent class="grid gap-3 md:grid-cols-2">
 					<For each={modeOptions}>
 						{(option) => (
 							<button
@@ -559,7 +448,7 @@ const NewApp: Component = () => {
 				</CardContent>
 			</Card>
 
-			<Show when={mode() === "app"}>
+			<Show when={mode() === "git_repository"}>
 				<Card>
 					<CardHeader class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
 						<div>
@@ -676,7 +565,7 @@ const NewApp: Component = () => {
 									onInput={(event) =>
 										applyRepoSelection(event.currentTarget.value)
 									}
-									placeholder="https://github.com/acme/app"
+									placeholder="https://github.com/acme/service"
 									required
 								/>
 								<Show when={!hasGithubAccess()}>
@@ -717,7 +606,7 @@ const NewApp: Component = () => {
 					envVars={envVars()}
 					onChange={setEnvVars}
 					title="shared environment variables"
-					description="available to the whole group during runtime"
+					description="available to the whole service network during runtime"
 					emptyText="no shared environment variables configured"
 					addLabel="add shared variable"
 				/>
@@ -746,45 +635,24 @@ const NewApp: Component = () => {
 				</div>
 			</Show>
 
-			<Show when={mode() === "database" || mode() === "queue"}>
+			<Show when={mode() === "template"}>
 				<Card>
 					<CardHeader class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
 						<div>
 							<p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
-								runtime
+								template
 							</p>
-							<CardTitle class="mt-2">
-								choose the managed service type
-							</CardTitle>
+							<CardTitle class="mt-2">choose the service template</CardTitle>
 						</div>
-						<Badge variant="outline">
-							{managedTypeLabel(mode(), databaseType(), queueType())}
-						</Badge>
+						<Badge variant="outline">{templateLabel(templateType())}</Badge>
 					</CardHeader>
-					<CardContent
-						class={`grid gap-3 ${
-							mode() === "database"
-								? "md:grid-cols-2 xl:grid-cols-4"
-								: "md:grid-cols-1"
-						}`}
-					>
-						<For each={mode() === "database" ? databaseOptions : queueOptions}>
+					<CardContent class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+						<For each={templateOptions}>
 							{(option) => (
 								<button
 									type="button"
-									onClick={() => {
-										if (mode() === "database") {
-											setDatabaseType(option.value as ManagedDatabaseType);
-											return;
-										}
-
-										setQueueType(option.value as ManagedQueueType);
-									}}
-									class={selectionCardClass(
-										(mode() === "database" &&
-											databaseType() === option.value) ||
-											(mode() === "queue" && queueType() === option.value),
-									)}
+									onClick={() => setTemplateType(option.value as TemplateType)}
+									class={selectionCardClass(templateType() === option.value)}
 								>
 									<p class="text-[11px] font-semibold uppercase tracking-[0.22em]">
 										{option.icon}
@@ -792,9 +660,7 @@ const NewApp: Component = () => {
 									<p class="mt-4 font-serif text-xl">{option.label}</p>
 									<p
 										class={`mt-3 text-sm leading-6 ${
-											(
-												mode() === "database" && databaseType() === option.value
-											) || (mode() === "queue" && queueType() === option.value)
+											templateType() === option.value
 												? "text-[var(--background)]/80"
 												: "text-[var(--muted-foreground)]"
 										}`}
@@ -812,7 +678,9 @@ const NewApp: Component = () => {
 						<p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
 							placement
 						</p>
-						<CardTitle class="mt-2">attach the service to a group</CardTitle>
+						<CardTitle class="mt-2">
+							attach the service to a service network
+						</CardTitle>
 					</CardHeader>
 					<CardContent class="space-y-4">
 						<div class="space-y-2">
@@ -820,7 +688,7 @@ const NewApp: Component = () => {
 								for="managed-group"
 								class="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]"
 							>
-								group
+								service network
 							</label>
 							<select
 								id="managed-group"
@@ -840,8 +708,8 @@ const NewApp: Component = () => {
 						</div>
 						<p class="text-sm text-[var(--muted-foreground)]">
 							if you leave this empty, the service gets its own private docker
-							network. attaching it to a group joins the existing group network
-							boundary.
+							network. attaching it to a service network joins the existing
+							shared boundary.
 						</p>
 					</CardContent>
 				</Card>
@@ -851,7 +719,7 @@ const NewApp: Component = () => {
 						<p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
 							settings
 						</p>
-						<CardTitle class="mt-2">configure the managed service</CardTitle>
+						<CardTitle class="mt-2">configure the template service</CardTitle>
 					</CardHeader>
 					<CardContent class="grid gap-4 md:grid-cols-2">
 						<Input

@@ -1090,7 +1090,7 @@ export interface paths {
         };
         get: operations["list_services"];
         put?: never;
-        post?: never;
+        post: operations["create_service"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1477,6 +1477,27 @@ export interface components {
         CreateRestorePointRequest: {
             restore_point?: string | null;
         };
+        CreateServiceRequest: {
+            branch?: string | null;
+            env_vars?: components["schemas"]["EnvVarRequest"][] | null;
+            github_url: string;
+            name: string;
+            rollout_strategy?: string | null;
+            service: components["schemas"]["ServiceRequest"];
+            /** @enum {string} */
+            source: "git_repository";
+        } | {
+            /** Format: double */
+            cpu_limit?: number | null;
+            group_id?: string | null;
+            /** Format: int64 */
+            memory_limit_mb?: number | null;
+            name: string;
+            /** @enum {string} */
+            source: "template";
+            template: string;
+            version?: string | null;
+        };
         /** @description certificate issuance response */
         DashboardCertResponse: {
             /** @description domains queued for issuance */
@@ -1660,6 +1681,44 @@ export interface components {
             id: number;
             /** Format: int32 */
             repository_count?: number | null;
+        };
+        InventoryServiceResponse: {
+            connection_string?: string | null;
+            container_ids: string[];
+            created_at: string;
+            default_urls: string[];
+            deployment_id?: string | null;
+            /** Format: int32 */
+            desired_instances: number;
+            domains: string[];
+            /** Format: int32 */
+            external_port?: number | null;
+            group_id?: string | null;
+            id: string;
+            image?: string | null;
+            internal_host?: string | null;
+            name: string;
+            network_name: string;
+            pitr_enabled: boolean;
+            /** Format: int32 */
+            port?: number | null;
+            project_id?: string | null;
+            project_name?: string | null;
+            proxy_connection_string?: string | null;
+            proxy_enabled: boolean;
+            /** Format: int32 */
+            proxy_external_port?: number | null;
+            /** Format: int32 */
+            proxy_port?: number | null;
+            public_http: boolean;
+            public_ip?: string | null;
+            resource_kind: string;
+            /** Format: int32 */
+            running_instances: number;
+            schedule?: string | null;
+            service_type: string;
+            status: string;
+            updated_at: string;
         };
         /** @description login request body */
         LoginRequest: {
@@ -1858,43 +1917,70 @@ export interface components {
             /** @description working directory override */
             working_dir?: string | null;
         };
+        /** @description service response for multi-container apps */
         ServiceResponse: {
-            connection_string?: string | null;
-            container_ids: string[];
-            created_at: string;
-            default_urls: string[];
-            deployment_id?: string | null;
-            /** Format: int32 */
-            desired_instances: number;
+            /** @description additional container ports */
+            additional_ports: number[];
+            /** @description docker build arguments */
+            build_args: components["schemas"]["EnvVarResponse"][];
+            /** @description relative repo path used as the docker build context */
+            build_context?: string | null;
+            /** @description docker build target stage */
+            build_target?: string | null;
+            /** @description command arguments override */
+            command: string[];
+            /**
+             * Format: double
+             * @description cpu limit
+             */
+            cpu_limit?: number | null;
+            /** @description dependencies */
+            depends_on: string[];
+            /** @description relative path to the dockerfile within the repo */
+            dockerfile_path?: string | null;
+            /** @description primary custom domain */
+            domain?: string | null;
+            /** @description service-specific custom domains */
             domains: string[];
-            /** Format: int32 */
-            external_port?: number | null;
-            group_id?: string | null;
+            /** @description entrypoint override */
+            entrypoint: string[];
+            /** @description service-specific environment variables */
+            env_vars: components["schemas"]["EnvVarResponse"][];
+            /** @description whether this service receives public http traffic */
+            expose_http: boolean;
+            health_check?: null | components["schemas"]["HealthCheckResponse"];
+            /** @description service id */
             id: string;
-            image?: string | null;
-            internal_host?: string | null;
+            /** @description docker image */
+            image: string;
+            /**
+             * Format: int64
+             * @description memory limit in mb
+             */
+            memory_limit_mb?: number | null;
+            /** @description persistent mounts */
+            mounts: components["schemas"]["ServiceMountResponse"][];
+            /** @description service name */
             name: string;
-            network_name: string;
-            pitr_enabled: boolean;
-            /** Format: int32 */
-            port?: number | null;
-            project_id?: string | null;
-            project_name?: string | null;
-            proxy_connection_string?: string | null;
-            proxy_enabled: boolean;
-            /** Format: int32 */
-            proxy_external_port?: number | null;
-            /** Format: int32 */
-            proxy_port?: number | null;
-            public_http: boolean;
-            public_ip?: string | null;
-            resource_kind: string;
-            /** Format: int32 */
-            running_instances: number;
+            /**
+             * Format: int32
+             * @description container port
+             */
+            port: number;
+            registry_auth?: null | components["schemas"]["ServiceRegistryAuthResponse"];
+            /**
+             * Format: int32
+             * @description number of replicas
+             */
+            replicas: number;
+            /** @description restart policy */
+            restart_policy: string;
+            /** @description cron expression used for scheduled jobs */
             schedule?: string | null;
+            /** @description render-style service category */
             service_type: string;
-            status: string;
-            updated_at: string;
+            /** @description working directory override */
+            working_dir?: string | null;
         };
         /** @description settings response - only exposes safe fields */
         SettingsResponse: {
@@ -5824,11 +5910,62 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ServiceResponse"][];
+                    "application/json": components["schemas"]["InventoryServiceResponse"][];
                 };
             };
             /** @description unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_service: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateServiceRequest"];
+            };
+        };
+        responses: {
+            /** @description service created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryServiceResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5856,7 +5993,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ServiceResponse"];
+                    "application/json": components["schemas"]["InventoryServiceResponse"];
                 };
             };
             /** @description unauthorized */
@@ -5988,7 +6125,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ServiceResponse"];
+                    "application/json": components["schemas"]["InventoryServiceResponse"];
                 };
             };
             /** @description invalid request */
@@ -6038,7 +6175,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ServiceResponse"];
+                    "application/json": components["schemas"]["InventoryServiceResponse"];
                 };
             };
             /** @description invalid request */
@@ -6088,7 +6225,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ServiceResponse"];
+                    "application/json": components["schemas"]["InventoryServiceResponse"];
                 };
             };
             /** @description unauthorized */
