@@ -26,6 +26,7 @@ use crate::handlers::{
     system, webhooks, websocket,
 };
 use crate::openapi::ApiDoc;
+use crate::routes;
 use crate::state::AppState;
 use containr_common::models::{App, Deployment, DeploymentStatus};
 use containr_common::{Config, Database, Result};
@@ -94,6 +95,8 @@ pub async fn run_server(
         .route("/api/system/stats", get(system::get_system_stats))
         // openapi docs
         .merge(Scalar::with_url("/api/docs", ApiDoc::openapi()))
+        // services (canonical)
+        .merge(routes::services::router())
         // auth
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))
@@ -328,20 +331,7 @@ pub async fn run_server(
         .route("/api/queues/{id}", delete(queues::delete_queue))
         .route("/api/queues/{id}/start", post(queues::start_queue))
         .route("/api/queues/{id}/stop", post(queues::stop_queue))
-        .route("/api/queues/{id}/expose", post(queues::expose_queue))
-        // unified services
-        .route("/api/services", get(services::list_services))
-        .route("/api/services", post(services::create_service))
-        .route("/api/services/{id}", get(services::get_service))
-        .route("/api/services/{id}", delete(services::delete_service))
-        .route("/api/services/{id}/logs", get(services::get_service_logs))
-        .route("/api/services/{id}/start", post(services::start_service))
-        .route("/api/services/{id}/stop", post(services::stop_service))
-        .route(
-            "/api/services/{id}/restart",
-            post(services::restart_service),
-        )
-        // storage buckets
+        .route("/api/queues/{id}/expose", post(queues::expose_queue)) // storage buckets
         .route("/api/buckets", get(storage::list_buckets))
         .route("/api/buckets", post(storage::create_bucket))
         .route("/api/buckets/{id}", get(storage::get_bucket))
