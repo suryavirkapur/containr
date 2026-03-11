@@ -41,12 +41,7 @@ type Feedback = {
 	variant: "default" | "destructive" | "success";
 };
 
-type DetailTab =
-	| "overview"
-	| "environment"
-	| "logs"
-	| "containers"
-	| "advanced";
+type DetailTab = "overview" | "environment" | "logs" | "containers" | "advanced";
 
 type KeyValueRow = {
 	key: string;
@@ -127,9 +122,7 @@ const describeError = (error: unknown): string => {
 	return "request failed";
 };
 
-const statusVariant = (
-	status: string,
-): "outline" | "success" | "warning" | "error" => {
+const statusVariant = (status: string): "outline" | "success" | "warning" | "error" => {
 	switch (status) {
 		case "running":
 			return "success";
@@ -213,8 +206,7 @@ const formatDate = (value?: string | null): string => {
 	return new Date(value).toLocaleString();
 };
 
-const formatBoolean = (value: boolean): string =>
-	value ? "enabled" : "disabled";
+const formatBoolean = (value: boolean): string => (value ? "enabled" : "disabled");
 
 const KeyValueCard: Component<{
 	title: string;
@@ -236,11 +228,7 @@ const KeyValueCard: Component<{
 					<CardDescription>{props.description}</CardDescription>
 				</div>
 				<Show when={props.onToggleSecrets}>
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={() => props.onToggleSecrets?.()}
-					>
+					<Button variant="outline" size="sm" onClick={() => props.onToggleSecrets?.()}>
 						{props.showSecrets ? "hide secrets" : "show secrets"}
 					</Button>
 				</Show>
@@ -248,11 +236,7 @@ const KeyValueCard: Component<{
 			<CardContent>
 				<Show
 					when={props.items.length > 0}
-					fallback={
-						<p class="text-sm text-[var(--muted-foreground)]">
-							{props.emptyText}
-						</p>
-					}
+					fallback={<p class="text-sm text-[var(--muted-foreground)]">{props.emptyText}</p>}
 				>
 					<div class="divide-y divide-[var(--border)] border border-[var(--border)]">
 						<For each={props.items}>
@@ -263,22 +247,14 @@ const KeyValueCard: Component<{
 											{item.key}
 										</p>
 										<Show when={item.description}>
-											<p class="text-sm text-[var(--muted-foreground)]">
-												{item.description}
-											</p>
+											<p class="text-sm text-[var(--muted-foreground)]">{item.description}</p>
 										</Show>
 									</div>
 									<div class="flex items-start gap-3 lg:max-w-[70%]">
 										<p class="break-all font-mono text-sm text-[var(--foreground-subtle)]">
-											{item.secret && !props.showSecrets
-												? "********"
-												: item.value}
+											{item.secret && !props.showSecrets ? "********" : item.value}
 										</p>
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={() => void copy(item.value)}
-										>
+										<Button variant="outline" size="sm" onClick={() => void copy(item.value)}>
 											copy
 										</Button>
 									</div>
@@ -303,10 +279,7 @@ const ServiceDetail: Component = () => {
 	const [externalPort, setExternalPort] = createSignal("");
 	const [proxyExternalPort, setProxyExternalPort] = createSignal("");
 
-	const [service, { refetch: refetchService }] = createResource(
-		() => params.id,
-		fetchService,
-	);
+	const [service, { refetch: refetchService }] = createResource(() => params.id, fetchService);
 	const [project, { refetch: refetchProject }] = createResource(() => {
 		const current = service();
 		if (current?.resource_kind !== "app_service") {
@@ -316,19 +289,14 @@ const ServiceDetail: Component = () => {
 		return current.project_id ?? undefined;
 	}, fetchProject);
 	const [database, { refetch: refetchDatabase }] = createResource(
-		() =>
-			service()?.resource_kind === "managed_database" ? params.id : undefined,
+		() => (service()?.resource_kind === "managed_database" ? params.id : undefined),
 		fetchDatabase,
 	);
 	const [queue, { refetch: refetchQueue }] = createResource(
-		() =>
-			service()?.resource_kind === "managed_queue" ? params.id : undefined,
+		() => (service()?.resource_kind === "managed_queue" ? params.id : undefined),
 		fetchQueue,
 	);
-	const [logs, { refetch: refetchLogs }] = createResource(
-		() => params.id,
-		fetchLogs,
-	);
+	const [logs, { refetch: refetchLogs }] = createResource(() => params.id, fetchLogs);
 
 	const appService = createMemo<ProjectService | null>(() => {
 		const currentService = service();
@@ -338,9 +306,8 @@ const ServiceDetail: Component = () => {
 		}
 
 		return (
-			currentProject.services.find(
-				(projectService) => projectService.id === currentService.id,
-			) ?? null
+			currentProject.services.find((projectService) => projectService.id === currentService.id) ??
+			null
 		);
 	});
 
@@ -707,9 +674,7 @@ const ServiceDetail: Component = () => {
 		}
 
 		if (currentService.resource_kind === "app_service") {
-			return currentService.project_id
-				? `/projects/${currentService.project_id}`
-				: null;
+			return currentService.project_id ? `/projects/${currentService.project_id}` : null;
 		}
 
 		if (currentService.resource_kind === "managed_database") {
@@ -742,11 +707,7 @@ const ServiceDetail: Component = () => {
 		}
 	};
 
-	const runAction = async (
-		key: string,
-		action: () => Promise<void>,
-		successText: string,
-	) => {
+	const runAction = async (key: string, action: () => Promise<void>, successText: string) => {
 		setPendingAction(key);
 		setFeedback(null);
 
@@ -867,8 +828,7 @@ const ServiceDetail: Component = () => {
 					params: { path: { id: currentDatabase.id } },
 					body: {
 						enabled,
-						external_port:
-							enabled && port.length > 0 ? Number(port) : undefined,
+						external_port: enabled && port.length > 0 ? Number(port) : undefined,
 					},
 				});
 				if (error) {
@@ -893,8 +853,7 @@ const ServiceDetail: Component = () => {
 					params: { path: { id: currentDatabase.id } },
 					body: {
 						enabled,
-						external_port:
-							enabled && port.length > 0 ? Number(port) : undefined,
+						external_port: enabled && port.length > 0 ? Number(port) : undefined,
 					},
 				});
 				if (error) {
@@ -940,8 +899,7 @@ const ServiceDetail: Component = () => {
 					params: { path: { id: currentQueue.id } },
 					body: {
 						enabled,
-						external_port:
-							enabled && port.length > 0 ? Number(port) : undefined,
+						external_port: enabled && port.length > 0 ? Number(port) : undefined,
 					},
 				});
 				if (error) {
@@ -969,15 +927,9 @@ const ServiceDetail: Component = () => {
 			return;
 		}
 
-		setExternalPort(
-			currentDatabase.external_port
-				? String(currentDatabase.external_port)
-				: "",
-		);
+		setExternalPort(currentDatabase.external_port ? String(currentDatabase.external_port) : "");
 		setProxyExternalPort(
-			currentDatabase.proxy_external_port
-				? String(currentDatabase.proxy_external_port)
-				: "",
+			currentDatabase.proxy_external_port ? String(currentDatabase.proxy_external_port) : "",
 		);
 	});
 
@@ -987,9 +939,7 @@ const ServiceDetail: Component = () => {
 			return;
 		}
 
-		setExternalPort(
-			currentQueue.external_port ? String(currentQueue.external_port) : "",
-		);
+		setExternalPort(currentQueue.external_port ? String(currentQueue.external_port) : "");
 	});
 
 	createEffect(() => {
@@ -1034,9 +984,7 @@ const ServiceDetail: Component = () => {
 					description={`${serviceTypeLabel(service()!.service_type)} on ${networkLabel(service()!)}`}
 					actions={
 						<div class="flex flex-wrap gap-3">
-							<Badge variant={statusVariant(service()!.status)}>
-								{service()!.status}
-							</Badge>
+							<Badge variant={statusVariant(service()!.status)}>{service()!.status}</Badge>
 							<Button
 								variant="secondary"
 								isLoading={pendingAction() === "restart"}
@@ -1070,12 +1018,8 @@ const ServiceDetail: Component = () => {
 							<p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
 								service network
 							</p>
-							<p class="font-serif text-3xl text-[var(--foreground)]">
-								{networkLabel(service()!)}
-							</p>
-							<p class="text-sm text-[var(--muted-foreground)]">
-								{service()!.network_name}
-							</p>
+							<p class="font-serif text-3xl text-[var(--foreground)]">{networkLabel(service()!)}</p>
+							<p class="text-sm text-[var(--muted-foreground)]">{service()!.network_name}</p>
 						</CardContent>
 					</Card>
 					<Card>
@@ -1083,9 +1027,7 @@ const ServiceDetail: Component = () => {
 							<p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
 								runtime
 							</p>
-							<p class="font-serif text-3xl text-[var(--foreground)]">
-								{runtimeLabel(service()!)}
-							</p>
+							<p class="font-serif text-3xl text-[var(--foreground)]">{runtimeLabel(service()!)}</p>
 							<p class="text-sm text-[var(--muted-foreground)]">
 								{service()!.container_ids.length} active containers tracked
 							</p>
@@ -1106,10 +1048,7 @@ const ServiceDetail: Component = () => {
 					</Card>
 				</div>
 
-				<Tabs
-					value={activeTab()}
-					onValueChange={(value) => setActiveTab(value as DetailTab)}
-				>
+				<Tabs value={activeTab()} onValueChange={(value) => setActiveTab(value as DetailTab)}>
 					<TabsList>
 						<TabsTrigger value="overview">overview</TabsTrigger>
 						<TabsTrigger value="environment">environment</TabsTrigger>
@@ -1169,15 +1108,10 @@ repository and template services."
 								<div>
 									<CardTitle>service logs</CardTitle>
 									<CardDescription>
-										this log panel always reads from the unified service log
-										endpoint.
+										this log panel always reads from the unified service log endpoint.
 									</CardDescription>
 								</div>
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={() => void refetchLogs()}
-								>
+								<Button variant="outline" size="sm" onClick={() => void refetchLogs()}>
 									refresh
 								</Button>
 							</CardHeader>
@@ -1211,8 +1145,7 @@ repository and template services."
 							<CardHeader>
 								<CardTitle>container monitor</CardTitle>
 								<CardDescription>
-									select an active container for live status, logs, volumes, and
-									terminal access.
+									select an active container for live status, logs, volumes, and terminal access.
 								</CardDescription>
 							</CardHeader>
 							<CardContent class="space-y-4">
@@ -1220,8 +1153,7 @@ repository and template services."
 									when={service()!.container_ids.length > 0}
 									fallback={
 										<p class="text-sm text-[var(--muted-foreground)]">
-											no active containers are currently tracked for this
-											service.
+											no active containers are currently tracked for this service.
 										</p>
 									}
 								>
@@ -1235,15 +1167,11 @@ repository and template services."
 										<select
 											id="container-select"
 											value={selectedContainerId()}
-											onChange={(event) =>
-												setSelectedContainerId(event.currentTarget.value)
-											}
+											onChange={(event) => setSelectedContainerId(event.currentTarget.value)}
 											class="mt-2 flex h-11 w-full border border-[var(--border)] bg-[var(--input)] px-3 py-2 text-sm text-[var(--foreground)]"
 										>
 											<For each={service()!.container_ids}>
-												{(containerId) => (
-													<option value={containerId}>{containerId}</option>
-												)}
+												{(containerId) => <option value={containerId}>{containerId}</option>}
 											</For>
 										</select>
 									</div>
@@ -1301,8 +1229,8 @@ repository and template services."
 								<CardHeader>
 									<CardTitle>legacy route</CardTitle>
 									<CardDescription>
-										advanced service-specific settings still remain available on
-										the legacy detail route while the unified view settles in.
+										advanced service-specific settings still remain available on the legacy detail
+										route while the unified view settles in.
 									</CardDescription>
 								</CardHeader>
 								<CardContent>
@@ -1326,8 +1254,8 @@ repository and template services."
 									<CardHeader>
 										<CardTitle>database access</CardTitle>
 										<CardDescription>
-											enable or disable public access and the optional database
-											proxy from the unified view.
+											enable or disable public access and the optional database proxy from the
+											unified view.
 										</CardDescription>
 									</CardHeader>
 									<CardContent class="space-y-4">
@@ -1335,9 +1263,7 @@ repository and template services."
 											label="public port"
 											type="number"
 											value={externalPort()}
-											onInput={(event) =>
-												setExternalPort(event.currentTarget.value)
-											}
+											onInput={(event) => setExternalPort(event.currentTarget.value)}
 											description="leave empty to let the platform choose a port"
 										/>
 										<div class="flex flex-wrap gap-3">
@@ -1363,9 +1289,7 @@ repository and template services."
 													label="proxy port"
 													type="number"
 													value={proxyExternalPort()}
-													onInput={(event) =>
-														setProxyExternalPort(event.currentTarget.value)
-													}
+													onInput={(event) => setProxyExternalPort(event.currentTarget.value)}
 													description="optional public proxy port"
 												/>
 												<div class="flex flex-wrap gap-3">
@@ -1409,8 +1333,7 @@ repository and template services."
 									<CardHeader>
 										<CardTitle>queue access</CardTitle>
 										<CardDescription>
-											enable or disable public access for this template-backed
-											service.
+											enable or disable public access for this template-backed service.
 										</CardDescription>
 									</CardHeader>
 									<CardContent class="space-y-4">
@@ -1418,9 +1341,7 @@ repository and template services."
 											label="public port"
 											type="number"
 											value={externalPort()}
-											onInput={(event) =>
-												setExternalPort(event.currentTarget.value)
-											}
+											onInput={(event) => setExternalPort(event.currentTarget.value)}
 											description="leave empty to let the platform choose a port"
 										/>
 										<div class="flex flex-wrap gap-3">

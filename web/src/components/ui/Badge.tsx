@@ -2,13 +2,7 @@ import { Component, JSX, splitProps } from "solid-js";
 
 import { cn } from "../../lib/cn";
 
-type BadgeVariant =
-	| "default"
-	| "outline"
-	| "secondary"
-	| "success"
-	| "warning"
-	| "error";
+type BadgeVariant = "default" | "outline" | "secondary" | "success" | "warning" | "error";
 
 interface BadgeProps extends JSX.HTMLAttributes<HTMLSpanElement> {
 	variant?: BadgeVariant;
@@ -19,12 +13,9 @@ export const Badge: Component<BadgeProps> = (props) => {
 	const [local, others] = splitProps(props, ["variant", "class", "children"]);
 
 	const variants: Record<BadgeVariant, string> = {
-		default:
-			"border-[var(--border)] bg-[var(--muted)] text-[var(--foreground)]",
-		outline:
-			"border-[var(--border-strong)] bg-transparent text-[var(--muted-foreground)]",
-		secondary:
-			"border-[var(--border)] bg-[var(--surface-muted)] text-[var(--foreground)]",
+		default: "border-[var(--border)] bg-[var(--muted)] text-[var(--foreground)]",
+		outline: "border-[var(--border-strong)] bg-transparent text-[var(--muted-foreground)]",
+		secondary: "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--foreground)]",
 		success: "border-emerald-900 bg-emerald-950/70 text-emerald-200",
 		warning: "border-amber-900 bg-amber-950/70 text-amber-200",
 		error: "border-red-900 bg-red-950/70 text-red-200",

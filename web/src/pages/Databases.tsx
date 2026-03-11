@@ -90,8 +90,7 @@ const resolveExternalTarget = (port?: number | null) => {
 		return "not exposed";
 	}
 
-	const host =
-		typeof window === "undefined" ? "localhost" : window.location.hostname;
+	const host = typeof window === "undefined" ? "localhost" : window.location.hostname;
 	return `${host}:${port}`;
 };
 
@@ -134,15 +133,12 @@ const Databases: Component = () => {
 			running: items.filter((item) => item.status === "running").length,
 			exposed: items.filter((item) => item.external_port !== null).length,
 			groups: new Set(
-				items
-					.map((item) => item.group_id)
-					.filter((groupId): groupId is string => Boolean(groupId)),
+				items.map((item) => item.group_id).filter((groupId): groupId is string => Boolean(groupId)),
 			).size,
 		};
 	});
 
-	const createUrl = (type = "postgresql") =>
-		`/projects/new?kind=database&type=${type}`;
+	const createUrl = (type = "postgresql") => `/projects/new?kind=database&type=${type}`;
 
 	const actionKey = (id: string, action: string) => `${id}:${action}`;
 
@@ -173,9 +169,7 @@ const Databases: Component = () => {
 	};
 
 	const handleDelete = async (database: Database) => {
-		const confirmed = window.confirm(
-			`delete ${database.name}? data will be lost.`,
-		);
+		const confirmed = window.confirm(`delete ${database.name}? data will be lost.`);
 		if (!confirmed) {
 			return;
 		}
@@ -271,9 +265,7 @@ const Databases: Component = () => {
 					"managed postgres, mariadb, valkey, and qdrant services " +
 					"with direct visibility into status, access, and grouping"
 				}
-				actions={
-					<Button onClick={() => navigate(createUrl())}>new database</Button>
-				}
+				actions={<Button onClick={() => navigate(createUrl())}>new database</Button>}
 			/>
 
 			<div class="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
@@ -281,8 +273,7 @@ const Databases: Component = () => {
 					<CardHeader>
 						<CardTitle>quick create</CardTitle>
 						<CardDescription>
-							start from the service type you want instead of digging through
-							forms
+							start from the service type you want instead of digging through forms
 						</CardDescription>
 					</CardHeader>
 					<CardContent class="grid gap-3 md:grid-cols-2">
@@ -296,9 +287,7 @@ const Databases: Component = () => {
 									<p class="text-[11px] uppercase tracking-[0.22em] text-[var(--muted-foreground)]">
 										{option.title}
 									</p>
-									<p class="mt-2 font-serif text-lg text-[var(--foreground)]">
-										{option.title}
-									</p>
+									<p class="mt-2 font-serif text-lg text-[var(--foreground)]">{option.title}</p>
 									<p class="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">
 										{option.description}
 									</p>
@@ -350,9 +339,7 @@ const Databases: Component = () => {
 
 			<Show when={feedback()}>
 				{(currentFeedback) => (
-					<Alert variant={currentFeedback().variant}>
-						{currentFeedback().text}
-					</Alert>
+					<Alert variant={currentFeedback().variant}>{currentFeedback().text}</Alert>
 				)}
 			</Show>
 
@@ -382,11 +369,7 @@ const Databases: Component = () => {
 							"create postgres, valkey, mariadb, or qdrant directly " +
 							"from the service flow and they will show up here"
 						}
-						action={
-							<Button onClick={() => navigate(createUrl())}>
-								create database
-							</Button>
-						}
+						action={<Button onClick={() => navigate(createUrl())}>create database</Button>}
 					/>
 				</Match>
 
@@ -399,12 +382,8 @@ const Databases: Component = () => {
 										<div class="flex flex-wrap items-start justify-between gap-4">
 											<div class="space-y-3">
 												<div class="flex flex-wrap items-center gap-2">
-													<Badge variant={statusVariant(database.status)}>
-														{database.status}
-													</Badge>
-													<Badge variant="outline">
-														{databaseTypeLabel(database)}
-													</Badge>
+													<Badge variant={statusVariant(database.status)}>{database.status}</Badge>
+													<Badge variant="outline">{databaseTypeLabel(database)}</Badge>
 													<Show when={database.group_id}>
 														<Badge variant="secondary">group attached</Badge>
 													</Show>
@@ -446,8 +425,7 @@ const Databases: Component = () => {
 											</p>
 											<Show when={database.proxy_enabled}>
 												<p class="text-sm text-[var(--muted-foreground)]">
-													pgdog:{" "}
-													{resolveExternalTarget(database.proxy_external_port)}
+													pgdog: {resolveExternalTarget(database.proxy_external_port)}
 												</p>
 											</Show>
 										</div>
@@ -456,9 +434,7 @@ const Databases: Component = () => {
 											<p class="text-[11px] uppercase tracking-[0.22em] text-[var(--muted-foreground)]">
 												credentials
 											</p>
-											<p class="text-sm text-[var(--foreground)]">
-												user {database.username}
-											</p>
+											<p class="text-sm text-[var(--foreground)]">user {database.username}</p>
 											<p class="text-sm text-[var(--muted-foreground)]">
 												db {database.database_name}
 											</p>
@@ -474,29 +450,20 @@ const Databases: Component = () => {
 											<p class="text-sm text-[var(--foreground)]">
 												{database.memory_limit_mb} mb memory
 											</p>
-											<p class="text-sm text-[var(--muted-foreground)]">
-												{database.cpu_limit} cpu
-											</p>
+											<p class="text-sm text-[var(--muted-foreground)]">{database.cpu_limit} cpu</p>
 											<Show when={database.pitr_enabled}>
-												<p class="text-sm text-[var(--muted-foreground)]">
-													pitr enabled
-												</p>
+												<p class="text-sm text-[var(--muted-foreground)]">pitr enabled</p>
 											</Show>
 										</div>
 									</CardContent>
 
 									<CardFooter class="flex flex-wrap gap-3">
-										<Button
-											variant="secondary"
-											onClick={() => void copyToClipboard(database)}
-										>
+										<Button variant="secondary" onClick={() => void copyToClipboard(database)}>
 											{copiedId() === database.id ? "copied" : "copy url"}
 										</Button>
 										<Button
 											variant="outline"
-											isLoading={
-												activeAction() === actionKey(database.id, "restart")
-											}
+											isLoading={activeAction() === actionKey(database.id, "restart")}
 											onClick={() => void handleRestart(database)}
 											disabled={database.status !== "running"}
 										>
@@ -507,9 +474,7 @@ const Databases: Component = () => {
 											fallback={
 												<Button
 													variant="outline"
-													isLoading={
-														activeAction() === actionKey(database.id, "start")
-													}
+													isLoading={activeAction() === actionKey(database.id, "start")}
 													onClick={() => void handleStart(database)}
 													disabled={database.status === "starting"}
 												>
@@ -519,9 +484,7 @@ const Databases: Component = () => {
 										>
 											<Button
 												variant="outline"
-												isLoading={
-													activeAction() === actionKey(database.id, "stop")
-												}
+												isLoading={activeAction() === actionKey(database.id, "stop")}
 												onClick={() => void handleStop(database)}
 											>
 												stop
@@ -529,9 +492,7 @@ const Databases: Component = () => {
 										</Show>
 										<Button
 											variant="danger"
-											isLoading={
-												activeAction() === actionKey(database.id, "delete")
-											}
+											isLoading={activeAction() === actionKey(database.id, "delete")}
 											onClick={() => void handleDelete(database)}
 										>
 											delete

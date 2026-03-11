@@ -1,12 +1,5 @@
 import { A } from "@solidjs/router";
-import {
-	Component,
-	createMemo,
-	createResource,
-	createSignal,
-	For,
-	Show,
-} from "solid-js";
+import { Component, createMemo, createResource, createSignal, For, Show } from "solid-js";
 
 import SystemMonitor from "../components/SystemMonitor";
 import {
@@ -221,8 +214,7 @@ const hasPublicExposure = (service: ServiceInventoryItem): boolean =>
 	service.public_http ||
 	service.default_urls.length > 0 ||
 	(service.external_port !== null && service.external_port !== undefined) ||
-	(service.proxy_external_port !== null &&
-		service.proxy_external_port !== undefined);
+	(service.proxy_external_port !== null && service.proxy_external_port !== undefined);
 
 const serviceTypeLabel = (serviceType: string): string => {
 	switch (serviceType) {
@@ -270,11 +262,7 @@ const serviceEndpointLabel = (service: ServiceInventoryItem): string => {
 		return service.default_urls[0];
 	}
 
-	if (
-		service.proxy_external_port &&
-		service.public_ip &&
-		service.proxy_enabled
-	) {
+	if (service.proxy_external_port && service.public_ip && service.proxy_enabled) {
 		return `${service.public_ip}:${service.proxy_external_port}`;
 	}
 
@@ -305,9 +293,7 @@ const serviceActivityLabel = (service: ServiceInventoryItem): string => {
 	return `${service.running_instances}/${service.desired_instances} instances`;
 };
 
-const statusVariant = (
-	status: string,
-): "success" | "warning" | "error" | "outline" => {
+const statusVariant = (status: string): "success" | "warning" | "error" | "outline" => {
 	switch (status) {
 		case "running":
 			return "success";
@@ -330,9 +316,7 @@ const groupLabel = (service: ServiceInventoryItem): string => {
 };
 
 const groupKey = (service: ServiceInventoryItem): string =>
-	service.project_id ||
-	service.group_id ||
-	`standalone:${service.network_name}:${service.id}`;
+	service.project_id || service.group_id || `standalone:${service.network_name}:${service.id}`;
 
 const ServiceIcon: Component<{ type: string }> = (props) => {
 	const iconPath = () => {
@@ -381,9 +365,7 @@ const Dashboard: Component = () => {
 	const [services, { refetch }] = createResource(fetchServices);
 	const [filter, setFilter] = createSignal<FilterTab>("all");
 	const [search, setSearch] = createSignal("");
-	const [pendingServiceId, setPendingServiceId] = createSignal<string | null>(
-		null,
-	);
+	const [pendingServiceId, setPendingServiceId] = createSignal<string | null>(null);
 	const [actionError, setActionError] = createSignal("");
 
 	const summary = createMemo(() => {
@@ -392,8 +374,7 @@ const Dashboard: Component = () => {
 
 		return {
 			all: rows.length,
-			app: rows.filter((service) => service.resource_kind === "app_service")
-				.length,
+			app: rows.filter((service) => service.resource_kind === "app_service").length,
 			managed: rows.filter(isManagedService).length,
 			public: rows.filter(hasPublicExposure).length,
 			groups: groupKeys.size,
@@ -402,9 +383,7 @@ const Dashboard: Component = () => {
 
 	const filteredServices = createMemo(() => {
 		let rows = [...(services() || [])].sort(
-			(left, right) =>
-				new Date(right.updated_at).getTime() -
-				new Date(left.updated_at).getTime(),
+			(left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime(),
 		);
 		const query = search().toLowerCase().trim();
 
@@ -446,10 +425,7 @@ const Dashboard: Component = () => {
 			if (existing) {
 				existing.services.push(service);
 				existing.public_count += hasPublicExposure(service) ? 1 : 0;
-				if (
-					new Date(service.updated_at).getTime() >
-					new Date(existing.updated_at).getTime()
-				) {
+				if (new Date(service.updated_at).getTime() > new Date(existing.updated_at).getTime()) {
 					existing.updated_at = service.updated_at;
 				}
 				continue;
@@ -472,8 +448,7 @@ const Dashboard: Component = () => {
 				...group,
 				services: [...group.services].sort(
 					(left, right) =>
-						new Date(right.updated_at).getTime() -
-						new Date(left.updated_at).getTime(),
+						new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime(),
 				),
 			}))
 			.sort((left, right) => {
@@ -481,10 +456,7 @@ const Dashboard: Component = () => {
 					return left.is_standalone ? 1 : -1;
 				}
 
-				return (
-					new Date(right.updated_at).getTime() -
-					new Date(left.updated_at).getTime()
-				);
+				return new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
 			});
 	});
 
@@ -537,8 +509,8 @@ their network boundary, and restart any service directly from the inventory."
 						</p>
 						<CardTitle class="mt-2">create a service</CardTitle>
 						<CardDescription>
-							every service type now starts from the same full-page creation
-							flow instead of separate modal screens.
+							every service type now starts from the same full-page creation flow instead of
+							separate modal screens.
 						</CardDescription>
 					</div>
 					<Badge variant="outline">{summary().all} services tracked</Badge>
@@ -576,9 +548,7 @@ their network boundary, and restart any service directly from the inventory."
 														</p>
 													</div>
 												</div>
-												<p class="text-sm font-medium text-[var(--foreground)]">
-													{action.label}
-												</p>
+												<p class="text-sm font-medium text-[var(--foreground)]">{action.label}</p>
 											</CardContent>
 										</Card>
 									</A>
@@ -594,8 +564,8 @@ their network boundary, and restart any service directly from the inventory."
 									managed services
 								</p>
 								<p class="mt-2 text-sm text-[var(--muted-foreground)]">
-									use the same creation page and attach the service to an
-									existing group or keep it standalone.
+									use the same creation page and attach the service to an existing group or keep it
+									standalone.
 								</p>
 							</div>
 							<Badge variant="secondary">{summary().managed}</Badge>
@@ -620,9 +590,7 @@ their network boundary, and restart any service directly from the inventory."
 														</p>
 													</div>
 												</div>
-												<p class="text-sm font-medium text-[var(--foreground)]">
-													{action.label}
-												</p>
+												<p class="text-sm font-medium text-[var(--foreground)]">{action.label}</p>
 											</CardContent>
 										</Card>
 									</A>
@@ -639,9 +607,7 @@ their network boundary, and restart any service directly from the inventory."
 						<p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
 							total services
 						</p>
-						<p class="font-serif text-4xl text-[var(--foreground)]">
-							{summary().all}
-						</p>
+						<p class="font-serif text-4xl text-[var(--foreground)]">{summary().all}</p>
 						<p class="text-sm text-[var(--muted-foreground)]">
 							across {summary().groups} groups or standalone networks
 						</p>
@@ -652,9 +618,7 @@ their network boundary, and restart any service directly from the inventory."
 						<p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
 							application services
 						</p>
-						<p class="font-serif text-4xl text-[var(--foreground)]">
-							{summary().app}
-						</p>
+						<p class="font-serif text-4xl text-[var(--foreground)]">{summary().app}</p>
 						<p class="text-sm text-[var(--muted-foreground)]">
 							web, private, worker, and cron containers
 						</p>
@@ -665,9 +629,7 @@ their network boundary, and restart any service directly from the inventory."
 						<p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
 							managed services
 						</p>
-						<p class="font-serif text-4xl text-[var(--foreground)]">
-							{summary().managed}
-						</p>
+						<p class="font-serif text-4xl text-[var(--foreground)]">{summary().managed}</p>
 						<p class="text-sm text-[var(--muted-foreground)]">
 							postgres, valkey, mariadb, qdrant, and rabbitmq
 						</p>
@@ -678,9 +640,7 @@ their network boundary, and restart any service directly from the inventory."
 						<p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
 							public exposure
 						</p>
-						<p class="font-serif text-4xl text-[var(--foreground)]">
-							{summary().public}
-						</p>
+						<p class="font-serif text-4xl text-[var(--foreground)]">{summary().public}</p>
 						<p class="text-sm text-[var(--muted-foreground)]">
 							services with a public url or public port
 						</p>
@@ -698,15 +658,12 @@ their network boundary, and restart any service directly from the inventory."
 						</p>
 						<CardTitle class="mt-2">services grouped by group</CardTitle>
 						<CardDescription>
-							each section matches the group network boundary. standalone
-							services stay isolated in their own section.
+							each section matches the group network boundary. standalone services stay isolated in
+							their own section.
 						</CardDescription>
 					</div>
 					<div class="flex w-full flex-col gap-4 xl:w-auto xl:flex-row xl:items-center">
-						<Tabs
-							value={filter()}
-							onValueChange={(value) => setFilter(value as FilterTab)}
-						>
+						<Tabs value={filter()} onValueChange={(value) => setFilter(value as FilterTab)}>
 							<TabsList>
 								<TabsTrigger value="all">
 									all <span class="text-[10px]">({summary().all})</span>
@@ -748,9 +705,7 @@ their network boundary, and restart any service directly from the inventory."
 
 					<Show when={services.loading}>
 						<div class="grid gap-4">
-							<For each={[1, 2, 3, 4]}>
-								{() => <Skeleton class="h-64 w-full" />}
-							</For>
+							<For each={[1, 2, 3, 4]}>{() => <Skeleton class="h-64 w-full" />}</For>
 						</div>
 					</Show>
 
@@ -765,12 +720,7 @@ it will appear here under its group automatically."
 								</A>
 							}
 							icon={
-								<svg
-									class="h-6 w-6"
-									fill="none"
-									stroke="currentColor"
-									viewBox="0 0 24 24"
-								>
+								<svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path
 										stroke-linecap="round"
 										stroke-linejoin="round"
@@ -790,25 +740,19 @@ it will appear here under its group automatically."
 										<CardHeader class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
 											<div>
 												<p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
-													{group.is_standalone
-														? "standalone service"
-														: "service group"}
+													{group.is_standalone ? "standalone service" : "service group"}
 												</p>
 												<CardTitle class="mt-2">{group.label}</CardTitle>
 												<CardDescription>
-													network {group.network_name} · {group.services.length}{" "}
-													service{group.services.length === 1 ? "" : "s"} ·{" "}
-													updated {timeAgo(group.updated_at)}
+													network {group.network_name} · {group.services.length} service
+													{group.services.length === 1 ? "" : "s"} · updated{" "}
+													{timeAgo(group.updated_at)}
 												</CardDescription>
 											</div>
 											<div class="flex flex-wrap items-center gap-2">
-												<Badge variant="secondary">
-													{group.services.length} services
-												</Badge>
+												<Badge variant="secondary">{group.services.length} services</Badge>
 												<Show when={group.public_count > 0}>
-													<Badge variant="outline">
-														{group.public_count} public
-													</Badge>
+													<Badge variant="outline">{group.public_count} public</Badge>
 												</Show>
 												<Show when={group.project_id}>
 													<A href={`/projects/${group.project_id}`}>
@@ -836,16 +780,11 @@ it will appear here under its group automatically."
 																		</p>
 																	</div>
 																	<div class="flex flex-wrap gap-2">
-																		<Badge
-																			variant={statusVariant(service.status)}
-																		>
+																		<Badge variant={statusVariant(service.status)}>
 																			{service.status}
 																		</Badge>
 																		<Badge variant="outline">
-																			{service.resource_kind.replaceAll(
-																				"_",
-																				" ",
-																			)}
+																			{service.resource_kind.replaceAll("_", " ")}
 																		</Badge>
 																		<Show when={hasPublicExposure(service)}>
 																			<Badge variant="outline">public</Badge>

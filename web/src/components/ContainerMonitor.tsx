@@ -18,10 +18,7 @@ type VolumeEntry = components["schemas"]["VolumeEntry"];
 const formatBytes = (bytes: number) => {
 	if (!bytes) return "0 B";
 	const units = ["B", "KB", "MB", "GB", "TB"];
-	const idx = Math.min(
-		Math.floor(Math.log(bytes) / Math.log(1024)),
-		units.length - 1,
-	);
+	const idx = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
 	return `${(bytes / Math.pow(1024, idx)).toFixed(1)} ${units[idx]}`;
 };
 
@@ -45,10 +42,7 @@ const ansiColors: Record<string, string> = {
 };
 
 const ansiToHtml = (text: string): string => {
-	let result = text
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;");
+	let result = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 	result = result.replace(/\x1b\[([0-9;]*)m/g, (_, codes) => {
 		if (!codes || codes === "0") return "</span>";
@@ -105,11 +99,7 @@ const fetchMounts = async (id: string): Promise<ContainerMount[]> => {
 	return data;
 };
 
-const fetchEntries = async (
-	id: string,
-	mount: string,
-	path: string,
-): Promise<VolumeEntry[]> => {
+const fetchEntries = async (id: string, mount: string, path: string): Promise<VolumeEntry[]> => {
 	const { data, error } = await api.GET("/api/containers/{id}/files", {
 		params: {
 			path: { id },
@@ -127,21 +117,12 @@ const ContainerMonitor: Component<{
 	containerId: string;
 	defaultTab?: "overview" | "metrics" | "logs" | "volumes" | "terminal";
 }> = (props) => {
-	const [tab, setTab] = createSignal<
-		"overview" | "metrics" | "logs" | "volumes" | "terminal"
-	>(props.defaultTab || "overview");
-	const [status, { refetch: refetchStatus }] = createResource(
-		() => props.containerId,
-		fetchStatus,
+	const [tab, setTab] = createSignal<"overview" | "metrics" | "logs" | "volumes" | "terminal">(
+		props.defaultTab || "overview",
 	);
-	const [logs, { refetch: refetchLogs }] = createResource(
-		() => props.containerId,
-		fetchLogs,
-	);
-	const [mounts, { refetch: refetchMounts }] = createResource(
-		() => props.containerId,
-		fetchMounts,
-	);
+	const [status, { refetch: refetchStatus }] = createResource(() => props.containerId, fetchStatus);
+	const [logs, { refetch: refetchLogs }] = createResource(() => props.containerId, fetchLogs);
+	const [mounts, { refetch: refetchMounts }] = createResource(() => props.containerId, fetchMounts);
 	const [selectedMount, setSelectedMount] = createSignal("");
 	const [currentPath, setCurrentPath] = createSignal("");
 	const [newFolderName, setNewFolderName] = createSignal("");
@@ -178,11 +159,7 @@ const ContainerMonitor: Component<{
 		const id = props.containerId;
 		if (!id) return;
 
-		if (
-			currentTab === "logs" ||
-			currentTab === "metrics" ||
-			currentTab === "overview"
-		) {
+		if (currentTab === "logs" || currentTab === "metrics" || currentTab === "overview") {
 			const interval = setInterval(() => {
 				if (currentTab === "logs") {
 					refetchLogs();
@@ -324,16 +301,14 @@ const ContainerMonitor: Component<{
 			</div>
 
 			<div class="flex gap-2 mb-4 text-xs">
-				{(["overview", "metrics", "logs", "terminal", "volumes"] as const).map(
-					(name) => (
-						<button
-							onClick={() => setTab(name)}
-							class={`px-2.5 py-1 border ${tab() === name ? "bg-black text-white border-black" : "bg-white text-neutral-600 border-neutral-300 hover:border-neutral-400"}`}
-						>
-							{name}
-						</button>
-					),
-				)}
+				{(["overview", "metrics", "logs", "terminal", "volumes"] as const).map((name) => (
+					<button
+						onClick={() => setTab(name)}
+						class={`px-2.5 py-1 border ${tab() === name ? "bg-black text-white border-black" : "bg-white text-neutral-600 border-neutral-300 hover:border-neutral-400"}`}
+					>
+						{name}
+					</button>
+				))}
 			</div>
 
 			<Show when={tab() === "overview"}>
@@ -348,9 +323,7 @@ const ContainerMonitor: Component<{
 					</div>
 					<div>
 						<p class="text-xs text-neutral-400">uptime</p>
-						<p class="text-neutral-800">
-							{formatUptime(status()?.started_at || null)}
-						</p>
+						<p class="text-neutral-800">{formatUptime(status()?.started_at || null)}</p>
 					</div>
 					<div>
 						<p class="text-xs text-neutral-400">restarts</p>
@@ -479,11 +452,7 @@ const ContainerMonitor: Component<{
 											{entry.is_dir ? "[dir]" : "[file]"} {entry.name}
 										</button>
 										<div class="flex items-center gap-3 text-xs text-neutral-500">
-											<span>
-												{entry.is_dir
-													? "folder"
-													: formatBytes(entry.size_bytes)}
-											</span>
+											<span>{entry.is_dir ? "folder" : formatBytes(entry.size_bytes)}</span>
 											<button
 												onClick={() =>
 													void handleDownload(entry).catch((err) => {
@@ -506,9 +475,7 @@ const ContainerMonitor: Component<{
 								)}
 							</For>
 							<Show when={entries() && entries()!.length === 0}>
-								<div class="px-3 py-4 text-xs text-neutral-400">
-									empty folder
-								</div>
+								<div class="px-3 py-4 text-xs text-neutral-400">empty folder</div>
 							</Show>
 						</div>
 					</Show>

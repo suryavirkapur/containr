@@ -15,6 +15,12 @@ import {
 	SidebarMenuItem,
 	SidebarMenuLink,
 } from "./ui";
+import {
+	DropdownMenu,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+} from "./ui/DropdownMenu";
 
 interface NavLink {
 	href: string;
@@ -36,24 +42,13 @@ const navSections: NavSection[] = [
 				href: "/services",
 				label: "services",
 				icon: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10",
-				matches: (path) =>
+				matches: (path: string) =>
 					path === "/" ||
 					path === "/apps" ||
 					path === "/projects" ||
 					path.startsWith("/services") ||
 					path.startsWith("/databases") ||
 					path.startsWith("/queues"),
-			},
-			{
-				href: "/services/new",
-				label: "new service",
-				icon: "M12 4v16m8-8H4",
-				matches: (path) =>
-					path === "/projects/new" ||
-					path === "/apps/new" ||
-					path === "/services/new" ||
-					path === "/databases/new" ||
-					path === "/queues/new",
 			},
 		],
 	},
@@ -64,7 +59,7 @@ const navSections: NavSection[] = [
 				href: "/storage",
 				label: "storage",
 				icon: "M4 7h16M7 7V5h10v2m-9 4h8m-8 4h8m-8 4h8",
-				matches: (path) => path.startsWith("/storage"),
+				matches: (path: string) => path.startsWith("/storage"),
 			},
 		],
 	},
@@ -75,16 +70,16 @@ const navSections: NavSection[] = [
 				href: "/settings",
 				label: "settings",
 				icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z",
-				matches: (path) => path.startsWith("/settings"),
+				matches: (path: string) => path.startsWith("/settings"),
 			},
 		],
 	},
 ];
 
-const Layout: Component<{ children?: JSX.Element }> = (props) => {
+const Layout: Component<{ children?: JSX.Element; onNavigate?: () => void }> = (props) => {
 	return (
 		<AuthProvider>
-			<LayoutContent>{props.children}</LayoutContent>
+			<LayoutContent onNavigate={props.onNavigate}>{props.children}</LayoutContent>
 		</AuthProvider>
 	);
 };
@@ -109,19 +104,12 @@ const AppSidebar: Component<{
 					<p class="text-[11px] font-semibold uppercase tracking-[0.32em] text-[var(--muted-foreground)]">
 						internal paas
 					</p>
-					<A
-						href="/services"
-						class="block"
-						onClick={() => props.onNavigate?.()}
-					>
-						<div class="font-serif text-2xl tracking-tight text-[var(--foreground)]">
-							containr
-						</div>
+					<A href="/services" class="block" onClick={() => props.onNavigate?.()}>
+						<div class="font-serif text-2xl tracking-tight text-[var(--foreground)]">containr</div>
 					</A>
 				</div>
 				<p class="mt-3 text-sm leading-6 text-[var(--muted-foreground)]">
-					service-first control plane with shared service networks and managed
-					runtimes.
+					service-first control plane with shared service networks and managed runtimes.
 				</p>
 			</SidebarHeader>
 
@@ -165,6 +153,91 @@ const AppSidebar: Component<{
 				</For>
 			</SidebarContent>
 
+			<div class="px-4 py-2">
+				<DropdownMenu
+					align="start"
+					trigger={<Button class="w-full justify-start text-left">new +</Button>}
+				>
+					<DropdownMenuLabel>Git Services</DropdownMenuLabel>
+					<DropdownMenuItem
+						onClick={() => {
+							props.onNavigate?.();
+							navigate("/services/new/repo?type=web_service");
+						}}
+					>
+						Web Service
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						onClick={() => {
+							props.onNavigate?.();
+							navigate("/services/new/repo?type=private_service");
+						}}
+					>
+						Private Service
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						onClick={() => {
+							props.onNavigate?.();
+							navigate("/services/new/repo?type=background_worker");
+						}}
+					>
+						Background Worker
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						onClick={() => {
+							props.onNavigate?.();
+							navigate("/services/new/repo?type=cron_job");
+						}}
+					>
+						Cron Job
+					</DropdownMenuItem>
+
+					<DropdownMenuSeparator />
+					<DropdownMenuLabel>Managed Templates</DropdownMenuLabel>
+
+					<DropdownMenuItem
+						onClick={() => {
+							props.onNavigate?.();
+							navigate("/services/new/template?type=postgresql");
+						}}
+					>
+						PostgreSQL
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						onClick={() => {
+							props.onNavigate?.();
+							navigate("/services/new/template?type=redis");
+						}}
+					>
+						Valkey
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						onClick={() => {
+							props.onNavigate?.();
+							navigate("/services/new/template?type=mariadb");
+						}}
+					>
+						MariaDB
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						onClick={() => {
+							props.onNavigate?.();
+							navigate("/services/new/template?type=qdrant");
+						}}
+					>
+						Qdrant
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						onClick={() => {
+							props.onNavigate?.();
+							navigate("/services/new/template?type=rabbitmq");
+						}}
+					>
+						RabbitMQ
+					</DropdownMenuItem>
+				</DropdownMenu>
+			</div>
+
 			<SidebarFooter>
 				<Show
 					when={isAuthenticated()}
@@ -188,7 +261,11 @@ const AppSidebar: Component<{
 	);
 };
 
-const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
+const LayoutContent: Component<{
+	children?: JSX.Element;
+	onNavigate?: () => void;
+}> = (props) => {
+	const navigate = useNavigate();
 	const [sidebarOpen, setSidebarOpen] = createSignal(false);
 
 	return (
@@ -215,11 +292,7 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
 					<header class="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--background-overlay)] backdrop-blur lg:hidden">
 						<div class="flex items-center justify-between px-4 py-4">
 							<div class="flex items-center gap-3">
-								<Button
-									variant="outline"
-									size="icon"
-									onClick={() => setSidebarOpen(true)}
-								>
+								<Button variant="outline" size="icon" onClick={() => setSidebarOpen(true)}>
 									<svg
 										class="h-4 w-4"
 										viewBox="0 0 24 24"
@@ -236,23 +309,56 @@ const LayoutContent: Component<{ children?: JSX.Element }> = (props) => {
 									containr
 								</A>
 							</div>
-							<A href="/services/new">
-								<Button size="sm">new service</Button>
-							</A>
+							<DropdownMenu align="end" trigger={<Button size="sm">new +</Button>}>
+								<DropdownMenuLabel>Git Services</DropdownMenuLabel>
+								<DropdownMenuItem onClick={() => navigate("/services/new/repo?type=web_service")}>
+									Web Service
+								</DropdownMenuItem>
+								<DropdownMenuItem
+									onClick={() => navigate("/services/new/repo?type=private_service")}
+								>
+									Private Service
+								</DropdownMenuItem>
+								<DropdownMenuItem
+									onClick={() => navigate("/services/new/repo?type=background_worker")}
+								>
+									Background Worker
+								</DropdownMenuItem>
+								<DropdownMenuItem onClick={() => navigate("/services/new/repo?type=cron_job")}>
+									Cron Job
+								</DropdownMenuItem>
+
+								<DropdownMenuSeparator />
+								<DropdownMenuLabel>Managed Templates</DropdownMenuLabel>
+
+								<DropdownMenuItem
+									onClick={() => navigate("/services/new/template?type=postgresql")}
+								>
+									PostgreSQL
+								</DropdownMenuItem>
+								<DropdownMenuItem onClick={() => navigate("/services/new/template?type=redis")}>
+									Valkey
+								</DropdownMenuItem>
+								<DropdownMenuItem onClick={() => navigate("/services/new/template?type=mariadb")}>
+									MariaDB
+								</DropdownMenuItem>
+								<DropdownMenuItem onClick={() => navigate("/services/new/template?type=qdrant")}>
+									Qdrant
+								</DropdownMenuItem>
+								<DropdownMenuItem onClick={() => navigate("/services/new/template?type=rabbitmq")}>
+									RabbitMQ
+								</DropdownMenuItem>
+							</DropdownMenu>
 						</div>
 					</header>
 
 					<main class="flex-1">
-						<div class="mx-auto w-full max-w-7xl px-5 py-8 lg:px-10 lg:py-10">
-							{props.children}
-						</div>
+						<div class="mx-auto w-full max-w-7xl px-5 py-8 lg:px-10 lg:py-10">{props.children}</div>
 					</main>
 
 					<footer class="border-t border-[var(--border)] bg-[var(--background-overlay)]">
 						<div class="mx-auto flex w-full max-w-7xl flex-col gap-3 px-5 py-5 text-sm text-[var(--muted-foreground)] lg:px-10 lg:flex-row lg:items-center lg:justify-between">
-							<div class="font-serif text-base text-[var(--foreground)]">
-								containr
-							</div>
+							<div class="font-serif text-base text-[var(--foreground)]">containr</div>
 							<p class="text-xs uppercase tracking-[0.18em]">
 								services and storage from one control plane
 							</p>

@@ -29,8 +29,8 @@ option 1: install from cargo (recommended)
 
 with specific version/tag:
 
-  cargo install --git https://github.com/suryavirkapur/containr --tag v0.1.14-alpha --package containr --bin containr
-  cargo install --git https://github.com/suryavirkapur/containr --tag v0.1.14-alpha --package containrctl --bin containrctl
+  cargo install --git https://github.com/suryavirkapur/containr --tag v0.1.15-alpha --package containr --bin containr
+  cargo install --git https://github.com/suryavirkapur/containr --tag v0.1.15-alpha --package containrctl --bin containrctl
 
 option 2: build from source
 

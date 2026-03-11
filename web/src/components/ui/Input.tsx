@@ -11,24 +11,15 @@ interface InputProps extends JSX.InputHTMLAttributes<HTMLInputElement> {
 
 /// reusable input component
 export const Input: Component<InputProps> = (props) => {
-	const [local, others] = splitProps(props, [
-		"label",
-		"error",
-		"description",
-		"class",
-		"id",
-	]);
+	const [local, others] = splitProps(props, ["label", "error", "description", "class", "id"]);
 
-	const inputId =
-		local.id || `input-${Math.random().toString(36).substring(2, 9)}`;
+	const inputId = local.id || `input-${Math.random().toString(36).substring(2, 9)}`;
 
 	return (
 		<div class="w-full space-y-2">
 			{local.label ? <Label for={inputId}>{local.label}</Label> : null}
 			{local.description ? (
-				<p class="text-xs text-[var(--muted-foreground)]">
-					{local.description}
-				</p>
+				<p class="text-xs text-[var(--muted-foreground)]">{local.description}</p>
 			) : null}
 			<input
 				id={inputId}
@@ -38,9 +29,7 @@ export const Input: Component<InputProps> = (props) => {
 					"border-[var(--border)] placeholder:text-[var(--muted-foreground)]/70",
 					"focus:border-[var(--ring)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)]",
 					"disabled:cursor-not-allowed disabled:opacity-50",
-					local.error
-						? "border-red-500 focus:border-red-500 focus:ring-red-500"
-						: "",
+					local.error ? "border-red-500 focus:border-red-500 focus:ring-red-500" : "",
 					local.class,
 				)}
 				{...others}

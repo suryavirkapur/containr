@@ -2,15 +2,7 @@ import { Component, createSignal } from "solid-js";
 import { A, useNavigate } from "@solidjs/router";
 
 import { api } from "../api";
-import {
-	Alert,
-	Button,
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	Input,
-} from "../components/ui";
+import { Alert, Button, Card, CardContent, CardHeader, CardTitle, Input } from "../components/ui";
 
 const Register: Component = () => {
 	const [email, setEmail] = createSignal("");

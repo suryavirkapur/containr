@@ -9,7 +9,7 @@ current context:
 - recent refactors centralized service lifecycle, separated the cli, added persistent mounts, and verified routing with live docker e2e tests.
 
 pending tasks:
-- publish 0.1.14-alpha release through `gh` cli
+- publish 0.1.15-alpha release through `gh` cli
 - platform roadmap: surface deployment state, expose public urls, harden startup replay
 - implement per-bucket rustfs credentials instead of shared keys
 - add queue logs and health visibility in the dashboard

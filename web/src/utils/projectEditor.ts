@@ -1,9 +1,5 @@
 import { components } from "../api";
-import {
-	Service,
-	createServiceForType,
-	normalizeServiceType,
-} from "../components/ServiceForm";
+import { Service, createServiceForType, normalizeServiceType } from "../components/ServiceForm";
 import { EditableKeyValueEntry } from "./keyValueEntries";
 
 export const secretMask = "********";
@@ -85,8 +81,7 @@ export function mapServiceToRequest(service: Service) {
 		port: service.port,
 		expose_http: service.expose_http,
 		domains: service.domains.length > 0 ? service.domains : null,
-		additional_ports:
-			service.additional_ports.length > 0 ? service.additional_ports : null,
+		additional_ports: service.additional_ports.length > 0 ? service.additional_ports : null,
 		replicas: service.replicas,
 		memory_limit_mb: service.memory_limit_mb,
 		cpu_limit: service.cpu_limit,

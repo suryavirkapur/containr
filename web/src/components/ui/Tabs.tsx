@@ -1,11 +1,4 @@
-import {
-	Component,
-	JSX,
-	Show,
-	createContext,
-	splitProps,
-	useContext,
-} from "solid-js";
+import { Component, JSX, Show, createContext, splitProps, useContext } from "solid-js";
 
 import { cn } from "../../lib/cn";
 
@@ -22,12 +15,7 @@ interface TabsProps extends JSX.HTMLAttributes<HTMLDivElement> {
 }
 
 export const Tabs: Component<TabsProps> = (props) => {
-	const [local, others] = splitProps(props, [
-		"value",
-		"onValueChange",
-		"class",
-		"children",
-	]);
+	const [local, others] = splitProps(props, ["value", "onValueChange", "class", "children"]);
 
 	return (
 		<TabsContext.Provider
@@ -43,9 +31,7 @@ export const Tabs: Component<TabsProps> = (props) => {
 	);
 };
 
-export const TabsList: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
-	props,
-) => {
+export const TabsList: Component<JSX.HTMLAttributes<HTMLDivElement>> = (props) => {
 	const [local, others] = splitProps(props, ["class", "children"]);
 
 	return (

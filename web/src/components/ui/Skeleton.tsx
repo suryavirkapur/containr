@@ -5,15 +5,15 @@ import { cn } from "../../lib/cn";
 interface SkeletonProps extends JSX.HTMLAttributes<HTMLDivElement> {}
 
 export const Skeleton: Component<SkeletonProps> = (props) => {
-    const [local, others] = splitProps(props, ["class"]);
+	const [local, others] = splitProps(props, ["class"]);
 
-    return (
-        <div
-            class={cn(
-                "animate-pulse bg-[linear-gradient(90deg,var(--muted),var(--surface-muted),var(--muted))]",
-                local.class,
-            )}
-            {...others}
-        />
-    );
+	return (
+		<div
+			class={cn(
+				"animate-pulse bg-[linear-gradient(90deg,var(--muted),var(--surface-muted),var(--muted))]",
+				local.class,
+			)}
+			{...others}
+		/>
+	);
 };

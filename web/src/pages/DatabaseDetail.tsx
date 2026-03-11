@@ -21,13 +21,7 @@ type ExportResponse = components["schemas"]["ExportResponse"];
 type BaseBackupResponse = components["schemas"]["BaseBackupResponse"];
 type RestorePointResponse = components["schemas"]["RestorePointResponse"];
 type RecoverDatabaseResponse = components["schemas"]["RecoverDatabaseResponse"];
-type DatabaseTab =
-	| "overview"
-	| "connect"
-	| "access"
-	| "recovery"
-	| "backups"
-	| "container";
+type DatabaseTab = "overview" | "connect" | "access" | "recovery" | "backups" | "container";
 
 const primaryButtonClass =
 	"border border-black bg-black px-4 py-2 text-sm text-white hover:bg-neutral-800 " +
@@ -104,10 +98,7 @@ const toggleExternalAccess = async (
 	return data;
 };
 
-const togglePitr = async (
-	id: string,
-	enabled: boolean,
-): Promise<DatabaseResponse> => {
+const togglePitr = async (id: string, enabled: boolean): Promise<DatabaseResponse> => {
 	const { data, error } = await api.POST("/api/databases/{id}/pitr", {
 		params: { path: { id } },
 		body: { enabled },
@@ -129,17 +120,11 @@ const toggleProxy = async (
 	return data;
 };
 
-const createPitrBaseBackup = async (
-	id: string,
-	label?: string,
-): Promise<BaseBackupResponse> => {
-	const { data, error } = await api.POST(
-		"/api/databases/{id}/pitr/base-backup",
-		{
-			params: { path: { id } },
-			body: { label },
-		},
-	);
+const createPitrBaseBackup = async (id: string, label?: string): Promise<BaseBackupResponse> => {
+	const { data, error } = await api.POST("/api/databases/{id}/pitr/base-backup", {
+		params: { path: { id } },
+		body: { label },
+	});
 	if (error) throw error;
 	return data;
 };
@@ -148,13 +133,10 @@ const createDatabaseRestorePoint = async (
 	id: string,
 	restorePoint?: string,
 ): Promise<RestorePointResponse> => {
-	const { data, error } = await api.POST(
-		"/api/databases/{id}/pitr/restore-point",
-		{
-			params: { path: { id } },
-			body: { restore_point: restorePoint },
-		},
-	);
+	const { data, error } = await api.POST("/api/databases/{id}/pitr/restore-point", {
+		params: { path: { id } },
+		body: { restore_point: restorePoint },
+	});
 	if (error) throw error;
 	return data;
 };
@@ -223,10 +205,7 @@ const formatBytes = (bytes: number) => {
 	if (!bytes) return "0 B";
 
 	const units = ["B", "KB", "MB", "GB"];
-	const idx = Math.min(
-		Math.floor(Math.log(bytes) / Math.log(1024)),
-		units.length - 1,
-	);
+	const idx = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
 
 	return `${(bytes / Math.pow(1024, idx)).toFixed(1)} ${units[idx]}`;
 };
@@ -258,9 +237,8 @@ const formatLocalDateTimeInput = (value?: string | null) => {
 
 	const pad = (input: number) => input.toString().padStart(2, "0");
 	return (
-		[date.getFullYear(), pad(date.getMonth() + 1), pad(date.getDate())].join(
-			"-",
-		) + `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+		[date.getFullYear(), pad(date.getMonth() + 1), pad(date.getDate())].join("-") +
+		`T${pad(date.getHours())}:${pad(date.getMinutes())}`
 	);
 };
 
@@ -321,25 +299,15 @@ const statusDotClass = (status?: string) => {
 
 const DatabaseDetail: Component = () => {
 	const params = useParams();
-	const [database, { refetch }] = createResource(
-		() => params.id,
-		fetchDatabase,
-	);
+	const [database, { refetch }] = createResource(() => params.id, fetchDatabase);
 	const [containers] = createResource(fetchContainers);
-	const [backups, { refetch: refetchBackups }] = createResource(
-		() => params.id,
-		fetchBackups,
-	);
+	const [backups, { refetch: refetchBackups }] = createResource(() => params.id, fetchBackups);
 	const [buckets] = createResource(fetchBuckets);
 	const [selectedContainer, setSelectedContainer] = createSignal("");
 	const [activeTab, setActiveTab] = createSignal<DatabaseTab>("overview");
-	const [visibleSecrets, setVisibleSecrets] = createSignal<
-		Record<string, boolean>
-	>({});
+	const [visibleSecrets, setVisibleSecrets] = createSignal<Record<string, boolean>>({});
 	const [copiedField, setCopiedField] = createSignal("");
-	const [powerAction, setPowerAction] = createSignal<
-		"" | "start" | "stop" | "restart"
-	>("");
+	const [powerAction, setPowerAction] = createSignal<"" | "start" | "stop" | "restart">("");
 	const [serviceMessage, setServiceMessage] = createSignal("");
 	const [exposing, setExposing] = createSignal(false);
 	const [togglingPitr, setTogglingPitr] = createSignal(false);
@@ -364,8 +332,7 @@ const DatabaseDetail: Component = () => {
 
 	const dbContainers = createMemo(() =>
 		(containers() || []).filter(
-			(item) =>
-				item.resource_type === "database" && item.resource_id === params.id,
+			(item) => item.resource_type === "database" && item.resource_id === params.id,
 		),
 	);
 
@@ -382,10 +349,7 @@ const DatabaseDetail: Component = () => {
 			nextTabs.push({ id: "recovery", label: "recovery" });
 		}
 
-		nextTabs.push(
-			{ id: "backups", label: "backups" },
-			{ id: "container", label: "container" },
-		);
+		nextTabs.push({ id: "backups", label: "backups" }, { id: "container", label: "container" });
 
 		return nextTabs;
 	});
@@ -481,8 +445,7 @@ const DatabaseDetail: Component = () => {
 		return maskSecret(value);
 	};
 
-	const copyLabel = (key: string) =>
-		copiedField() === key ? "copied" : "copy";
+	const copyLabel = (key: string) => (copiedField() === key ? "copied" : "copy");
 
 	const copyToClipboard = async (key: string, text?: string | null) => {
 		if (!text) return;
@@ -500,8 +463,7 @@ const DatabaseDetail: Component = () => {
 
 	const externalTarget = (port?: number | null) => {
 		if (!port) return "";
-		const host =
-			typeof window === "undefined" ? "localhost" : window.location.hostname;
+		const host = typeof window === "undefined" ? "localhost" : window.location.hostname;
 		return `${host}:${port}`;
 	};
 
@@ -570,9 +532,7 @@ const DatabaseDetail: Component = () => {
 				shouldEnable,
 				shouldEnable && requestedPort ? Number(requestedPort) : undefined,
 			);
-			setAccessMessage(
-				shouldEnable ? "external access enabled" : "external access disabled",
-			);
+			setAccessMessage(shouldEnable ? "external access enabled" : "external access disabled");
 			await refetch();
 		} catch (error) {
 			setAccessMessage(describeError(error));
@@ -589,9 +549,7 @@ const DatabaseDetail: Component = () => {
 		try {
 			await togglePitr(db.id, !db.pitr_enabled);
 			setPitrMessage(
-				!db.pitr_enabled
-					? "point in time recovery enabled"
-					: "point in time recovery disabled",
+				!db.pitr_enabled ? "point in time recovery enabled" : "point in time recovery disabled",
 			);
 			await refetch();
 		} catch (error) {
@@ -614,9 +572,7 @@ const DatabaseDetail: Component = () => {
 				shouldEnable,
 				shouldEnable && requestedPort ? Number(requestedPort) : undefined,
 			);
-			setProxyMessage(
-				shouldEnable ? "pgdog proxy enabled" : "pgdog proxy disabled",
-			);
+			setProxyMessage(shouldEnable ? "pgdog proxy enabled" : "pgdog proxy disabled");
 			await refetch();
 		} catch (error) {
 			setProxyMessage(describeError(error));
@@ -670,10 +626,7 @@ const DatabaseDetail: Component = () => {
 
 		setCreatingBaseBackup(true);
 		try {
-			const response = await createPitrBaseBackup(
-				db.id,
-				baseBackupLabel().trim() || undefined,
-			);
+			const response = await createPitrBaseBackup(db.id, baseBackupLabel().trim() || undefined);
 			setPitrMessage(`base backup created: ${response.label}`);
 			setBaseBackupLabel("");
 			await refetch();
@@ -758,23 +711,15 @@ const DatabaseDetail: Component = () => {
 			<div class="mb-8 flex items-start justify-between gap-4">
 				<div>
 					<div class="flex items-center gap-3">
-						<A
-							href="/databases"
-							class="text-xs text-neutral-400 hover:text-black"
-						>
+						<A href="/databases" class="text-xs text-neutral-400 hover:text-black">
 							databases
 						</A>
 						<span class="text-xs text-neutral-300">/</span>
-						<span class="text-xs text-neutral-500">
-							{database()?.name || "..."}
-						</span>
+						<span class="text-xs text-neutral-500">{database()?.name || "..."}</span>
 					</div>
-					<h1 class="mt-2 text-2xl font-serif text-black">
-						{database()?.name || "database"}
-					</h1>
+					<h1 class="mt-2 text-2xl font-serif text-black">{database()?.name || "database"}</h1>
 					<p class="mt-1 text-sm text-neutral-500">
-						managed service detail with quick connect, exposure, recovery, and
-						backups
+						managed service detail with quick connect, exposure, recovery, and backups
 					</p>
 				</div>
 			</div>
@@ -783,9 +728,7 @@ const DatabaseDetail: Component = () => {
 				when={!database.loading && database()}
 				fallback={
 					<div class="border border-neutral-200 bg-white p-6 text-sm text-neutral-500">
-						{database.error
-							? describeError(database.error)
-							: "loading database..."}
+						{database.error ? describeError(database.error) : "loading database..."}
 					</div>
 				}
 			>
@@ -801,9 +744,7 @@ const DatabaseDetail: Component = () => {
 											<span
 												class={`inline-flex items-center gap-2 px-3 py-1 text-xs uppercase tracking-[0.24em] ${statusBadgeClass(db.status)}`}
 											>
-												<span
-													class={`h-2 w-2 ${statusDotClass(db.status)}`}
-												></span>
+												<span class={`h-2 w-2 ${statusDotClass(db.status)}`}></span>
 												{db.status}
 											</span>
 											<span class="border border-neutral-800 px-3 py-1 text-xs uppercase tracking-[0.24em] text-neutral-400">
@@ -814,41 +755,28 @@ const DatabaseDetail: Component = () => {
 											</span>
 										</div>
 
-										<h2 class="mt-5 text-3xl font-serif text-white">
-											{db.name}
-										</h2>
+										<h2 class="mt-5 text-3xl font-serif text-white">{db.name}</h2>
 										<p class="mt-2 max-w-2xl text-sm leading-6 text-neutral-300">
-											structured like a service overview: quick access up top,
-											deep controls in separate tabs, and sensitive values
-											masked until you explicitly reveal them.
+											structured like a service overview: quick access up top, deep controls in
+											separate tabs, and sensitive values masked until you explicitly reveal them.
 										</p>
 
 										<div class="mt-6 flex flex-wrap gap-3">
 											<button
 												type="button"
 												onClick={handlePowerAction}
-												disabled={
-													powerAction() !== "" || db.status === "starting"
-												}
-												class={
-													db.status === "running"
-														? secondaryButtonClass
-														: primaryButtonClass
-												}
+												disabled={powerAction() !== "" || db.status === "starting"}
+												class={db.status === "running" ? secondaryButtonClass : primaryButtonClass}
 											>
 												{powerButtonLabel()}
 											</button>
 											<button
 												type="button"
 												onClick={() => void handleRestart()}
-												disabled={
-													powerAction() !== "" || db.status !== "running"
-												}
+												disabled={powerAction() !== "" || db.status !== "running"}
 												class={secondaryButtonClass}
 											>
-												{powerAction() === "restart"
-													? "restarting..."
-													: "restart"}
+												{powerAction() === "restart" ? "restarting..." : "restart"}
 											</button>
 											<button
 												type="button"
@@ -871,8 +799,8 @@ const DatabaseDetail: Component = () => {
 											quick connect
 										</p>
 										<p class="mt-2 text-sm text-neutral-300">
-											copy the live uri without exposing it on screen, or reveal
-											it when you need to inspect it.
+											copy the live uri without exposing it on screen, or reveal it when you need to
+											inspect it.
 										</p>
 
 										<div class="mt-5 border border-neutral-800 bg-neutral-950 p-4">
@@ -892,12 +820,7 @@ const DatabaseDetail: Component = () => {
 												</button>
 												<button
 													type="button"
-													onClick={() =>
-														void copyToClipboard(
-															"direct_uri",
-															db.connection_string,
-														)
-													}
+													onClick={() => void copyToClipboard("direct_uri", db.connection_string)}
 													class={subtleButtonClass}
 												>
 													{copyLabel("direct_uri")}
@@ -924,10 +847,7 @@ const DatabaseDetail: Component = () => {
 													<button
 														type="button"
 														onClick={() =>
-															void copyToClipboard(
-																"proxy_uri",
-																db.proxy_connection_string,
-															)
+															void copyToClipboard("proxy_uri", db.proxy_connection_string)
 														}
 														class={subtleButtonClass}
 													>
@@ -944,9 +864,7 @@ const DatabaseDetail: Component = () => {
 										<p class="text-[11px] uppercase tracking-[0.28em] text-neutral-500">
 											internal endpoint
 										</p>
-										<p class="mt-2 font-mono text-sm text-neutral-100">
-											{directTarget()}
-										</p>
+										<p class="mt-2 font-mono text-sm text-neutral-100">{directTarget()}</p>
 									</div>
 									<div class="bg-neutral-950 px-6 py-4">
 										<p class="text-[11px] uppercase tracking-[0.28em] text-neutral-500">
@@ -961,18 +879,12 @@ const DatabaseDetail: Component = () => {
 											public access
 										</p>
 										<p class="mt-2 text-sm text-neutral-100">
-											{db.external_port
-												? externalTarget(db.external_port)
-												: "internal only"}
+											{db.external_port ? externalTarget(db.external_port) : "internal only"}
 										</p>
 									</div>
 									<div class="bg-neutral-950 px-6 py-4">
-										<p class="text-[11px] uppercase tracking-[0.28em] text-neutral-500">
-											created
-										</p>
-										<p class="mt-2 text-sm text-neutral-100">
-											{formatDateTime(db.created_at)}
-										</p>
+										<p class="text-[11px] uppercase tracking-[0.28em] text-neutral-500">created</p>
+										<p class="mt-2 text-sm text-neutral-100">{formatDateTime(db.created_at)}</p>
 									</div>
 								</div>
 							</div>
@@ -1002,23 +914,15 @@ const DatabaseDetail: Component = () => {
 									<div class="space-y-6">
 										<div class="border border-neutral-200 bg-white">
 											<div class="border-b border-neutral-200 px-5 py-3">
-												<h3 class="text-sm font-serif text-black">
-													service state
-												</h3>
+												<h3 class="text-sm font-serif text-black">service state</h3>
 											</div>
 											<div class="grid gap-4 p-5 md:grid-cols-2">
 												<div>
-													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">
-														status
-													</p>
-													<p class="mt-2 text-sm text-neutral-800">
-														{db.status}
-													</p>
+													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">status</p>
+													<p class="mt-2 text-sm text-neutral-800">{db.status}</p>
 												</div>
 												<div>
-													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">
-														engine
-													</p>
+													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">engine</p>
 													<p class="mt-2 text-sm text-neutral-800">
 														{db.db_type} {db.version}
 													</p>
@@ -1028,17 +932,10 @@ const DatabaseDetail: Component = () => {
 														internal endpoint
 													</p>
 													<div class="mt-2 flex items-center gap-2">
-														<code class="font-mono text-sm text-neutral-800">
-															{directTarget()}
-														</code>
+														<code class="font-mono text-sm text-neutral-800">{directTarget()}</code>
 														<button
 															type="button"
-															onClick={() =>
-																void copyToClipboard(
-																	"direct_target",
-																	directTarget(),
-																)
-															}
+															onClick={() => void copyToClipboard("direct_target", directTarget())}
 															class={subtleButtonClass}
 														>
 															{copyLabel("direct_target")}
@@ -1051,9 +948,7 @@ const DatabaseDetail: Component = () => {
 													</p>
 													<div class="mt-2 flex items-center gap-2">
 														<code class="font-mono text-sm text-neutral-800">
-															{db.external_port
-																? externalTarget(db.external_port)
-																: "not exposed"}
+															{db.external_port ? externalTarget(db.external_port) : "not exposed"}
 														</code>
 														<Show when={db.external_port}>
 															<button
@@ -1076,9 +971,7 @@ const DatabaseDetail: Component = () => {
 
 										<div class="border border-neutral-200 bg-white">
 											<div class="border-b border-neutral-200 px-5 py-3">
-												<h3 class="text-sm font-serif text-black">
-													routing and exposure
-												</h3>
+												<h3 class="text-sm font-serif text-black">routing and exposure</h3>
 											</div>
 											<div class="grid gap-4 p-5 md:grid-cols-3">
 												<div>
@@ -1086,23 +979,17 @@ const DatabaseDetail: Component = () => {
 														direct access
 													</p>
 													<p class="mt-2 text-sm text-neutral-800">
-														{db.external_port
-															? "internal + public"
-															: "internal only"}
+														{db.external_port ? "internal + public" : "internal only"}
 													</p>
 												</div>
 												<div>
-													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">
-														pgdog
-													</p>
+													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">pgdog</p>
 													<p class="mt-2 text-sm text-neutral-800">
 														{db.proxy_enabled ? "enabled" : "disabled"}
 													</p>
 												</div>
 												<div>
-													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">
-														pitr
-													</p>
+													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">pitr</p>
 													<p class="mt-2 text-sm text-neutral-800">
 														{db.pitr_enabled ? "enabled" : "disabled"}
 													</p>
@@ -1114,9 +1001,7 @@ const DatabaseDetail: Component = () => {
 									<div class="space-y-6">
 										<div class="border border-neutral-200 bg-white">
 											<div class="border-b border-neutral-200 px-5 py-3">
-												<h3 class="text-sm font-serif text-black">
-													credentials
-												</h3>
+												<h3 class="text-sm font-serif text-black">credentials</h3>
 											</div>
 											<div class="space-y-4 p-5">
 												<div>
@@ -1124,14 +1009,10 @@ const DatabaseDetail: Component = () => {
 														username
 													</p>
 													<div class="mt-2 flex items-center gap-2">
-														<code class="font-mono text-sm text-neutral-800">
-															{db.username}
-														</code>
+														<code class="font-mono text-sm text-neutral-800">{db.username}</code>
 														<button
 															type="button"
-															onClick={() =>
-																void copyToClipboard("username", db.username)
-															}
+															onClick={() => void copyToClipboard("username", db.username)}
 															class={subtleButtonClass}
 														>
 															{copyLabel("username")}
@@ -1149,10 +1030,7 @@ const DatabaseDetail: Component = () => {
 														<button
 															type="button"
 															onClick={() =>
-																void copyToClipboard(
-																	"database_name",
-																	db.database_name,
-																)
+																void copyToClipboard("database_name", db.database_name)
 															}
 															class={subtleButtonClass}
 														>
@@ -1177,9 +1055,7 @@ const DatabaseDetail: Component = () => {
 														</button>
 														<button
 															type="button"
-															onClick={() =>
-																void copyToClipboard("password", db.password)
-															}
+															onClick={() => void copyToClipboard("password", db.password)}
 															class={subtleButtonClass}
 														>
 															{copyLabel("password")}
@@ -1191,9 +1067,7 @@ const DatabaseDetail: Component = () => {
 
 										<div class="border border-neutral-200 bg-white">
 											<div class="border-b border-neutral-200 px-5 py-3">
-												<h3 class="text-sm font-serif text-black">
-													recovery posture
-												</h3>
+												<h3 class="text-sm font-serif text-black">recovery posture</h3>
 											</div>
 											<div class="space-y-4 p-5 text-sm text-neutral-700">
 												<div>
@@ -1222,14 +1096,12 @@ const DatabaseDetail: Component = () => {
 								<div class="space-y-6">
 									<div class="border border-neutral-200 bg-white">
 										<div class="border-b border-neutral-200 px-5 py-3">
-											<h3 class="text-sm font-serif text-black">
-												direct connection
-											</h3>
+											<h3 class="text-sm font-serif text-black">direct connection</h3>
 										</div>
 										<div class="space-y-5 p-5">
 											<p class="text-sm text-neutral-600">
-												connection details stay masked until you reveal them.
-												copy always uses the real value.
+												connection details stay masked until you reveal them. copy always uses the
+												real value.
 											</p>
 
 											<div class="border border-neutral-200 bg-neutral-50 p-4">
@@ -1249,12 +1121,7 @@ const DatabaseDetail: Component = () => {
 													</button>
 													<button
 														type="button"
-														onClick={() =>
-															void copyToClipboard(
-																"direct_uri",
-																db.connection_string,
-															)
-														}
+														onClick={() => void copyToClipboard("direct_uri", db.connection_string)}
 														class={subtleButtonClass}
 													>
 														{copyLabel("direct_uri")}
@@ -1264,18 +1131,14 @@ const DatabaseDetail: Component = () => {
 
 											<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 												<div>
-													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">
-														host
-													</p>
+													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">host</p>
 													<div class="mt-2 flex items-center gap-2">
 														<code class="font-mono text-sm text-neutral-800">
 															{db.internal_host}
 														</code>
 														<button
 															type="button"
-															onClick={() =>
-																void copyToClipboard("host", db.internal_host)
-															}
+															onClick={() => void copyToClipboard("host", db.internal_host)}
 															class={subtleButtonClass}
 														>
 															{copyLabel("host")}
@@ -1283,18 +1146,12 @@ const DatabaseDetail: Component = () => {
 													</div>
 												</div>
 												<div>
-													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">
-														port
-													</p>
+													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">port</p>
 													<div class="mt-2 flex items-center gap-2">
-														<code class="font-mono text-sm text-neutral-800">
-															{db.port}
-														</code>
+														<code class="font-mono text-sm text-neutral-800">{db.port}</code>
 														<button
 															type="button"
-															onClick={() =>
-																void copyToClipboard("port", String(db.port))
-															}
+															onClick={() => void copyToClipboard("port", String(db.port))}
 															class={subtleButtonClass}
 														>
 															{copyLabel("port")}
@@ -1306,14 +1163,10 @@ const DatabaseDetail: Component = () => {
 														username
 													</p>
 													<div class="mt-2 flex items-center gap-2">
-														<code class="font-mono text-sm text-neutral-800">
-															{db.username}
-														</code>
+														<code class="font-mono text-sm text-neutral-800">{db.username}</code>
 														<button
 															type="button"
-															onClick={() =>
-																void copyToClipboard("username", db.username)
-															}
+															onClick={() => void copyToClipboard("username", db.username)}
 															class={subtleButtonClass}
 														>
 															{copyLabel("username")}
@@ -1331,10 +1184,7 @@ const DatabaseDetail: Component = () => {
 														<button
 															type="button"
 															onClick={() =>
-																void copyToClipboard(
-																	"database_name",
-																	db.database_name,
-																)
+																void copyToClipboard("database_name", db.database_name)
 															}
 															class={subtleButtonClass}
 														>
@@ -1345,9 +1195,7 @@ const DatabaseDetail: Component = () => {
 											</div>
 
 											<div class="border border-neutral-200 bg-white p-4">
-												<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">
-													password
-												</p>
+												<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">password</p>
 												<code class="mt-3 block break-all font-mono text-sm text-neutral-800">
 													{secretText("password", db.password)}
 												</code>
@@ -1361,9 +1209,7 @@ const DatabaseDetail: Component = () => {
 													</button>
 													<button
 														type="button"
-														onClick={() =>
-															void copyToClipboard("password", db.password)
-														}
+														onClick={() => void copyToClipboard("password", db.password)}
 														class={subtleButtonClass}
 													>
 														{copyLabel("password")}
@@ -1376,9 +1222,7 @@ const DatabaseDetail: Component = () => {
 									<Show when={db.proxy_connection_string}>
 										<div class="border border-neutral-200 bg-white">
 											<div class="border-b border-neutral-200 px-5 py-3">
-												<h3 class="text-sm font-serif text-black">
-													pgdog frontend
-												</h3>
+												<h3 class="text-sm font-serif text-black">pgdog frontend</h3>
 											</div>
 											<div class="space-y-5 p-5">
 												<div class="border border-neutral-200 bg-neutral-50 p-4">
@@ -1386,10 +1230,7 @@ const DatabaseDetail: Component = () => {
 														connection string
 													</p>
 													<code class="mt-3 block break-all font-mono text-sm text-neutral-800">
-														{secretText(
-															"proxy_uri",
-															db.proxy_connection_string,
-														)}
+														{secretText("proxy_uri", db.proxy_connection_string)}
 													</code>
 													<div class="mt-4 flex flex-wrap gap-2">
 														<button
@@ -1402,10 +1243,7 @@ const DatabaseDetail: Component = () => {
 														<button
 															type="button"
 															onClick={() =>
-																void copyToClipboard(
-																	"proxy_uri",
-																	db.proxy_connection_string,
-																)
+																void copyToClipboard("proxy_uri", db.proxy_connection_string)
 															}
 															class={subtleButtonClass}
 														>
@@ -1468,9 +1306,7 @@ const DatabaseDetail: Component = () => {
 															status
 														</p>
 														<p class="mt-2 text-sm text-neutral-800">
-															{db.proxy_external_port
-																? "internal + public"
-																: "internal only"}
+															{db.proxy_external_port ? "internal + public" : "internal only"}
 														</p>
 													</div>
 												</div>
@@ -1484,9 +1320,7 @@ const DatabaseDetail: Component = () => {
 								<div class="space-y-6">
 									<div class="border border-neutral-200 bg-white">
 										<div class="border-b border-neutral-200 px-5 py-3">
-											<h3 class="text-sm font-serif text-black">
-												external access
-											</h3>
+											<h3 class="text-sm font-serif text-black">external access</h3>
 										</div>
 										<div class="space-y-4 p-5 text-sm text-neutral-700">
 											<div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -1495,8 +1329,7 @@ const DatabaseDetail: Component = () => {
 														expose the primary database endpoint publicly
 													</p>
 													<p class="mt-2 text-xs uppercase tracking-[0.24em] text-neutral-400">
-														direct clients outside the internal network can
-														connect when enabled
+														direct clients outside the internal network can connect when enabled
 													</p>
 												</div>
 												<div class="w-full max-w-xs">
@@ -1508,9 +1341,7 @@ const DatabaseDetail: Component = () => {
 														min="1024"
 														max="65535"
 														value={externalPort()}
-														onInput={(event) =>
-															setExternalPort(event.currentTarget.value)
-														}
+														onInput={(event) => setExternalPort(event.currentTarget.value)}
 														placeholder="auto"
 														class="w-full border border-neutral-300 px-3 py-2 text-sm text-neutral-800"
 													/>
@@ -1520,9 +1351,7 @@ const DatabaseDetail: Component = () => {
 													onClick={handleToggleExpose}
 													disabled={exposing()}
 													class={
-														db.external_port === null
-															? primaryButtonClass
-															: secondaryButtonClass
+														db.external_port === null ? primaryButtonClass : secondaryButtonClass
 													}
 												>
 													{exposing()
@@ -1569,20 +1398,16 @@ const DatabaseDetail: Component = () => {
 									<Show when={isPostgres()}>
 										<div class="border border-neutral-200 bg-white">
 											<div class="border-b border-neutral-200 px-5 py-3">
-												<h3 class="text-sm font-serif text-black">
-													pgdog proxy
-												</h3>
+												<h3 class="text-sm font-serif text-black">pgdog proxy</h3>
 											</div>
 											<div class="space-y-4 p-5 text-sm text-neutral-700">
 												<div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
 													<div>
 														<p class="text-sm text-neutral-900">
-															enable the pooled postgres frontend for
-															shared-network clients
+															enable the pooled postgres frontend for shared-network clients
 														</p>
 														<p class="mt-2 text-xs uppercase tracking-[0.24em] text-neutral-400">
-															optionally publish the proxy on a separate public
-															port
+															optionally publish the proxy on a separate public port
 														</p>
 													</div>
 													<div class="w-full max-w-xs">
@@ -1594,9 +1419,7 @@ const DatabaseDetail: Component = () => {
 															min="1024"
 															max="65535"
 															value={proxyExternalPort()}
-															onInput={(event) =>
-																setProxyExternalPort(event.currentTarget.value)
-															}
+															onInput={(event) => setProxyExternalPort(event.currentTarget.value)}
 															placeholder="internal only"
 															class="w-full border border-neutral-300 px-3 py-2 text-sm text-neutral-800"
 														/>
@@ -1605,11 +1428,7 @@ const DatabaseDetail: Component = () => {
 														type="button"
 														onClick={handleToggleProxy}
 														disabled={togglingProxy()}
-														class={
-															db.proxy_enabled
-																? secondaryButtonClass
-																: primaryButtonClass
-														}
+														class={db.proxy_enabled ? secondaryButtonClass : primaryButtonClass}
 													>
 														{togglingProxy()
 															? "saving..."
@@ -1644,10 +1463,7 @@ const DatabaseDetail: Component = () => {
 																connection string
 															</p>
 															<code class="mt-3 block break-all font-mono text-sm text-neutral-800">
-																{secretText(
-																	"proxy_uri",
-																	db.proxy_connection_string,
-																)}
+																{secretText("proxy_uri", db.proxy_connection_string)}
 															</code>
 														</div>
 													</div>
@@ -1669,8 +1485,7 @@ const DatabaseDetail: Component = () => {
 									when={isPostgres()}
 									fallback={
 										<div class="border border-neutral-200 bg-white p-6 text-sm text-neutral-500">
-											point in time recovery is currently available only for
-											postgresql databases.
+											point in time recovery is currently available only for postgresql databases.
 										</div>
 									}
 								>
@@ -1678,18 +1493,12 @@ const DatabaseDetail: Component = () => {
 										<div class="border border-neutral-200 bg-white">
 											<div class="border-b border-neutral-200 px-5 py-3">
 												<div class="flex items-center justify-between gap-4">
-													<h3 class="text-sm font-serif text-black">
-														point in time recovery
-													</h3>
+													<h3 class="text-sm font-serif text-black">point in time recovery</h3>
 													<button
 														type="button"
 														onClick={handleTogglePitr}
 														disabled={togglingPitr()}
-														class={
-															db.pitr_enabled
-																? secondaryButtonClass
-																: primaryButtonClass
-														}
+														class={db.pitr_enabled ? secondaryButtonClass : primaryButtonClass}
 													>
 														{togglingPitr()
 															? "saving..."
@@ -1701,9 +1510,7 @@ const DatabaseDetail: Component = () => {
 											</div>
 											<div class="grid gap-4 p-5 md:grid-cols-3">
 												<div>
-													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">
-														status
-													</p>
+													<p class="text-xs uppercase tracking-[0.24em] text-neutral-400">status</p>
 													<p class="mt-2 text-sm text-neutral-800">
 														{db.pitr_enabled ? "enabled" : "disabled"}
 													</p>
@@ -1730,9 +1537,7 @@ const DatabaseDetail: Component = () => {
 										<div class="grid gap-6 xl:grid-cols-2">
 											<div class="border border-neutral-200 bg-white">
 												<div class="border-b border-neutral-200 px-5 py-3">
-													<h3 class="text-sm font-serif text-black">
-														base backup
-													</h3>
+													<h3 class="text-sm font-serif text-black">base backup</h3>
 												</div>
 												<div class="space-y-4 p-5">
 													<div>
@@ -1742,9 +1547,7 @@ const DatabaseDetail: Component = () => {
 														<input
 															type="text"
 															value={baseBackupLabel()}
-															onInput={(event) =>
-																setBaseBackupLabel(event.currentTarget.value)
-															}
+															onInput={(event) => setBaseBackupLabel(event.currentTarget.value)}
 															placeholder="base-20260308"
 															class="w-full border border-neutral-300 px-3 py-2 text-sm text-neutral-800"
 														/>
@@ -1753,24 +1556,18 @@ const DatabaseDetail: Component = () => {
 														type="button"
 														onClick={handleCreateBaseBackup}
 														disabled={
-															creatingBaseBackup() ||
-															!db.pitr_enabled ||
-															db.status !== "running"
+															creatingBaseBackup() || !db.pitr_enabled || db.status !== "running"
 														}
 														class={primaryButtonClass}
 													>
-														{creatingBaseBackup()
-															? "creating..."
-															: "create base backup"}
+														{creatingBaseBackup() ? "creating..." : "create base backup"}
 													</button>
 												</div>
 											</div>
 
 											<div class="border border-neutral-200 bg-white">
 												<div class="border-b border-neutral-200 px-5 py-3">
-													<h3 class="text-sm font-serif text-black">
-														restore point
-													</h3>
+													<h3 class="text-sm font-serif text-black">restore point</h3>
 												</div>
 												<div class="space-y-4 p-5">
 													<div>
@@ -1780,9 +1577,7 @@ const DatabaseDetail: Component = () => {
 														<input
 															type="text"
 															value={restorePointName()}
-															onInput={(event) =>
-																setRestorePointName(event.currentTarget.value)
-															}
+															onInput={(event) => setRestorePointName(event.currentTarget.value)}
 															placeholder="restore-before-migration"
 															class="w-full border border-neutral-300 px-3 py-2 text-sm text-neutral-800"
 														/>
@@ -1791,15 +1586,11 @@ const DatabaseDetail: Component = () => {
 														type="button"
 														onClick={handleCreateRestorePoint}
 														disabled={
-															creatingRestorePoint() ||
-															!db.pitr_enabled ||
-															db.status !== "running"
+															creatingRestorePoint() || !db.pitr_enabled || db.status !== "running"
 														}
 														class={secondaryButtonClass}
 													>
-														{creatingRestorePoint()
-															? "creating..."
-															: "create restore point"}
+														{creatingRestorePoint() ? "creating..." : "create restore point"}
 													</button>
 												</div>
 											</div>
@@ -1807,14 +1598,12 @@ const DatabaseDetail: Component = () => {
 
 										<div class="border border-neutral-200 bg-white">
 											<div class="border-b border-neutral-200 px-5 py-3">
-												<h3 class="text-sm font-serif text-black">
-													recover database
-												</h3>
+												<h3 class="text-sm font-serif text-black">recover database</h3>
 											</div>
 											<div class="space-y-5 p-5">
 												<p class="text-sm text-neutral-600">
-													recover from the latest base backup using either a
-													named restore point or a target timestamp.
+													recover from the latest base backup using either a named restore point or
+													a target timestamp.
 												</p>
 												<div class="grid gap-4 md:grid-cols-2">
 													<div>
@@ -1825,9 +1614,7 @@ const DatabaseDetail: Component = () => {
 															type="text"
 															value={recoveryRestorePoint()}
 															onInput={(event) =>
-																setRecoveryRestorePoint(
-																	event.currentTarget.value,
-																)
+																setRecoveryRestorePoint(event.currentTarget.value)
 															}
 															placeholder="restore-before-migration"
 															class="w-full border border-neutral-300 px-3 py-2 text-sm text-neutral-800"
@@ -1840,9 +1627,7 @@ const DatabaseDetail: Component = () => {
 														<input
 															type="datetime-local"
 															value={recoveryTargetTime()}
-															onInput={(event) =>
-																setRecoveryTargetTime(event.currentTarget.value)
-															}
+															onInput={(event) => setRecoveryTargetTime(event.currentTarget.value)}
 															class="w-full border border-neutral-300 px-3 py-2 text-sm text-neutral-800"
 														/>
 													</div>
@@ -1857,9 +1642,7 @@ const DatabaseDetail: Component = () => {
 													}
 													class={primaryButtonClass}
 												>
-													{recoveringDatabase()
-														? "recovering..."
-														: "recover database"}
+													{recoveringDatabase() ? "recovering..." : "recover database"}
 												</button>
 											</div>
 										</div>
@@ -1877,9 +1660,7 @@ const DatabaseDetail: Component = () => {
 								<div class="space-y-6">
 									<div class="border border-neutral-200 bg-white">
 										<div class="border-b border-neutral-200 px-5 py-3">
-											<h3 class="text-sm font-serif text-black">
-												create backup
-											</h3>
+											<h3 class="text-sm font-serif text-black">create backup</h3>
 										</div>
 										<div class="space-y-5 p-5">
 											<div class="flex flex-wrap gap-3">
@@ -1889,23 +1670,17 @@ const DatabaseDetail: Component = () => {
 													disabled={creatingBackup() || db.status !== "running"}
 													class={primaryButtonClass}
 												>
-													{creatingBackup()
-														? "creating..."
-														: "create local backup"}
+													{creatingBackup() ? "creating..." : "create local backup"}
 												</button>
 												<button
 													type="button"
 													onClick={handleBackupToBucket}
 													disabled={
-														uploadingBackup() ||
-														db.status !== "running" ||
-														!selectedBucketId()
+														uploadingBackup() || db.status !== "running" || !selectedBucketId()
 													}
 													class={secondaryButtonClass}
 												>
-													{uploadingBackup()
-														? "uploading..."
-														: "backup to bucket"}
+													{uploadingBackup() ? "uploading..." : "backup to bucket"}
 												</button>
 											</div>
 
@@ -1916,16 +1691,12 @@ const DatabaseDetail: Component = () => {
 													</label>
 													<select
 														value={selectedBucketId()}
-														onChange={(event) =>
-															setSelectedBucketId(event.currentTarget.value)
-														}
+														onChange={(event) => setSelectedBucketId(event.currentTarget.value)}
 														class="w-full border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-800"
 													>
 														<option value="">select bucket</option>
 														<For each={buckets()}>
-															{(bucket) => (
-																<option value={bucket.id}>{bucket.name}</option>
-															)}
+															{(bucket) => <option value={bucket.id}>{bucket.name}</option>}
 														</For>
 													</select>
 												</div>
@@ -1936,9 +1707,7 @@ const DatabaseDetail: Component = () => {
 													<input
 														type="text"
 														value={bucketPrefix()}
-														onInput={(event) =>
-															setBucketPrefix(event.currentTarget.value)
-														}
+														onInput={(event) => setBucketPrefix(event.currentTarget.value)}
 														placeholder={`databases/${db.name}`}
 														class="w-full border border-neutral-300 px-3 py-2 text-sm text-neutral-800"
 													/>
@@ -1946,8 +1715,8 @@ const DatabaseDetail: Component = () => {
 											</div>
 
 											<p class="text-sm text-neutral-500">
-												uploads keep the local backup file and optionally mirror
-												it into a selected bucket.
+												uploads keep the local backup file and optionally mirror it into a selected
+												bucket.
 											</p>
 
 											<Show when={backupMessage()}>
@@ -1960,16 +1729,12 @@ const DatabaseDetail: Component = () => {
 
 									<div class="border border-neutral-200 bg-white">
 										<div class="border-b border-neutral-200 px-5 py-3">
-											<h3 class="text-sm font-serif text-black">
-												backup history
-											</h3>
+											<h3 class="text-sm font-serif text-black">backup history</h3>
 										</div>
 										<Show
 											when={backups() && backups()!.length > 0}
 											fallback={
-												<div class="p-8 text-center text-sm text-neutral-400">
-													no backups yet
-												</div>
+												<div class="p-8 text-center text-sm text-neutral-400">no backups yet</div>
 											}
 										>
 											<div>
@@ -1977,9 +1742,7 @@ const DatabaseDetail: Component = () => {
 													{(backup) => (
 														<div class="flex flex-col gap-4 border-b border-neutral-200 px-5 py-4 last:border-b-0 md:flex-row md:items-center md:justify-between">
 															<div>
-																<p class="font-mono text-sm text-neutral-800">
-																	{backup.filename}
-																</p>
+																<p class="font-mono text-sm text-neutral-800">{backup.filename}</p>
 																<p class="mt-1 text-xs uppercase tracking-[0.18em] text-neutral-400">
 																	{formatBytes(backup.size_bytes)} ·{" "}
 																	{formatDateTime(backup.created_at)}
@@ -1987,9 +1750,7 @@ const DatabaseDetail: Component = () => {
 															</div>
 															<button
 																type="button"
-																onClick={() =>
-																	handleDownloadBackup(backup.filename)
-																}
+																onClick={() => handleDownloadBackup(backup.filename)}
 																class={subtleButtonClass}
 															>
 																download
@@ -2007,9 +1768,7 @@ const DatabaseDetail: Component = () => {
 								<div class="space-y-6">
 									<div class="border border-neutral-200 bg-white">
 										<div class="border-b border-neutral-200 px-5 py-3">
-											<h3 class="text-sm font-serif text-black">
-												container monitor
-											</h3>
+											<h3 class="text-sm font-serif text-black">container monitor</h3>
 										</div>
 										<div class="p-5">
 											<Show

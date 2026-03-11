@@ -8,21 +8,20 @@ const Register = lazy(() => import("./pages/Register"));
 const Services = lazy(() => import("./pages/services"));
 const ServiceDetail = lazy(() => import("./pages/service-detail"));
 const AppDetail = lazy(() => import("./pages/AppDetail"));
-const NewApp = lazy(() => import("./pages/NewApp"));
+const CreateFlow = lazy(() => import("./pages/CreateFlow"));
+const CreateRepo = lazy(() => import("./pages/CreateRepo"));
+const CreateConfigure = lazy(() => import("./pages/CreateConfigure"));
+const CreateTemplate = lazy(() => import("./pages/CreateTemplate"));
 const Settings = lazy(() => import("./pages/Settings"));
 const DatabaseDetail = lazy(() => import("./pages/DatabaseDetail"));
 const QueueDetail = lazy(() => import("./pages/QueueDetail"));
 const Storage = lazy(() => import("./pages/Storage"));
 const BucketDetail = lazy(() => import("./pages/BucketDetail"));
 const GithubCallback = lazy(() => import("./pages/GithubCallback"));
-const GithubInstallCallback = lazy(
-	() => import("./pages/GithubInstallCallback"),
-);
+const GithubInstallCallback = lazy(() => import("./pages/GithubInstallCallback"));
 
 const RedirectToServices: Component = () => <Navigate href="/services" />;
-const RedirectToServicesNew: Component = () => (
-	<Navigate href="/services/new" />
-);
+const RedirectToServicesNew: Component = () => <Navigate href="/services/new" />;
 
 const App: Component = () => {
 	return (
@@ -30,14 +29,14 @@ const App: Component = () => {
 			<Route path="/login" component={Login} />
 			<Route path="/register" component={Register} />
 			<Route path="/github/callback" component={GithubCallback} />
-			<Route
-				path="/github/install/callback"
-				component={GithubInstallCallback}
-			/>
+			<Route path="/github/install/callback" component={GithubInstallCallback} />
 			<Route path="/" component={Layout}>
 				<Route path="/" component={RedirectToServices} />
 				<Route path="/services" component={Services} />
-				<Route path="/services/new" component={NewApp} />
+				<Route path="/services/new" component={CreateFlow} />
+				<Route path="/services/new/repo" component={CreateRepo} />
+				<Route path="/services/new/configure" component={CreateConfigure} />
+				<Route path="/services/new/template" component={CreateTemplate} />
 				<Route path="/services/:id" component={ServiceDetail} />
 				<Route path="/apps" component={RedirectToServices} />
 				<Route path="/projects" component={RedirectToServices} />

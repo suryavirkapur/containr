@@ -118,9 +118,7 @@ const Queues: Component = () => {
 				title="queues"
 				description="managed rabbitmq instances"
 				actions={
-					<Button
-						onClick={() => navigate("/projects/new?kind=queue&type=rabbitmq")}
-					>
+					<Button onClick={() => navigate("/projects/new?kind=queue&type=rabbitmq")}>
 						create queue
 					</Button>
 				}
@@ -154,9 +152,7 @@ const Queues: Component = () => {
 								<div class="flex items-start justify-between gap-4">
 									<div>
 										<div class="flex items-center gap-3">
-											<span
-												class={`h-2 w-2 ${statusIndicator(queue.status)}`}
-											></span>
+											<span class={`h-2 w-2 ${statusIndicator(queue.status)}`}></span>
 											<A
 												href={`/queues/${queue.id}`}
 												class="font-medium text-black hover:underline"
@@ -173,9 +169,7 @@ const Queues: Component = () => {
 									</div>
 									<div class="flex flex-wrap gap-2">
 										<button
-											onClick={() =>
-												copyToClipboard(queue.id, queue.connection_string)
-											}
+											onClick={() => copyToClipboard(queue.id, queue.connection_string)}
 											class="border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:border-neutral-400"
 										>
 											{copiedId() === queue.id ? "copied!" : "copy url"}

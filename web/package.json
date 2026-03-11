@@ -1,36 +1,36 @@
 {
-    "name": "containr-web",
-    "version": "0.1.14-alpha",
-    "type": "module",
-    "packageManager": "pnpm@10.30.3",
-    "engines": {
-        "node": "24.x"
-    },
-    "scripts": {
-        "dev": "pnpm exec vite",
-        "build": "pnpm exec vite build",
-        "preview": "pnpm exec vite preview",
-        "generate:schema": "cd .. && cargo run --bin openapi --features openapi-only 2>/dev/null > web/src/api/openapi.json",
-        "generate:client": "pnpm exec openapi-typescript src/api/openapi.json -o src/api/schema.d.ts",
-        "generate": "pnpm run generate:schema && pnpm run generate:client"
-    },
-    "dependencies": {
-        "@solidjs/router": "^0.15.4",
-        "@xterm/addon-fit": "^0.11.0",
-        "@xterm/xterm": "^6.0.0",
-        "openapi-fetch": "^0.15.0",
-        "solid-js": "^1.9.10"
-    },
-    "devDependencies": {
-        "@biomejs/biome": "^2.2.4",
-        "@tailwindcss/postcss": "^4.1.18",
-        "@tailwindcss/vite": "^4.1.18",
-        "autoprefixer": "^10.4.23",
-        "openapi-typescript": "^7.13.0",
-        "postcss": "^8.5.6",
-        "tailwindcss": "^4.1.18",
-        "typescript": "^5.9.3",
-        "vite": "^7.3.1",
-        "vite-plugin-solid": "^2.11.10"
-    }
+	"name": "containr-web",
+	"version": "0.1.15-alpha",
+	"type": "module",
+	"packageManager": "pnpm@10.30.3",
+	"engines": {
+		"node": "24.x"
+	},
+	"scripts": {
+		"dev": "pnpm exec vite",
+		"build": "pnpm exec vite build",
+		"preview": "pnpm exec vite preview",
+		"generate:schema": "cd .. && cargo run --bin openapi --features openapi-only 2>/dev/null > web/src/api/openapi.json",
+		"generate:client": "pnpm exec openapi-typescript src/api/openapi.json -o src/api/schema.d.ts",
+		"generate": "pnpm run generate:schema && pnpm run generate:client"
+	},
+	"dependencies": {
+		"@solidjs/router": "^0.15.4",
+		"@xterm/addon-fit": "^0.11.0",
+		"@xterm/xterm": "^6.0.0",
+		"openapi-fetch": "^0.15.0",
+		"solid-js": "^1.9.10"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.2.4",
+		"@tailwindcss/postcss": "^4.1.18",
+		"@tailwindcss/vite": "^4.1.18",
+		"autoprefixer": "^10.4.23",
+		"openapi-typescript": "^7.13.0",
+		"postcss": "^8.5.6",
+		"tailwindcss": "^4.1.18",
+		"typescript": "^5.9.3",
+		"vite": "^7.3.1",
+		"vite-plugin-solid": "^2.11.10"
+	}
 }
