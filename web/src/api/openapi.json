@@ -5279,7 +5279,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/ServiceResponse"
+                    "$ref": "#/components/schemas/InventoryServiceResponse"
                   }
                 }
               }
@@ -5287,6 +5287,69 @@
           },
           "401": {
             "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "create_service",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateServiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "service created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryServiceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -5327,7 +5390,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ServiceResponse"
+                  "$ref": "#/components/schemas/InventoryServiceResponse"
                 }
               }
             }
@@ -5508,7 +5571,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ServiceResponse"
+                  "$ref": "#/components/schemas/InventoryServiceResponse"
                 }
               }
             }
@@ -5575,7 +5638,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ServiceResponse"
+                  "$ref": "#/components/schemas/InventoryServiceResponse"
                 }
               }
             }
@@ -5642,7 +5705,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ServiceResponse"
+                  "$ref": "#/components/schemas/InventoryServiceResponse"
                 }
               }
             }
@@ -6597,6 +6660,106 @@
           }
         }
       },
+      "CreateServiceRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "github_url",
+              "service",
+              "source"
+            ],
+            "properties": {
+              "branch": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "env_vars": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/components/schemas/EnvVarRequest"
+                }
+              },
+              "github_url": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "rollout_strategy": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "service": {
+                "$ref": "#/components/schemas/ServiceRequest"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "git_repository"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "template",
+              "source"
+            ],
+            "properties": {
+              "cpu_limit": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double"
+              },
+              "group_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "memory_limit_mb": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "template"
+                ]
+              },
+              "template": {
+                "type": "string"
+              },
+              "version": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "DashboardCertResponse": {
         "type": "object",
         "description": "certificate issuance response",
@@ -7165,6 +7328,182 @@
               "null"
             ],
             "format": "int32"
+          }
+        }
+      },
+      "InventoryServiceResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "resource_kind",
+          "service_type",
+          "name",
+          "status",
+          "network_name",
+          "domains",
+          "default_urls",
+          "public_http",
+          "desired_instances",
+          "running_instances",
+          "container_ids",
+          "pitr_enabled",
+          "proxy_enabled",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "connection_string": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "container_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "default_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deployment_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "desired_instances": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "external_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "group_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "internal_host": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "network_name": {
+            "type": "string"
+          },
+          "pitr_enabled": {
+            "type": "boolean"
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proxy_connection_string": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proxy_enabled": {
+            "type": "boolean"
+          },
+          "proxy_external_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "proxy_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "public_http": {
+            "type": "boolean"
+          },
+          "public_ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_kind": {
+            "type": "string"
+          },
+          "running_instances": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "schedule": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
           }
         }
       },
@@ -7815,177 +8154,200 @@
       },
       "ServiceResponse": {
         "type": "object",
+        "description": "service response for multi-container apps",
         "required": [
           "id",
-          "resource_kind",
-          "service_type",
           "name",
-          "status",
-          "network_name",
+          "image",
+          "service_type",
+          "port",
+          "expose_http",
           "domains",
-          "default_urls",
-          "public_http",
-          "desired_instances",
-          "running_instances",
-          "container_ids",
-          "pitr_enabled",
-          "proxy_enabled",
-          "created_at",
-          "updated_at"
+          "additional_ports",
+          "replicas",
+          "depends_on",
+          "restart_policy",
+          "env_vars",
+          "build_args",
+          "command",
+          "entrypoint",
+          "mounts"
         ],
         "properties": {
-          "connection_string": {
+          "additional_ports": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            "description": "additional container ports"
+          },
+          "build_args": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnvVarResponse"
+            },
+            "description": "docker build arguments"
+          },
+          "build_context": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "relative repo path used as the docker build context"
           },
-          "container_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "default_urls": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "deployment_id": {
+          "build_target": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "docker build target stage"
           },
-          "desired_instances": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "command arguments override"
+          },
+          "cpu_limit": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "cpu limit"
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "dependencies"
+          },
+          "dockerfile_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "relative path to the dockerfile within the repo"
+          },
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "primary custom domain"
           },
           "domains": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "service-specific custom domains"
           },
-          "external_port": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "minimum": 0
+          "entrypoint": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "entrypoint override"
           },
-          "group_id": {
-            "type": [
-              "string",
-              "null"
+          "env_vars": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnvVarResponse"
+            },
+            "description": "service-specific environment variables"
+          },
+          "expose_http": {
+            "type": "boolean",
+            "description": "whether this service receives public http traffic"
+          },
+          "health_check": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HealthCheckResponse",
+                "description": "health check config"
+              }
             ]
           },
           "id": {
-            "type": "string"
+            "type": "string",
+            "description": "service id"
           },
           "image": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "description": "docker image"
           },
-          "internal_host": {
+          "memory_limit_mb": {
             "type": [
-              "string",
+              "integer",
               "null"
-            ]
+            ],
+            "format": "int64",
+            "description": "memory limit in mb",
+            "minimum": 0
+          },
+          "mounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceMountResponse"
+            },
+            "description": "persistent mounts"
           },
           "name": {
-            "type": "string"
-          },
-          "network_name": {
-            "type": "string"
-          },
-          "pitr_enabled": {
-            "type": "boolean"
+            "type": "string",
+            "description": "service name"
           },
           "port": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "minimum": 0
-          },
-          "project_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "project_name": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "proxy_connection_string": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "proxy_enabled": {
-            "type": "boolean"
-          },
-          "proxy_external_port": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "minimum": 0
-          },
-          "proxy_port": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "minimum": 0
-          },
-          "public_http": {
-            "type": "boolean"
-          },
-          "public_ip": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "resource_kind": {
-            "type": "string"
-          },
-          "running_instances": {
             "type": "integer",
             "format": "int32",
+            "description": "container port",
             "minimum": 0
+          },
+          "registry_auth": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ServiceRegistryAuthResponse",
+                "description": "private registry credentials metadata"
+              }
+            ]
+          },
+          "replicas": {
+            "type": "integer",
+            "format": "int32",
+            "description": "number of replicas",
+            "minimum": 0
+          },
+          "restart_policy": {
+            "type": "string",
+            "description": "restart policy"
           },
           "schedule": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "cron expression used for scheduled jobs"
           },
           "service_type": {
-            "type": "string"
+            "type": "string",
+            "description": "render-style service category"
           },
-          "status": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string"
+          "working_dir": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "working directory override"
           }
         }
       },

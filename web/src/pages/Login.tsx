@@ -49,7 +49,7 @@ const Login: Component = () => {
 					<div class="space-y-2">
 						<CardTitle class="text-3xl">sign in</CardTitle>
 						<p class="text-sm text-[var(--muted-foreground)]">
-							deploy containers, databases, queues, and storage from one control plane
+							deploy and manage services and storage from one control plane
 						</p>
 					</div>
 				</CardHeader>
@@ -100,7 +100,10 @@ const Login: Component = () => {
 
 					<p class="text-center text-sm text-[var(--muted-foreground)]">
 						don&apos;t have an account?{" "}
-						<A href="/register" class="text-[var(--foreground)] underline underline-offset-4">
+						<A
+							href="/register"
+							class="text-[var(--foreground)] underline underline-offset-4"
+						>
 							sign up
 						</A>
 					</p>

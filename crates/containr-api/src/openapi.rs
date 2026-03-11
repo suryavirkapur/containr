@@ -114,6 +114,7 @@ use crate::handlers::{
         queues::stop_queue,
         queues::expose_queue,
         // services
+        services::create_service,
         services::list_services,
         services::get_service,
         services::get_service_logs,
@@ -198,7 +199,8 @@ use crate::handlers::{
             queues::QueueResponse,
             queues::ExposeQueueRequest,
             // services
-            services::ServiceResponse,
+            services::CreateServiceRequest,
+            services::InventoryServiceResponse,
             services::ServiceLogsResponse,
             // storage
             storage::CreateBucketRequest,

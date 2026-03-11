@@ -2,6 +2,31 @@ changelog
 =========
 
 0.1.14-alpha - 2026-03-10
+- unify the dashboard around `/services`, `/services/new`, and
+  `/services/:id`, replacing the sidebar’s split database/queue list entry
+  model with one service inventory, one create flow, and one primary detail
+  route for repository-backed and template-backed services
+- add `post /api/services` in `crates/containr-api/src/handlers/services.rs`
+  so repository deployments and template launches share one creation payload,
+  then regenerate the checked-in openapi schema and typed web client for the
+  new contract
+- add the new Solid pages `web/src/pages/services.tsx` and
+  `web/src/pages/service-detail.tsx`, switch root routing to the unified
+  service inventory, and move the create page in `web/src/pages/NewApp.tsx`
+  to `source = git_repository | template` instead of legacy
+  `kind=database|queue` deep links
+- render connection values, environment values, and logs through the unified
+  service detail page so databases now use the same `/api/services/{id}/logs`
+  tailer path as repository-backed services while legacy specialized routes
+  remain reachable for advanced controls
+- verify with:
+  `cargo test -p containr-api --features skip-web-build`
+  `cargo test -p containr --features openapi-only --bin openapi`
+  `pnpm --dir web run generate`
+  `pnpm --dir web exec tsc --noEmit`
+  `pnpm --dir web build`
+
+0.1.14-alpha - 2026-03-10
 - expand `scripts/e2e-services.sh` into a full docker-backed `containrctl`
   sweep that exercises config/auth, projects, services, databases, queues,
   containers, and system commands against a disposable local server

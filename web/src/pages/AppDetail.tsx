@@ -88,6 +88,10 @@ const normalizeDetailTab = (value?: string | null): DetailTab => {
 	}
 };
 
+const searchParamValue = (
+	value: string | string[] | undefined,
+): string | undefined => (Array.isArray(value) ? value[0] : value);
+
 function nextServiceName(
 	services: Service[],
 	serviceType: ServiceType,
@@ -250,7 +254,7 @@ const AppDetail: Component = () => {
 	const [selectedContainer, setSelectedContainer] = createSignal("");
 	const [selectedServiceId, setSelectedServiceId] = createSignal("");
 	const activeTab = createMemo<DetailTab>(() =>
-		normalizeDetailTab(searchParams.tab),
+		normalizeDetailTab(searchParamValue(searchParams.tab)),
 	);
 
 	const appContainers = createMemo(() =>
@@ -266,14 +270,18 @@ const AppDetail: Component = () => {
 				(service.project_id === params.id || service.group_id === params.id),
 		),
 	);
-	const serviceRuntimeById = createMemo(() => {
-		const entries = projectRuntimeServices().map((service) => [
-			service.id,
-			service,
-		]);
-		return new Map(entries);
-	});
-	const selectedProjectService = createMemo(
+	const serviceRuntimeById = createMemo<Map<string, ServiceInventoryItem>>(
+		() =>
+			new Map(
+				projectRuntimeServices().map(
+					(service): [string, ServiceInventoryItem] => [
+						service.id,
+						service,
+					],
+				),
+			),
+	);
+	const selectedProjectService = createMemo<Project["services"][number] | undefined>(
 		() =>
 			projectServices().find((service) => service.id === selectedServiceId()) ||
 			projectServices()[0],
@@ -281,7 +289,7 @@ const AppDetail: Component = () => {
 	const latestDeployment = createMemo(() => deployments()?.[0] || null);
 
 	createEffect(() => {
-		const requestedTab = searchParams.tab;
+		const requestedTab = searchParamValue(searchParams.tab);
 		const normalizedTab = normalizeDetailTab(requestedTab);
 
 		if (requestedTab !== normalizedTab) {
@@ -290,7 +298,7 @@ const AppDetail: Component = () => {
 	});
 
 	createEffect(() => {
-		const requestedContainerId = searchParams.container;
+		const requestedContainerId = searchParamValue(searchParams.container);
 		const nextContainerId = appContainers().some(
 			(container) => container.id === requestedContainerId,
 		)
@@ -310,7 +318,7 @@ const AppDetail: Component = () => {
 	});
 
 	createEffect(() => {
-		const requestedServiceId = searchParams.service;
+		const requestedServiceId = searchParamValue(searchParams.service);
 		const nextServiceId = projectServices().some(
 			(service) => service.id === requestedServiceId,
 		)
@@ -674,6 +682,8 @@ const AppDetail: Component = () => {
 			case "pushing":
 			case "starting":
 				return "starting";
+			default:
+				return "pending";
 		}
 	});
 
