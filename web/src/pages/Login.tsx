@@ -100,10 +100,7 @@ const Login: Component = () => {
 
 					<p class="text-center text-sm text-[var(--muted-foreground)]">
 						don&apos;t have an account?{" "}
-						<A
-							href="/register"
-							class="text-[var(--foreground)] underline underline-offset-4"
-						>
+						<A href="/register" class="text-[var(--foreground)] underline underline-offset-4">
 							sign up
 						</A>
 					</p>

@@ -1,18 +1,6 @@
-import {
-	Component,
-	createResource,
-	createSignal,
-	onCleanup,
-	Show,
-} from "solid-js";
+import { Component, createResource, createSignal, onCleanup, Show } from "solid-js";
 import { api, components } from "../api";
-import {
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	Skeleton,
-} from "./ui";
+import { Card, CardContent, CardHeader, CardTitle, Skeleton } from "./ui";
 
 type SystemStats = components["schemas"]["SystemStats"];
 
@@ -26,10 +14,7 @@ const fetchStats = async (): Promise<SystemStats | null> => {
 const formatBytes = (bytes: number) => {
 	if (!bytes) return "0 B";
 	const units = ["B", "KB", "MB", "GB", "TB"];
-	const idx = Math.min(
-		Math.floor(Math.log(bytes) / Math.log(1024)),
-		units.length - 1,
-	);
+	const idx = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
 	return `${(bytes / Math.pow(1024, idx)).toFixed(1)} ${units[idx]}`;
 };
 
@@ -47,13 +32,11 @@ const ProgressBar: Component<{
 	max?: number;
 	color?: string;
 }> = (props) => {
-	const percent = () =>
-		Math.min((props.value / (props.max || 100)) * 100, 100);
+	const percent = () => Math.min((props.value / (props.max || 100)) * 100, 100);
 	return (
 		<div class="h-1.5 bg-neutral-800 w-full">
 			<div
-				class={`h-full transition-all duration-300 ${props.color || "bg-purple-500"
-					}`}
+				class={`h-full transition-all duration-300 ${props.color || "bg-purple-500"}`}
 				style={{ width: `${percent()}%` }}
 			/>
 		</div>
@@ -146,74 +129,73 @@ const SystemMonitor: Component = () => {
 					}
 				>
 					<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-					<div>
-						<div class="mb-4 border border-[var(--border)] bg-[var(--muted)] p-4">
-							<div class="mb-1 flex items-center justify-between">
-								<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
-									cpu
-								</span>
-								<span class="text-xs font-mono text-[var(--foreground-subtle)]">
-								{stats()!.cpu_percent.toFixed(1)}%
-								</span>
-							</div>
-							<ProgressBar value={stats()!.cpu_percent} color={cpuColor()} />
-							<div class="mt-3 text-xs text-[var(--muted-foreground)]">
-								load: {stats()!.load_avg[0].toFixed(2)},{" "}
-								{stats()!.load_avg[1].toFixed(2)},{" "}
-								{stats()!.load_avg[2].toFixed(2)}
+						<div>
+							<div class="mb-4 border border-[var(--border)] bg-[var(--muted)] p-4">
+								<div class="mb-1 flex items-center justify-between">
+									<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
+										cpu
+									</span>
+									<span class="text-xs font-mono text-[var(--foreground-subtle)]">
+										{stats()!.cpu_percent.toFixed(1)}%
+									</span>
+								</div>
+								<ProgressBar value={stats()!.cpu_percent} color={cpuColor()} />
+								<div class="mt-3 text-xs text-[var(--muted-foreground)]">
+									load: {stats()!.load_avg[0].toFixed(2)}, {stats()!.load_avg[1].toFixed(2)},{" "}
+									{stats()!.load_avg[2].toFixed(2)}
+								</div>
 							</div>
 						</div>
-					</div>
 
-					<div>
-						<div class="mb-4 border border-[var(--border)] bg-[var(--muted)] p-4">
-							<div class="mb-1 flex items-center justify-between">
-								<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
-									memory
-								</span>
-								<span class="text-xs font-mono text-[var(--foreground-subtle)]">
-								{memPercent().toFixed(1)}%
-								</span>
-							</div>
-							<ProgressBar value={memPercent()} color={memColor()} />
-							<div class="mt-3 text-xs text-[var(--muted-foreground)]">
-								{formatBytes(stats()!.memory_used_bytes)} /{" "}
-								{formatBytes(stats()!.memory_total_bytes)}
+						<div>
+							<div class="mb-4 border border-[var(--border)] bg-[var(--muted)] p-4">
+								<div class="mb-1 flex items-center justify-between">
+									<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
+										memory
+									</span>
+									<span class="text-xs font-mono text-[var(--foreground-subtle)]">
+										{memPercent().toFixed(1)}%
+									</span>
+								</div>
+								<ProgressBar value={memPercent()} color={memColor()} />
+								<div class="mt-3 text-xs text-[var(--muted-foreground)]">
+									{formatBytes(stats()!.memory_used_bytes)} /{" "}
+									{formatBytes(stats()!.memory_total_bytes)}
+								</div>
 							</div>
 						</div>
-					</div>
 
-					<div>
-						<div class="mb-4 border border-[var(--border)] bg-[var(--muted)] p-4">
-							<div class="mb-1 flex items-center justify-between">
-								<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
-									network rx
-								</span>
-								<span class="text-xs font-mono text-[var(--foreground-subtle)]">
-								{formatBytes(networkSpeed().rx)}/s
-								</span>
-							</div>
-							<div class="mt-6 text-xs text-[var(--muted-foreground)]">
-								total: {formatBytes(stats()!.network_rx_bytes)}
+						<div>
+							<div class="mb-4 border border-[var(--border)] bg-[var(--muted)] p-4">
+								<div class="mb-1 flex items-center justify-between">
+									<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
+										network rx
+									</span>
+									<span class="text-xs font-mono text-[var(--foreground-subtle)]">
+										{formatBytes(networkSpeed().rx)}/s
+									</span>
+								</div>
+								<div class="mt-6 text-xs text-[var(--muted-foreground)]">
+									total: {formatBytes(stats()!.network_rx_bytes)}
+								</div>
 							</div>
 						</div>
-					</div>
 
-					<div>
-						<div class="mb-4 border border-[var(--border)] bg-[var(--muted)] p-4">
-							<div class="mb-1 flex items-center justify-between">
-								<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
-									network tx
-								</span>
-								<span class="text-xs font-mono text-[var(--foreground-subtle)]">
-								{formatBytes(networkSpeed().tx)}/s
-								</span>
-							</div>
-							<div class="mt-6 text-xs text-[var(--muted-foreground)]">
-								total: {formatBytes(stats()!.network_tx_bytes)}
+						<div>
+							<div class="mb-4 border border-[var(--border)] bg-[var(--muted)] p-4">
+								<div class="mb-1 flex items-center justify-between">
+									<span class="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
+										network tx
+									</span>
+									<span class="text-xs font-mono text-[var(--foreground-subtle)]">
+										{formatBytes(networkSpeed().tx)}/s
+									</span>
+								</div>
+								<div class="mt-6 text-xs text-[var(--muted-foreground)]">
+									total: {formatBytes(stats()!.network_tx_bytes)}
+								</div>
 							</div>
 						</div>
-					</div>
 					</div>
 				</Show>
 			</CardContent>

@@ -21,39 +21,27 @@ export const Sidebar: Component<JSX.HTMLAttributes<HTMLElement>> = (props) => {
 	);
 };
 
-export const SidebarInset: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
-	props,
-) => {
+export const SidebarInset: Component<JSX.HTMLAttributes<HTMLDivElement>> = (props) => {
 	const [local, others] = splitProps(props, ["class", "children"]);
 
 	return (
-		<div
-			class={cn("flex min-h-screen min-w-0 flex-1 flex-col", local.class)}
-			{...others}
-		>
+		<div class={cn("flex min-h-screen min-w-0 flex-1 flex-col", local.class)} {...others}>
 			{local.children}
 		</div>
 	);
 };
 
-export const SidebarHeader: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
-	props,
-) => {
+export const SidebarHeader: Component<JSX.HTMLAttributes<HTMLDivElement>> = (props) => {
 	const [local, others] = splitProps(props, ["class", "children"]);
 
 	return (
-		<div
-			class={cn("border-b border-[var(--border)] p-5", local.class)}
-			{...others}
-		>
+		<div class={cn("border-b border-[var(--border)] p-5", local.class)} {...others}>
 			{local.children}
 		</div>
 	);
 };
 
-export const SidebarContent: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
-	props,
-) => {
+export const SidebarContent: Component<JSX.HTMLAttributes<HTMLDivElement>> = (props) => {
 	const [local, others] = splitProps(props, ["class", "children"]);
 
 	return (
@@ -63,24 +51,17 @@ export const SidebarContent: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
 	);
 };
 
-export const SidebarFooter: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
-	props,
-) => {
+export const SidebarFooter: Component<JSX.HTMLAttributes<HTMLDivElement>> = (props) => {
 	const [local, others] = splitProps(props, ["class", "children"]);
 
 	return (
-		<div
-			class={cn("border-t border-[var(--border)] p-5", local.class)}
-			{...others}
-		>
+		<div class={cn("border-t border-[var(--border)] p-5", local.class)} {...others}>
 			{local.children}
 		</div>
 	);
 };
 
-export const SidebarGroup: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
-	props,
-) => {
+export const SidebarGroup: Component<JSX.HTMLAttributes<HTMLDivElement>> = (props) => {
 	const [local, others] = splitProps(props, ["class", "children"]);
 
 	return (
@@ -90,9 +71,7 @@ export const SidebarGroup: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
 	);
 };
 
-export const SidebarGroupLabel: Component<
-	JSX.HTMLAttributes<HTMLParagraphElement>
-> = (props) => {
+export const SidebarGroupLabel: Component<JSX.HTMLAttributes<HTMLParagraphElement>> = (props) => {
 	const [local, others] = splitProps(props, ["class", "children"]);
 
 	return (
@@ -109,9 +88,7 @@ export const SidebarGroupLabel: Component<
 	);
 };
 
-export const SidebarMenu: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
-	props,
-) => {
+export const SidebarMenu: Component<JSX.HTMLAttributes<HTMLDivElement>> = (props) => {
 	const [local, others] = splitProps(props, ["class", "children"]);
 
 	return (
@@ -121,9 +98,7 @@ export const SidebarMenu: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
 	);
 };
 
-export const SidebarMenuItem: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
-	props,
-) => {
+export const SidebarMenuItem: Component<JSX.HTMLAttributes<HTMLDivElement>> = (props) => {
 	const [local, others] = splitProps(props, ["class", "children"]);
 
 	return (
@@ -133,18 +108,12 @@ export const SidebarMenuItem: Component<JSX.HTMLAttributes<HTMLDivElement>> = (
 	);
 };
 
-interface SidebarMenuLinkProps
-	extends JSX.AnchorHTMLAttributes<HTMLAnchorElement> {
+interface SidebarMenuLinkProps extends JSX.AnchorHTMLAttributes<HTMLAnchorElement> {
 	active?: boolean;
 }
 
 export const SidebarMenuLink: Component<SidebarMenuLinkProps> = (props) => {
-	const [local, others] = splitProps(props, [
-		"active",
-		"class",
-		"children",
-		"href",
-	]);
+	const [local, others] = splitProps(props, ["active", "class", "children", "href"]);
 
 	return (
 		<A
@@ -155,8 +124,7 @@ export const SidebarMenuLink: Component<SidebarMenuLinkProps> = (props) => {
 				local.active
 					? "border-[var(--accent)] bg-[var(--accent-bg)] text-[var(--foreground)]"
 					: "border-[var(--border)] text-[var(--muted-foreground)]",
-				!local.active &&
-					"hover:border-[var(--border-strong)] hover:text-[var(--foreground)]",
+				!local.active && "hover:border-[var(--border-strong)] hover:text-[var(--foreground)]",
 				local.class,
 			)}
 			{...others}

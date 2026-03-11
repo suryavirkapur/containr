@@ -1,11 +1,4 @@
-import {
-	Component,
-	JSX,
-	createContext,
-	createEffect,
-	createSignal,
-	useContext,
-} from "solid-js";
+import { Component, JSX, createContext, createEffect, createSignal, useContext } from "solid-js";
 
 export type ColorScheme = "purple" | "blue" | "green" | "orange" | "red";
 export type ColorMode = "dark" | "light";
@@ -80,10 +73,7 @@ export const colorSchemes: Record<
 };
 
 /// roundness values in px
-export const roundnessValues: Record<
-	Roundness,
-	{ value: string; label: string }
-> = {
+export const roundnessValues: Record<Roundness, { value: string; label: string }> = {
 	none: { value: "0px", label: "none" },
 	slight: { value: "4px", label: "slight" },
 	medium: { value: "8px", label: "medium" },

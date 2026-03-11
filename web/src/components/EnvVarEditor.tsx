@@ -1,16 +1,7 @@
 import { Component, createEffect, createSignal, For, Show } from "solid-js";
 
 import { EditableKeyValueEntry } from "../utils/keyValueEntries";
-import {
-	Button,
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	Input,
-	Switch,
-	Textarea,
-} from "./ui";
+import { Button, Card, CardContent, CardHeader, CardTitle, Input, Switch, Textarea } from "./ui";
 
 interface EnvVarEditorProps {
 	envVars: EditableKeyValueEntry[];
@@ -27,14 +18,11 @@ const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
 	const [bulkEdit, setBulkEdit] = createSignal(false);
 	const [bulkText, setBulkText] = createSignal("");
 	const title = () => props.title ?? "environment variables";
-	const description = () =>
-		props.description ?? "shared across every service in this group";
-	const emptyText = () =>
-		props.emptyText ?? "no environment variables configured";
+	const description = () => props.description ?? "shared across every service in this group";
+	const emptyText = () => props.emptyText ?? "no environment variables configured";
 	const addLabel = () => props.addLabel ?? "add key/value pair";
 	const bulkHint = () =>
-		props.bulkHint ??
-		".env format works. existing secret keys keep their secret flag.";
+		props.bulkHint ?? ".env format works. existing secret keys keep their secret flag.";
 
 	createEffect(() => {
 		if (!bulkEdit()) {
@@ -76,9 +64,7 @@ const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
 			<CardHeader class="flex flex-wrap items-center justify-between gap-4">
 				<div>
 					<CardTitle class="text-base">{title()}</CardTitle>
-					<p class="mt-2 text-sm text-[var(--muted-foreground)]">
-						{description()}
-					</p>
+					<p class="mt-2 text-sm text-[var(--muted-foreground)]">{description()}</p>
 				</div>
 				<div class="flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
 					<span>bulk edit</span>
@@ -91,8 +77,8 @@ const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
 					<Textarea
 						label="bulk variables"
 						description={bulkHint()}
-					value={bulkText()}
-					onInput={(event) => setBulkText(event.currentTarget.value)}
+						value={bulkText()}
+						onInput={(event) => setBulkText(event.currentTarget.value)}
 						placeholder={"export key=value\nanother_key=another_value"}
 						class="h-40 resize-none font-mono"
 					/>
@@ -107,27 +93,21 @@ const EnvVarEditor: Component<EnvVarEditorProps> = (props) => {
 										type="text"
 										placeholder="key"
 										value={envVar.key}
-										onInput={(event) =>
-											updateEnvVar(index(), "key", event.currentTarget.value)
-										}
+										onInput={(event) => updateEnvVar(index(), "key", event.currentTarget.value)}
 										class="font-mono"
 									/>
 									<Input
 										type={envVar.secret ? "password" : "text"}
 										placeholder="value"
 										value={envVar.value}
-										onInput={(event) =>
-											updateEnvVar(index(), "value", event.currentTarget.value)
-										}
+										onInput={(event) => updateEnvVar(index(), "value", event.currentTarget.value)}
 										class="font-mono"
 									/>
 									<Button
 										type="button"
 										variant={envVar.secret ? "primary" : "outline"}
 										size="sm"
-										onClick={() =>
-											updateEnvVar(index(), "secret", !envVar.secret)
-										}
+										onClick={() => updateEnvVar(index(), "secret", !envVar.secret)}
 									>
 										secret
 									</Button>
@@ -167,18 +147,14 @@ function bulkTextToEnvVars(
 	text: string,
 	existingEnvVars: EditableKeyValueEntry[],
 ): EditableKeyValueEntry[] {
-	const existingByKey = new Map(
-		existingEnvVars.map((envVar) => [envVar.key, envVar]),
-	);
+	const existingByKey = new Map(existingEnvVars.map((envVar) => [envVar.key, envVar]));
 
 	return text
 		.split("\n")
 		.map((line) => line.trim())
 		.filter((line) => line && !line.startsWith("#"))
 		.map((line) => {
-			const normalizedLine = line.startsWith("export ")
-				? line.slice("export ".length)
-				: line;
+			const normalizedLine = line.startsWith("export ") ? line.slice("export ".length) : line;
 			const separatorIndex = normalizedLine.indexOf("=");
 			if (separatorIndex < 0) {
 				return null;

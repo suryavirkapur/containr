@@ -44,13 +44,7 @@ type Project = components["schemas"]["AppResponse"];
 type Deployment = components["schemas"]["DeploymentResponse"];
 type CertificateStatus = components["schemas"]["CertificateResponse"];
 type ContainerListItem = components["schemas"]["ContainerListItem"];
-type RuntimeStatus =
-	| "pending"
-	| "starting"
-	| "running"
-	| "partial"
-	| "stopped"
-	| "failed";
+type RuntimeStatus = "pending" | "starting" | "running" | "partial" | "stopped" | "failed";
 
 interface ServiceInventoryItem {
 	id: string;
@@ -88,14 +82,10 @@ const normalizeDetailTab = (value?: string | null): DetailTab => {
 	}
 };
 
-const searchParamValue = (
-	value: string | string[] | undefined,
-): string | undefined => (Array.isArray(value) ? value[0] : value);
+const searchParamValue = (value: string | string[] | undefined): string | undefined =>
+	Array.isArray(value) ? value[0] : value;
 
-function nextServiceName(
-	services: Service[],
-	serviceType: ServiceType,
-): string {
+function nextServiceName(services: Service[], serviceType: ServiceType): string {
 	const baseName =
 		serviceType === "web_service"
 			? "web"
@@ -110,9 +100,7 @@ function nextServiceName(
 	}
 
 	let counter = 2;
-	while (
-		services.some((service) => service.name === `${baseName}-${counter}`)
-	) {
+	while (services.some((service) => service.name === `${baseName}-${counter}`)) {
 		counter += 1;
 	}
 
@@ -144,9 +132,7 @@ const fetchDeployments = async (projectId: string): Promise<Deployment[]> => {
 /**
  * fetches certificate status for a project
  */
-const fetchCertificate = async (
-	projectId: string,
-): Promise<CertificateStatus[]> => {
+const fetchCertificate = async (projectId: string): Promise<CertificateStatus[]> => {
 	const { data, error } = await api.GET("/api/projects/{id}/certificate", {
 		params: { path: { id: projectId } },
 	});
@@ -221,21 +207,16 @@ const AppDetail: Component = () => {
 	const [deleting, setDeleting] = createSignal(false);
 
 	// deployment logs state
-	const [selectedDeployment, setSelectedDeployment] =
-		createSignal<Deployment | null>(null);
+	const [selectedDeployment, setSelectedDeployment] = createSignal<Deployment | null>(null);
 	const [deploymentLogs, setDeploymentLogs] = createSignal<string[]>([]);
 	const [deploymentLogOffset, setDeploymentLogOffset] = createSignal(0);
 	const [deploymentLogHasMore, setDeploymentLogHasMore] = createSignal(true);
-	const [deploymentLogsConnected, setDeploymentLogsConnected] =
-		createSignal(false);
+	const [deploymentLogsConnected, setDeploymentLogsConnected] = createSignal(false);
 	const [deploymentLogsLoading, setDeploymentLogsLoading] = createSignal(false);
 	let deploymentLogsSocket: WebSocket | null = null;
 	let deploymentLogsRef: HTMLDivElement | undefined;
 
-	const [app, { refetch: refetchApp }] = createResource(
-		() => params.id,
-		fetchProject,
-	);
+	const [app, { refetch: refetchApp }] = createResource(() => params.id, fetchProject);
 
 	const [deployments, { refetch: refetchDeployments }] = createResource(
 		() => params.id,
@@ -246,11 +227,9 @@ const AppDetail: Component = () => {
 		() => params.id,
 		fetchCertificate,
 	);
-	const [serviceInventory, { refetch: refetchServiceInventory }] =
-		createResource(fetchServices);
+	const [serviceInventory, { refetch: refetchServiceInventory }] = createResource(fetchServices);
 
-	const [containers, { refetch: refetchContainers }] =
-		createResource(fetchContainers);
+	const [containers, { refetch: refetchContainers }] = createResource(fetchContainers);
 	const [selectedContainer, setSelectedContainer] = createSignal("");
 	const [selectedServiceId, setSelectedServiceId] = createSignal("");
 	const activeTab = createMemo<DetailTab>(() =>
@@ -273,12 +252,10 @@ const AppDetail: Component = () => {
 	const serviceRuntimeById = createMemo<Map<string, ServiceInventoryItem>>(
 		() =>
 			new Map(
-				projectRuntimeServices().map(
-					(service): [string, ServiceInventoryItem] => [
-						service.id,
-						service,
-					],
-				),
+				projectRuntimeServices().map((service): [string, ServiceInventoryItem] => [
+					service.id,
+					service,
+				]),
 			),
 	);
 	const selectedProjectService = createMemo<Project["services"][number] | undefined>(
@@ -310,18 +287,13 @@ const AppDetail: Component = () => {
 		}
 
 		if ((requestedContainerId || "") !== nextContainerId) {
-			setSearchParams(
-				{ container: nextContainerId || null },
-				{ replace: true },
-			);
+			setSearchParams({ container: nextContainerId || null }, { replace: true });
 		}
 	});
 
 	createEffect(() => {
 		const requestedServiceId = searchParamValue(searchParams.service);
-		const nextServiceId = projectServices().some(
-			(service) => service.id === requestedServiceId,
-		)
+		const nextServiceId = projectServices().some((service) => service.id === requestedServiceId)
 			? requestedServiceId!
 			: projectServices()[0]?.id || "";
 
@@ -336,10 +308,7 @@ const AppDetail: Component = () => {
 
 	createEffect(() => {
 		const items = deployments();
-		if (
-			!items ||
-			!items.some((deployment) => isLiveDeployment(deployment.status))
-		) {
+		if (!items || !items.some((deployment) => isLiveDeployment(deployment.status))) {
 			return;
 		}
 
@@ -357,13 +326,10 @@ const AppDetail: Component = () => {
 	const reissueCertificate = async (domain?: string) => {
 		setReissuing(true);
 		try {
-			const { error } = await api.POST(
-				"/api/projects/{id}/certificate/reissue",
-				{
-					params: { path: { id: params.id! } },
-					body: domain ? { domain } : {},
-				},
-			);
+			const { error } = await api.POST("/api/projects/{id}/certificate/reissue", {
+				params: { path: { id: params.id! } },
+				body: domain ? { domain } : {},
+			});
 			if (error) throw error;
 
 			refetchCertificate();
@@ -391,12 +357,7 @@ const AppDetail: Component = () => {
 	const readApiError = async (response: Response) => {
 		try {
 			const body = await response.json();
-			if (
-				body &&
-				typeof body === "object" &&
-				"error" in body &&
-				typeof body.error === "string"
-			) {
+			if (body && typeof body === "object" && "error" in body && typeof body.error === "string") {
 				return body.error;
 			}
 		} catch {}
@@ -440,20 +401,14 @@ const AppDetail: Component = () => {
 		} catch (error) {
 			setServiceMountActionError({
 				service: serviceName,
-				message:
-					error instanceof Error
-						? error.message
-						: "failed to back up service mounts",
+				message: error instanceof Error ? error.message : "failed to back up service mounts",
 			});
 		} finally {
 			setServiceMountAction(null);
 		}
 	};
 
-	const restoreServiceMounts = async (
-		serviceName: string,
-		files: FileList | null,
-	) => {
+	const restoreServiceMounts = async (serviceName: string, files: FileList | null) => {
 		const archive = files?.[0];
 		if (!archive) {
 			return;
@@ -464,11 +419,7 @@ const AppDetail: Component = () => {
 			throw new Error("missing auth token");
 		}
 
-		if (
-			!confirm(
-				`restore mounts for ${serviceName}? existing mount data will be replaced.`,
-			)
-		) {
+		if (!confirm(`restore mounts for ${serviceName}? existing mount data will be replaced.`)) {
 			return;
 		}
 
@@ -496,10 +447,7 @@ const AppDetail: Component = () => {
 		} catch (error) {
 			setServiceMountActionError({
 				service: serviceName,
-				message:
-					error instanceof Error
-						? error.message
-						: "failed to restore service mounts",
+				message: error instanceof Error ? error.message : "failed to restore service mounts",
 			});
 		} finally {
 			setServiceMountAction(null);
@@ -538,10 +486,7 @@ const AppDetail: Component = () => {
 	};
 
 	const formatServiceHealth = (service: Project["services"][number]) => {
-		if (
-			service.service_type === "background_worker" ||
-			service.service_type === "cron_job"
-		) {
+		if (service.service_type === "background_worker" || service.service_type === "cron_job") {
 			return service.health_check ? "custom" : "not used";
 		}
 
@@ -553,10 +498,7 @@ const AppDetail: Component = () => {
 	};
 
 	const formatServiceHealthDetail = (service: Project["services"][number]) => {
-		if (
-			service.service_type === "background_worker" ||
-			service.service_type === "cron_job"
-		) {
+		if (service.service_type === "background_worker" || service.service_type === "cron_job") {
 			return service.health_check
 				? "custom worker health check"
 				: "not used for worker or cron services";
@@ -601,9 +543,7 @@ const AppDetail: Component = () => {
 		const current = app();
 		if (!current) return [];
 		const serviceDomains = Array.from(
-			new Set(
-				(current.services || []).flatMap((service) => service.domains || []),
-			),
+			new Set((current.services || []).flatMap((service) => service.domains || [])),
 		);
 		if (serviceDomains.length > 0) {
 			return serviceDomains;
@@ -619,16 +559,10 @@ const AppDetail: Component = () => {
 	const serviceTypeCounts = createMemo(() => {
 		const services = projectServices();
 		return {
-			web: services.filter((service) => service.service_type === "web_service")
-				.length,
-			private: services.filter(
-				(service) => service.service_type === "private_service",
-			).length,
-			workers: services.filter(
-				(service) => service.service_type === "background_worker",
-			).length,
-			cron: services.filter((service) => service.service_type === "cron_job")
-				.length,
+			web: services.filter((service) => service.service_type === "web_service").length,
+			private: services.filter((service) => service.service_type === "private_service").length,
+			workers: services.filter((service) => service.service_type === "background_worker").length,
+			cron: services.filter((service) => service.service_type === "cron_job").length,
 		};
 	});
 
@@ -649,8 +583,7 @@ const AppDetail: Component = () => {
 
 			if (
 				runtimeServices.some(
-					(service) =>
-						service.status === "starting" || service.status === "pending",
+					(service) => service.status === "starting" || service.status === "pending",
 				)
 			) {
 				return "starting";
@@ -747,8 +680,7 @@ const AppDetail: Component = () => {
 		}
 	};
 
-	const serviceRuntime = (serviceId: string) =>
-		serviceRuntimeById().get(serviceId);
+	const serviceRuntime = (serviceId: string) => serviceRuntimeById().get(serviceId);
 
 	const resourceErrorMessage = (value: unknown): string | null => {
 		if (!value) {
@@ -759,12 +691,7 @@ const AppDetail: Component = () => {
 			return value.message;
 		}
 
-		if (
-			typeof value === "object" &&
-			value &&
-			"error" in value &&
-			typeof value.error === "string"
-		) {
+		if (typeof value === "object" && value && "error" in value && typeof value.error === "string") {
 			return value.error;
 		}
 
@@ -829,9 +756,7 @@ const AppDetail: Component = () => {
 			setEditForm({
 				github_url: currentApp.github_url,
 				branch: currentApp.branch,
-				env_vars: currentApp.env_vars
-					? currentApp.env_vars.map((e) => ({ ...e }))
-					: [],
+				env_vars: currentApp.env_vars ? currentApp.env_vars.map((e) => ({ ...e })) : [],
 				services,
 			});
 			setEditError("");
@@ -865,9 +790,7 @@ const AppDetail: Component = () => {
 	const removeEditService = (index: number) => {
 		setEditForm((previous) => ({
 			...previous,
-			services: previous.services.filter(
-				(_, serviceIndex) => serviceIndex !== index,
-			),
+			services: previous.services.filter((_, serviceIndex) => serviceIndex !== index),
 		}));
 	};
 
@@ -997,15 +920,12 @@ const AppDetail: Component = () => {
 			const limit = 100;
 			const offset = reset ? 0 : deploymentLogOffset();
 
-			const { data, error } = await api.GET(
-				"/api/projects/{project_id}/deployments/{id}/logs",
-				{
-					params: {
-						path: { project_id: params.id!, id: deploymentId },
-						query: { limit, offset },
-					},
+			const { data, error } = await api.GET("/api/projects/{project_id}/deployments/{id}/logs", {
+				params: {
+					path: { project_id: params.id!, id: deploymentId },
+					query: { limit, offset },
 				},
-			);
+			});
 			if (error) throw error;
 			const logs = data;
 
@@ -1232,32 +1152,21 @@ const AppDetail: Component = () => {
 							<div class="flex items-center gap-3 mt-2">
 								<span class="flex items-center gap-1.5 text-xs text-neutral-400">
 									<span
-										class={`w-1.5 h-1.5 ${runtimeStatusDotClass(
-											projectRuntimeStatus(),
-										)}`}
+										class={`w-1.5 h-1.5 ${runtimeStatusDotClass(projectRuntimeStatus())}`}
 									></span>
 									{projectRuntimeText()}
 								</span>
 								<span class="text-neutral-600">·</span>
-								<span class="text-xs text-neutral-400 font-mono">
-									{app()!.branch}
-								</span>
+								<span class="text-xs text-neutral-400 font-mono">{app()!.branch}</span>
 								<span class="text-neutral-600">·</span>
-								<span class="text-xs text-neutral-400">
-									{projectRuntimeDetail()}
-								</span>
+								<span class="text-xs text-neutral-400">{projectRuntimeDetail()}</span>
 							</div>
 						</div>
 						<div class="flex flex-wrap gap-2">
 							<Button variant="outline" size="sm" onClick={openEditModal}>
 								edit group
 							</Button>
-							<Button
-								variant="danger"
-								size="sm"
-								onClick={deleteApp}
-								disabled={deleting()}
-							>
+							<Button variant="danger" size="sm" onClick={deleteApp} disabled={deleting()}>
 								{deleting() ? "deleting..." : "delete"}
 							</Button>
 							<Button size="sm" onClick={triggerDeploy} disabled={deploying()}>
@@ -1272,18 +1181,12 @@ const AppDetail: Component = () => {
 						</div>
 					</Show>
 
-					<Tabs
-						value={activeTab()}
-						onValueChange={changeDetailTab}
-						class="space-y-6"
-					>
+					<Tabs value={activeTab()} onValueChange={changeDetailTab} class="space-y-6">
 						<TabsList class="w-full justify-start">
 							<TabsTrigger value="overview">overview</TabsTrigger>
 							<TabsTrigger value="services">
 								services
-								<span class="text-[10px] font-mono">
-									{projectServices().length}
-								</span>
+								<span class="text-[10px] font-mono">{projectServices().length}</span>
 							</TabsTrigger>
 							<TabsTrigger value="activity">activity</TabsTrigger>
 						</TabsList>
@@ -1292,35 +1195,23 @@ const AppDetail: Component = () => {
 							<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 								<Card variant="muted">
 									<CardContent class="space-y-3">
-										<p class="text-xs uppercase tracking-wider text-neutral-500">
-											status
-										</p>
+										<p class="text-xs uppercase tracking-wider text-neutral-500">status</p>
 										<div class="flex items-center gap-2">
 											<span
-												class={`h-2 w-2 ${runtimeStatusDotClass(
-													projectRuntimeStatus(),
-												)}`}
+												class={`h-2 w-2 ${runtimeStatusDotClass(projectRuntimeStatus())}`}
 											></span>
-											<span class="text-sm text-black">
-												{projectRuntimeText()}
-											</span>
+											<span class="text-sm text-black">{projectRuntimeText()}</span>
 										</div>
-										<p class="text-xs text-neutral-500">
-											{projectRuntimeDetail()}
-										</p>
+										<p class="text-xs text-neutral-500">{projectRuntimeDetail()}</p>
 									</CardContent>
 								</Card>
 
 								<Card variant="muted">
 									<CardContent class="space-y-3">
-										<p class="text-xs uppercase tracking-wider text-neutral-500">
-											custom domains
-										</p>
+										<p class="text-xs uppercase tracking-wider text-neutral-500">custom domains</p>
 										<Show
 											when={appDomains().length > 0}
-											fallback={
-												<span class="text-sm text-neutral-400">n/a</span>
-											}
+											fallback={<span class="text-sm text-neutral-400">n/a</span>}
 										>
 											<div class="space-y-1">
 												<For each={appDomains().slice(0, 2)}>
@@ -1346,9 +1237,7 @@ const AppDetail: Component = () => {
 
 								<Card variant="muted">
 									<CardContent class="space-y-3">
-										<p class="text-xs uppercase tracking-wider text-neutral-500">
-											branch
-										</p>
+										<p class="text-xs uppercase tracking-wider text-neutral-500">branch</p>
 										<p class="text-sm font-mono text-black">{app()!.branch}</p>
 										<p class="text-xs text-neutral-500">
 											{appContainers().length} running container
@@ -1359,18 +1248,14 @@ const AppDetail: Component = () => {
 
 								<Card variant="muted">
 									<CardContent class="space-y-3">
-										<p class="text-xs uppercase tracking-wider text-neutral-500">
-											ssl
-										</p>
+										<p class="text-xs uppercase tracking-wider text-neutral-500">ssl</p>
 										<Show when={certificate.loading}>
 											<span class="text-sm text-neutral-400">loading...</span>
 										</Show>
 										<Show when={!certificate.loading}>
 											<Show
 												when={certificateList().length > 0}
-												fallback={
-													<span class="text-sm text-neutral-400">n/a</span>
-												}
+												fallback={<span class="text-sm text-neutral-400">n/a</span>}
 											>
 												<div class="space-y-2">
 													<For each={certificateList().slice(0, 2)}>
@@ -1378,13 +1263,9 @@ const AppDetail: Component = () => {
 															<div class="flex items-center justify-between gap-2">
 																<div class="flex items-center gap-2">
 																	<span
-																		class={`h-2 w-2 ${certificateDotClass(
-																			cert.status,
-																		)}`}
+																		class={`h-2 w-2 ${certificateDotClass(cert.status)}`}
 																	></span>
-																	<span class="text-xs text-neutral-600">
-																		{cert.domain}
-																	</span>
+																	<span class="text-xs text-neutral-600">{cert.domain}</span>
 																</div>
 																<span class="text-xs text-neutral-500">
 																	{certificateStatusLabel(cert.status)}
@@ -1408,15 +1289,11 @@ const AppDetail: Component = () => {
 								<Card>
 									<CardHeader>
 										<CardTitle>source and rollout</CardTitle>
-										<CardDescription>
-											current source, latest deployment, and branch
-										</CardDescription>
+										<CardDescription>current source, latest deployment, and branch</CardDescription>
 									</CardHeader>
 									<CardContent class="grid gap-4 md:grid-cols-2">
 										<div>
-											<p class="text-xs uppercase tracking-wider text-neutral-500">
-												source
-											</p>
+											<p class="text-xs uppercase tracking-wider text-neutral-500">source</p>
 											<p class="mt-2 text-sm font-mono text-black break-all">
 												{app()!.github_url || "manual image or direct deploy"}
 											</p>
@@ -1428,36 +1305,22 @@ const AppDetail: Component = () => {
 											<Show
 												when={latestDeployment()}
 												fallback={
-													<p class="mt-2 text-sm text-neutral-500">
-														no deployment recorded
-													</p>
+													<p class="mt-2 text-sm text-neutral-500">no deployment recorded</p>
 												}
 											>
-												<p class="mt-2 text-sm text-black">
-													{latestDeployment()!.status}
-												</p>
+												<p class="mt-2 text-sm text-black">{latestDeployment()!.status}</p>
 												<p class="mt-1 text-xs text-neutral-500">
-													{new Date(
-														latestDeployment()!.created_at,
-													).toLocaleString()}
+													{new Date(latestDeployment()!.created_at).toLocaleString()}
 												</p>
 											</Show>
 										</div>
 										<div>
-											<p class="text-xs uppercase tracking-wider text-neutral-500">
-												branch
-											</p>
-											<p class="mt-2 text-sm font-mono text-black">
-												{app()!.branch}
-											</p>
+											<p class="text-xs uppercase tracking-wider text-neutral-500">branch</p>
+											<p class="mt-2 text-sm font-mono text-black">{app()!.branch}</p>
 										</div>
 										<div>
-											<p class="text-xs uppercase tracking-wider text-neutral-500">
-												runtime
-											</p>
-											<p class="mt-2 text-sm text-black">
-												{projectRuntimeDetail()}
-											</p>
+											<p class="text-xs uppercase tracking-wider text-neutral-500">runtime</p>
+											<p class="mt-2 text-sm text-black">{projectRuntimeDetail()}</p>
 										</div>
 									</CardContent>
 								</Card>
@@ -1465,9 +1328,7 @@ const AppDetail: Component = () => {
 								<Card>
 									<CardHeader>
 										<CardTitle>service mix</CardTitle>
-										<CardDescription>
-											current shape of the group runtime
-										</CardDescription>
+										<CardDescription>current shape of the group runtime</CardDescription>
 									</CardHeader>
 									<CardContent class="space-y-4">
 										<div class="flex flex-wrap gap-2 text-xs text-neutral-500">
@@ -1487,10 +1348,7 @@ const AppDetail: Component = () => {
 										<p class="text-sm text-neutral-600">
 											{projectServices().length} configured service
 											{projectServices().length === 1 ? "" : "s"} with{" "}
-											{projectServices().reduce(
-												(total, service) => total + service.replicas,
-												0,
-											)}{" "}
+											{projectServices().reduce((total, service) => total + service.replicas, 0)}{" "}
 											total desired slots
 										</p>
 									</CardContent>
@@ -1514,8 +1372,7 @@ const AppDetail: Component = () => {
 										<div>
 											<CardTitle>services</CardTitle>
 											<CardDescription>
-												select a service to inspect its runtime, network, and
-												storage details
+												select a service to inspect its runtime, network, and storage details
 											</CardDescription>
 										</div>
 										<div class="flex flex-wrap gap-2 text-xs text-neutral-500">
@@ -1533,11 +1390,7 @@ const AppDetail: Component = () => {
 											</span>
 											<span class="border border-neutral-200 px-2 py-1">
 												with mounts{" "}
-												{
-													projectServices().filter(
-														(service) => service.mounts.length > 0,
-													).length
-												}
+												{projectServices().filter((service) => service.mounts.length > 0).length}
 											</span>
 										</div>
 									</CardHeader>
@@ -1556,9 +1409,7 @@ const AppDetail: Component = () => {
 															}`}
 														>
 															<div class="flex items-center justify-between gap-3">
-																<span class="text-sm font-medium">
-																	{service.name}
-																</span>
+																<span class="text-sm font-medium">{service.name}</span>
 																<span
 																	class={`text-[10px] uppercase tracking-wide ${
 																		selectedProjectService()?.id === service.id
@@ -1578,14 +1429,10 @@ const AppDetail: Component = () => {
 															>
 																<span
 																	class={`h-2 w-2 ${runtimeStatusDotClass(
-																		serviceRuntime(service.id)?.status ||
-																			"pending",
+																		serviceRuntime(service.id)?.status || "pending",
 																	)}`}
 																></span>
-																<span>
-																	{serviceRuntime(service.id)?.status ||
-																		"pending"}
-																</span>
+																<span>{serviceRuntime(service.id)?.status || "pending"}</span>
 																<span>
 																	{serviceRuntime(service.id)
 																		? `${serviceRuntime(service.id)!.running_instances}/${serviceRuntime(service.id)!.desired_instances}`
@@ -1602,9 +1449,7 @@ const AppDetail: Component = () => {
 																<span>{formatServicePorts(service)}</span>
 																<span>
 																	{service.replicas}x
-																	{service.domains?.length
-																		? ` · ${service.domains.length}d`
-																		: ""}
+																	{service.domains?.length ? ` · ${service.domains.length}d` : ""}
 																</span>
 															</div>
 														</button>
@@ -1621,21 +1466,17 @@ const AppDetail: Component = () => {
 															<div class="flex flex-wrap items-start justify-between gap-4">
 																<div>
 																	<div class="flex items-center gap-3">
-																		<h3 class="text-xl font-serif text-black">
-																			{service().name}
-																		</h3>
+																		<h3 class="text-xl font-serif text-black">{service().name}</h3>
 																		<span class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
 																			{serviceTypeLabel(service().service_type)}
 																		</span>
 																		<span class="inline-flex items-center gap-2 border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600">
 																			<span
 																				class={`h-2 w-2 ${runtimeStatusDotClass(
-																					serviceRuntime(service().id)
-																						?.status || "pending",
+																					serviceRuntime(service().id)?.status || "pending",
 																				)}`}
 																			></span>
-																			{serviceRuntime(service().id)?.status ||
-																				"pending"}
+																			{serviceRuntime(service().id)?.status || "pending"}
 																		</span>
 																	</div>
 																	<p class="mt-2 text-sm font-mono text-neutral-500">
@@ -1655,8 +1496,7 @@ const AppDetail: Component = () => {
 																	status
 																</p>
 																<p class="mt-2 text-sm font-mono text-black">
-																	{serviceRuntime(service().id)?.status ||
-																		"pending"}
+																	{serviceRuntime(service().id)?.status || "pending"}
 																</p>
 															</div>
 															<div class="border border-neutral-200 p-3">
@@ -1700,9 +1540,7 @@ const AppDetail: Component = () => {
 																	cpu
 																</p>
 																<p class="mt-2 text-sm font-mono text-black">
-																	{service().cpu_limit
-																		? `${service().cpu_limit}`
-																		: "auto"}
+																	{service().cpu_limit ? `${service().cpu_limit}` : "auto"}
 																</p>
 															</div>
 														</div>
@@ -1728,9 +1566,7 @@ const AppDetail: Component = () => {
 																	<p class="text-[10px] uppercase tracking-wide text-neutral-400">
 																		default route
 																	</p>
-																	<p class="mt-1">
-																		{formatPublicUrlStatus(service())}
-																	</p>
+																	<p class="mt-1">{formatPublicUrlStatus(service())}</p>
 																</div>
 																<div>
 																	<p class="text-[10px] uppercase tracking-wide text-neutral-400">
@@ -1751,9 +1587,7 @@ const AppDetail: Component = () => {
 																						<div class="flex items-center justify-between gap-2 border border-neutral-200 bg-white px-2 py-2 text-xs">
 																							<div class="flex items-center gap-2 overflow-hidden">
 																								<span
-																									class={`h-2 w-2 ${certificateDotClass(
-																										status,
-																									)}`}
+																									class={`h-2 w-2 ${certificateDotClass(status)}`}
 																								></span>
 																								<a
 																									href={`https://${domain}`}
@@ -1764,25 +1598,15 @@ const AppDetail: Component = () => {
 																								</a>
 																							</div>
 																							<div class="flex items-center gap-2 text-neutral-500">
-																								<span>
-																									{certificateStatusLabel(
-																										status,
-																									)}
-																								</span>
-																								<Show
-																									when={status !== "pending"}
-																								>
+																								<span>{certificateStatusLabel(status)}</span>
+																								<Show when={status !== "pending"}>
 																									<button
 																										type="button"
-																										onClick={() =>
-																											reissueCertificate(domain)
-																										}
+																										onClick={() => reissueCertificate(domain)}
 																										disabled={reissuing()}
 																										class="border border-neutral-300 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-600 hover:border-black hover:text-black disabled:opacity-50"
 																									>
-																										{reissuing()
-																											? "..."
-																											: "reissue"}
+																										{reissuing() ? "..." : "reissue"}
 																									</button>
 																								</Show>
 																							</div>
@@ -1823,9 +1647,7 @@ const AppDetail: Component = () => {
 																	<p class="text-[10px] uppercase tracking-wide text-neutral-400">
 																		health check
 																	</p>
-																	<p class="mt-1">
-																		{formatServiceHealthDetail(service())}
-																	</p>
+																	<p class="mt-1">{formatServiceHealthDetail(service())}</p>
 																</div>
 																<div>
 																	<p class="text-[10px] uppercase tracking-wide text-neutral-400">
@@ -1839,24 +1661,16 @@ const AppDetail: Component = () => {
 																	<p class="text-[10px] uppercase tracking-wide text-neutral-400">
 																		registry
 																	</p>
-																	<p class="mt-1">
-																		{formatServiceRegistry(service())}
-																	</p>
+																	<p class="mt-1">{formatServiceRegistry(service())}</p>
 																</div>
 																<Show
 																	when={
-																		service().entrypoint.length > 0 ||
-																		service().command.length > 0
+																		service().entrypoint.length > 0 || service().command.length > 0
 																	}
 																>
 																	<div class="space-y-2 font-mono text-xs text-neutral-500">
-																		<Show
-																			when={service().entrypoint.length > 0}
-																		>
-																			<p>
-																				entrypoint{" "}
-																				{service().entrypoint.join(" ")}
-																			</p>
+																		<Show when={service().entrypoint.length > 0}>
+																			<p>entrypoint {service().entrypoint.join(" ")}</p>
 																		</Show>
 																		<Show when={service().command.length > 0}>
 																			<p>cmd {service().command.join(" ")}</p>
@@ -1891,33 +1705,23 @@ const AppDetail: Component = () => {
 																	</div>
 																	<div class="flex flex-wrap items-center gap-2 text-xs">
 																		<button
-																			onClick={() =>
-																				void downloadServiceMounts(
-																					service().name,
-																				)
-																			}
-																			disabled={
-																				serviceMountAction()?.service ===
-																				service().name
-																			}
+																			onClick={() => void downloadServiceMounts(service().name)}
+																			disabled={serviceMountAction()?.service === service().name}
 																			class="border border-neutral-300 px-2 py-1 text-neutral-700 hover:border-neutral-400 disabled:opacity-50"
 																		>
-																			{serviceMountAction()?.service ===
-																				service().name &&
+																			{serviceMountAction()?.service === service().name &&
 																			serviceMountAction()?.kind === "backup"
 																				? "backing up..."
 																				: "backup mounts"}
 																		</button>
 																		<label
 																			class={`border px-2 py-1 ${
-																				serviceMountAction()?.service ===
-																				service().name
+																				serviceMountAction()?.service === service().name
 																					? "cursor-not-allowed border-neutral-200 text-neutral-300"
 																					: "cursor-pointer border-neutral-300 text-neutral-700 hover:border-neutral-400"
 																			}`}
 																		>
-																			{serviceMountAction()?.service ===
-																				service().name &&
+																			{serviceMountAction()?.service === service().name &&
 																			serviceMountAction()?.kind === "restore"
 																				? "restoring..."
 																				: "restore mounts"}
@@ -1925,10 +1729,7 @@ const AppDetail: Component = () => {
 																				type="file"
 																				accept=".tar,application/x-tar"
 																				class="hidden"
-																				disabled={
-																					serviceMountAction()?.service ===
-																					service().name
-																				}
+																				disabled={serviceMountAction()?.service === service().name}
 																				onChange={(event) => {
 																					const input = event.currentTarget;
 																					void restoreServiceMounts(
@@ -1942,10 +1743,7 @@ const AppDetail: Component = () => {
 																		</label>
 																	</div>
 																	<Show
-																		when={
-																			serviceMountActionError()?.service ===
-																			service().name
-																		}
+																		when={serviceMountActionError()?.service === service().name}
 																	>
 																		<p class="text-xs text-neutral-500">
 																			{serviceMountActionError()?.message}
@@ -1968,26 +1766,18 @@ const AppDetail: Component = () => {
 								<CardHeader class="flex items-center justify-between gap-4">
 									<div>
 										<CardTitle>live group logs</CardTitle>
-										<CardDescription>
-											live websocket stream for the whole group
-										</CardDescription>
+										<CardDescription>live websocket stream for the whole group</CardDescription>
 									</div>
 									<div class="flex items-center gap-4">
 										<div class="flex items-center gap-2">
 											<span
-												class={`h-1.5 w-1.5 ${
-													logsConnected() ? "bg-black" : "bg-neutral-300"
-												}`}
+												class={`h-1.5 w-1.5 ${logsConnected() ? "bg-black" : "bg-neutral-300"}`}
 											></span>
 											<span class="text-xs text-neutral-500">
 												{logsConnected() ? "live" : "disconnected"}
 											</span>
 										</div>
-										<Button
-											variant="ghost"
-											size="sm"
-											onClick={() => setLogs([])}
-										>
+										<Button variant="ghost" size="sm" onClick={() => setLogs([])}>
 											clear
 										</Button>
 									</div>
@@ -1998,9 +1788,7 @@ const AppDetail: Component = () => {
 								>
 									<Show when={logs().length === 0}>
 										<p class="text-neutral-400">
-											{logsConnected()
-												? "waiting for logs..."
-												: "connecting..."}
+											{logsConnected() ? "waiting for logs..." : "connecting..."}
 										</p>
 									</Show>
 									<For each={logs()}>
@@ -2019,22 +1807,17 @@ const AppDetail: Component = () => {
 									<div>
 										<CardTitle>container monitor</CardTitle>
 										<CardDescription>
-											health, metrics, logs, and volumes for the selected
-											container
+											health, metrics, logs, and volumes for the selected container
 										</CardDescription>
 									</div>
 									<Show when={appContainers().length > 0}>
 										<select
 											value={selectedContainer()}
-											onChange={(event) =>
-												selectContainer(event.currentTarget.value)
-											}
+											onChange={(event) => selectContainer(event.currentTarget.value)}
 											class="border border-neutral-300 px-2 py-1.5 text-xs text-neutral-700"
 										>
 											<For each={appContainers()}>
-												{(container) => (
-													<option value={container.id}>{container.name}</option>
-												)}
+												{(container) => <option value={container.id}>{container.name}</option>}
 											</For>
 										</select>
 									</Show>
@@ -2054,9 +1837,7 @@ const AppDetail: Component = () => {
 							<Card>
 								<CardHeader>
 									<CardTitle>deployments</CardTitle>
-									<CardDescription>
-										recent deploy history for this group
-									</CardDescription>
+									<CardDescription>recent deploy history for this group</CardDescription>
 								</CardHeader>
 								<CardContent class="p-0">
 									<Show when={deployments.loading}>
@@ -2066,31 +1847,17 @@ const AppDetail: Component = () => {
 										</div>
 									</Show>
 
-									<Show
-										when={!deployments.loading && deployments()?.length === 0}
-									>
-										<div class="p-8 text-center text-sm text-neutral-400">
-											no deployments yet
-										</div>
+									<Show when={!deployments.loading && deployments()?.length === 0}>
+										<div class="p-8 text-center text-sm text-neutral-400">no deployments yet</div>
 									</Show>
 
-									<Show
-										when={
-											!deployments.loading &&
-											deployments() &&
-											deployments()!.length > 0
-										}
-									>
+									<Show when={!deployments.loading && deployments() && deployments()!.length > 0}>
 										<div class="divide-y divide-neutral-200">
 											<For each={deployments()}>
 												{(deployment) => (
 													<div class="flex items-center justify-between px-5 py-4">
 														<div class="flex items-center gap-4">
-															<span
-																class={`h-2 w-2 ${statusIndicator(
-																	deployment.status,
-																)}`}
-															></span>
+															<span class={`h-2 w-2 ${statusIndicator(deployment.status)}`}></span>
 															<div>
 																<p class="font-mono text-sm text-black">
 																	{deployment.commit_sha.substring(0, 8)}
@@ -2101,13 +1868,9 @@ const AppDetail: Component = () => {
 															</div>
 														</div>
 														<div class="flex items-center gap-4 text-xs">
-															<span class="text-neutral-500">
-																{deployment.status}
-															</span>
+															<span class="text-neutral-500">{deployment.status}</span>
 															<span class="text-neutral-400">
-																{new Date(
-																	deployment.created_at,
-																).toLocaleString()}
+																{new Date(deployment.created_at).toLocaleString()}
 															</span>
 															<Button
 																variant="outline"
@@ -2133,16 +1896,8 @@ const AppDetail: Component = () => {
 						<div class="bg-white border border-neutral-300 w-full max-w-6xl max-h-[90vh] flex flex-col">
 							<div class="border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
 								<h2 class="text-lg font-serif text-black">group settings</h2>
-								<button
-									onClick={() => setEditing(false)}
-									class="text-neutral-400 hover:text-black"
-								>
-									<svg
-										class="h-5 w-5"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke="currentColor"
-									>
+								<button onClick={() => setEditing(false)} class="text-neutral-400 hover:text-black">
+									<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 										<path
 											stroke-linecap="round"
 											stroke-linejoin="round"
@@ -2156,15 +1911,11 @@ const AppDetail: Component = () => {
 							<div class="flex-1 overflow-y-auto p-6 space-y-6">
 								{/* source settings */}
 								<section class="border border-neutral-200 p-4">
-									<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-4">
-										source
-									</h3>
+									<h3 class="text-xs text-neutral-500 uppercase tracking-wider mb-4">source</h3>
 
 									<div class="grid grid-cols-2 gap-4">
 										<div>
-											<label class="block text-xs text-neutral-500 mb-2">
-												repository url
-											</label>
+											<label class="block text-xs text-neutral-500 mb-2">repository url</label>
 											<input
 												type="text"
 												value={editForm().github_url}
@@ -2178,9 +1929,7 @@ const AppDetail: Component = () => {
 											/>
 										</div>
 										<div>
-											<label class="block text-xs text-neutral-500 mb-2">
-												branch
-											</label>
+											<label class="block text-xs text-neutral-500 mb-2">branch</label>
 											<input
 												type="text"
 												value={editForm().branch}
@@ -2210,12 +1959,10 @@ const AppDetail: Component = () => {
 								<section class="border border-neutral-200 p-4">
 									<div class="flex justify-between items-center mb-4">
 										<div>
-											<h3 class="text-xs text-neutral-500 uppercase tracking-wider">
-												services
-											</h3>
+											<h3 class="text-xs text-neutral-500 uppercase tracking-wider">services</h3>
 											<p class="text-xs text-neutral-400 mt-2">
-												define render-style service types for this group. custom
-												domains now belong to each web service card.
+												define render-style service types for this group. custom domains now belong
+												to each web service card.
 											</p>
 										</div>
 										<div class="flex flex-wrap gap-2">
@@ -2317,16 +2064,8 @@ const AppDetail: Component = () => {
 											<span class="text-xs text-neutral-500">live</span>
 										</div>
 									</Show>
-									<button
-										onClick={closeDeploymentLogs}
-										class="text-neutral-400 hover:text-black"
-									>
-										<svg
-											class="h-5 w-5"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke="currentColor"
-										>
+									<button onClick={closeDeploymentLogs} class="text-neutral-400 hover:text-black">
+										<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 											<path
 												stroke-linecap="round"
 												stroke-linejoin="round"
@@ -2341,18 +2080,10 @@ const AppDetail: Component = () => {
 								ref={deploymentLogsRef}
 								class="flex-1 p-4 overflow-y-auto font-mono text-xs bg-neutral-50 min-h-[300px] max-h-[60vh]"
 							>
-								<Show
-									when={
-										deploymentLogsLoading() && deploymentLogs().length === 0
-									}
-								>
+								<Show when={deploymentLogsLoading() && deploymentLogs().length === 0}>
 									<p class="text-neutral-400">loading logs...</p>
 								</Show>
-								<Show
-									when={
-										!deploymentLogsLoading() && deploymentLogs().length === 0
-									}
-								>
+								<Show when={!deploymentLogsLoading() && deploymentLogs().length === 0}>
 									<p class="text-neutral-400">no logs available</p>
 								</Show>
 								<Show
@@ -2368,9 +2099,7 @@ const AppDetail: Component = () => {
 											disabled={deploymentLogsLoading()}
 											class="text-xs text-neutral-500 hover:text-black border border-neutral-200 px-3 py-1 bg-white hover:border-neutral-400 transition-colors disabled:opacity-50"
 										>
-											{deploymentLogsLoading()
-												? "loading..."
-												: "load older logs"}
+											{deploymentLogsLoading() ? "loading..." : "load older logs"}
 										</button>
 									</div>
 								</Show>
@@ -2386,18 +2115,12 @@ const AppDetail: Component = () => {
 							<div class="border-t border-neutral-200 px-6 py-3 flex justify-between items-center text-xs text-neutral-500">
 								<div>
 									<span>
-										started:{" "}
-										{new Date(
-											selectedDeployment()!.created_at,
-										).toLocaleString()}
+										started: {new Date(selectedDeployment()!.created_at).toLocaleString()}
 									</span>
 									<Show when={selectedDeployment()!.finished_at}>
 										<span class="mx-2">|</span>
 										<span>
-											finished:{" "}
-											{new Date(
-												selectedDeployment()!.finished_at!,
-											).toLocaleString()}
+											finished: {new Date(selectedDeployment()!.finished_at!).toLocaleString()}
 										</span>
 									</Show>
 								</div>

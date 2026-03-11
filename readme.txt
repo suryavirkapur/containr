@@ -3,7 +3,7 @@ containr
 
 rust-native platform as a service for deploying docker containers with automatic ssl.
 
-alpha release v0.1.14-alpha
+alpha release v0.1.15-alpha
 
 quick start
 -----------

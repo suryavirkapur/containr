@@ -1,6 +1,15 @@
 changelog
 =========
 
+0.1.15-alpha - 2026-03-11
+- refactor service creation flow into step-by-step render-style pipeline with dedicated routing
+- replace monolithic `/services/new` modal with isolated repository and template configure pages
+- redesign services dashboard to remove legacy launch cards and tidy the unified inventory table
+- add global dropdown to app layout for quick service creation links
+- fix container terminal missing xterm addon dependencies
+- fix biome.json to properly parse the new v4 tailwindcss directives
+
+
 0.1.14-alpha - 2026-03-10
 - unify the dashboard around `/services`, `/services/new`, and
   `/services/:id`, replacing the sidebar’s split database/queue list entry

@@ -10,16 +10,10 @@ interface AlertProps extends JSX.HTMLAttributes<HTMLDivElement> {
 }
 
 export const Alert: Component<AlertProps> = (props) => {
-	const [local, others] = splitProps(props, [
-		"variant",
-		"title",
-		"class",
-		"children",
-	]);
+	const [local, others] = splitProps(props, ["variant", "title", "class", "children"]);
 
 	const variantClass: Record<AlertVariant, string> = {
-		default:
-			"border-[var(--border)] bg-[var(--muted)] text-[var(--foreground)]",
+		default: "border-[var(--border)] bg-[var(--muted)] text-[var(--foreground)]",
 		destructive: "border-red-900 bg-red-950/60 text-red-100",
 		success: "border-emerald-900 bg-emerald-950/60 text-emerald-100",
 	};
@@ -34,9 +28,7 @@ export const Alert: Component<AlertProps> = (props) => {
 			{...others}
 		>
 			{local.title ? (
-				<div class="mb-1 text-xs font-semibold uppercase tracking-[0.2em]">
-					{local.title}
-				</div>
+				<div class="mb-1 text-xs font-semibold uppercase tracking-[0.2em]">{local.title}</div>
 			) : null}
 			<div class="text-sm">{local.children}</div>
 		</div>

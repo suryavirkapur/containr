@@ -1,12 +1,6 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import {
-	Component,
-	createEffect,
-	createSignal,
-	onCleanup,
-	onMount,
-} from "solid-js";
+import { Component, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import "@xterm/xterm/css/xterm.css";
 
 const shellOptions = [
@@ -25,8 +19,7 @@ const terminalTheme = {
 };
 
 const ContainerTerminal: Component<{ containerId: string }> = (props) => {
-	const [connectionState, setConnectionState] =
-		createSignal<ConnectionState>("disconnected");
+	const [connectionState, setConnectionState] = createSignal<ConnectionState>("disconnected");
 	const [shell, setShell] = createSignal("/bin/sh");
 
 	let terminalElement: HTMLDivElement | undefined;
@@ -61,15 +54,12 @@ const ContainerTerminal: Component<{ containerId: string }> = (props) => {
 	};
 
 	const requestExecToken = async (token: string) => {
-		const response = await fetch(
-			`/api/containers/${props.containerId}/exec/token`,
-			{
-				method: "POST",
-				headers: {
-					Authorization: `Bearer ${token}`,
-				},
+		const response = await fetch(`/api/containers/${props.containerId}/exec/token`, {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${token}`,
 			},
-		);
+		});
 
 		if (!response.ok) {
 			throw new Error("failed to create exec token");

@@ -4,15 +4,9 @@ import EnvVarEditor from "./EnvVarEditor";
 import { Badge, Button, Card } from "./ui";
 import { EditableKeyValueEntry } from "../utils/keyValueEntries";
 
-export type ServiceType =
-	| "web_service"
-	| "private_service"
-	| "background_worker"
-	| "cron_job";
+export type ServiceType = "web_service" | "private_service" | "background_worker" | "cron_job";
 
-export function normalizeServiceType(
-	serviceType: string | null | undefined,
-): ServiceType {
+export function normalizeServiceType(serviceType: string | null | undefined): ServiceType {
 	switch (serviceType) {
 		case "web_service":
 		case "private_service":
@@ -128,10 +122,7 @@ export function serviceTypeDescription(serviceType: string | null | undefined) {
 	}
 }
 
-export function applyServiceType(
-	service: Service,
-	serviceType: ServiceType,
-): Service {
+export function applyServiceType(service: Service, serviceType: ServiceType): Service {
 	const next: Service = {
 		...service,
 		service_type: serviceType,
@@ -170,13 +161,11 @@ interface ServiceFormProps {
  * form for configuring a single container service
  */
 const ServiceForm: Component<ServiceFormProps> = (props) => {
-	const [activeTab, setActiveTab] = createSignal<
-		"overview" | "build" | "runtime" | "storage"
-	>("overview");
-
-	const isRepositoryBuild = createMemo(
-		() => props.service.image.trim().length === 0,
+	const [activeTab, setActiveTab] = createSignal<"overview" | "build" | "runtime" | "storage">(
+		"overview",
 	);
+
+	const isRepositoryBuild = createMemo(() => props.service.image.trim().length === 0);
 	const expectsInboundPort = createMemo(
 		() =>
 			props.service.service_type !== "background_worker" &&
@@ -197,9 +186,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 		value
 			.split("\n")
 			.map((entry) => parseInt(entry.trim(), 10))
-			.filter(
-				(entry) => Number.isInteger(entry) && entry > 0 && entry <= 65535,
-			);
+			.filter((entry) => Number.isInteger(entry) && entry > 0 && entry <= 65535);
 
 	const domainsToText = (value: string[]) => value.join("\n");
 
@@ -213,10 +200,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 			),
 		);
 
-	const updateField = <K extends keyof Service>(
-		field: K,
-		value: Service[K],
-	) => {
+	const updateField = <K extends keyof Service>(field: K, value: Service[K]) => {
 		props.onUpdate(props.index, { ...props.service, [field]: value });
 	};
 
@@ -245,11 +229,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 		]);
 	};
 
-	const updateMount = (
-		mountIndex: number,
-		field: keyof ServiceMount,
-		value: string | boolean,
-	) => {
+	const updateMount = (mountIndex: number, field: keyof ServiceMount, value: string | boolean) => {
 		const updated = [...props.service.mounts];
 		updated[mountIndex] = {
 			...updated[mountIndex],
@@ -273,10 +253,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 		});
 	};
 
-	const updateRegistryAuth = (
-		field: keyof ServiceRegistryAuth,
-		value: string,
-	) => {
+	const updateRegistryAuth = (field: keyof ServiceRegistryAuth, value: string) => {
 		const current = props.service.registry_auth || {
 			server: "",
 			username: "",
@@ -293,8 +270,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 			? "border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]"
 			: "border-[var(--border)] bg-[var(--muted)] text-[var(--muted-foreground)] hover:border-[var(--border-strong)] hover:text-[var(--foreground)]";
 
-	const modeLabel = () =>
-		isRepositoryBuild() ? "repo build" : "prebuilt image";
+	const modeLabel = () => (isRepositoryBuild() ? "repo build" : "prebuilt image");
 
 	const selectServiceType = (serviceType: ServiceType) => {
 		props.onUpdate(props.index, applyServiceType(props.service, serviceType));
@@ -308,16 +284,12 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 						<span class="text-sm font-medium text-[var(--foreground)]">
 							{props.service.name || `service ${props.index + 1}`}
 						</span>
-						<Badge variant="secondary">
-							{serviceTypeLabel(props.service.service_type)}
-						</Badge>
+						<Badge variant="secondary">{serviceTypeLabel(props.service.service_type)}</Badge>
 						<Badge variant="outline">{modeLabel()}</Badge>
 					</div>
 					<div class="mt-2 flex flex-wrap gap-2 text-xs text-[var(--muted-foreground)]">
 						<span class="border border-[var(--border)] px-2 py-1 font-mono">
-							{expectsInboundPort()
-								? `:${props.service.port}`
-								: "no inbound port"}
+							{expectsInboundPort() ? `:${props.service.port}` : "no inbound port"}
 						</span>
 						<span class="border border-[var(--border)] px-2 py-1">
 							{props.service.replicas} replica
@@ -390,9 +362,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 					<div class="grid gap-4 md:grid-cols-2">
 						<Show when={props.showServiceTypePicker !== false}>
 							<div class="md:col-span-2">
-								<label class="mb-2 block text-xs text-neutral-600">
-									service type
-								</label>
+								<label class="mb-2 block text-xs text-neutral-600">service type</label>
 								<div class="grid gap-2 md:grid-cols-4">
 									<For
 										each={
@@ -438,9 +408,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 							<input
 								type="text"
 								value={props.service.name}
-								onInput={(event) =>
-									updateField("name", event.currentTarget.value)
-								}
+								onInput={(event) => updateField("name", event.currentTarget.value)}
 								class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 								placeholder="web"
 								required
@@ -454,10 +422,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 									type="number"
 									value={props.service.port}
 									onInput={(event) =>
-										updateField(
-											"port",
-											parseInt(event.currentTarget.value, 10) || 8080,
-										)
+										updateField("port", parseInt(event.currentTarget.value, 10) || 8080)
 									}
 									class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 									placeholder="8080"
@@ -479,40 +444,29 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 
 						<Show when={props.service.service_type === "web_service"}>
 							<div class="md:col-span-2">
-								<label class="mb-1 block text-xs text-neutral-600">
-									custom domains
-								</label>
+								<label class="mb-1 block text-xs text-neutral-600">custom domains</label>
 								<textarea
 									value={domainsToText(props.service.domains)}
 									onInput={(event) =>
-										updateField(
-											"domains",
-											textToDomains(event.currentTarget.value),
-										)
+										updateField("domains", textToDomains(event.currentTarget.value))
 									}
 									rows="3"
 									class="w-full border border-neutral-300 bg-white px-2 py-1.5 font-mono text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 									placeholder={"api.example.com\nwww.example.com"}
 								/>
 								<p class="mt-1 text-xs text-neutral-400">
-									each web service always gets its own generated service
-									subdomain. add custom domains here when this service should
-									also answer on your domains.
+									each web service always gets its own generated service subdomain. add custom
+									domains here when this service should also answer on your domains.
 								</p>
 							</div>
 						</Show>
 
 						<div>
-							<label class="mb-1 block text-xs text-neutral-600">
-								additional ports
-							</label>
+							<label class="mb-1 block text-xs text-neutral-600">additional ports</label>
 							<textarea
 								value={portsToText(props.service.additional_ports)}
 								onInput={(event) =>
-									updateField(
-										"additional_ports",
-										textToPorts(event.currentTarget.value),
-									)
+									updateField("additional_ports", textToPorts(event.currentTarget.value))
 								}
 								rows="3"
 								class="w-full border border-neutral-300 bg-white px-2 py-1.5 font-mono text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
@@ -524,35 +478,24 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 						</div>
 
 						<div>
-							<label class="mb-1 block text-xs text-neutral-600">
-								replicas
-							</label>
+							<label class="mb-1 block text-xs text-neutral-600">replicas</label>
 							<input
 								type="number"
 								min="1"
 								max="10"
 								value={props.service.replicas}
 								onInput={(event) =>
-									updateField(
-										"replicas",
-										parseInt(event.currentTarget.value, 10) || 1,
-									)
+									updateField("replicas", parseInt(event.currentTarget.value, 10) || 1)
 								}
 								class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 							/>
 						</div>
 
 						<div class="md:col-span-2">
-							<label class="mb-1 block text-xs text-neutral-600">
-								depends on
-							</label>
+							<label class="mb-1 block text-xs text-neutral-600">depends on</label>
 							<Show
 								when={availableDependencies().length > 0}
-								fallback={
-									<span class="text-xs text-neutral-400">
-										no other services
-									</span>
-								}
+								fallback={<span class="text-xs text-neutral-400">no other services</span>}
 							>
 								<div class="flex flex-wrap gap-1">
 									<For each={availableDependencies()}>
@@ -580,64 +523,48 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 					<div class="space-y-4">
 						<div class="grid gap-4 md:grid-cols-2">
 							<div class="md:col-span-2">
-								<label class="mb-1 block text-xs text-neutral-600">
-									docker image
-								</label>
+								<label class="mb-1 block text-xs text-neutral-600">docker image</label>
 								<input
 									type="text"
 									value={props.service.image}
-									onInput={(event) =>
-										updateField("image", event.currentTarget.value)
-									}
+									onInput={(event) => updateField("image", event.currentTarget.value)}
 									class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 									placeholder="ghcr.io/acme/worker:latest"
 								/>
 								<p class="mt-1 text-xs text-neutral-400">
-									leave empty to build from the linked repository. set an image
-									when this service should deploy a prebuilt container instead.
+									leave empty to build from the linked repository. set an image when this service
+									should deploy a prebuilt container instead.
 								</p>
 							</div>
 
 							<div>
-								<label class="mb-1 block text-xs text-neutral-600">
-									build context
-								</label>
+								<label class="mb-1 block text-xs text-neutral-600">build context</label>
 								<input
 									type="text"
 									value={props.service.build_context}
-									onInput={(event) =>
-										updateField("build_context", event.currentTarget.value)
-									}
+									onInput={(event) => updateField("build_context", event.currentTarget.value)}
 									class="w-full border border-neutral-300 bg-white px-2 py-1.5 font-mono text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 									placeholder="."
 								/>
 							</div>
 
 							<div>
-								<label class="mb-1 block text-xs text-neutral-600">
-									dockerfile path
-								</label>
+								<label class="mb-1 block text-xs text-neutral-600">dockerfile path</label>
 								<input
 									type="text"
 									value={props.service.dockerfile_path}
-									onInput={(event) =>
-										updateField("dockerfile_path", event.currentTarget.value)
-									}
+									onInput={(event) => updateField("dockerfile_path", event.currentTarget.value)}
 									class="w-full border border-neutral-300 bg-white px-2 py-1.5 font-mono text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 									placeholder="Dockerfile"
 								/>
 							</div>
 
 							<div>
-								<label class="mb-1 block text-xs text-neutral-600">
-									build target
-								</label>
+								<label class="mb-1 block text-xs text-neutral-600">build target</label>
 								<input
 									type="text"
 									value={props.service.build_target}
-									onInput={(event) =>
-										updateField("build_target", event.currentTarget.value)
-									}
+									onInput={(event) => updateField("build_target", event.currentTarget.value)}
 									class="w-full border border-neutral-300 bg-white px-2 py-1.5 font-mono text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 									placeholder="runtime"
 								/>
@@ -677,18 +604,13 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 
 						<div class="grid gap-4 md:grid-cols-2">
 							<div>
-								<label class="mb-1 block text-xs text-neutral-600">
-									memory (mb)
-								</label>
+								<label class="mb-1 block text-xs text-neutral-600">memory (mb)</label>
 								<input
 									type="number"
 									value={props.service.memory_limit_mb || ""}
 									onInput={(event) => {
 										const value = event.currentTarget.value;
-										updateField(
-											"memory_limit_mb",
-											value ? parseInt(value, 10) : null,
-										);
+										updateField("memory_limit_mb", value ? parseInt(value, 10) : null);
 									}}
 									class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 									placeholder="512"
@@ -696,9 +618,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 							</div>
 
 							<div>
-								<label class="mb-1 block text-xs text-neutral-600">
-									cpu cores
-								</label>
+								<label class="mb-1 block text-xs text-neutral-600">cpu cores</label>
 								<input
 									type="number"
 									value={props.service.cpu_limit || ""}
@@ -715,17 +635,12 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 							<Show when={expectsInboundPort()}>
 								<>
 									<div>
-										<label class="mb-1 block text-xs text-neutral-600">
-											health check path
-										</label>
+										<label class="mb-1 block text-xs text-neutral-600">health check path</label>
 										<input
 											type="text"
 											value={props.service.health_check_path}
 											onInput={(event) =>
-												updateField(
-													"health_check_path",
-													event.currentTarget.value,
-												)
+												updateField("health_check_path", event.currentTarget.value)
 											}
 											class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 											placeholder="/health"
@@ -733,9 +648,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 									</div>
 
 									<div>
-										<label class="mb-1 block text-xs text-neutral-600">
-											health interval (s)
-										</label>
+										<label class="mb-1 block text-xs text-neutral-600">health interval (s)</label>
 										<input
 											type="number"
 											min="1"
@@ -751,9 +664,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 									</div>
 
 									<div>
-										<label class="mb-1 block text-xs text-neutral-600">
-											health timeout (s)
-										</label>
+										<label class="mb-1 block text-xs text-neutral-600">health timeout (s)</label>
 										<input
 											type="number"
 											min="1"
@@ -769,9 +680,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 									</div>
 
 									<div>
-										<label class="mb-1 block text-xs text-neutral-600">
-											health retries
-										</label>
+										<label class="mb-1 block text-xs text-neutral-600">health retries</label>
 										<input
 											type="number"
 											min="1"
@@ -790,20 +699,16 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 
 							<Show when={!expectsInboundPort()}>
 								<div class="md:col-span-2 border border-neutral-200 bg-neutral-50 px-3 py-3 text-xs text-neutral-500">
-									background workers and cron jobs do not use http health checks
-									unless you switch them to a web or private service.
+									background workers and cron jobs do not use http health checks unless you switch
+									them to a web or private service.
 								</div>
 							</Show>
 
 							<div>
-								<label class="mb-1 block text-xs text-neutral-600">
-									restart policy
-								</label>
+								<label class="mb-1 block text-xs text-neutral-600">restart policy</label>
 								<select
 									value={props.service.restart_policy}
-									onChange={(event) =>
-										updateField("restart_policy", event.currentTarget.value)
-									}
+									onChange={(event) => updateField("restart_policy", event.currentTarget.value)}
 									class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black focus:border-black focus:outline-none"
 								>
 									<option value="always">always</option>
@@ -813,17 +718,10 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 							</div>
 
 							<div class="md:col-span-2">
-								<label class="mb-1 block text-xs text-neutral-600">
-									command args
-								</label>
+								<label class="mb-1 block text-xs text-neutral-600">command args</label>
 								<textarea
 									value={argsToText(props.service.command)}
-									onInput={(event) =>
-										updateField(
-											"command",
-											textToArgs(event.currentTarget.value),
-										)
-									}
+									onInput={(event) => updateField("command", textToArgs(event.currentTarget.value))}
 									rows="3"
 									class="w-full border border-neutral-300 bg-white px-2 py-1.5 font-mono text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 									placeholder={"npm\nrun\nstart"}
@@ -831,16 +729,11 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 							</div>
 
 							<div class="md:col-span-2">
-								<label class="mb-1 block text-xs text-neutral-600">
-									entrypoint
-								</label>
+								<label class="mb-1 block text-xs text-neutral-600">entrypoint</label>
 								<textarea
 									value={argsToText(props.service.entrypoint)}
 									onInput={(event) =>
-										updateField(
-											"entrypoint",
-											textToArgs(event.currentTarget.value),
-										)
+										updateField("entrypoint", textToArgs(event.currentTarget.value))
 									}
 									rows="2"
 									class="w-full border border-neutral-300 bg-white px-2 py-1.5 font-mono text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
@@ -849,15 +742,11 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 							</div>
 
 							<div class="md:col-span-2">
-								<label class="mb-1 block text-xs text-neutral-600">
-									working directory
-								</label>
+								<label class="mb-1 block text-xs text-neutral-600">working directory</label>
 								<input
 									type="text"
 									value={props.service.working_dir}
-									onInput={(event) =>
-										updateField("working_dir", event.currentTarget.value)
-									}
+									onInput={(event) => updateField("working_dir", event.currentTarget.value)}
 									class="w-full border border-neutral-300 bg-white px-2 py-1.5 font-mono text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 									placeholder="/workspace"
 								/>
@@ -865,9 +754,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 
 							<div class="md:col-span-2 border-t border-neutral-100 pt-3">
 								<div class="mb-3 flex items-center justify-between">
-									<label class="block text-xs text-neutral-600">
-										private registry auth
-									</label>
+									<label class="block text-xs text-neutral-600">private registry auth</label>
 									<Show
 										when={props.service.registry_auth}
 										fallback={
@@ -894,58 +781,40 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 									when={props.service.registry_auth}
 									fallback={
 										<p class="text-xs text-neutral-400">
-											use this when the service image comes from a private
-											registry
+											use this when the service image comes from a private registry
 										</p>
 									}
 								>
 									<div class="grid gap-3 lg:grid-cols-3">
 										<div>
-											<label class="mb-1 block text-xs text-neutral-600">
-												registry server
-											</label>
+											<label class="mb-1 block text-xs text-neutral-600">registry server</label>
 											<input
 												type="text"
 												value={props.service.registry_auth?.server || ""}
-												onInput={(event) =>
-													updateRegistryAuth(
-														"server",
-														event.currentTarget.value,
-													)
-												}
+												onInput={(event) => updateRegistryAuth("server", event.currentTarget.value)}
 												class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 												placeholder="ghcr.io"
 											/>
 										</div>
 										<div>
-											<label class="mb-1 block text-xs text-neutral-600">
-												username
-											</label>
+											<label class="mb-1 block text-xs text-neutral-600">username</label>
 											<input
 												type="text"
 												value={props.service.registry_auth?.username || ""}
 												onInput={(event) =>
-													updateRegistryAuth(
-														"username",
-														event.currentTarget.value,
-													)
+													updateRegistryAuth("username", event.currentTarget.value)
 												}
 												class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 												placeholder="registry user"
 											/>
 										</div>
 										<div>
-											<label class="mb-1 block text-xs text-neutral-600">
-												password
-											</label>
+											<label class="mb-1 block text-xs text-neutral-600">password</label>
 											<input
 												type="password"
 												value={props.service.registry_auth?.password || ""}
 												onInput={(event) =>
-													updateRegistryAuth(
-														"password",
-														event.currentTarget.value,
-													)
+													updateRegistryAuth("password", event.currentTarget.value)
 												}
 												class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 												placeholder="password"
@@ -961,9 +830,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 				<Show when={activeTab() === "storage"}>
 					<div class="border-t border-neutral-100 pt-3">
 						<div class="mb-3 flex items-center justify-between">
-							<label class="block text-xs text-neutral-600">
-								persistent mounts
-							</label>
+							<label class="block text-xs text-neutral-600">persistent mounts</label>
 							<button
 								type="button"
 								onClick={addMount}
@@ -975,9 +842,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 
 						<Show
 							when={props.service.mounts.length > 0}
-							fallback={
-								<p class="text-xs text-neutral-400">no mounts configured</p>
-							}
+							fallback={<p class="text-xs text-neutral-400">no mounts configured</p>}
 						>
 							<div class="space-y-3">
 								<For each={props.service.mounts}>
@@ -985,36 +850,24 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 										<div class="border border-neutral-200 p-3">
 											<div class="grid gap-3 md:grid-cols-3">
 												<div>
-													<label class="mb-1 block text-xs text-neutral-600">
-														name
-													</label>
+													<label class="mb-1 block text-xs text-neutral-600">name</label>
 													<input
 														type="text"
 														value={mount.name}
 														onInput={(event) =>
-															updateMount(
-																mountIndex(),
-																"name",
-																event.currentTarget.value,
-															)
+															updateMount(mountIndex(), "name", event.currentTarget.value)
 														}
 														class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 														placeholder="data"
 													/>
 												</div>
 												<div class="col-span-2">
-													<label class="mb-1 block text-xs text-neutral-600">
-														target path
-													</label>
+													<label class="mb-1 block text-xs text-neutral-600">target path</label>
 													<input
 														type="text"
 														value={mount.target}
 														onInput={(event) =>
-															updateMount(
-																mountIndex(),
-																"target",
-																event.currentTarget.value,
-															)
+															updateMount(mountIndex(), "target", event.currentTarget.value)
 														}
 														class="w-full border border-neutral-300 bg-white px-2 py-1.5 text-sm text-black placeholder-neutral-400 focus:border-black focus:outline-none"
 														placeholder="/data"
@@ -1027,11 +880,7 @@ const ServiceForm: Component<ServiceFormProps> = (props) => {
 														type="checkbox"
 														checked={mount.read_only}
 														onChange={(event) =>
-															updateMount(
-																mountIndex(),
-																"read_only",
-																event.currentTarget.checked,
-															)
+															updateMount(mountIndex(), "read_only", event.currentTarget.checked)
 														}
 														class="border border-neutral-300"
 													/>
