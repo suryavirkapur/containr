@@ -1,6 +1,6 @@
-import { Component, createEffect, createResource, createSignal, For, Show } from "solid-js";
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import { api, components } from "../api";
+import { type Component, createEffect, createResource, createSignal, For, Show } from "solid-js";
+import { api, type components } from "../api";
 import {
 	Alert,
 	Button,

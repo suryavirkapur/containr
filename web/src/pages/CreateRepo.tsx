@@ -1,6 +1,12 @@
-import { Component, createEffect, createResource, createSignal, For, Show } from "solid-js";
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import { api, components } from "../api";
+import { type Component, createEffect, createResource, createSignal, For, Show } from "solid-js";
+import { api, type components } from "../api";
+import {
+	applyServiceType,
+	createServiceForType,
+	type ServiceType,
+	serviceTypeLabel,
+} from "../components/ServiceForm";
 import {
 	Badge,
 	Button,
@@ -11,12 +17,6 @@ import {
 	Input,
 	PageHeader,
 } from "../components/ui";
-import {
-	applyServiceType,
-	createServiceForType,
-	ServiceType,
-	serviceTypeLabel,
-} from "../components/ServiceForm";
 
 type GithubAppStatus = components["schemas"]["GithubAppStatusResponse"];
 type RepoInfo = components["schemas"]["RepoInfo"];

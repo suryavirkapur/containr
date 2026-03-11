@@ -1,13 +1,5 @@
-import { Component, For, createResource, createSignal, Show } from "solid-js";
-import { api, components } from "../api";
-import {
-	type ColorMode,
-	type ColorScheme,
-	type Roundness,
-	colorSchemes,
-	roundnessValues,
-	useTheme,
-} from "../context/ThemeContext";
+import { type Component, createResource, createSignal, For, Show } from "solid-js";
+import { api, type components } from "../api";
 import {
 	Alert,
 	Button,
@@ -18,6 +10,14 @@ import {
 	CardTitle,
 	Input,
 } from "../components/ui";
+import {
+	type ColorMode,
+	type ColorScheme,
+	colorSchemes,
+	type Roundness,
+	roundnessValues,
+	useTheme,
+} from "../context/ThemeContext";
 
 type SettingsResponse = components["schemas"]["SettingsResponse"];
 type GithubAppStatus = components["schemas"]["GithubAppStatusResponse"];

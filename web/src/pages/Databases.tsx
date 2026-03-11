@@ -1,6 +1,6 @@
 import { A, useNavigate } from "@solidjs/router";
 import {
-	Component,
+	type Component,
 	createMemo,
 	createResource,
 	createSignal,

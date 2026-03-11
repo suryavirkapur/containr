@@ -1,4 +1,4 @@
-import { JSX, ParentComponent, Show, createSignal, onCleanup } from "solid-js";
+import { createSignal, type JSX, onCleanup, type ParentComponent, Show } from "solid-js";
 
 interface DropdownMenuProps {
 	trigger: JSX.Element;

@@ -1,6 +1,6 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { Component, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { type Component, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import "@xterm/xterm/css/xterm.css";
 
 const shellOptions = [

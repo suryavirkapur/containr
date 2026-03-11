@@ -1,6 +1,14 @@
-import { Component, createSignal, createEffect, Show } from "solid-js";
 import { useNavigate, useSearchParams } from "@solidjs/router";
+import { type Component, createEffect, createSignal, Show } from "solid-js";
 import { api, components } from "../api";
+import EnvVarEditor from "../components/EnvVarEditor";
+import ServiceForm, {
+	applyServiceType,
+	createServiceForType,
+	type Service,
+	type ServiceType,
+	serviceTypeLabel,
+} from "../components/ServiceForm";
 import {
 	Alert,
 	Button,
@@ -11,15 +19,7 @@ import {
 	Input,
 	PageHeader,
 } from "../components/ui";
-import EnvVarEditor from "../components/EnvVarEditor";
-import ServiceForm, {
-	applyServiceType,
-	createServiceForType,
-	Service,
-	ServiceType,
-	serviceTypeLabel,
-} from "../components/ServiceForm";
-import { mapServiceToRequest, EditableEnvVar } from "../utils/projectEditor";
+import { type EditableEnvVar, mapServiceToRequest } from "../utils/projectEditor";
 
 const inferServiceName = (sourceUrl: string): string => {
 	const trimmed = sourceUrl.trim();

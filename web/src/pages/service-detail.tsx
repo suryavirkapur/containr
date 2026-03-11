@@ -1,6 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import {
-	Component,
+	type Component,
 	createEffect,
 	createMemo,
 	createResource,
@@ -12,6 +12,11 @@ import {
 
 import { api, type components } from "../api";
 import ContainerMonitor from "../components/ContainerMonitor";
+import EnvVarEditor from "../components/EnvVarEditor";
+import ServiceForm, {
+	createServiceForType,
+	type Service as FormService,
+} from "../components/ServiceForm";
 import {
 	Alert,
 	Badge,
@@ -29,6 +34,11 @@ import {
 	TabsTrigger,
 } from "../components/ui";
 import { parseAnsi } from "../utils/ansi";
+import {
+	type EditableEnvVar,
+	mapServiceResponseToForm,
+	mapServiceToRequest,
+} from "../utils/projectEditor";
 
 type Service = components["schemas"]["InventoryServiceResponse"];
 type Project = components["schemas"]["AppResponse"];
@@ -41,7 +51,7 @@ type Feedback = {
 	variant: "default" | "destructive" | "success";
 };
 
-type DetailTab = "overview" | "environment" | "logs" | "containers" | "advanced";
+type DetailTab = "overview" | "environment" | "settings" | "logs" | "containers" | "advanced";
 
 type KeyValueRow = {
 	key: string;
@@ -278,6 +288,17 @@ const ServiceDetail: Component = () => {
 	const [pendingAction, setPendingAction] = createSignal<string | null>(null);
 	const [externalPort, setExternalPort] = createSignal("");
 	const [proxyExternalPort, setProxyExternalPort] = createSignal("");
+
+	// Edit form states
+	const [editing, setEditing] = createSignal(false);
+	const [saving, setSaving] = createSignal(false);
+	const [editError, setEditError] = createSignal("");
+	const [editForm, setEditForm] = createSignal({
+		github_url: "",
+		branch: "main",
+		env_vars: [] as EditableEnvVar[],
+		services: [] as FormService[],
+	});
 
 	const [service, { refetch: refetchService }] = createResource(() => params.id, fetchService);
 	const [project, { refetch: refetchProject }] = createResource(() => {
@@ -814,6 +835,67 @@ const ServiceDetail: Component = () => {
 		navigate("/services");
 	};
 
+	const startEditing = () => {
+		const currentProject = project();
+		const currentAppService = appService();
+
+		if (currentProject && currentAppService) {
+			const formServices = currentProject.services.map(mapServiceResponseToForm);
+
+			setEditForm({
+				github_url: currentProject.github_url,
+				branch: currentProject.branch,
+				env_vars: currentProject.env_vars ? currentProject.env_vars.map((e) => ({ ...e })) : [],
+				services: formServices,
+			});
+			setEditError("");
+			setEditing(true);
+		}
+	};
+
+	const cancelEditing = () => {
+		setEditing(false);
+		setEditError("");
+	};
+
+	const updateServiceConfig = async () => {
+		const currentProject = project();
+		if (!currentProject) return;
+
+		setSaving(true);
+		setEditError("");
+		try {
+			const form = editForm();
+			const services = form.services;
+
+			if (services.length === 0) {
+				throw new Error("add at least one service");
+			}
+
+			const { error } = await api.PUT("/api/projects/{id}", {
+				params: { path: { id: currentProject.id } },
+				body: {
+					github_url: form.github_url,
+					branch: form.branch,
+					env_vars: form.env_vars,
+					services: services.map(mapServiceToRequest),
+				},
+			});
+			if (error) throw error;
+
+			setEditing(false);
+			await refreshCurrentDetail();
+			setFeedback({
+				text: "service updated successfully",
+				variant: "success",
+			});
+		} catch (err) {
+			setEditError(describeError(err));
+		} finally {
+			setSaving(false);
+		}
+	};
+
 	const toggleDatabaseExposure = async (enabled: boolean) => {
 		const currentDatabase = database();
 		if (!currentDatabase) {
@@ -1052,6 +1134,9 @@ const ServiceDetail: Component = () => {
 					<TabsList>
 						<TabsTrigger value="overview">overview</TabsTrigger>
 						<TabsTrigger value="environment">environment</TabsTrigger>
+						<Show when={service()?.resource_kind === "app_service"}>
+							<TabsTrigger value="settings">settings</TabsTrigger>
+						</Show>
 						<TabsTrigger value="logs">logs</TabsTrigger>
 						<TabsTrigger value="containers">containers</TabsTrigger>
 						<TabsTrigger value="advanced">advanced</TabsTrigger>
@@ -1091,16 +1176,190 @@ service."
 					</TabsContent>
 
 					<TabsContent value="environment">
-						<KeyValueCard
-							title="environment values"
-							description="runtime values are rendered with the same layout for
-repository and template services."
-							items={environmentItems()}
-							emptyText="no environment values are configured for this service"
-							showSecrets={showSecrets()}
-							onToggleSecrets={() => setShowSecrets((current) => !current)}
-						/>
+						<Show
+							when={!editing()}
+							fallback={
+								<Card>
+									<CardHeader class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+										<div>
+											<CardTitle>edit environment</CardTitle>
+											<CardDescription>
+												update environment variables for this service network
+											</CardDescription>
+										</div>
+										<div class="flex items-center gap-3">
+											<Button variant="outline" size="sm" onClick={cancelEditing}>
+												cancel
+											</Button>
+											<Button
+												variant="secondary"
+												size="sm"
+												isLoading={saving()}
+												onClick={() => void updateServiceConfig()}
+											>
+												save changes
+											</Button>
+										</div>
+									</CardHeader>
+									<CardContent class="space-y-4">
+										<Show when={editError()}>
+											<Alert variant="destructive" title="failed to update">
+												{editError()}
+											</Alert>
+										</Show>
+										<EnvVarEditor
+											envVars={editForm().env_vars}
+											onChange={(vars) => setEditForm((prev) => ({ ...prev, env_vars: vars }))}
+										/>
+									</CardContent>
+								</Card>
+							}
+						>
+							<KeyValueCard
+								title="environment values"
+								description="runtime values are rendered with the same layout for repository and template services."
+								items={environmentItems()}
+								emptyText="no environment values are configured for this service"
+								showSecrets={showSecrets()}
+								onToggleSecrets={() => setShowSecrets((current) => !current)}
+							/>
+							<Show when={service()?.resource_kind === "app_service"}>
+								<div class="mt-4 flex justify-end">
+									<Button variant="outline" onClick={startEditing}>
+										edit environment variables
+									</Button>
+								</div>
+							</Show>
+						</Show>
 					</TabsContent>
+
+					<Show when={service()?.resource_kind === "app_service"}>
+						<TabsContent value="settings">
+							<Card>
+								<CardHeader class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+									<div>
+										<CardTitle>service settings</CardTitle>
+										<CardDescription>
+											modify branch, startup commands, and replica counts
+										</CardDescription>
+									</div>
+									<div class="flex items-center gap-3 text-sm">
+										<Show
+											when={editing()}
+											fallback={
+												<Button variant="outline" size="sm" onClick={startEditing}>
+													edit settings
+												</Button>
+											}
+										>
+											<Button variant="outline" size="sm" onClick={cancelEditing}>
+												cancel
+											</Button>
+											<Button
+												variant="secondary"
+												size="sm"
+												isLoading={saving()}
+												onClick={() => void updateServiceConfig()}
+											>
+												save changes
+											</Button>
+										</Show>
+									</div>
+								</CardHeader>
+								<CardContent>
+									<Show when={editError()}>
+										<div class="mb-6">
+											<Alert variant="destructive" title="Failed to update">
+												{editError()}
+											</Alert>
+										</div>
+									</Show>
+									<Show
+										when={editing() && appService()}
+										fallback={
+											<div class="grid gap-6">
+												<KeyValueCard
+													title="repository configuration"
+													description="git branch and repository source settings"
+													items={[
+														{ key: "repository", value: project()?.github_url || "" },
+														{ key: "branch", value: project()?.branch || "" },
+													]}
+													emptyText="no connection details"
+													showSecrets={showSecrets()}
+												/>
+												<KeyValueCard
+													title="runtime settings"
+													description="branch-specific runtime controls"
+													items={[
+														{ key: "service name", value: appService()?.name || "" },
+														{ key: "build target", value: appService()?.build_target || "runtime" },
+														{
+															key: "start command",
+															value: appService()?.command?.join(" ") || "default",
+														},
+														{ key: "root directory", value: appService()?.working_dir || "/" },
+														{ key: "replicas", value: String(appService()?.replicas || 1) },
+														{ key: "base port", value: String(appService()?.port || 0) },
+													]}
+													emptyText="no service details"
+													showSecrets={showSecrets()}
+												/>
+											</div>
+										}
+									>
+										<div class="space-y-6">
+											<div class="grid gap-6 md:grid-cols-2">
+												<Input
+													label="repository url"
+													value={editForm().github_url}
+													onInput={(e) =>
+														setEditForm((p) => ({ ...p, github_url: e.currentTarget.value }))
+													}
+													placeholder="https://github.com/organization/repo"
+													required
+												/>
+												<Input
+													label="branch"
+													value={editForm().branch}
+													onInput={(e) =>
+														setEditForm((p) => ({ ...p, branch: e.currentTarget.value }))
+													}
+													placeholder="main"
+													required
+												/>
+											</div>
+											<div class="space-y-4">
+												<For each={editForm().services}>
+													{(formService, index) => {
+														// Match form service by name instead of id (FormService doesn't have id)
+														if (formService.name !== appService()?.name) return null;
+
+														return (
+															<div class="border border-[var(--border)] p-4">
+																<ServiceForm
+																	service={formService}
+																	index={index()}
+																	allServices={editForm().services}
+																	onUpdate={(idx, updatedService) => {
+																		const current = [...editForm().services];
+																		current[idx] = updatedService;
+																		setEditForm((p) => ({ ...p, services: current }));
+																	}}
+																	onRemove={() => {}}
+																	allowRemove={false}
+																/>
+															</div>
+														);
+													}}
+												</For>
+											</div>
+										</div>
+									</Show>
+								</CardContent>
+							</Card>
+						</TabsContent>
+					</Show>
 
 					<TabsContent value="logs">
 						<Card>

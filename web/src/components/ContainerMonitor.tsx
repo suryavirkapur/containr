@@ -1,5 +1,5 @@
 import {
-	Component,
+	type Component,
 	createEffect,
 	createMemo,
 	createResource,
@@ -8,7 +8,7 @@ import {
 	onCleanup,
 	Show,
 } from "solid-js";
-import { api, components } from "../api";
+import { api, type components } from "../api";
 import ContainerTerminal from "./ContainerTerminal";
 
 type ContainerStatus = components["schemas"]["ContainerStatusResponse"];
@@ -19,7 +19,7 @@ const formatBytes = (bytes: number) => {
 	if (!bytes) return "0 B";
 	const units = ["B", "KB", "MB", "GB", "TB"];
 	const idx = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-	return `${(bytes / Math.pow(1024, idx)).toFixed(1)} ${units[idx]}`;
+	return `${(bytes / 1024 ** idx).toFixed(1)} ${units[idx]}`;
 };
 
 const ansiColors: Record<string, string> = {

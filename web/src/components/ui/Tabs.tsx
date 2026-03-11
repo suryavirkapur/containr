@@ -1,4 +1,4 @@
-import { Component, JSX, Show, createContext, splitProps, useContext } from "solid-js";
+import { type Component, createContext, type JSX, Show, splitProps, useContext } from "solid-js";
 
 import { cn } from "../../lib/cn";
 

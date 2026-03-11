@@ -1,8 +1,7 @@
-import { Component, createMemo, createSignal, For, Show } from "solid-js";
-
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
+import type { EditableKeyValueEntry } from "../utils/keyValueEntries";
 import EnvVarEditor from "./EnvVarEditor";
 import { Badge, Button, Card } from "./ui";
-import { EditableKeyValueEntry } from "../utils/keyValueEntries";
 
 export type ServiceType = "web_service" | "private_service" | "background_worker" | "cron_job";
 

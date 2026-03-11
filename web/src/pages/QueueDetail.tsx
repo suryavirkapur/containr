@@ -1,8 +1,15 @@
-import { Component, createEffect, createMemo, createResource, createSignal, Show } from "solid-js";
-import { useParams, A } from "@solidjs/router";
-import ContainerMonitor from "../components/ContainerMonitor";
+import { A, useParams } from "@solidjs/router";
+import {
+	type Component,
+	createEffect,
+	createMemo,
+	createResource,
+	createSignal,
+	Show,
+} from "solid-js";
 import { api } from "../api";
 import type { components } from "../api/schema";
+import ContainerMonitor from "../components/ContainerMonitor";
 
 type Queue = components["schemas"]["QueueResponse"] & { password?: string };
 type ContainerListItem = components["schemas"]["ContainerListItem"];

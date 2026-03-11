@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router";
-import { Component, createSignal, onMount } from "solid-js";
+import { type Component, createSignal, onMount } from "solid-js";
 
 /**
  * handles github app installation callback
