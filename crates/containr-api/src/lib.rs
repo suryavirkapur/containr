@@ -14,3 +14,5 @@ pub mod static_files;
 
 pub use server::run_server;
 pub use state::AppState;
+
+pub mod routes;
