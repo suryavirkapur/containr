@@ -1,6 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { Component, createResource, createSignal, Show } from "solid-js";
-import { api, components } from "../api";
+import { type Component, createResource, createSignal, Show } from "solid-js";
+import { api, type components } from "../api";
 
 type Bucket = components["schemas"]["BucketResponse"];
 type BucketConnection = components["schemas"]["BucketConnectionResponse"];
@@ -50,7 +50,7 @@ const BucketDetail: Component = () => {
 		const k = 1024;
 		const sizes = ["bytes", "kb", "mb", "gb", "tb"];
 		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+		return parseFloat((bytes / k ** i).toFixed(2)) + " " + sizes[i];
 	};
 
 	const handleDelete = async () => {

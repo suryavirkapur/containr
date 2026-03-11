@@ -1,5 +1,5 @@
-import { Component, createSignal } from "solid-js";
 import { A, useNavigate } from "@solidjs/router";
+import { type Component, createSignal } from "solid-js";
 
 import { api } from "../api";
 import { Alert, Button, Card, CardContent, CardHeader, CardTitle, Input } from "../components/ui";

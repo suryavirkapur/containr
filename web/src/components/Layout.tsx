@@ -1,5 +1,5 @@
 import { A, useLocation, useNavigate } from "@solidjs/router";
-import { Component, For, JSX, Show, createSignal } from "solid-js";
+import { type Component, createSignal, For, type JSX, Show } from "solid-js";
 
 import { AuthProvider, useAuth } from "../context/AuthContext";
 import {

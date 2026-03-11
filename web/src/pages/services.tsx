@@ -1,5 +1,5 @@
 import { A } from "@solidjs/router";
-import { Component, createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { type Component, createMemo, createResource, createSignal, For, Show } from "solid-js";
 
 import { api, type components } from "../api";
 import {

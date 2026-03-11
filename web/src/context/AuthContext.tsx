@@ -1,4 +1,4 @@
-import { createSignal, createContext, useContext, JSX, Accessor } from "solid-js";
+import { type Accessor, createContext, createSignal, type JSX, useContext } from "solid-js";
 import { api, type components } from "../api";
 
 type User = components["schemas"]["UserResponse"];

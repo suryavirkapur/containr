@@ -1,6 +1,6 @@
-import { Component, createEffect, createSignal, For, Show } from "solid-js";
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
 
-import { EditableKeyValueEntry } from "../utils/keyValueEntries";
+import type { EditableKeyValueEntry } from "../utils/keyValueEntries";
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Switch, Textarea } from "./ui";
 
 interface EnvVarEditorProps {

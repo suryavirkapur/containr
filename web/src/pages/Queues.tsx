@@ -1,8 +1,7 @@
 import { A, useNavigate } from "@solidjs/router";
-import { Component, createResource, createSignal, For, Show } from "solid-js";
-
-import { api } from "../api";
+import { type Component, createResource, createSignal, For, Show } from "solid-js";
 import type { components } from "../api";
+import { api } from "../api";
 import { Button, PageHeader } from "../components/ui";
 
 type Queue = components["schemas"]["QueueResponse"];

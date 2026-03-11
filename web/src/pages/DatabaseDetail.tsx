@@ -1,17 +1,16 @@
 import { A, useParams } from "@solidjs/router";
 import {
-	Component,
-	For,
-	Show,
+	type Component,
 	createEffect,
 	createMemo,
 	createResource,
 	createSignal,
+	For,
+	Show,
 } from "solid-js";
-
-import ContainerMonitor from "../components/ContainerMonitor";
-import { api } from "../api";
 import type { components } from "../api";
+import { api } from "../api";
+import ContainerMonitor from "../components/ContainerMonitor";
 
 type DatabaseResponse = components["schemas"]["DatabaseResponse"];
 type ContainerListItem = components["schemas"]["ContainerListItem"];
@@ -207,7 +206,7 @@ const formatBytes = (bytes: number) => {
 	const units = ["B", "KB", "MB", "GB"];
 	const idx = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
 
-	return `${(bytes / Math.pow(1024, idx)).toFixed(1)} ${units[idx]}`;
+	return `${(bytes / 1024 ** idx).toFixed(1)} ${units[idx]}`;
 };
 
 const describeError = (error: unknown) => {

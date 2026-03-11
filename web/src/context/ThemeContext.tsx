@@ -1,4 +1,11 @@
-import { Component, JSX, createContext, createEffect, createSignal, useContext } from "solid-js";
+import {
+	type Component,
+	createContext,
+	createEffect,
+	createSignal,
+	type JSX,
+	useContext,
+} from "solid-js";
 
 export type ColorScheme = "purple" | "blue" | "green" | "orange" | "red";
 export type ColorMode = "dark" | "light";

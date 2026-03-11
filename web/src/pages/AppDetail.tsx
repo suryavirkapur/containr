@@ -1,5 +1,6 @@
+import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import {
-	Component,
+	type Component,
 	createEffect,
 	createMemo,
 	createResource,
@@ -9,16 +10,15 @@ import {
 	onCleanup,
 	Show,
 } from "solid-js";
-import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
+import { api, type components } from "../api";
+import ContainerMonitor from "../components/ContainerMonitor";
 import EnvVarEditor from "../components/EnvVarEditor";
 import ServiceForm, {
-	Service,
-	ServiceType,
 	createServiceForType,
+	type Service,
+	type ServiceType,
 	serviceTypeLabel,
 } from "../components/ServiceForm";
-import { parseAnsi } from "../utils/ansi";
-import ContainerMonitor from "../components/ContainerMonitor";
 import {
 	Badge,
 	Button,
@@ -32,10 +32,10 @@ import {
 	TabsList,
 	TabsTrigger,
 } from "../components/ui";
-import { api, components } from "../api";
+import { parseAnsi } from "../utils/ansi";
 import {
 	createPrimaryService,
-	EditableEnvVar,
+	type EditableEnvVar,
 	mapServiceResponseToForm,
 	mapServiceToRequest,
 } from "../utils/projectEditor";

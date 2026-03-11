@@ -1,5 +1,5 @@
 import { Navigate, Route } from "@solidjs/router";
-import { Component, lazy, Suspense } from "solid-js";
+import { type Component, lazy, Suspense } from "solid-js";
 import Layout from "./components/Layout";
 import Loading from "./components/Loading";
 

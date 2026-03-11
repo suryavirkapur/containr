@@ -1,5 +1,5 @@
-import { Component, createResource, createSignal, onCleanup, Show } from "solid-js";
-import { api, components } from "../api";
+import { type Component, createResource, createSignal, onCleanup, Show } from "solid-js";
+import { api, type components } from "../api";
 import { Card, CardContent, CardHeader, CardTitle, Skeleton } from "./ui";
 
 type SystemStats = components["schemas"]["SystemStats"];
@@ -15,7 +15,7 @@ const formatBytes = (bytes: number) => {
 	if (!bytes) return "0 B";
 	const units = ["B", "KB", "MB", "GB", "TB"];
 	const idx = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-	return `${(bytes / Math.pow(1024, idx)).toFixed(1)} ${units[idx]}`;
+	return `${(bytes / 1024 ** idx).toFixed(1)} ${units[idx]}`;
 };
 
 const formatUptime = (seconds: number) => {

@@ -1,5 +1,5 @@
 import { A } from "@solidjs/router";
-import { Component, For } from "solid-js";
+import { type Component, For } from "solid-js";
 import { Badge, Card, CardContent, CardHeader, CardTitle, PageHeader } from "../components/ui";
 
 interface QuickAction {

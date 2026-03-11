@@ -1,6 +1,10 @@
-import { components } from "../api";
-import { Service, createServiceForType, normalizeServiceType } from "../components/ServiceForm";
-import { EditableKeyValueEntry } from "./keyValueEntries";
+import type { components } from "../api";
+import {
+	createServiceForType,
+	normalizeServiceType,
+	type Service,
+} from "../components/ServiceForm";
+import type { EditableKeyValueEntry } from "./keyValueEntries";
 
 export const secretMask = "********";
 
