@@ -37,28 +37,28 @@ fn default_tail() -> usize {
 /// websocket endpoint for container logs
 pub async fn container_logs_ws(
     ws: WebSocketUpgrade,
-    Path(app_id): Path<Uuid>,
+    Path(service_id): Path<Uuid>,
     Query(query): Query<LogsQuery>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| {
-        handle_container_logs(socket, app_id, query, state)
+        handle_container_logs(socket, service_id, query, state)
     })
 }
 
 /// handle websocket connection for container logs
 async fn handle_container_logs(
     mut socket: WebSocket,
-    app_id: Uuid,
+    service_id: Uuid,
     query: LogsQuery,
     _state: AppState,
 ) {
-    info!(app_id = %app_id, "container logs websocket connected");
+    info!(service_id = %service_id, "container logs websocket connected");
 
     // send welcome message
     if socket
         .send(Message::Text(
-            format!("[connected to container logs for {}]", app_id).into(),
+            format!("[connected to container logs for {}]", service_id).into(),
         ))
         .await
         .is_err()
@@ -81,7 +81,7 @@ async fn handle_container_logs(
     };
 
     // get the container name
-    let container_name = format!("containr-{}", app_id);
+    let container_name = format!("containr-{}", service_id);
 
     // set up log streaming options
     let options = LogsOptions {
@@ -129,20 +129,20 @@ async fn handle_container_logs(
         }
     }
 
-    info!(app_id = %app_id, "container logs websocket disconnected");
+    info!(service_id = %service_id, "container logs websocket disconnected");
 }
 
 /// websocket endpoint for deployment build logs
 pub async fn deployment_logs_ws(
     ws: WebSocketUpgrade,
-    Path((app_id, deployment_id)): Path<(Uuid, Uuid)>,
+    Path((service_id, deployment_id)): Path<(Uuid, Uuid)>,
     Query(query): Query<DeploymentLogsQuery>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| {
         handle_deployment_logs(
             socket,
-            app_id,
+            service_id,
             deployment_id,
             query.offset,
             state,
@@ -153,12 +153,12 @@ pub async fn deployment_logs_ws(
 /// handle websocket connection for deployment build logs
 async fn handle_deployment_logs(
     mut socket: WebSocket,
-    app_id: Uuid,
+    service_id: Uuid,
     deployment_id: Uuid,
     initial_offset: usize,
     state: AppState,
 ) {
-    info!(app_id = %app_id, deployment_id = %deployment_id, "build logs websocket connected");
+    info!(service_id = %service_id, deployment_id = %deployment_id, "build logs websocket connected");
 
     // initial offset
     let mut current_offset = initial_offset;
@@ -261,5 +261,5 @@ async fn handle_deployment_logs(
         }
     }
 
-    info!(app_id = %app_id, deployment_id = %deployment_id, "build logs websocket disconnected");
+    info!(service_id = %service_id, deployment_id = %deployment_id, "build logs websocket disconnected");
 }

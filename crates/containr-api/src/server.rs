@@ -21,9 +21,8 @@ use utoipa_scalar::{Scalar, Servable};
 use crate::deployment_source::resolve_source_deployment_source;
 use crate::github::DeploymentJob;
 use crate::handlers::{
-    apps, auth, certificates, containers, databases, deployments, github_app,
-    github_repos, health, projects, queues, services, settings, storage,
-    system, webhooks, websocket,
+    auth, certificates, containers, github_app, github_repos, health, settings,
+    storage, system, webhooks, websocket,
 };
 use crate::openapi::ApiDoc;
 use crate::routes;
@@ -97,6 +96,23 @@ pub async fn run_server(
         .merge(Scalar::with_url("/api/docs", ApiDoc::openapi()))
         // services (canonical)
         .merge(routes::services::router())
+        // service certificates and websockets
+        .route(
+            "/api/services/{id}/certificate",
+            get(certificates::get_certificate),
+        )
+        .route(
+            "/api/services/{id}/certificate/reissue",
+            post(certificates::reissue_certificate),
+        )
+        .route(
+            "/api/services/{id}/logs/ws",
+            get(websocket::container_logs_ws),
+        )
+        .route(
+            "/api/services/{id}/deployments/{deployment_id}/logs/ws",
+            get(websocket::deployment_logs_ws),
+        )
         // auth
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))
@@ -132,111 +148,6 @@ pub async fn run_server(
             get(github_app::github_install_callback),
         )
         .route("/api/github/app/repos", get(github_app::get_app_repos))
-        // apps
-        .route("/api/apps", get(apps::list_apps))
-        .route("/api/apps", post(apps::create_app))
-        .route("/api/apps/{id}", get(apps::get_app))
-        .route("/api/apps/{id}", put(apps::update_app))
-        .route("/api/apps/{id}", delete(apps::delete_app))
-        .route("/api/apps/{id}/metrics", get(apps::get_app_metrics))
-        .route(
-            "/api/apps/{id}/services/{service_name}/mounts/backup",
-            get(apps::backup_service_mounts),
-        )
-        .route(
-            "/api/apps/{id}/services/{service_name}/mounts/restore",
-            post(apps::restore_service_mounts),
-        )
-        // deployments
-        .route(
-            "/api/apps/{id}/deployments",
-            get(deployments::list_deployments),
-        )
-        .route(
-            "/api/apps/{id}/deployments",
-            post(deployments::trigger_deployment),
-        )
-        .route(
-            "/api/apps/{app_id}/deployments/{id}",
-            get(deployments::get_deployment),
-        )
-        .route(
-            "/api/apps/{app_id}/deployments/{id}/rollback",
-            post(deployments::rollback_deployment),
-        )
-        .route(
-            "/api/apps/{app_id}/deployments/{id}/logs",
-            get(deployments::get_deployment_logs),
-        )
-        // certificates
-        .route(
-            "/api/apps/{id}/certificate",
-            get(certificates::get_certificate),
-        )
-        .route(
-            "/api/apps/{id}/certificate/reissue",
-            post(certificates::reissue_certificate),
-        )
-        // websocket logs
-        .route("/api/apps/{id}/logs/ws", get(websocket::container_logs_ws))
-        .route(
-            "/api/apps/{app_id}/deployments/{id}/logs/ws",
-            get(websocket::deployment_logs_ws),
-        )
-        // projects
-        .route("/api/projects", get(projects::list_projects))
-        .route("/api/projects", post(projects::create_project))
-        .route("/api/projects/{id}", get(projects::get_project))
-        .route("/api/projects/{id}", put(projects::update_project))
-        .route("/api/projects/{id}", delete(projects::delete_project))
-        .route(
-            "/api/projects/{id}/metrics",
-            get(projects::get_project_metrics),
-        )
-        .route(
-            "/api/projects/{id}/services/{service_name}/mounts/backup",
-            get(projects::backup_service_mounts),
-        )
-        .route(
-            "/api/projects/{id}/services/{service_name}/mounts/restore",
-            post(projects::restore_service_mounts),
-        )
-        .route(
-            "/api/projects/{id}/deployments",
-            get(projects::list_deployments),
-        )
-        .route(
-            "/api/projects/{id}/deployments",
-            post(projects::trigger_deployment),
-        )
-        .route(
-            "/api/projects/{project_id}/deployments/{id}",
-            get(projects::get_deployment),
-        )
-        .route(
-            "/api/projects/{project_id}/deployments/{id}/rollback",
-            post(projects::rollback_deployment),
-        )
-        .route(
-            "/api/projects/{project_id}/deployments/{id}/logs",
-            get(projects::get_deployment_logs),
-        )
-        .route(
-            "/api/projects/{id}/certificate",
-            get(projects::get_certificate),
-        )
-        .route(
-            "/api/projects/{id}/certificate/reissue",
-            post(projects::reissue_certificate),
-        )
-        .route(
-            "/api/projects/{id}/logs/ws",
-            get(websocket::container_logs_ws),
-        )
-        .route(
-            "/api/projects/{project_id}/deployments/{id}/logs/ws",
-            get(websocket::deployment_logs_ws),
-        )
         // containers
         .route("/api/containers", get(containers::list_containers))
         .route(
@@ -279,59 +190,7 @@ pub async fn run_server(
             "/api/containers/{id}/files/mkdir",
             post(containers::create_volume_directory),
         )
-        // managed databases
-        .route("/api/databases", get(databases::list_databases))
-        .route("/api/databases", post(databases::create_database))
-        .route("/api/databases/{id}", get(databases::get_database))
-        .route("/api/databases/{id}", delete(databases::delete_database))
-        .route("/api/databases/{id}/start", post(databases::start_database))
-        .route("/api/databases/{id}/stop", post(databases::stop_database))
-        .route(
-            "/api/databases/{id}/restart",
-            post(databases::restart_database),
-        )
-        .route(
-            "/api/databases/{id}/logs",
-            get(databases::get_database_logs),
-        )
-        .route(
-            "/api/databases/{id}/expose",
-            post(databases::expose_database),
-        )
-        .route("/api/databases/{id}/pitr", post(databases::configure_pitr))
-        .route(
-            "/api/databases/{id}/proxy",
-            post(databases::configure_proxy),
-        )
-        .route(
-            "/api/databases/{id}/pitr/base-backup",
-            post(databases::create_pitr_base_backup),
-        )
-        .route(
-            "/api/databases/{id}/pitr/restore-point",
-            post(databases::create_restore_point),
-        )
-        .route(
-            "/api/databases/{id}/pitr/recover",
-            post(databases::recover_database),
-        )
-        .route(
-            "/api/databases/{id}/export",
-            post(databases::export_database),
-        )
-        .route("/api/databases/{id}/backups", get(databases::list_backups))
-        .route(
-            "/api/databases/{id}/backups/download",
-            get(databases::download_backup),
-        )
-        // managed queues
-        .route("/api/queues", get(queues::list_queues))
-        .route("/api/queues", post(queues::create_queue))
-        .route("/api/queues/{id}", get(queues::get_queue))
-        .route("/api/queues/{id}", delete(queues::delete_queue))
-        .route("/api/queues/{id}/start", post(queues::start_queue))
-        .route("/api/queues/{id}/stop", post(queues::stop_queue))
-        .route("/api/queues/{id}/expose", post(queues::expose_queue)) // storage buckets
+        // storage buckets
         .route("/api/buckets", get(storage::list_buckets))
         .route("/api/buckets", post(storage::create_bucket))
         .route("/api/buckets/{id}", get(storage::get_bucket))

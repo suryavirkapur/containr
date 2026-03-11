@@ -1,63 +1,11 @@
-import type { components } from "../api";
 import {
-	createServiceForType,
-	normalizeServiceType,
 	type Service,
 } from "../components/ServiceForm";
 import type { EditableKeyValueEntry } from "./keyValueEntries";
 
 export const secretMask = "********";
 
-type ServiceResponse = components["schemas"]["ServiceResponse"];
-
 export type EditableEnvVar = EditableKeyValueEntry;
-
-export function createPrimaryService(): Service {
-	const service = createServiceForType("web_service");
-	service.name = "web";
-	return service;
-}
-
-export function mapServiceResponseToForm(service: ServiceResponse): Service {
-	return {
-		name: service.name,
-		image: service.image,
-		service_type: normalizeServiceType(service.service_type),
-		port: service.port,
-		expose_http: service.expose_http,
-		domains: [...(service.domains || [])],
-		additional_ports: [...service.additional_ports],
-		replicas: service.replicas,
-		memory_limit_mb: service.memory_limit_mb ?? null,
-		cpu_limit: service.cpu_limit ?? null,
-		depends_on: [...service.depends_on],
-		health_check_path: service.health_check?.path ?? "",
-		health_check_interval_secs: service.health_check?.interval_secs ?? 30,
-		health_check_timeout_secs: service.health_check?.timeout_secs ?? 5,
-		health_check_retries: service.health_check?.retries ?? 3,
-		restart_policy: normalizeRestartPolicy(service.restart_policy),
-		registry_auth: service.registry_auth
-			? {
-					server: service.registry_auth.server ?? "",
-					username: service.registry_auth.username,
-					password: secretMask,
-				}
-			: null,
-		env_vars: service.env_vars.map((entry) => ({ ...entry })),
-		build_context: service.build_context ?? "",
-		dockerfile_path: service.dockerfile_path ?? "",
-		build_target: service.build_target ?? "",
-		build_args: service.build_args.map((entry) => ({ ...entry })),
-		command: [...service.command],
-		entrypoint: [...service.entrypoint],
-		working_dir: service.working_dir ?? "",
-		mounts: service.mounts.map((mount) => ({
-			name: mount.name,
-			target: mount.target,
-			read_only: mount.read_only,
-		})),
-	};
-}
 
 export function mapServiceToRequest(service: Service) {
 	const image = service.image.trim();

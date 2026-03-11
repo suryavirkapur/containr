@@ -10,13 +10,31 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/services", get(services::list_services))
         .route("/api/services", post(services::create_service))
+        .route(
+            "/api/services/{id}/deployments",
+            get(services::list_service_deployments),
+        )
+        .route(
+            "/api/services/{id}/deployments",
+            post(services::trigger_service_deployment),
+        )
+        .route(
+            "/api/services/{id}/deployments/{deployment_id}",
+            get(services::get_service_deployment),
+        )
+        .route(
+            "/api/services/{id}/deployments/{deployment_id}/rollback",
+            post(services::rollback_service_deployment),
+        )
+        .route(
+            "/api/services/{id}/deployments/{deployment_id}/logs",
+            get(services::get_service_deployment_logs),
+        )
         .route("/api/services/{id}", get(services::get_service))
         .route("/api/services/{id}", delete(services::delete_service))
         .route("/api/services/{id}/logs", get(services::get_service_logs))
-        .route("/api/services/{id}/start", post(services::start_service))
-        .route("/api/services/{id}/stop", post(services::stop_service))
         .route(
-            "/api/services/{id}/restart",
-            post(services::restart_service),
+            "/api/services/{id}/actions/{action}",
+            post(services::run_service_action),
         )
 }

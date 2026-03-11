@@ -1,6 +1,6 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { type Component, createEffect, createResource, createSignal, For, Show } from "solid-js";
-import { api, type components } from "../api";
+import { createService, listServices, type Service } from "../api/services";
 import {
 	Alert,
 	Button,
@@ -12,8 +12,11 @@ import {
 	PageHeader,
 } from "../components/ui";
 
-type Project = components["schemas"]["AppResponse"];
 type TemplateType = "postgresql" | "redis" | "mariadb" | "qdrant" | "rabbitmq";
+type ServiceNetworkOption = {
+	id: string;
+	label: string;
+};
 
 const templateLabel = (templateType: TemplateType): string => {
 	switch (templateType) {
@@ -32,14 +35,38 @@ const templateLabel = (templateType: TemplateType): string => {
 	}
 };
 
-const fetchProjects = async (): Promise<Project[]> => {
+const fetchServiceNetworks = async (): Promise<ServiceNetworkOption[]> => {
 	try {
-		const { data, error } = await api.GET("/api/projects");
-		if (error) throw error;
-		return data ?? [];
+		const services = await listServices();
+		const networks = new Map<string, ServiceNetworkOption>();
+
+		for (const service of services) {
+			const groupId = service.group_id?.trim();
+			if (!groupId || networks.has(groupId)) {
+				continue;
+			}
+
+			networks.set(groupId, {
+				id: groupId,
+				label: formatNetworkLabel(service),
+			});
+		}
+
+		return [...networks.values()].sort((left, right) =>
+			left.label.localeCompare(right.label),
+		);
 	} catch {
 		return [];
 	}
+};
+
+const formatNetworkLabel = (service: Service): string => {
+	const projectName = service.project_name?.trim();
+	if (projectName) {
+		return `${projectName} (${service.network_name})`;
+	}
+
+	return service.network_name;
 };
 
 const searchParamValue = (value: string | string[] | undefined): string | undefined =>
@@ -64,7 +91,7 @@ const CreateTemplate: Component = () => {
 	const [error, setError] = createSignal("");
 	const [loading, setLoading] = createSignal(false);
 
-	const [projects] = createResource(fetchProjects);
+	const [serviceNetworks] = createResource(fetchServiceNetworks);
 
 	createEffect(() => {
 		const requestedTemplate = searchParamValue(searchParams.type);
@@ -95,18 +122,15 @@ const CreateTemplate: Component = () => {
 				throw new Error("service name is required");
 			}
 
-			const { data, error: apiError } = await api.POST("/api/services", {
-				body: {
-					source: "template",
-					name: managedName().trim(),
-					template: templateType(),
-					version: managedVersion().trim() || null,
-					memory_limit_mb: parseInt(managedMemoryMb(), 10) || 512,
-					cpu_limit: parseFloat(managedCpuLimit()) || 1.0,
-					group_id: selectedGroupId().trim() || null,
-				},
+			const data = await createService({
+				source: "template",
+				name: managedName().trim(),
+				template: templateType(),
+				version: managedVersion().trim() || null,
+				memory_limit_mb: parseInt(managedMemoryMb(), 10) || 512,
+				cpu_limit: parseFloat(managedCpuLimit()) || 1.0,
+				group_id: selectedGroupId().trim() || null,
 			});
-			if (apiError) throw apiError;
 			navigate(`/services/${data.id}`);
 		} catch (err) {
 			if (err instanceof Error) {
@@ -163,8 +187,8 @@ const CreateTemplate: Component = () => {
 								class={selectClass}
 							>
 								<option value="">standalone service</option>
-								<For each={projects() || []}>
-									{(project) => <option value={project.id}>{project.name}</option>}
+								<For each={serviceNetworks() || []}>
+									{(network) => <option value={network.id}>{network.label}</option>}
 								</For>
 							</select>
 						</div>

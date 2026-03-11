@@ -4,6 +4,7 @@ mod cache;
 
 pub mod auth;
 pub mod deployment_source;
+pub mod domain;
 pub mod github;
 pub mod handlers;
 pub mod openapi;
