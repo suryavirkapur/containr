@@ -29,8 +29,9 @@ use containr_common::managed_services::{
 };
 use containr_common::models::{
     App, BuildArg, ContainerService, Deployment, DeploymentSource,
-    DeploymentStatus, EnvVar, HealthCheck, RestartPolicy, RolloutStrategy,
-    ServiceDeployment, ServiceMount, ServiceRegistryAuth, ServiceType,
+    DeploymentStatus, EnvVar, HealthCheck, HttpRequestLog, RestartPolicy,
+    RolloutStrategy, ServiceDeployment, ServiceMount, ServiceRegistryAuth,
+    ServiceType,
 };
 use containr_common::service_inventory::ServiceInventoryItem;
 use containr_common::Config;
@@ -93,6 +94,114 @@ pub struct InventoryServiceResponse {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ServiceLogsResponse {
     pub logs: String,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct HttpRequestLogsQuery {
+    #[serde(default = "default_tail")]
+    pub limit: usize,
+    #[serde(default)]
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct EditableEnvVarResponse {
+    pub key: String,
+    pub value: String,
+    pub secret: bool,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct HealthCheckResponse {
+    pub path: String,
+    pub interval_secs: u32,
+    pub timeout_secs: u32,
+    pub retries: u32,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ServiceRegistryAuthResponse {
+    pub server: Option<String>,
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ServiceSettingsServiceResponse {
+    pub name: String,
+    pub image: Option<String>,
+    pub service_type: String,
+    pub port: u16,
+    pub expose_http: bool,
+    pub domains: Vec<String>,
+    pub additional_ports: Vec<u16>,
+    pub replicas: u32,
+    pub memory_limit_mb: Option<u64>,
+    pub cpu_limit: Option<f64>,
+    pub depends_on: Vec<String>,
+    pub health_check: Option<HealthCheckResponse>,
+    pub restart_policy: String,
+    pub registry_auth: Option<ServiceRegistryAuthResponse>,
+    pub env_vars: Vec<EditableEnvVarResponse>,
+    pub build_context: Option<String>,
+    pub dockerfile_path: Option<String>,
+    pub build_target: Option<String>,
+    pub build_args: Vec<EditableEnvVarResponse>,
+    pub command: Option<Vec<String>>,
+    pub entrypoint: Option<Vec<String>>,
+    pub working_dir: Option<String>,
+    pub schedule: Option<String>,
+    pub mounts: Vec<ServiceMountRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct AutoDeploySettingsResponse {
+    pub enabled: bool,
+    pub watch_paths: Vec<String>,
+    pub cleanup_stale_deployments: bool,
+    pub webhook_path: String,
+    pub webhook_token: String,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ServiceSettingsResponse {
+    pub service_id: String,
+    pub resource_kind: String,
+    pub github_url: String,
+    pub branch: String,
+    pub env_vars: Vec<EditableEnvVarResponse>,
+    pub rollout_strategy: String,
+    pub auto_deploy: AutoDeploySettingsResponse,
+    pub service: ServiceSettingsServiceResponse,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct AutoDeploySettingsRequest {
+    pub enabled: Option<bool>,
+    pub watch_paths: Option<Vec<String>>,
+    pub cleanup_stale_deployments: Option<bool>,
+    pub regenerate_webhook_token: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct UpdateServiceRequest {
+    pub github_url: Option<String>,
+    pub branch: Option<String>,
+    pub env_vars: Option<Vec<EnvVarRequest>>,
+    pub rollout_strategy: Option<String>,
+    pub auto_deploy: Option<AutoDeploySettingsRequest>,
+    pub service: Option<ServiceRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct HttpRequestLogResponse {
+    pub domain: String,
+    pub method: String,
+    pub path: String,
+    pub status: u16,
+    pub upstream: String,
+    pub protocol: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -287,6 +396,20 @@ impl InventoryServiceResponse {
     }
 }
 
+impl From<&HttpRequestLog> for HttpRequestLogResponse {
+    fn from(log: &HttpRequestLog) -> Self {
+        Self {
+            domain: log.domain.clone(),
+            method: log.method.clone(),
+            path: log.path.clone(),
+            status: log.status,
+            upstream: log.upstream.clone(),
+            protocol: log.protocol.clone(),
+            created_at: log.created_at.to_rfc3339(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ServiceSvc {
     state: AppState,
@@ -394,6 +517,142 @@ impl ServiceSvc {
         )
     }
 
+    pub async fn get_service_settings(
+        &self,
+        user_id: Uuid,
+        service_id: Uuid,
+    ) -> ApiResult<ServiceSettingsResponse> {
+        let (mut app, service) =
+            resolve_owned_app_service_record(&self.state, user_id, service_id)?;
+        let webhook_token_missing = app
+            .deploy_webhook_token
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default()
+            .is_empty();
+        let webhook_token = app.ensure_deploy_webhook_token().to_string();
+        if webhook_token_missing {
+            self.state.db.save_app(&app).map_err(internal_error)?;
+        }
+
+        Ok(ServiceSettingsResponse {
+            service_id: service.id.to_string(),
+            resource_kind: "app_service".to_string(),
+            github_url: app.github_url.clone(),
+            branch: app.branch.clone(),
+            env_vars: app
+                .env_vars
+                .iter()
+                .map(masked_env_var_response)
+                .collect(),
+            rollout_strategy: rollout_strategy_label(app.rollout_strategy)
+                .to_string(),
+            auto_deploy: AutoDeploySettingsResponse {
+                enabled: app.auto_deploy_enabled,
+                watch_paths: app.auto_deploy_watch_paths.clone(),
+                cleanup_stale_deployments: app
+                    .auto_deploy_cleanup_stale_deployments,
+                webhook_path: format!(
+                    "/webhooks/deploy/{}?token={}",
+                    service.id, webhook_token
+                ),
+                webhook_token,
+            },
+            service: service_settings_service_response(&service),
+        })
+    }
+
+    pub async fn update_service(
+        &self,
+        user_id: Uuid,
+        service_id: Uuid,
+        req: UpdateServiceRequest,
+    ) -> ApiResult<InventoryServiceResponse> {
+        let config = self.state.config.read().await.clone();
+        let (mut app, service) =
+            resolve_owned_app_service_record(&self.state, user_id, service_id)?;
+
+        if let Some(github_url) = req.github_url {
+            app.github_url = github_url.trim().to_string();
+        }
+
+        if let Some(branch) = req.branch {
+            let branch = branch.trim();
+            if branch.is_empty() {
+                return Err(bad_request("branch cannot be empty"));
+            }
+            app.branch = branch.to_string();
+        }
+
+        if let Some(env_vars) = req.env_vars {
+            app.env_vars = build_app_env_vars(Some(env_vars), &app.env_vars)?;
+        }
+
+        app.rollout_strategy = resolve_rollout_strategy(
+            req.rollout_strategy.as_deref(),
+            app.rollout_strategy,
+        )?;
+
+        if let Some(auto_deploy) = req.auto_deploy {
+            if let Some(enabled) = auto_deploy.enabled {
+                app.auto_deploy_enabled = enabled;
+            }
+            if let Some(watch_paths) = auto_deploy.watch_paths {
+                app.auto_deploy_watch_paths =
+                    normalize_watch_paths(watch_paths)?;
+            }
+            if let Some(cleanup_stale_deployments) =
+                auto_deploy.cleanup_stale_deployments
+            {
+                app.auto_deploy_cleanup_stale_deployments =
+                    cleanup_stale_deployments;
+            }
+            if auto_deploy.regenerate_webhook_token == Some(true) {
+                app.deploy_webhook_token = None;
+                let _ = app.ensure_deploy_webhook_token();
+            }
+        }
+
+        if let Some(updated_service_request) = req.service {
+            let service_requests = app
+                .services
+                .iter()
+                .map(|existing_service| {
+                    if existing_service.id == service_id {
+                        updated_service_request.clone()
+                    } else {
+                        service_request_from_model(existing_service)
+                    }
+                })
+                .collect::<Vec<_>>();
+            app.services = build_services(
+                &config,
+                app.id,
+                &app.services,
+                service_requests,
+            )?;
+        }
+
+        app.ensure_service_model();
+
+        if app.requires_source_checkout() && app.github_url.trim().is_empty() {
+            return Err(bad_request(
+                "github_url is required when a service needs a source build",
+            ));
+        }
+
+        validate_app_service_domains(&self.state, &config, &app).await?;
+        app.updated_at = Utc::now();
+        self.state.db.save_app(&app).map_err(internal_error)?;
+
+        self.service_response(
+            user_id,
+            service.id,
+            &config.proxy.base_domain,
+            config.proxy.public_ip.as_deref(),
+        )
+    }
+
     pub async fn get_service_logs(
         &self,
         user_id: Uuid,
@@ -440,6 +699,29 @@ impl ServiceSvc {
         };
 
         Ok(ServiceLogsResponse { logs })
+    }
+
+    pub fn list_http_request_logs(
+        &self,
+        user_id: Uuid,
+        service_id: Uuid,
+        limit: usize,
+        offset: usize,
+    ) -> ApiResult<Vec<HttpRequestLogResponse>> {
+        let (_, service) =
+            resolve_owned_app_service_record(&self.state, user_id, service_id)?;
+        if !service.is_public_http() {
+            return Err(bad_request(
+                "http request logs are only available for public web services",
+            ));
+        }
+
+        let logs = self
+            .state
+            .db
+            .list_http_request_logs(service_id, limit, offset)
+            .map_err(internal_error)?;
+        Ok(logs.iter().map(HttpRequestLogResponse::from).collect())
     }
 
     pub async fn run_action(
@@ -658,6 +940,8 @@ impl ServiceSvc {
             branch,
             rollout_strategy,
             None,
+            None,
+            false,
         )
         .await?;
 
@@ -724,6 +1008,8 @@ impl ServiceSvc {
             app.branch.clone(),
             rollout_strategy,
             Some(target_deployment_id),
+            None,
+            false,
         )
         .await?;
 
@@ -852,6 +1138,8 @@ impl ServiceSvc {
             app.branch.clone(),
             app.rollout_strategy,
             None,
+            None,
+            false,
         )
         .await
         {
@@ -1262,6 +1550,234 @@ fn parse_restart_policy(value: Option<&str>) -> RestartPolicy {
     }
 }
 
+fn restart_policy_label(value: RestartPolicy) -> &'static str {
+    match value {
+        RestartPolicy::Never => "never",
+        RestartPolicy::Always => "always",
+        RestartPolicy::OnFailure => "on-failure",
+    }
+}
+
+fn rollout_strategy_label(value: RolloutStrategy) -> &'static str {
+    match value {
+        RolloutStrategy::StopFirst => "stop_first",
+        RolloutStrategy::StartFirst => "start_first",
+    }
+}
+
+fn mask_secret_value(secret: bool, value: &str) -> String {
+    if secret && !value.is_empty() {
+        "********".to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+fn masked_env_var_response(env_var: &EnvVar) -> EditableEnvVarResponse {
+    EditableEnvVarResponse {
+        key: env_var.key.clone(),
+        value: mask_secret_value(env_var.secret, &env_var.value),
+        secret: env_var.secret,
+    }
+}
+
+fn masked_build_arg_response(build_arg: &BuildArg) -> EditableEnvVarResponse {
+    EditableEnvVarResponse {
+        key: build_arg.key.clone(),
+        value: mask_secret_value(build_arg.secret, &build_arg.value),
+        secret: build_arg.secret,
+    }
+}
+
+fn service_settings_service_response(
+    service: &ContainerService,
+) -> ServiceSettingsServiceResponse {
+    ServiceSettingsServiceResponse {
+        name: service.name.clone(),
+        image: normalize_optional_string(Some(service.image.clone())),
+        service_type: ContainerService::service_type_name(service.service_type)
+            .to_string(),
+        port: service.port,
+        expose_http: service.expose_http,
+        domains: service.domains.clone(),
+        additional_ports: service.additional_ports.clone(),
+        replicas: service.replicas,
+        memory_limit_mb: service.memory_limit.map(|value| value / 1024 / 1024),
+        cpu_limit: service.cpu_limit,
+        depends_on: service.depends_on.clone(),
+        health_check: service.health_check.as_ref().map(|health_check| {
+            HealthCheckResponse {
+                path: health_check.path.clone(),
+                interval_secs: health_check.interval_secs,
+                timeout_secs: health_check.timeout_secs,
+                retries: health_check.retries,
+            }
+        }),
+        restart_policy: restart_policy_label(service.restart_policy)
+            .to_string(),
+        registry_auth: service.registry_auth.as_ref().map(|auth| {
+            ServiceRegistryAuthResponse {
+                server: auth.server.clone(),
+                username: auth.username.clone(),
+                password: mask_secret_value(true, &auth.password),
+            }
+        }),
+        env_vars: service
+            .env_vars
+            .iter()
+            .map(masked_env_var_response)
+            .collect(),
+        build_context: service.build_context.clone(),
+        dockerfile_path: service.dockerfile_path.clone(),
+        build_target: service.build_target.clone(),
+        build_args: service
+            .build_args
+            .iter()
+            .map(masked_build_arg_response)
+            .collect(),
+        command: service.command.clone(),
+        entrypoint: service.entrypoint.clone(),
+        working_dir: service.working_dir.clone(),
+        schedule: service.schedule.clone(),
+        mounts: service
+            .mounts
+            .iter()
+            .map(|mount| ServiceMountRequest {
+                name: mount.name.clone(),
+                target: mount.target.clone(),
+                read_only: Some(mount.read_only),
+            })
+            .collect(),
+    }
+}
+
+fn service_request_from_model(service: &ContainerService) -> ServiceRequest {
+    ServiceRequest {
+        name: service.name.clone(),
+        image: normalize_optional_string(Some(service.image.clone())),
+        service_type: Some(
+            ContainerService::service_type_name(service.service_type)
+                .to_string(),
+        ),
+        port: service.port,
+        expose_http: Some(service.expose_http),
+        domains: if service.domains.is_empty() {
+            None
+        } else {
+            Some(service.domains.clone())
+        },
+        domain: None,
+        additional_ports: if service.additional_ports.is_empty() {
+            None
+        } else {
+            Some(service.additional_ports.clone())
+        },
+        replicas: Some(service.replicas),
+        memory_limit_mb: service.memory_limit.map(|value| value / 1024 / 1024),
+        cpu_limit: service.cpu_limit,
+        depends_on: if service.depends_on.is_empty() {
+            None
+        } else {
+            Some(service.depends_on.clone())
+        },
+        health_check: service.health_check.as_ref().map(|health_check| {
+            HealthCheckRequest {
+                path: health_check.path.clone(),
+                interval_secs: Some(health_check.interval_secs),
+                timeout_secs: Some(health_check.timeout_secs),
+                retries: Some(health_check.retries),
+            }
+        }),
+        restart_policy: Some(
+            restart_policy_label(service.restart_policy).to_string(),
+        ),
+        registry_auth: service.registry_auth.as_ref().map(|auth| {
+            ServiceRegistryAuthRequest {
+                server: auth.server.clone(),
+                username: Some(auth.username.clone()),
+                password: Some(mask_secret_value(true, &auth.password)),
+            }
+        }),
+        env_vars: if service.env_vars.is_empty() {
+            None
+        } else {
+            Some(
+                service
+                    .env_vars
+                    .iter()
+                    .map(|env_var| EnvVarRequest {
+                        key: env_var.key.clone(),
+                        value: mask_secret_value(
+                            env_var.secret,
+                            &env_var.value,
+                        ),
+                        secret: Some(env_var.secret),
+                    })
+                    .collect(),
+            )
+        },
+        build_context: service.build_context.clone(),
+        dockerfile_path: service.dockerfile_path.clone(),
+        build_target: service.build_target.clone(),
+        build_args: if service.build_args.is_empty() {
+            None
+        } else {
+            Some(
+                service
+                    .build_args
+                    .iter()
+                    .map(|build_arg| EnvVarRequest {
+                        key: build_arg.key.clone(),
+                        value: mask_secret_value(
+                            build_arg.secret,
+                            &build_arg.value,
+                        ),
+                        secret: Some(build_arg.secret),
+                    })
+                    .collect(),
+            )
+        },
+        command: service.command.clone(),
+        entrypoint: service.entrypoint.clone(),
+        working_dir: service.working_dir.clone(),
+        schedule: service.schedule.clone(),
+        mounts: if service.mounts.is_empty() {
+            None
+        } else {
+            Some(
+                service
+                    .mounts
+                    .iter()
+                    .map(|mount| ServiceMountRequest {
+                        name: mount.name.clone(),
+                        target: mount.target.clone(),
+                        read_only: Some(mount.read_only),
+                    })
+                    .collect(),
+            )
+        },
+    }
+}
+
+fn normalize_watch_paths(paths: Vec<String>) -> ApiResult<Vec<String>> {
+    let mut normalized = Vec::new();
+    for path in paths {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with('/') {
+            return Err(bad_request(
+                "watch paths must be relative repository paths or glob patterns",
+            ));
+        }
+        if !normalized.iter().any(|existing| existing == trimmed) {
+            normalized.push(trimmed.to_string());
+        }
+    }
+    Ok(normalized)
+}
+
 fn parse_service_type(value: &str) -> Option<ServiceType> {
     match value.trim().to_ascii_lowercase().as_str() {
         "web_service" | "web-service" | "webservice" | "web" => {
@@ -1605,6 +2121,69 @@ fn build_service_env_vars(
                         Json(ErrorResponse {
                             error: format!(
                                 "missing original value for masked service env var {}",
+                                key
+                            ),
+                        }),
+                    )
+                })?
+        } else {
+            request.value
+        };
+
+        env_vars.push(EnvVar { key, value, secret });
+    }
+
+    Ok(env_vars)
+}
+
+fn build_app_env_vars(
+    requests: Option<Vec<EnvVarRequest>>,
+    existing: &[EnvVar],
+) -> ApiResult<Vec<EnvVar>> {
+    let Some(requests) = requests else {
+        return Ok(existing.to_vec());
+    };
+
+    let existing_by_key = existing
+        .iter()
+        .map(|env_var| (env_var.key.clone(), env_var.clone()))
+        .collect::<HashMap<_, _>>();
+    let mut seen_keys = HashSet::new();
+    let mut env_vars = Vec::new();
+
+    for request in requests {
+        let key = request.key.trim().to_string();
+        if key.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "shared env var key cannot be empty".to_string(),
+                }),
+            ));
+        }
+
+        if !seen_keys.insert(key.clone()) {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("duplicate shared env var key: {}", key),
+                }),
+            ));
+        }
+
+        let existing_value = existing_by_key.get(&key);
+        let secret = request.secret.unwrap_or_else(|| {
+            existing_value.map(|item| item.secret).unwrap_or(false)
+        });
+        let value = if secret && request.value == "********" {
+            existing_value
+                .map(|item| item.value.clone())
+                .ok_or_else(|| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: format!(
+                                "missing original value for masked shared env var {}",
                                 key
                             ),
                         }),
@@ -2891,6 +3470,10 @@ pub(crate) async fn resolve_source_deployment_source(
         domains: Vec::new(),
         domain: None,
         env_vars: Vec::new(),
+        auto_deploy_enabled: true,
+        auto_deploy_watch_paths: Vec::new(),
+        auto_deploy_cleanup_stale_deployments: true,
+        deploy_webhook_token: None,
         port: 8080,
         services: Vec::new(),
         rollout_strategy: RolloutStrategy::StopFirst,

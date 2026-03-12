@@ -11,6 +11,7 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 use containr_common::Config as AppConfig;
+use containr_common::{Database, HttpRequestLog};
 use dashmap::DashMap;
 use pingora_core::listeners::tls::TlsSettings;
 use pingora_core::listeners::{TlsAccept, TlsAcceptCallbacks};
@@ -50,6 +51,7 @@ pub struct ContainrProxy {
     config: Arc<RwLock<AppConfig>>,
     api_upstream: String,
     certs_dir: PathBuf,
+    db: Database,
 }
 
 impl ContainrProxy {
@@ -60,6 +62,7 @@ impl ContainrProxy {
         config: Arc<RwLock<AppConfig>>,
         api_upstream: String,
         certs_dir: PathBuf,
+        db: Database,
     ) -> Self {
         Self {
             routes: Arc::new(routes),
@@ -67,6 +70,7 @@ impl ContainrProxy {
             config,
             api_upstream,
             certs_dir,
+            db,
         }
     }
 
@@ -523,6 +527,46 @@ impl ProxyHttp for ContainrProxy {
             protocol = %protocol,
             "request completed"
         );
+
+        let Some(selection) = ctx.upstream_selection.as_ref() else {
+            return;
+        };
+        let (Some(app_id), Some(service_id)) =
+            (selection.app_id(), selection.service_id())
+        else {
+            return;
+        };
+
+        let host = req
+            .headers
+            .get("host")
+            .and_then(|value| value.to_str().ok())
+            .map(|value| value.split(':').next().unwrap_or(value))
+            .unwrap_or(selection.domain())
+            .to_string();
+        let path = req
+            .uri
+            .path_and_query()
+            .map(|value| value.as_str())
+            .unwrap_or(req.uri.path())
+            .to_string();
+        let log = HttpRequestLog::new(
+            service_id,
+            app_id,
+            host,
+            req.method.as_str().to_string(),
+            path,
+            status,
+            upstream.to_string(),
+            protocol.to_string(),
+        );
+        if let Err(error) = self.db.append_http_request_log(&log) {
+            warn!(
+                service_id = %service_id,
+                error = %error,
+                "failed to persist http request log"
+            );
+        }
     }
 }
 
@@ -535,6 +579,7 @@ pub fn create_proxy_server(
     certs_dir: PathBuf,
     config: Arc<RwLock<AppConfig>>,
     api_upstream: String,
+    db: Database,
 ) -> anyhow::Result<Server> {
     let mut server = Server::new(None).unwrap();
     server.bootstrap();
@@ -545,6 +590,7 @@ pub fn create_proxy_server(
         config,
         api_upstream,
         certs_dir.clone(),
+        db,
     );
 
     let mut proxy_service =
