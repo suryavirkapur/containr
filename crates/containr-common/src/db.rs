@@ -22,8 +22,8 @@ use crate::managed_services::{
     ManagedDatabase, ManagedQueue, ServiceStatus, StorageBucket,
 };
 use crate::models::{
-    App, Certificate, ContainerService, Deployment, GithubAppConfig, Project,
-    ServiceDeployment,
+    App, Certificate, ContainerService, Deployment, GithubAppConfig,
+    HttpRequestLog, Project, ServiceDeployment,
 };
 use crate::service_inventory::{
     summarize_app_service_runtime, ServiceInventoryItem, ServiceResourceKind,
@@ -36,11 +36,13 @@ const SERVICES_TABLE: &str = "metadata_services";
 const SERVICE_DEPLOYMENTS_TABLE: &str = "metadata_service_deployments";
 const DEPLOYMENTS_TABLE: &str = "metadata_deployments";
 const DEPLOYMENT_LOGS_TABLE: &str = "metadata_deployment_logs";
+const HTTP_REQUEST_LOGS_TABLE: &str = "metadata_http_request_logs";
 const CERTIFICATES_TABLE: &str = "metadata_certificates";
 const MANAGED_DATABASES_TABLE: &str = "metadata_managed_databases";
 const MANAGED_QUEUES_TABLE: &str = "metadata_managed_queues";
 const STORAGE_BUCKETS_TABLE: &str = "metadata_storage_buckets";
 const GITHUB_APPS_TABLE: &str = "metadata_github_apps";
+const MAX_HTTP_REQUEST_LOGS_PER_SERVICE: i64 = 2_000;
 
 const MIGRATOR: Migrator = sqlx::migrate!("./sqlx_migrations");
 
@@ -283,6 +285,23 @@ impl Database {
         offset: usize,
     ) -> Result<Vec<String>> {
         self.store.get_deployment_logs(deployment_id, limit, offset)
+    }
+
+    pub fn append_http_request_log(&self, log: &HttpRequestLog) -> Result<()> {
+        self.store.append_http_request_log(log)
+    }
+
+    pub fn list_http_request_logs(
+        &self,
+        service_id: Uuid,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<HttpRequestLog>> {
+        self.store.list_http_request_logs(service_id, limit, offset)
+    }
+
+    pub fn delete_http_request_logs(&self, service_id: Uuid) -> Result<usize> {
+        self.store.delete_http_request_logs(service_id)
     }
 
     pub fn save_certificate(&self, cert: &Certificate) -> Result<()> {
@@ -765,6 +784,9 @@ impl SqliteJsonDatabase {
         for deployment in self.list_deployments_by_app(app.id)? {
             let _ = self.delete_deployment(deployment.id)?;
         }
+        for service in &app.services {
+            let _ = self.delete_http_request_logs(service.id)?;
+        }
 
         self.run(async {
             let mut tx = self.pool.begin().await.map_err(Error::from)?;
@@ -823,7 +845,11 @@ impl SqliteJsonDatabase {
     }
 
     fn delete_service(&self, id: Uuid) -> Result<bool> {
-        self.delete_key(SERVICES_TABLE, &id.to_string())
+        let deleted = self.delete_key(SERVICES_TABLE, &id.to_string())?;
+        if deleted {
+            let _ = self.delete_http_request_logs(id)?;
+        }
+        Ok(deleted)
     }
 
     fn save_service_deployment(
@@ -1044,6 +1070,95 @@ impl SqliteJsonDatabase {
                     row.try_get::<String, _>("line").map_err(Error::from)
                 })
                 .collect()
+        })
+    }
+
+    fn append_http_request_log(&self, log: &HttpRequestLog) -> Result<()> {
+        self.run(async {
+            let mut tx = self.pool.begin().await.map_err(Error::from)?;
+            let next_index = sqlx::query_scalar::<_, i64>(safe_sql(format!(
+                "select coalesce(max(idx), -1) + 1
+                 from {HTTP_REQUEST_LOGS_TABLE}
+                 where service_id = ?1"
+            )))
+            .bind(log.service_id.to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(Error::from)?;
+
+            let value = serde_json::to_string(log)?;
+
+            sqlx::query(safe_sql(format!(
+                "insert into {HTTP_REQUEST_LOGS_TABLE}
+                 (service_id, idx, value)
+                 values (?1, ?2, ?3)"
+            )))
+            .bind(log.service_id.to_string())
+            .bind(next_index)
+            .bind(value)
+            .execute(&mut *tx)
+            .await
+            .map_err(Error::from)?;
+
+            sqlx::query(safe_sql(format!(
+                "delete from {HTTP_REQUEST_LOGS_TABLE}
+                 where service_id = ?1
+                   and idx <= (
+                       select coalesce(max(idx), -1) - ?2
+                       from {HTTP_REQUEST_LOGS_TABLE}
+                       where service_id = ?1
+                   )"
+            )))
+            .bind(log.service_id.to_string())
+            .bind(MAX_HTTP_REQUEST_LOGS_PER_SERVICE)
+            .execute(&mut *tx)
+            .await
+            .map_err(Error::from)?;
+
+            tx.commit().await.map_err(Error::from)?;
+            Ok(())
+        })
+    }
+
+    fn list_http_request_logs(
+        &self,
+        service_id: Uuid,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<HttpRequestLog>> {
+        self.run(async {
+            let rows = sqlx::query(safe_sql(format!(
+                "select value from {HTTP_REQUEST_LOGS_TABLE}
+                 where service_id = ?1
+                 order by idx desc
+                 limit ?2 offset ?3"
+            )))
+            .bind(service_id.to_string())
+            .bind(limit as i64)
+            .bind(offset as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Error::from)?;
+
+            rows.into_iter()
+                .map(|row| {
+                    let value = row.try_get::<String, _>("value")?;
+                    serde_json::from_str(&value).map_err(Error::from)
+                })
+                .collect()
+        })
+    }
+
+    fn delete_http_request_logs(&self, service_id: Uuid) -> Result<usize> {
+        self.run(async {
+            let result = sqlx::query(safe_sql(format!(
+                "delete from {HTTP_REQUEST_LOGS_TABLE} where service_id = ?1"
+            )))
+            .bind(service_id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(Error::from)?;
+            Ok(result.rows_affected() as usize)
         })
     }
 

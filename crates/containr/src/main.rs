@@ -338,6 +338,7 @@ async fn run_server_command(
     let api_host = resolve_api_host(&config.server.host);
     let api_upstream = format!("{}:{}", api_host, config.server.port);
     let proxy_config = shared_config.clone();
+    let proxy_db = db.clone();
 
     std::thread::spawn(move || {
         let server = containr_proxy::pingora_proxy::create_proxy_server(
@@ -348,6 +349,7 @@ async fn run_server_command(
             certs_dir,
             proxy_config,
             api_upstream,
+            proxy_db,
         );
         match server {
             Ok(server) => server.run_forever(),
@@ -755,6 +757,18 @@ async fn refresh_routes_for_app(
         Ok(Some(app)) => app,
         _ => return,
     };
+    let latest_running_deployment = db
+        .get_latest_deployment(app.id)
+        .ok()
+        .flatten()
+        .filter(|deployment| {
+            deployment.status
+                == containr_common::models::DeploymentStatus::Running
+        });
+    let routing_app = latest_running_deployment
+        .as_ref()
+        .and_then(|deployment| deployment.app_snapshot.clone())
+        .unwrap_or_else(|| app.clone());
 
     let mut upstreams = Vec::new();
     let network_name = format!("containr-{}", app.id);
@@ -778,7 +792,7 @@ async fn refresh_routes_for_app(
         }
     };
 
-    let public_services = exposed_services(&app);
+    let public_services = exposed_services(&routing_app);
     if public_services.is_empty() {
         remove_app_routes(routes, &app, base_domain);
         tracing::warn!(app_id = %app.id, "no exposed http service selected for app");
@@ -787,7 +801,7 @@ async fn refresh_routes_for_app(
 
     remove_app_routes(routes, &app, base_domain);
 
-    let primary_service = match select_exposed_service(&app) {
+    let primary_service = match select_exposed_service(&routing_app) {
         Some(service) => service,
         None => return,
     };
@@ -795,19 +809,13 @@ async fn refresh_routes_for_app(
     for service in public_services {
         upstreams.clear();
 
-        let active_container_ids = db
-            .get_latest_deployment(app.id)
-            .ok()
-            .flatten()
-            .filter(|deployment| {
-                deployment.status
-                    == containr_common::models::DeploymentStatus::Running
-            })
-            .and_then(|deployment| {
-                active_http_container_ids(&deployment, service.id)
+        let active_container_ids =
+            latest_running_deployment.as_ref().and_then(|deployment| {
+                active_http_container_ids(deployment, service.id)
             });
         let service_prefix = format!("containr-{}-{}-", app.id, service.name);
-        let legacy_prefix = legacy_service_container_prefix(&app, &service);
+        let legacy_prefix =
+            legacy_service_container_prefix(&routing_app, &service);
 
         for container in &containers {
             if let Some(names) = &container.names {
@@ -846,7 +854,8 @@ async fn refresh_routes_for_app(
             }
         }
 
-        let service_domain = service_subdomain(&app, &service, base_domain);
+        let service_domain =
+            service_subdomain(&routing_app, &service, base_domain);
         if upstreams.is_empty() {
             routes.remove_route(&service_domain);
             continue;
@@ -854,6 +863,8 @@ async fn refresh_routes_for_app(
 
         routes.add_route(containr_proxy::routes::Route {
             domain: service_domain.clone(),
+            app_id: Some(app.id),
+            service_id: Some(service.id),
             upstreams: upstreams.clone(),
             ssl_enabled: false,
             algorithm,
@@ -863,6 +874,8 @@ async fn refresh_routes_for_app(
         for custom_domain in service.custom_domains() {
             routes.add_route(containr_proxy::routes::Route {
                 domain: custom_domain.clone(),
+                app_id: Some(app.id),
+                service_id: Some(service.id),
                 upstreams: upstreams.clone(),
                 ssl_enabled: true,
                 algorithm,
@@ -875,9 +888,11 @@ async fn refresh_routes_for_app(
         }
 
         if service.id == primary_service.id {
-            let subdomain = app_subdomain(&app, base_domain);
+            let subdomain = app_subdomain(&routing_app, base_domain);
             routes.add_route(containr_proxy::routes::Route {
                 domain: subdomain.clone(),
+                app_id: Some(app.id),
+                service_id: Some(service.id),
                 upstreams: upstreams.clone(),
                 ssl_enabled: false,
                 algorithm,
@@ -892,6 +907,12 @@ fn remove_app_routes(
     app: &containr_common::models::App,
     base_domain: &str,
 ) {
+    for route in routes.list_routes() {
+        if route.app_id == Some(app.id) {
+            routes.remove_route(&route.domain);
+        }
+    }
+
     let subdomain = app_subdomain(app, base_domain);
     routes.remove_route(&subdomain);
     for custom_domain in app.custom_domains() {

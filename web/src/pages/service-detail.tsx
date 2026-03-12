@@ -13,15 +13,25 @@ import {
 	deleteService,
 	getService,
 	getServiceDeploymentLogs,
+	getServiceHttpLogs,
 	getServiceLogs,
+	getServiceSettings,
 	listServiceDeployments,
 	runServiceAction,
 	triggerServiceDeployment,
-	type Service,
+	updateService,
+	type HttpRequestLog,
+	type Service as InventoryService,
 	type ServiceAction,
 	type ServiceDeployment,
+	type ServiceSettings,
 } from "../api/services";
 import ContainerMonitor from "../components/ContainerMonitor";
+import EnvVarEditor from "../components/EnvVarEditor";
+import ServiceForm, {
+	normalizeServiceType,
+	type Service as ServiceFormValue,
+} from "../components/ServiceForm";
 import {
 	Alert,
 	Badge,
@@ -32,19 +42,43 @@ import {
 	CardHeader,
 	CardTitle,
 	EmptyState,
+	Input,
 	PageHeader,
 	Skeleton,
+	Switch,
 	Tabs,
 	TabsContent,
 	TabsList,
 	TabsTrigger,
+	Textarea,
 } from "../components/ui";
 import { parseAnsi } from "../utils/ansi";
+import { mapServiceToRequest, type EditableEnvVar } from "../utils/projectEditor";
 
-type DetailTab = "overview" | "logs" | "deployments" | "containers";
+type DetailTab =
+	| "overview"
+	| "settings"
+	| "logs"
+	| "http"
+	| "deployments"
+	| "containers";
+
 type Feedback = {
 	text: string;
 	variant: "default" | "destructive" | "success";
+};
+
+type SettingsFormState = {
+	githubUrl: string;
+	branch: string;
+	rolloutStrategy: string;
+	envVars: EditableEnvVar[];
+	service: ServiceFormValue;
+	autoDeployEnabled: boolean;
+	autoDeployWatchPathsText: string;
+	cleanupStaleDeployments: boolean;
+	webhookPath: string;
+	regenerateWebhookToken: boolean;
 };
 
 const describeError = (error: unknown): string => {
@@ -78,7 +112,22 @@ const statusVariant = (status: string): "outline" | "success" | "warning" | "err
 	}
 };
 
-const serviceCategoryLabel = (service: Service): string => {
+const httpStatusVariant = (
+	status: number,
+): "outline" | "success" | "warning" | "error" => {
+	if (status >= 500) {
+		return "error";
+	}
+	if (status >= 400) {
+		return "warning";
+	}
+	if (status >= 200 && status < 400) {
+		return "success";
+	}
+	return "outline";
+};
+
+const serviceCategoryLabel = (service: InventoryService): string => {
 	switch (service.resource_kind) {
 		case "app_service":
 			return "repository";
@@ -115,7 +164,7 @@ const serviceTypeLabel = (serviceType: string): string => {
 	}
 };
 
-const runtimeLabel = (service: Service): string => {
+const runtimeLabel = (service: InventoryService): string => {
 	if (service.schedule?.trim()) {
 		return service.schedule.trim();
 	}
@@ -131,7 +180,7 @@ const runtimeLabel = (service: Service): string => {
 	return "managed";
 };
 
-const endpointLabel = (service: Service): string => {
+const endpointLabel = (service: InventoryService): string => {
 	if (service.default_urls.length > 0) {
 		return service.default_urls[0];
 	}
@@ -174,6 +223,73 @@ const formatDate = (value?: string | null): string => {
 const formatDeploymentStatus = (deployment: ServiceDeployment): string =>
 	deployment.status.replaceAll("_", " ");
 
+const editableEntries = (
+	entries: { key: string; value: string; secret: boolean }[],
+): EditableEnvVar[] => entries.map((entry) => ({ ...entry }));
+
+const serviceSettingsToFormState = (settings: ServiceSettings): SettingsFormState => ({
+	githubUrl: settings.github_url,
+	branch: settings.branch,
+	rolloutStrategy: settings.rollout_strategy,
+	envVars: editableEntries(settings.env_vars),
+	service: {
+		name: settings.service.name,
+		image: settings.service.image ?? "",
+		service_type: normalizeServiceType(settings.service.service_type),
+		port: settings.service.port,
+		expose_http: settings.service.expose_http,
+		domains: [...settings.service.domains],
+		additional_ports: [...settings.service.additional_ports],
+		replicas: settings.service.replicas,
+		memory_limit_mb: settings.service.memory_limit_mb ?? null,
+		cpu_limit: settings.service.cpu_limit ?? null,
+		depends_on: [...settings.service.depends_on],
+		health_check_path: settings.service.health_check?.path ?? "",
+		health_check_interval_secs: settings.service.health_check?.interval_secs ?? 30,
+		health_check_timeout_secs: settings.service.health_check?.timeout_secs ?? 5,
+		health_check_retries: settings.service.health_check?.retries ?? 3,
+		restart_policy: settings.service.restart_policy,
+		registry_auth: settings.service.registry_auth
+			? {
+					server: settings.service.registry_auth.server ?? "",
+					username: settings.service.registry_auth.username,
+					password: settings.service.registry_auth.password,
+				}
+			: null,
+		env_vars: editableEntries(settings.service.env_vars),
+		build_context: settings.service.build_context ?? "",
+		dockerfile_path: settings.service.dockerfile_path ?? "",
+		build_target: settings.service.build_target ?? "",
+		build_args: editableEntries(settings.service.build_args),
+		command: settings.service.command ?? [],
+		entrypoint: settings.service.entrypoint ?? [],
+		working_dir: settings.service.working_dir ?? "",
+		mounts: settings.service.mounts.map((mount) => ({
+			name: mount.name,
+			target: mount.target,
+			read_only: Boolean(mount.read_only),
+		})),
+	},
+	autoDeployEnabled: settings.auto_deploy.enabled,
+	autoDeployWatchPathsText: settings.auto_deploy.watch_paths.join("\n"),
+	cleanupStaleDeployments: settings.auto_deploy.cleanup_stale_deployments,
+	webhookPath: settings.auto_deploy.webhook_path,
+	regenerateWebhookToken: false,
+});
+
+const textToWatchPaths = (value: string): string[] =>
+	Array.from(
+		new Set(
+			value
+				.split(/[\n,]+/)
+				.map((entry) => entry.trim())
+				.filter((entry) => entry.length > 0),
+		),
+	);
+
+const requestLabel = (request: HttpRequestLog): string =>
+	`${request.method} ${request.path}`;
+
 const ServiceDetail: Component = () => {
 	const params = useParams<{ id: string }>();
 	const navigate = useNavigate();
@@ -182,9 +298,11 @@ const ServiceDetail: Component = () => {
 	const [pendingAction, setPendingAction] = createSignal<ServiceAction | null>(null);
 	const [deploying, setDeploying] = createSignal(false);
 	const [deleting, setDeleting] = createSignal(false);
+	const [savingSettings, setSavingSettings] = createSignal(false);
 	const [selectedContainerId, setSelectedContainerId] = createSignal("");
 	const [selectedDeploymentId, setSelectedDeploymentId] = createSignal("");
 	const [feedback, setFeedback] = createSignal<Feedback | null>(null);
+	const [settingsForm, setSettingsForm] = createSignal<SettingsFormState | null>(null);
 
 	const [serviceResource, { refetch: refetchService }] = createResource(
 		() => params.id,
@@ -208,6 +326,20 @@ const ServiceDetail: Component = () => {
 		},
 		({ serviceId, deploymentId }) => getServiceDeploymentLogs(serviceId, deploymentId, 200, 0),
 	);
+	const [httpLogs, { refetch: refetchHttpLogs }] = createResource(
+		() => {
+			const current = serviceResource();
+			return current?.public_http ? current.id : null;
+		},
+		(id) => getServiceHttpLogs(id, 200, 0),
+	);
+	const [serviceSettingsResource, { refetch: refetchServiceSettings }] = createResource(
+		() => {
+			const current = serviceResource();
+			return current && current.resource_kind === "app_service" ? current.id : null;
+		},
+		getServiceSettings,
+	);
 
 	createEffect(() => {
 		const containerIds = serviceResource()?.container_ids ?? [];
@@ -224,15 +356,44 @@ const ServiceDetail: Component = () => {
 		}
 	});
 
+	createEffect(() => {
+		const settings = serviceSettingsResource();
+		if (settings) {
+			setSettingsForm(serviceSettingsToFormState(settings));
+		}
+	});
+
+	createEffect(() => {
+		if (tab() === "settings" && serviceResource()?.resource_kind !== "app_service") {
+			setTab("overview");
+		}
+		if (tab() === "http" && !serviceResource()?.public_http) {
+			setTab("overview");
+		}
+		if (tab() === "deployments" && serviceResource()?.resource_kind !== "app_service") {
+			setTab("overview");
+		}
+	});
+
 	const currentService = createMemo(() => serviceResource());
 	const canDeploy = createMemo(() => currentService()?.resource_kind === "app_service");
+	const canEditSettings = createMemo(() => currentService()?.resource_kind === "app_service");
+	const canShowHttpLogs = createMemo(() => Boolean(currentService()?.public_http));
 	const selectedDeployment = createMemo(() =>
 		(deployments() ?? []).find((deployment) => deployment.id === selectedDeploymentId()),
 	);
 	const logMarkup = createMemo(() => parseAnsi(logs() ?? ""));
-	const deploymentLogMarkup = createMemo(() =>
-		parseAnsi((deploymentLogs() ?? []).join("\n")),
-	);
+	const deploymentLogMarkup = createMemo(() => parseAnsi((deploymentLogs() ?? []).join("\n")));
+	const deployWebhookUrl = createMemo(() => {
+		const path = settingsForm()?.webhookPath;
+		if (!path) {
+			return "";
+		}
+		if (typeof window === "undefined") {
+			return path;
+		}
+		return new URL(path, window.location.origin).toString();
+	});
 	const endpointDetails = createMemo(() => {
 		const current = currentService();
 		if (!current) {
@@ -266,12 +427,23 @@ const ServiceDetail: Component = () => {
 	const refreshAll = async () => {
 		await refetchService();
 		await refetchLogs();
+		if (canShowHttpLogs()) {
+			await refetchHttpLogs();
+		}
 		if (canDeploy()) {
 			await refetchDeployments();
+			await refetchServiceSettings();
 			if (selectedDeploymentId()) {
 				await refetchDeploymentLogs();
 			}
 		}
+	};
+
+	const updateSettings = <K extends keyof SettingsFormState>(
+		key: K,
+		value: SettingsFormState[K],
+	) => {
+		setSettingsForm((current) => (current ? { ...current, [key]: value } : current));
 	};
 
 	const handleAction = async (action: ServiceAction) => {
@@ -315,6 +487,68 @@ const ServiceDetail: Component = () => {
 			});
 		} finally {
 			setDeploying(false);
+		}
+	};
+
+	const handleSaveSettings = async () => {
+		const current = settingsForm();
+		if (!current) {
+			return;
+		}
+
+		setSavingSettings(true);
+		setFeedback(null);
+
+		try {
+			await updateService(params.id, {
+				github_url: current.githubUrl.trim(),
+				branch: current.branch.trim() || "main",
+				env_vars: current.envVars,
+				rollout_strategy: current.rolloutStrategy,
+				auto_deploy: {
+					enabled: current.autoDeployEnabled,
+					watch_paths: textToWatchPaths(current.autoDeployWatchPathsText),
+					cleanup_stale_deployments: current.cleanupStaleDeployments,
+					regenerate_webhook_token: current.regenerateWebhookToken || undefined,
+				},
+				service: mapServiceToRequest(current.service),
+			});
+
+			setFeedback({
+				text: "settings saved; deploy to apply runtime changes",
+				variant: "success",
+			});
+			setSettingsForm((form) =>
+				form ? { ...form, regenerateWebhookToken: false } : form,
+			);
+			await refreshAll();
+		} catch (error) {
+			setFeedback({
+				text: describeError(error),
+				variant: "destructive",
+			});
+		} finally {
+			setSavingSettings(false);
+		}
+	};
+
+	const handleCopyWebhook = async () => {
+		const url = deployWebhookUrl();
+		if (!url) {
+			return;
+		}
+
+		try {
+			await navigator.clipboard.writeText(url);
+			setFeedback({
+				text: "deploy webhook copied",
+				variant: "success",
+			});
+		} catch {
+			setFeedback({
+				text: "failed to copy deploy webhook",
+				variant: "destructive",
+			});
 		}
 	};
 
@@ -465,7 +699,13 @@ const ServiceDetail: Component = () => {
 						<Tabs value={tab()} onValueChange={(value) => setTab(value as DetailTab)}>
 							<TabsList>
 								<TabsTrigger value="overview">overview</TabsTrigger>
+								<Show when={canEditSettings()}>
+									<TabsTrigger value="settings">settings</TabsTrigger>
+								</Show>
 								<TabsTrigger value="logs">logs</TabsTrigger>
+								<Show when={canShowHttpLogs()}>
+									<TabsTrigger value="http">http</TabsTrigger>
+								</Show>
 								<Show when={canDeploy()}>
 									<TabsTrigger value="deployments">deployments</TabsTrigger>
 								</Show>
@@ -526,6 +766,186 @@ const ServiceDetail: Component = () => {
 								</Card>
 							</TabsContent>
 
+							<TabsContent value="settings" class="space-y-4">
+								<Show when={canEditSettings()}>
+									<>
+										<Alert title="save config, then deploy">
+											Settings are stored immediately, but runtime changes only apply after the next deployment.
+										</Alert>
+
+										<Show when={serviceSettingsResource.error}>
+											<Alert variant="destructive" title="failed to load settings">
+												{describeError(serviceSettingsResource.error)}
+											</Alert>
+										</Show>
+
+										<Show when={serviceSettingsResource.loading && !settingsForm()}>
+											<Skeleton class="h-80 w-full" />
+										</Show>
+
+										<Show when={settingsForm()}>
+											{(form) => (
+												<div class="space-y-4">
+													<Card>
+														<CardHeader>
+															<CardTitle>repository</CardTitle>
+															<CardDescription>
+																Git source and rollout behavior for this service.
+															</CardDescription>
+														</CardHeader>
+														<CardContent class="grid gap-4 md:grid-cols-2">
+															<Input
+																label="github url"
+																value={form().githubUrl}
+																onInput={(event) => updateSettings("githubUrl", event.currentTarget.value)}
+																placeholder="https://github.com/org/repo.git"
+															/>
+															<Input
+																label="branch"
+																value={form().branch}
+																onInput={(event) => updateSettings("branch", event.currentTarget.value)}
+																placeholder="main"
+															/>
+															<div class="space-y-2 md:col-span-2">
+																<label
+																	class="text-sm font-medium text-[var(--foreground)]"
+																	for="rollout-strategy"
+																>
+																	rollout strategy
+																</label>
+																<select
+																	id="rollout-strategy"
+																	class="flex h-11 w-full rounded-[var(--radius)] border border-[var(--border)] bg-[var(--input)] px-3 py-2 text-sm font-medium text-[var(--foreground)] focus:border-[var(--ring)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)]"
+																	value={form().rolloutStrategy}
+																	onChange={(event) =>
+																		updateSettings("rolloutStrategy", event.currentTarget.value)
+																	}
+																>
+																	<option value="stop_first">stop first</option>
+																	<option value="start_first">start first</option>
+																</select>
+															</div>
+														</CardContent>
+													</Card>
+
+													<EnvVarEditor
+														envVars={form().envVars}
+														onChange={(envVars) => updateSettings("envVars", envVars)}
+														title="shared environment variables"
+														description="applied to every container in this repository service."
+														emptyText="no shared variables configured"
+														addLabel="add shared variable"
+													/>
+
+													<div class="space-y-2">
+														<p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
+															service definition
+														</p>
+														<h2 class="font-serif text-2xl text-[var(--foreground)]">
+															build, runtime, and storage
+														</h2>
+													</div>
+													<ServiceForm
+														service={form().service}
+														index={0}
+														allServices={[form().service]}
+														showServiceTypePicker={false}
+														onUpdate={(_, next) => updateSettings("service", next)}
+														onRemove={() => {}}
+														allowRemove={false}
+													/>
+
+													<Card>
+														<CardHeader>
+															<CardTitle>auto deploy</CardTitle>
+															<CardDescription>
+																Control github push deploys, watched paths, and CI-triggered deploy hooks.
+															</CardDescription>
+														</CardHeader>
+														<CardContent class="space-y-4">
+															<div class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--border)] bg-[var(--muted)] px-4 py-4">
+																<div class="space-y-1">
+																	<p class="font-medium text-[var(--foreground)]">github push auto-deploy</p>
+																	<p class="text-sm text-[var(--muted-foreground)]">
+																		Deploy automatically when matching pushes land on the tracked branch.
+																	</p>
+																</div>
+																<Switch
+																	checked={form().autoDeployEnabled}
+																	onChange={(checked) =>
+																		updateSettings("autoDeployEnabled", checked)
+																	}
+																/>
+															</div>
+
+															<div class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--border)] bg-[var(--muted)] px-4 py-4">
+																<div class="space-y-1">
+																	<p class="font-medium text-[var(--foreground)]">cleanup stale auto-deploys</p>
+																	<p class="text-sm text-[var(--muted-foreground)]">
+																		Stop queued or in-progress auto-deploys when a newer deploy is triggered.
+																	</p>
+																</div>
+																<Switch
+																	checked={form().cleanupStaleDeployments}
+																	onChange={(checked) =>
+																		updateSettings("cleanupStaleDeployments", checked)
+																	}
+																/>
+															</div>
+
+															<Textarea
+																label="watch paths"
+																description="Optional newline-delimited repo paths or glob patterns. Leave empty to deploy on every push."
+																value={form().autoDeployWatchPathsText}
+																onInput={(event) =>
+																	updateSettings(
+																		"autoDeployWatchPathsText",
+																		event.currentTarget.value,
+																	)
+																}
+																placeholder={"apps/api/**\nDockerfile\npackage.json"}
+																class="min-h-32 font-mono"
+															/>
+
+															<Input
+																label="deploy webhook"
+																description="Use this webhook from CI to trigger a deployment without GitHub push webhooks."
+																value={deployWebhookUrl()}
+																readOnly
+																class="font-mono text-xs"
+															/>
+
+															<div class="flex flex-wrap gap-3">
+																<Button variant="outline" onClick={() => void handleCopyWebhook()}>
+																	copy webhook
+																</Button>
+																<Button
+																	variant={form().regenerateWebhookToken ? "secondary" : "outline"}
+																	onClick={() =>
+																		updateSettings(
+																			"regenerateWebhookToken",
+																			!form().regenerateWebhookToken,
+																		)
+																	}
+																>
+																	{form().regenerateWebhookToken ? "token rotates on save" : "rotate token on save"}
+																</Button>
+															</div>
+														</CardContent>
+													</Card>
+
+													<div class="flex justify-end">
+														<Button isLoading={savingSettings()} onClick={() => void handleSaveSettings()}>
+															save settings
+														</Button>
+													</div>
+												</div>
+											)}
+										</Show>
+									</>
+								</Show>
+							</TabsContent>
+
 							<TabsContent value="logs" class="space-y-4">
 								<Card>
 									<CardHeader class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -556,6 +976,74 @@ const ServiceDetail: Component = () => {
 										</Show>
 									</CardContent>
 								</Card>
+							</TabsContent>
+
+							<TabsContent value="http" class="space-y-4">
+								<Show when={canShowHttpLogs()}>
+									<Card>
+										<CardHeader class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+											<div>
+												<CardTitle>http request logs</CardTitle>
+												<CardDescription>
+													Recent request-level access logs captured by the proxy for this public service.
+												</CardDescription>
+											</div>
+											<Button variant="outline" onClick={() => void refetchHttpLogs()}>
+												refresh http logs
+											</Button>
+										</CardHeader>
+										<CardContent>
+											<Show when={httpLogs.error}>
+												<Alert variant="destructive" title="failed to load http logs">
+													{describeError(httpLogs.error)}
+												</Alert>
+											</Show>
+											<Show when={httpLogs.loading}>
+												<Skeleton class="h-64 w-full" />
+											</Show>
+											<Show
+												when={!httpLogs.loading && (httpLogs()?.length ?? 0) > 0}
+												fallback={
+													<EmptyState
+														title="no http requests yet"
+														description="request logs will appear here after traffic reaches the service."
+													/>
+												}
+											>
+												<div class="space-y-3">
+													<For each={httpLogs() ?? []}>
+														{(request) => (
+															<div class="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--card)] px-4 py-4">
+																<div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+																	<div class="space-y-2">
+																		<div class="flex flex-wrap items-center gap-2">
+																			<Badge variant="outline">{request.method}</Badge>
+																			<Badge variant={httpStatusVariant(request.status)}>
+																				{request.status}
+																			</Badge>
+																			<p class="text-xs text-[var(--muted-foreground)]">
+																				{request.domain}
+																			</p>
+																		</div>
+																		<p class="font-mono text-sm text-[var(--foreground)]">
+																			{requestLabel(request)}
+																			</p>
+																			<p class="text-xs text-[var(--muted-foreground)]">
+																				{request.protocol} {"->"} {request.upstream}
+																			</p>
+																	</div>
+																	<p class="text-xs text-[var(--muted-foreground)]">
+																		{formatDate(request.created_at)}
+																	</p>
+																</div>
+															</div>
+														)}
+													</For>
+												</div>
+											</Show>
+										</CardContent>
+									</Card>
+								</Show>
 							</TabsContent>
 
 							<TabsContent value="deployments" class="space-y-4">

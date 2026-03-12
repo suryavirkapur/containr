@@ -20,6 +20,8 @@ pub struct PushEvent {
     pub ref_: String,
     pub after: String,
     pub repository: Repository,
+    #[serde(default)]
+    pub commits: Vec<Commit>,
     pub head_commit: Option<Commit>,
 }
 
@@ -34,6 +36,31 @@ pub struct Repository {
 pub struct Commit {
     pub message: String,
     pub id: String,
+    #[serde(default)]
+    pub added: Vec<String>,
+    #[serde(default)]
+    pub modified: Vec<String>,
+    #[serde(default)]
+    pub removed: Vec<String>,
+}
+
+impl PushEvent {
+    pub fn changed_paths(&self) -> Vec<String> {
+        let mut paths = Vec::new();
+        for commit in &self.commits {
+            for path in commit
+                .added
+                .iter()
+                .chain(commit.modified.iter())
+                .chain(commit.removed.iter())
+            {
+                if !paths.iter().any(|existing| existing == path) {
+                    paths.push(path.clone());
+                }
+            }
+        }
+        paths
+    }
 }
 
 /// github oauth token response

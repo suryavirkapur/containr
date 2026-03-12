@@ -37,32 +37,47 @@ fn main() {
     );
 
     // install dependencies
-    let install_status = Command::new("mise")
-        .arg("exec")
-        .arg("--")
-        .arg("pnpm")
-        .arg("install")
-        .arg("--frozen-lockfile")
-        .current_dir(&web_dir)
-        .status()
-        .expect("failed to run mise exec pnpm install");
+    let install_status = run_pnpm(
+        &web_dir,
+        &["install", "--frozen-lockfile"],
+        "failed to run pnpm install",
+    );
 
     if !install_status.success() {
         panic!("pnpm install failed");
     }
 
     // build frontend
-    let build_status = Command::new("mise")
-        .arg("exec")
-        .arg("--")
-        .arg("pnpm")
-        .arg("run")
-        .arg("build")
-        .current_dir(&web_dir)
-        .status()
-        .expect("failed to run mise exec pnpm run build");
+    let build_status =
+        run_pnpm(&web_dir, &["run", "build"], "failed to run pnpm build");
 
     if !build_status.success() {
         panic!("vite build failed");
+    }
+}
+
+fn run_pnpm(
+    web_dir: &Path,
+    args: &[&str],
+    error_message: &str,
+) -> std::process::ExitStatus {
+    let mut mise_command = Command::new("mise");
+    mise_command
+        .arg("exec")
+        .arg("--")
+        .arg("pnpm")
+        .args(args)
+        .current_dir(web_dir);
+
+    match mise_command.status() {
+        Ok(status) => status,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Command::new("pnpm")
+                .args(args)
+                .current_dir(web_dir)
+                .status()
+                .expect(error_message)
+        }
+        Err(error) => panic!("{error_message}: {error}"),
     }
 }

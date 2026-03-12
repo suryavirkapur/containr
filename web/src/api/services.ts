@@ -3,10 +3,14 @@ import type { paths } from "./schema";
 
 export type Service = components["schemas"]["InventoryServiceResponse"];
 export type ServiceDeployment = components["schemas"]["DeploymentResponse"];
+export type ServiceSettings = components["schemas"]["ServiceSettingsResponse"];
+export type HttpRequestLog = components["schemas"]["HttpRequestLogResponse"];
 export type ServiceAction = "start" | "stop" | "restart";
 
 type CreateServiceBody =
 	paths["/api/services"]["post"]["requestBody"]["content"]["application/json"];
+type UpdateServiceBody =
+	paths["/api/services/{id}"]["patch"]["requestBody"]["content"]["application/json"];
 type DeploymentTriggerBody =
 	paths["/api/services/{id}/deployments"]["post"]["requestBody"]["content"]["application/json"];
 type DeploymentRollbackBody =
@@ -57,6 +61,40 @@ export const getService = async (id: string): Promise<Service> => {
 	return data;
 };
 
+export const getServiceSettings = async (id: string): Promise<ServiceSettings> => {
+	const { data, error } = await api.GET("/api/services/{id}/settings", {
+		params: { path: { id } },
+	});
+	if (error) {
+		throw error;
+	}
+
+	if (!data) {
+		throw new Error("missing service settings response");
+	}
+
+	return data;
+};
+
+export const updateService = async (
+	id: string,
+	body: UpdateServiceBody,
+): Promise<Service> => {
+	const { data, error } = await api.PATCH("/api/services/{id}", {
+		params: { path: { id } },
+		body,
+	});
+	if (error) {
+		throw error;
+	}
+
+	if (!data) {
+		throw new Error("missing service response");
+	}
+
+	return data;
+};
+
 export const getServiceLogs = async (id: string, tail = 200): Promise<string> => {
 	const { data, error } = await api.GET("/api/services/{id}/logs", {
 		params: {
@@ -69,6 +107,24 @@ export const getServiceLogs = async (id: string, tail = 200): Promise<string> =>
 	}
 
 	return data?.logs ?? "";
+};
+
+export const getServiceHttpLogs = async (
+	id: string,
+	limit = 100,
+	offset = 0,
+): Promise<HttpRequestLog[]> => {
+	const { data, error } = await api.GET("/api/services/{id}/http-logs", {
+		params: {
+			path: { id },
+			query: { limit, offset },
+		},
+	});
+	if (error) {
+		throw error;
+	}
+
+	return data ?? [];
 };
 
 export const runServiceAction = async (

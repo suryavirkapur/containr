@@ -2,25 +2,32 @@
 
 use axum::{
     body::Bytes,
-    extract::State,
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
-use serde::Serialize;
+use globset::{Glob, GlobSetBuilder};
+use serde::{Deserialize, Serialize};
 
 use crate::deployment_source::resolve_remote_deployment_source;
-use crate::github::{
-    extract_branch, verify_webhook_signature, DeploymentJob, PushEvent,
-};
+use crate::github::{extract_branch, verify_webhook_signature, PushEvent};
 use crate::handlers::auth::ErrorResponse;
+use crate::handlers::deployments::{
+    create_and_queue_deployment, DeploymentTriggerRequest,
+};
 use crate::state::AppState;
-use containr_common::models::Deployment;
+use containr_common::models::RolloutStrategy;
 
 /// webhook response
 #[derive(Debug, Serialize)]
 pub struct WebhookResponse {
     pub message: String,
     pub deployment_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeployWebhookQuery {
+    pub token: String,
 }
 
 /// handles github push webhooks
@@ -106,36 +113,45 @@ pub async fn github_webhook(
 
     match app {
         Some(app) => {
+            if !app.auto_deploy_enabled {
+                return Ok(Json(WebhookResponse {
+                    message: "auto-deploy is disabled".to_string(),
+                    deployment_id: None,
+                }));
+            }
+
+            if !should_trigger_for_watch_paths(
+                &push_event,
+                &app.auto_deploy_watch_paths,
+            )
+            .map_err(internal_error)?
+            {
+                return Ok(Json(WebhookResponse {
+                    message: "ignored push: no watched paths changed"
+                        .to_string(),
+                    deployment_id: None,
+                }));
+            }
+
             let source =
                 resolve_remote_deployment_source(&state, app.owner_id, &app)
                     .await?;
-
-            // create deployment
-            let mut deployment =
-                Deployment::new(app.id, push_event.after.clone());
-            deployment.commit_message =
-                push_event.head_commit.map(|c| c.message);
-            state
-                .db
-                .save_deployment(&deployment)
-                .map_err(internal_error)?;
-
-            // queue deployment job
-            let job = DeploymentJob {
-                deployment_id: deployment.id,
-                app_id: app.id,
-                commit_sha: push_event.after,
-                commit_message: deployment.commit_message.clone(),
-                branch: app.branch.clone(),
-                source,
-                rollout_strategy: app.rollout_strategy,
-                rollback_from_deployment_id: None,
-            };
-
-            state.deployment_tx.send(job).await.map_err(|e| {
-                let _ = state.db.delete_deployment(deployment.id);
-                internal_error(format!("failed to queue deployment: {}", e))
-            })?;
+            let deployment = create_and_queue_deployment(
+                &state,
+                app.owner_id,
+                &app,
+                push_event.after.clone(),
+                push_event
+                    .head_commit
+                    .as_ref()
+                    .map(|commit| commit.message.clone()),
+                app.branch.clone(),
+                app.rollout_strategy,
+                None,
+                Some(source),
+                app.auto_deploy_cleanup_stale_deployments,
+            )
+            .await?;
 
             tracing::info!(
                 app_id = %app.id,
@@ -153,6 +169,93 @@ pub async fn github_webhook(
             deployment_id: None,
         })),
     }
+}
+
+/// handles deploy webhooks for CI systems
+pub async fn deploy_webhook(
+    State(state): State<AppState>,
+    Path(service_id): Path<uuid::Uuid>,
+    Query(query): Query<DeployWebhookQuery>,
+    body: Option<Json<DeploymentTriggerRequest>>,
+) -> Result<Json<WebhookResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let service = state
+        .db
+        .get_service(service_id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "service not found".to_string(),
+                }),
+            )
+        })?;
+    let mut app = state
+        .db
+        .get_app(service.app_id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "service group not found".to_string(),
+                }),
+            )
+        })?;
+
+    let token_missing = app
+        .deploy_webhook_token
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default()
+        .is_empty();
+    let expected_token = app.ensure_deploy_webhook_token().to_string();
+    if token_missing {
+        state.db.save_app(&app).map_err(internal_error)?;
+    }
+
+    if query.token != expected_token {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "invalid deploy webhook token".to_string(),
+            }),
+        ));
+    }
+
+    let trigger = body.map(|value| value.0);
+    let deployment = create_and_queue_deployment(
+        &state,
+        app.owner_id,
+        &app,
+        trigger
+            .as_ref()
+            .and_then(|value| value.commit_sha.clone())
+            .unwrap_or_else(|| "webhook".to_string()),
+        trigger
+            .as_ref()
+            .and_then(|value| value.commit_message.clone())
+            .or_else(|| Some("deploy webhook".to_string())),
+        trigger
+            .as_ref()
+            .and_then(|value| value.branch.clone())
+            .unwrap_or_else(|| app.branch.clone()),
+        resolve_rollout_strategy_override(
+            trigger
+                .as_ref()
+                .and_then(|value| value.rollout_strategy.as_deref()),
+            app.rollout_strategy,
+        )?,
+        None,
+        None,
+        app.auto_deploy_cleanup_stale_deployments,
+    )
+    .await?;
+
+    Ok(Json(WebhookResponse {
+        message: "deployment triggered".to_string(),
+        deployment_id: Some(deployment.id.to_string()),
+    }))
 }
 
 /// finds an app by repository url and branch
@@ -182,6 +285,55 @@ fn internal_error<E: std::fmt::Display>(
             error: "internal server error".to_string(),
         }),
     )
+}
+
+fn should_trigger_for_watch_paths(
+    push_event: &PushEvent,
+    watch_paths: &[String],
+) -> anyhow::Result<bool> {
+    if watch_paths.is_empty() {
+        return Ok(true);
+    }
+
+    let changed_paths = push_event.changed_paths();
+    if changed_paths.is_empty() {
+        return Ok(true);
+    }
+
+    let mut builder = GlobSetBuilder::new();
+    for watch_path in watch_paths {
+        builder.add(Glob::new(watch_path.trim())?);
+    }
+    let matcher = builder.build()?;
+
+    Ok(changed_paths
+        .iter()
+        .any(|path| matcher.is_match(path.as_str())))
+}
+
+fn resolve_rollout_strategy_override(
+    value: Option<&str>,
+    default_value: RolloutStrategy,
+) -> Result<RolloutStrategy, (StatusCode, Json<ErrorResponse>)> {
+    match value {
+        None => Ok(default_value),
+        Some(value) => match value.trim().to_ascii_lowercase().as_str() {
+            "stop_first" | "stop-first" | "stopfirst" => {
+                Ok(RolloutStrategy::StopFirst)
+            }
+            "start_first" | "start-first" | "startfirst" => {
+                Ok(RolloutStrategy::StartFirst)
+            }
+            _ => Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error:
+                        "invalid rollout strategy. use stop_first or start_first"
+                            .to_string(),
+                }),
+            )),
+        },
+    }
 }
 
 #[cfg(test)]
