@@ -384,6 +384,136 @@ export interface paths {
         delete: operations["delete_service"];
         options?: never;
         head?: never;
+        patch: operations["update_service"];
+        trace?: never;
+    };
+    "/api/services/{id}/actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["run_service_action"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/certificate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get certificate status for a service */
+        get: operations["get_certificate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/certificate/reissue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trigger certificate reissue for a service */
+        post: operations["reissue_certificate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_service_deployments"];
+        put?: never;
+        post: operations["trigger_service_deployment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/deployments/{deployment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_service_deployment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/deployments/{deployment_id}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_service_deployment_logs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/deployments/{deployment_id}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rollback_service_deployment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/http-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_service_http_logs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
         patch?: never;
         trace?: never;
     };
@@ -395,6 +525,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_service_logs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_service_settings"];
         put?: never;
         post?: never;
         delete?: never;
@@ -472,86 +618,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/services/{id}/actions/{action}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["run_service_action"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/services/{id}/deployments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_service_deployments"];
-        put?: never;
-        post: operations["trigger_service_deployment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/services/{id}/deployments/{deployment_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_service_deployment"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/services/{id}/deployments/{deployment_id}/rollback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["rollback_service_deployment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/services/{id}/deployments/{deployment_id}/logs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_service_deployment_logs"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -563,50 +629,9 @@ export interface components {
             app_name: string;
             html_url: string;
         };
-        /** @description app container metrics response */
-        AppMetricsResponse: {
-            container: string;
-            /** Format: double */
-            cpu_percent: number;
-            /** Format: int64 */
-            mem_limit_bytes: number;
-            /** Format: int64 */
-            mem_usage_bytes: number;
-        };
         /** @description repos response */
         AppReposResponse: {
             repos: components["schemas"]["RepoInfo"][];
-        };
-        /** @description app response */
-        AppResponse: {
-            /** @description branch being deployed */
-            branch: string;
-            /** @description creation timestamp */
-            created_at: string;
-            /** @description custom domain */
-            domain?: string | null;
-            /** @description custom domains */
-            domains: string[];
-            /** @description environment variables */
-            env_vars: components["schemas"]["EnvVarResponse"][];
-            /** @description repository url */
-            github_url: string;
-            /**
-             * Format: uuid
-             * @description unique app id
-             */
-            id: string;
-            /** @description app name */
-            name: string;
-            /**
-             * Format: int32
-             * @description app port (deprecated)
-             */
-            port: number;
-            /** @description rollout strategy */
-            rollout_strategy: string;
-            /** @description container services */
-            services: components["schemas"]["ServiceResponse"][];
         };
         /** @description auth response with token */
         AuthResponse: {
@@ -615,18 +640,18 @@ export interface components {
             /** @description authenticated user info */
             user: components["schemas"]["UserResponse"];
         };
-        /** @description backup info */
-        BackupInfo: {
-            created_at: string;
-            filename: string;
-            /** Format: int64 */
-            size_bytes: number;
+        AutoDeploySettingsRequest: {
+            cleanup_stale_deployments?: boolean | null;
+            enabled?: boolean | null;
+            regenerate_webhook_token?: boolean | null;
+            watch_paths?: string[] | null;
         };
-        /** @description base backup response */
-        BaseBackupResponse: {
-            backup_path: string;
-            created_at: string;
-            label: string;
+        AutoDeploySettingsResponse: {
+            cleanup_stale_deployments: boolean;
+            enabled: boolean;
+            watch_paths: string[];
+            webhook_path: string;
+            webhook_token: string;
         };
         /** @description per-bucket s3 connection details */
         BucketConnectionResponse: {
@@ -665,16 +690,6 @@ export interface components {
             issued_at?: string | null;
             status: string;
         };
-        /** @description pitr configuration request */
-        ConfigurePitrRequest: {
-            enabled: boolean;
-        };
-        /** @description proxy configuration request */
-        ConfigureProxyRequest: {
-            enabled: boolean;
-            /** Format: int32 */
-            external_port?: number | null;
-        };
         ContainerListItem: {
             id: string;
             name: string;
@@ -704,84 +719,10 @@ export interface components {
             started_at?: string | null;
             status: string;
         };
-        /** @description create app request */
-        CreateAppRequest: {
-            /** @description branch to deploy (defaults to main) */
-            branch?: string | null;
-            /** @description custom domain */
-            domain?: string | null;
-            /** @description custom domains */
-            domains?: string[] | null;
-            /** @description environment variables (shared across all services) */
-            env_vars?: components["schemas"]["EnvVarRequest"][] | null;
-            /** @description repository url */
-            github_url: string;
-            /** @description app name */
-            name: string;
-            /**
-             * Format: int32
-             * @description port for the app (deprecated, use services)
-             */
-            port?: number | null;
-            /** @description rollout strategy (stop_first or start_first) */
-            rollout_strategy?: string | null;
-            /** @description container services for multi-container apps */
-            services?: components["schemas"]["ServiceRequest"][] | null;
-        };
-        /** @description base backup request */
-        CreateBaseBackupRequest: {
-            label?: string | null;
-        };
         /** @description bucket creation request */
         CreateBucketRequest: {
             /** @description bucket name */
             name: string;
-        };
-        /** @description database creation request */
-        CreateDatabaseRequest: {
-            /**
-             * Format: double
-             * @description cpu limit (optional)
-             */
-            cpu_limit?: number | null;
-            /** @description database type */
-            db_type: string;
-            /** @description attach this service to a project group */
-            group_id?: string | null;
-            /**
-             * Format: int64
-             * @description memory limit in mb (optional)
-             */
-            memory_limit_mb?: number | null;
-            /** @description database name */
-            name: string;
-            /** @description version (optional, uses default) */
-            version?: string | null;
-        };
-        /** @description queue creation request */
-        CreateQueueRequest: {
-            /**
-             * Format: double
-             * @description cpu limit (optional)
-             */
-            cpu_limit?: number | null;
-            /** @description attach this service to a project group */
-            group_id?: string | null;
-            /**
-             * Format: int64
-             * @description memory limit in mb (optional)
-             */
-            memory_limit_mb?: number | null;
-            /** @description queue name */
-            name: string;
-            /** @description queue type */
-            queue_type: string;
-            /** @description version (optional, uses default) */
-            version?: string | null;
-        };
-        /** @description restore point request */
-        CreateRestorePointRequest: {
-            restore_point?: string | null;
         };
         CreateServiceRequest: {
             branch?: string | null;
@@ -811,43 +752,6 @@ export interface components {
             /** @description status message */
             message: string;
         };
-        /** @description database response */
-        DatabaseResponse: {
-            connection_string: string;
-            /** Format: double */
-            cpu_limit: number;
-            created_at: string;
-            database_name: string;
-            db_type: string;
-            /** Format: int32 */
-            external_port?: number | null;
-            group_id?: string | null;
-            id: string;
-            internal_host: string;
-            /** Format: int64 */
-            memory_limit_mb: number;
-            name: string;
-            network_name: string;
-            password: string;
-            pitr_enabled: boolean;
-            pitr_last_base_backup_at?: string | null;
-            pitr_last_base_backup_label?: string | null;
-            /** Format: int32 */
-            port: number;
-            proxy_connection_string?: string | null;
-            proxy_enabled: boolean;
-            /** Format: int32 */
-            proxy_external_port?: number | null;
-            /** Format: int32 */
-            proxy_port?: number | null;
-            public_connection_string?: string | null;
-            public_ip?: string | null;
-            public_proxy_connection_string?: string | null;
-            service_type: string;
-            status: string;
-            username: string;
-            version: string;
-        };
         /** @description deployment response */
         DeploymentResponse: {
             /** Format: uuid */
@@ -873,22 +777,14 @@ export interface components {
             /** @description rollout strategy override (stop_first or start_first) */
             rollout_strategy?: string | null;
         };
-        /** @description env var in request */
-        EnvVarRequest: {
-            /** @description variable key */
+        EditableEnvVarResponse: {
             key: string;
-            /** @description mark as secret (hides value) */
-            secret?: boolean | null;
-            /** @description variable value */
+            secret: boolean;
             value: string;
         };
-        /** @description env var in response (hides secret values) */
-        EnvVarResponse: {
-            /** @description variable key */
+        EnvVarRequest: {
             key: string;
-            /** @description whether value is secret */
-            secret: boolean;
-            /** @description variable value (masked if secret) */
+            secret?: boolean | null;
             value: string;
         };
         /** @description error response */
@@ -900,30 +796,6 @@ export interface components {
             expires_at: string;
             token: string;
         };
-        /** @description export request */
-        ExportRequest: {
-            /** Format: uuid */
-            bucket_id?: string | null;
-            object_key_prefix?: string | null;
-        };
-        /** @description export response */
-        ExportResponse: {
-            backup_path: string;
-            bucket_name?: string | null;
-            object_key?: string | null;
-        };
-        /** @description queue expose request */
-        ExposeQueueRequest: {
-            enabled: boolean;
-            /** Format: int32 */
-            external_port?: number | null;
-        };
-        /** @description expose request */
-        ExposeRequest: {
-            enabled: boolean;
-            /** Format: int32 */
-            external_port?: number | null;
-        };
         /** @description github app status response */
         GithubAppStatusResponse: {
             app?: null | components["schemas"]["AppDetails"];
@@ -932,44 +804,22 @@ export interface components {
             /** @description list of installations */
             installations: components["schemas"]["InstallationDetails"][];
         };
-        /** @description health check configuration request */
         HealthCheckRequest: {
-            /**
-             * Format: int32
-             * @description interval in seconds
-             */
+            /** Format: int32 */
             interval_secs?: number | null;
-            /** @description http path to check */
             path: string;
-            /**
-             * Format: int32
-             * @description retries before unhealthy
-             */
+            /** Format: int32 */
             retries?: number | null;
-            /**
-             * Format: int32
-             * @description timeout in seconds
-             */
+            /** Format: int32 */
             timeout_secs?: number | null;
         };
-        /** @description health check configuration response */
         HealthCheckResponse: {
-            /**
-             * Format: int32
-             * @description interval in seconds
-             */
+            /** Format: int32 */
             interval_secs: number;
-            /** @description http path to check */
             path: string;
-            /**
-             * Format: int32
-             * @description retries before unhealthy
-             */
+            /** Format: int32 */
             retries: number;
-            /**
-             * Format: int32
-             * @description timeout in seconds
-             */
+            /** Format: int32 */
             timeout_secs: number;
         };
         /** @description health check response */
@@ -978,6 +828,16 @@ export interface components {
             status: string;
             /** @description api version string */
             version: string;
+        };
+        HttpRequestLogResponse: {
+            created_at: string;
+            domain: string;
+            method: string;
+            path: string;
+            protocol: string;
+            /** Format: int32 */
+            status: number;
+            upstream: string;
         };
         /** @description installation details */
         InstallationDetails: {
@@ -1033,47 +893,6 @@ export interface components {
             /** @description user password */
             password: string;
         };
-        /** @description logs response */
-        LogsResponse: {
-            logs: string;
-        };
-        /** @description queue response */
-        QueueResponse: {
-            connection_string: string;
-            /** Format: double */
-            cpu_limit: number;
-            created_at: string;
-            /** Format: int32 */
-            external_port?: number | null;
-            group_id?: string | null;
-            id: string;
-            internal_host: string;
-            /** Format: int64 */
-            memory_limit_mb: number;
-            name: string;
-            network_name: string;
-            password: string;
-            /** Format: int32 */
-            port: number;
-            public_connection_string?: string | null;
-            public_ip?: string | null;
-            queue_type: string;
-            service_type: string;
-            status: string;
-            username: string;
-            version: string;
-        };
-        /** @description recover request */
-        RecoverDatabaseRequest: {
-            restore_point?: string | null;
-            target_time?: string | null;
-        };
-        /** @description recover response */
-        RecoverDatabaseResponse: {
-            base_backup_label: string;
-            recovered: boolean;
-            recovery_target: string;
-        };
         /** @description register request body */
         RegisterRequest: {
             /** @description user email address */
@@ -1103,12 +922,6 @@ export interface components {
             name: string;
             private: boolean;
         };
-        /** @description restore point response */
-        RestorePointResponse: {
-            created_at: string;
-            restore_point: string;
-            wal_lsn: string;
-        };
         /** @description rollback request */
         RollbackRequest: {
             /** @description rollout strategy override (stop_first or start_first) */
@@ -1117,175 +930,90 @@ export interface components {
         ServiceLogsResponse: {
             logs: string;
         };
-        /** @description persistent mount configuration request */
         ServiceMountRequest: {
-            /** @description unique mount name within the service */
             name: string;
-            /** @description whether the mount is read-only */
             read_only?: boolean | null;
-            /** @description absolute container path where the mount is attached */
             target: string;
         };
-        /** @description persistent mount configuration response */
-        ServiceMountResponse: {
-            /** @description unique mount name within the service */
-            name: string;
-            /** @description whether the mount is read-only */
-            read_only: boolean;
-            /** @description absolute container path where the mount is attached */
-            target: string;
-        };
-        /** @description service mount restore response */
-        ServiceMountRestoreResponse: {
-            /** @description restored mount names */
-            mounts: string[];
-            /** @description restore timestamp */
-            restored_at: string;
-            /** @description service name */
-            service: string;
-        };
-        /** @description private registry credentials request */
         ServiceRegistryAuthRequest: {
-            /** @description registry password */
             password?: string | null;
-            /** @description optional registry server override */
             server?: string | null;
-            /** @description registry username */
             username?: string | null;
         };
-        /** @description private registry credentials response */
         ServiceRegistryAuthResponse: {
-            /** @description optional registry server override */
+            password: string;
             server?: string | null;
-            /** @description registry username */
             username: string;
         };
-        /** @description service request for multi-container apps */
         ServiceRequest: {
-            /** @description additional container ports */
             additional_ports?: number[] | null;
-            /** @description docker build arguments */
             build_args?: components["schemas"]["EnvVarRequest"][] | null;
-            /** @description relative repo path used as the docker build context */
             build_context?: string | null;
-            /** @description docker build target stage */
             build_target?: string | null;
-            /** @description command arguments override */
             command?: string[] | null;
-            /**
-             * Format: double
-             * @description cpu limit (1.0 = 1 core)
-             */
+            /** Format: double */
             cpu_limit?: number | null;
-            /** @description service names this depends on */
             depends_on?: string[] | null;
-            /** @description relative path to the dockerfile within the repo */
             dockerfile_path?: string | null;
-            /** @description service-specific custom domain */
             domain?: string | null;
-            /** @description service-specific custom domains */
             domains?: string[] | null;
-            /** @description entrypoint override */
             entrypoint?: string[] | null;
-            /** @description service-specific environment variables */
             env_vars?: components["schemas"]["EnvVarRequest"][] | null;
-            /** @description whether this service receives public http traffic */
             expose_http?: boolean | null;
             health_check?: null | components["schemas"]["HealthCheckRequest"];
-            /** @description docker image (empty = use built image) */
             image?: string | null;
-            /**
-             * Format: int64
-             * @description memory limit in mb
-             */
+            /** Format: int64 */
             memory_limit_mb?: number | null;
-            /** @description persistent mounts attached to the service */
             mounts?: components["schemas"]["ServiceMountRequest"][] | null;
-            /** @description service name (e.g. "web", "api", "db") */
             name: string;
-            /**
-             * Format: int32
-             * @description container port
-             */
+            /** Format: int32 */
             port: number;
             registry_auth?: null | components["schemas"]["ServiceRegistryAuthRequest"];
-            /**
-             * Format: int32
-             * @description number of replicas
-             */
+            /** Format: int32 */
             replicas?: number | null;
-            /** @description restart policy */
             restart_policy?: string | null;
-            /** @description cron expression used for scheduled jobs */
             schedule?: string | null;
-            /** @description render-style service category */
             service_type?: string | null;
-            /** @description working directory override */
             working_dir?: string | null;
         };
-        /** @description service response for multi-container apps */
-        ServiceResponse: {
-            /** @description additional container ports */
+        ServiceSettingsResponse: {
+            auto_deploy: components["schemas"]["AutoDeploySettingsResponse"];
+            branch: string;
+            env_vars: components["schemas"]["EditableEnvVarResponse"][];
+            github_url: string;
+            resource_kind: string;
+            rollout_strategy: string;
+            service: components["schemas"]["ServiceSettingsServiceResponse"];
+            service_id: string;
+        };
+        ServiceSettingsServiceResponse: {
             additional_ports: number[];
-            /** @description docker build arguments */
-            build_args: components["schemas"]["EnvVarResponse"][];
-            /** @description relative repo path used as the docker build context */
+            build_args: components["schemas"]["EditableEnvVarResponse"][];
             build_context?: string | null;
-            /** @description docker build target stage */
             build_target?: string | null;
-            /** @description command arguments override */
-            command: string[];
-            /**
-             * Format: double
-             * @description cpu limit
-             */
+            command?: string[] | null;
+            /** Format: double */
             cpu_limit?: number | null;
-            /** @description dependencies */
             depends_on: string[];
-            /** @description relative path to the dockerfile within the repo */
             dockerfile_path?: string | null;
-            /** @description primary custom domain */
-            domain?: string | null;
-            /** @description service-specific custom domains */
             domains: string[];
-            /** @description entrypoint override */
-            entrypoint: string[];
-            /** @description service-specific environment variables */
-            env_vars: components["schemas"]["EnvVarResponse"][];
-            /** @description whether this service receives public http traffic */
+            entrypoint?: string[] | null;
+            env_vars: components["schemas"]["EditableEnvVarResponse"][];
             expose_http: boolean;
             health_check?: null | components["schemas"]["HealthCheckResponse"];
-            /** @description service id */
-            id: string;
-            /** @description docker image */
-            image: string;
-            /**
-             * Format: int64
-             * @description memory limit in mb
-             */
+            image?: string | null;
+            /** Format: int64 */
             memory_limit_mb?: number | null;
-            /** @description persistent mounts */
-            mounts: components["schemas"]["ServiceMountResponse"][];
-            /** @description service name */
+            mounts: components["schemas"]["ServiceMountRequest"][];
             name: string;
-            /**
-             * Format: int32
-             * @description container port
-             */
+            /** Format: int32 */
             port: number;
             registry_auth?: null | components["schemas"]["ServiceRegistryAuthResponse"];
-            /**
-             * Format: int32
-             * @description number of replicas
-             */
+            /** Format: int32 */
             replicas: number;
-            /** @description restart policy */
             restart_policy: string;
-            /** @description cron expression used for scheduled jobs */
             schedule?: string | null;
-            /** @description render-style service category */
             service_type: string;
-            /** @description working directory override */
             working_dir?: string | null;
         };
         /** @description settings response - only exposes safe fields */
@@ -1352,29 +1080,13 @@ export interface components {
             /** Format: int64 */
             uptime_seconds: number;
         };
-        /** @description update app request */
-        UpdateAppRequest: {
-            /** @description new branch */
+        UpdateServiceRequest: {
+            auto_deploy?: null | components["schemas"]["AutoDeploySettingsRequest"];
             branch?: string | null;
-            /** @description new domain */
-            domain?: string | null;
-            /** @description new domains */
-            domains?: string[] | null;
-            /** @description updated env vars */
             env_vars?: components["schemas"]["EnvVarRequest"][] | null;
-            /** @description new repository url */
             github_url?: string | null;
-            /** @description new app name */
-            name?: string | null;
-            /**
-             * Format: int32
-             * @description new port (deprecated, use services)
-             */
-            port?: number | null;
-            /** @description rollout strategy (stop_first or start_first) */
             rollout_strategy?: string | null;
-            /** @description updated services */
-            services?: components["schemas"]["ServiceRequest"][] | null;
+            service?: null | components["schemas"]["ServiceRequest"];
         };
         /** @description update settings request */
         UpdateSettingsRequest: {
@@ -2541,6 +2253,556 @@ export interface operations {
             };
         };
     };
+    update_service: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateServiceRequest"];
+            };
+        };
+        responses: {
+            /** @description service updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryServiceResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    run_service_action: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+                /** @description service action: start | stop | restart */
+                action: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description service action completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryServiceResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_certificate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description certificate status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CertificateResponse"][];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reissue_certificate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReissueRequest"];
+            };
+        };
+        responses: {
+            /** @description certificate reissue initiated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReissueResponse"];
+                };
+            };
+            /** @description bad request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_service_deployments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description list of service deployments */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentResponse"][];
+                };
+            };
+            /** @description deployments not supported for this service */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    trigger_service_deployment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeploymentTriggerRequest"];
+            };
+        };
+        responses: {
+            /** @description deployment triggered */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentResponse"];
+                };
+            };
+            /** @description deployments not supported for this service */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_service_deployment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+                /** @description deployment id */
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description service deployment details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentResponse"];
+                };
+            };
+            /** @description deployments not supported for this service */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description deployment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_service_deployment_logs: {
+        parameters: {
+            query?: {
+                /** @description lines limit */
+                limit?: number;
+                /** @description lines offset */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+                /** @description deployment id */
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description deployment logs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+            /** @description deployments not supported for this service */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description deployment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rollback_service_deployment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+                /** @description deployment id to rollback to */
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RollbackRequest"];
+            };
+        };
+        responses: {
+            /** @description rollback deployment queued */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description deployment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_service_http_logs: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description http request logs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HttpRequestLogResponse"][];
+                };
+            };
+            /** @description http request logs not supported for this service */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     get_service_logs: {
         parameters: {
             query?: {
@@ -2562,6 +2824,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ServiceLogsResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_service_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description service settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceSettingsResponse"];
+                };
+            };
+            /** @description settings not supported for this service */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description unauthorized */
@@ -2765,327 +3077,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
-                };
-            };
-        };
-    };
-    run_service_action: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description service id */
-                id: string;
-                /** @description service action: start | stop | restart */
-                action: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description service action completed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InventoryServiceResponse"];
-                };
-            };
-            /** @description invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description service not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    list_service_deployments: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description service id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description list of service deployments */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DeploymentResponse"][];
-                };
-            };
-            /** @description deployments not supported for this service */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description service not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    trigger_service_deployment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description service id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DeploymentTriggerRequest"];
-            };
-        };
-        responses: {
-            /** @description deployment triggered */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DeploymentResponse"];
-                };
-            };
-            /** @description deployments not supported for this service */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description service not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    get_service_deployment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description service id */
-                id: string;
-                /** @description deployment id */
-                deployment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description service deployment details */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DeploymentResponse"];
-                };
-            };
-            /** @description deployments not supported for this service */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description deployment not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    rollback_service_deployment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description service id */
-                id: string;
-                /** @description deployment id to rollback to */
-                deployment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RollbackRequest"];
-            };
-        };
-        responses: {
-            /** @description rollback deployment queued */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DeploymentResponse"];
-                };
-            };
-            /** @description invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description deployment not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    get_service_deployment_logs: {
-        parameters: {
-            query?: {
-                /** @description lines limit */
-                limit?: number;
-                /** @description lines offset */
-                offset?: number;
-            };
-            header?: never;
-            path: {
-                /** @description service id */
-                id: string;
-                /** @description deployment id */
-                deployment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description deployment logs */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": string[];
-                };
-            };
-            /** @description deployments not supported for this service */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description deployment not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

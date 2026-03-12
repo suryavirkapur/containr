@@ -62,6 +62,7 @@ pub async fn run_server(
             .allow_methods([
                 Method::GET,
                 Method::POST,
+                Method::PATCH,
                 Method::PUT,
                 Method::DELETE,
                 Method::OPTIONS,
@@ -80,6 +81,7 @@ pub async fn run_server(
             .allow_methods([
                 Method::GET,
                 Method::POST,
+                Method::PATCH,
                 Method::PUT,
                 Method::DELETE,
                 Method::OPTIONS,
@@ -201,6 +203,7 @@ pub async fn run_server(
         .route("/api/buckets/{id}", delete(storage::delete_bucket))
         // webhooks
         .route("/webhooks/github", post(webhooks::github_webhook))
+        .route("/webhooks/deploy/{id}", post(webhooks::deploy_webhook))
         // static files fallback (spa)
         .fallback(crate::static_files::serve_static)
         // middleware

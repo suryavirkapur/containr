@@ -160,9 +160,13 @@ enum DatabaseCommand {
 
 #[derive(Subcommand, Debug)]
 enum ServiceCommand {
+    Create(ServiceCreateArgs),
     List(ServiceListArgs),
     Get { id: String },
+    Settings { id: String },
+    Update(ServiceUpdateArgs),
     Logs(ServiceLogsArgs),
+    HttpLogs(ServiceHttpLogsArgs),
     Start { id: String },
     Stop { id: String },
     Restart { id: String },
@@ -176,11 +180,35 @@ struct ServiceListArgs {
 }
 
 #[derive(Args, Debug)]
+struct ServiceCreateArgs {
+    #[arg(long)]
+    file: PathBuf,
+}
+
+#[derive(Args, Debug)]
 struct ServiceLogsArgs {
     #[arg(long)]
     id: String,
     #[arg(long, default_value_t = 200)]
     tail: usize,
+}
+
+#[derive(Args, Debug)]
+struct ServiceUpdateArgs {
+    #[arg(long)]
+    id: String,
+    #[arg(long)]
+    file: PathBuf,
+}
+
+#[derive(Args, Debug)]
+struct ServiceHttpLogsArgs {
+    #[arg(long)]
+    id: String,
+    #[arg(long, default_value_t = 100)]
+    limit: usize,
+    #[arg(long, default_value_t = 0)]
+    offset: usize,
 }
 
 #[derive(Args, Debug)]
@@ -721,6 +749,9 @@ async fn run_service_command(
     command: ServiceCommand,
 ) -> Result<()> {
     match command {
+        ServiceCommand::Create(args) => {
+            run_service_create(config_path, selected_instance, args).await
+        }
         ServiceCommand::List(args) => {
             run_resource_list(
                 config_path,
@@ -739,6 +770,18 @@ async fn run_service_command(
             )
             .await
         }
+        ServiceCommand::Settings { id } => {
+            run_get_json(
+                config_path,
+                selected_instance,
+                &format!("/api/services/{}/settings", id),
+                true,
+            )
+            .await
+        }
+        ServiceCommand::Update(args) => {
+            run_service_update(config_path, selected_instance, args).await
+        }
         ServiceCommand::Logs(args) => {
             run_resource_logs(
                 config_path,
@@ -749,35 +792,29 @@ async fn run_service_command(
             )
             .await
         }
-        ServiceCommand::Start { id } => {
-            run_resource_action(
+        ServiceCommand::HttpLogs(args) => {
+            run_get_json(
                 config_path,
                 selected_instance,
-                "/api/services",
-                &id,
-                "start",
+                &format!(
+                    "/api/services/{}/http-logs?limit={}&offset={}",
+                    args.id, args.limit, args.offset
+                ),
+                true,
             )
             .await
+        }
+        ServiceCommand::Start { id } => {
+            run_service_action(config_path, selected_instance, &id, "start")
+                .await
         }
         ServiceCommand::Stop { id } => {
-            run_resource_action(
-                config_path,
-                selected_instance,
-                "/api/services",
-                &id,
-                "stop",
-            )
-            .await
+            run_service_action(config_path, selected_instance, &id, "stop")
+                .await
         }
         ServiceCommand::Restart { id } => {
-            run_resource_action(
-                config_path,
-                selected_instance,
-                "/api/services",
-                &id,
-                "restart",
-            )
-            .await
+            run_service_action(config_path, selected_instance, &id, "restart")
+                .await
         }
         ServiceCommand::Delete { id } => {
             run_resource_delete(
@@ -1096,6 +1133,20 @@ async fn run_resource_action(
     run_post_empty(config_path, selected_instance, &path).await
 }
 
+async fn run_service_action(
+    config_path: Option<&Path>,
+    selected_instance: Option<&str>,
+    id: &str,
+    action: &str,
+) -> Result<()> {
+    run_post_empty(
+        config_path,
+        selected_instance,
+        &format!("/api/services/{}/actions/{}", id, action),
+    )
+    .await
+}
+
 async fn run_resource_delete(
     config_path: Option<&Path>,
     selected_instance: Option<&str>,
@@ -1153,6 +1204,17 @@ async fn run_post_json(
 ) -> Result<()> {
     let client = load_client(config_path, selected_instance, true)?;
     let response = client.post_json(path, body).await?;
+    print_json(&response)
+}
+
+async fn run_patch_json(
+    config_path: Option<&Path>,
+    selected_instance: Option<&str>,
+    path: &str,
+    body: &Value,
+) -> Result<()> {
+    let client = load_client(config_path, selected_instance, true)?;
+    let response = client.patch_json(path, body).await?;
     print_json(&response)
 }
 
@@ -1291,6 +1353,30 @@ async fn run_project_rollback(
     .await
 }
 
+async fn run_service_update(
+    config_path: Option<&Path>,
+    selected_instance: Option<&str>,
+    args: ServiceUpdateArgs,
+) -> Result<()> {
+    let body = load_structured_value(&args.file)?;
+    run_patch_json(
+        config_path,
+        selected_instance,
+        &format!("/api/services/{}", args.id),
+        &body,
+    )
+    .await
+}
+
+async fn run_service_create(
+    config_path: Option<&Path>,
+    selected_instance: Option<&str>,
+    args: ServiceCreateArgs,
+) -> Result<()> {
+    let body = load_structured_value(&args.file)?;
+    run_post_json(config_path, selected_instance, "/api/services", &body).await
+}
+
 async fn run_container_logs(
     config_path: Option<&Path>,
     selected_instance: Option<&str>,
@@ -1314,6 +1400,35 @@ fn load_project_spec(path: &Path) -> Result<ProjectSpec> {
         .with_context(|| format!("failed to read {}", path.display()))?;
     toml::from_str(&content)
         .with_context(|| format!("failed to parse {}", path.display()))
+}
+
+fn load_structured_value(path: &Path) -> Result<Value> {
+    let content = fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+
+    if matches!(path.extension().and_then(|ext| ext.to_str()), Some("json")) {
+        return serde_json::from_str(&content)
+            .with_context(|| format!("failed to parse {}", path.display()));
+    }
+
+    if matches!(path.extension().and_then(|ext| ext.to_str()), Some("toml")) {
+        let value: toml::Value = toml::from_str(&content)
+            .with_context(|| format!("failed to parse {}", path.display()))?;
+        return serde_json::to_value(value)
+            .with_context(|| format!("failed to convert {}", path.display()));
+    }
+
+    serde_json::from_str(&content)
+        .or_else(|json_error| {
+            toml::from_str::<toml::Value>(&content)
+                .map_err(anyhow::Error::from)
+                .and_then(|value| serde_json::to_value(value).map_err(Into::into))
+                .with_context(|| format!("failed to parse {}", path.display()))
+                .map_err(|toml_error| anyhow!(
+                    "failed to parse {} as json ({json_error}) or toml ({toml_error})",
+                    path.display()
+                ))
+        })
 }
 
 fn build_project_body(spec: &ProjectSpec) -> Value {
