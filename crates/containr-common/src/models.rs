@@ -18,6 +18,18 @@ pub struct Project {
     pub domain: Option<String>,
     /// shared environment variables for all services
     pub env_vars: Vec<EnvVar>,
+    /// whether github push webhooks should trigger deployments automatically
+    #[serde(default = "default_true")]
+    pub auto_deploy_enabled: bool,
+    /// only deploy when changed files match these paths; empty means all paths
+    #[serde(default)]
+    pub auto_deploy_watch_paths: Vec<String>,
+    /// stop stale queued or in-progress deployments before queueing a new auto-deploy
+    #[serde(default = "default_true")]
+    pub auto_deploy_cleanup_stale_deployments: bool,
+    /// secret token used by the ci deploy webhook
+    #[serde(default)]
+    pub deploy_webhook_token: Option<String>,
     /// deprecated: use services instead. kept for backward compat
     #[serde(default = "default_port")]
     pub port: u16,
@@ -36,8 +48,16 @@ fn default_port() -> u16 {
     8080
 }
 
+fn default_true() -> bool {
+    true
+}
+
 fn default_branch_name() -> String {
     "main".to_string()
+}
+
+fn new_deploy_webhook_token() -> String {
+    Uuid::new_v4().simple().to_string()
 }
 
 pub type App = Project;
@@ -54,6 +74,10 @@ impl Project {
             domains: Vec::new(),
             domain: None,
             env_vars: Vec::new(),
+            auto_deploy_enabled: true,
+            auto_deploy_watch_paths: Vec::new(),
+            auto_deploy_cleanup_stale_deployments: true,
+            deploy_webhook_token: Some(new_deploy_webhook_token()),
             port: 8080,
             services: Vec::new(),
             rollout_strategy: RolloutStrategy::default(),
@@ -203,6 +227,23 @@ impl Project {
     /// returns the docker network name for this project group
     pub fn network_name(&self) -> String {
         format!("containr-{}", self.id)
+    }
+
+    /// ensures a deploy webhook token exists and returns it
+    pub fn ensure_deploy_webhook_token(&mut self) -> &str {
+        if self
+            .deploy_webhook_token
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default()
+            .is_empty()
+        {
+            self.deploy_webhook_token = Some(new_deploy_webhook_token());
+        }
+
+        self.deploy_webhook_token
+            .as_deref()
+            .expect("deploy webhook token must exist")
     }
 }
 
@@ -606,6 +647,45 @@ impl Deployment {
             logs: Vec::new(),
             started_at: None,
             finished_at: None,
+            created_at: Utc::now(),
+        }
+    }
+}
+
+/// request-level http access log for a public service
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HttpRequestLog {
+    pub service_id: Uuid,
+    pub app_id: Uuid,
+    pub domain: String,
+    pub method: String,
+    pub path: String,
+    pub status: u16,
+    pub upstream: String,
+    pub protocol: String,
+    pub created_at: DateTime<Utc>,
+}
+
+impl HttpRequestLog {
+    pub fn new(
+        service_id: Uuid,
+        app_id: Uuid,
+        domain: String,
+        method: String,
+        path: String,
+        status: u16,
+        upstream: String,
+        protocol: String,
+    ) -> Self {
+        Self {
+            service_id,
+            app_id,
+            domain,
+            method,
+            path,
+            status,
+            upstream,
+            protocol,
             created_at: Utc::now(),
         }
     }

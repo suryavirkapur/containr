@@ -123,6 +123,14 @@ impl DeploymentWorker {
                 if let Ok(Some(mut deployment)) =
                     self.db.get_deployment(job.deployment_id)
                 {
+                    if deployment.status == DeploymentStatus::Stopped {
+                        info!(
+                            app_id = %job.app_id,
+                            deployment_id = %job.deployment_id,
+                            "deployment already superseded; skipping failure mark"
+                        );
+                        continue;
+                    }
                     deployment.status = DeploymentStatus::Failed;
                     deployment.finished_at = Some(chrono::Utc::now());
                     let _ = self.db.append_deployment_log(
@@ -147,6 +155,12 @@ impl DeploymentWorker {
 
         if deployment.app_id != job.app_id {
             return Err(anyhow::anyhow!("deployment app mismatch"));
+        }
+        if !self.should_continue_deployment(
+            deployment.id,
+            "deployment skipped: superseded before execution",
+        )? {
+            return Ok(());
         }
 
         // get the current app config
@@ -196,6 +210,15 @@ impl DeploymentWorker {
                     Some(self.clone_repo(job).await?)
                 }
             };
+            if !self.should_continue_deployment(
+                deployment.id,
+                "deployment skipped: superseded after source checkout",
+            )? {
+                if let Some(repo_path) = repo_path {
+                    let _ = tokio::fs::remove_dir_all(repo_path).await;
+                }
+                return Ok(());
+            }
 
             self.update_status(&deployment, DeploymentStatus::Building)?;
             let service_images = self
@@ -210,11 +233,23 @@ impl DeploymentWorker {
             if let Some(repo_path) = repo_path {
                 let _ = tokio::fs::remove_dir_all(&repo_path).await;
             }
+            if !self.should_continue_deployment(
+                deployment.id,
+                "deployment skipped: superseded after image build",
+            )? {
+                return Ok(());
+            }
             service_images
         };
 
         // update status to starting
         self.update_status(&deployment, DeploymentStatus::Starting)?;
+        if !self.should_continue_deployment(
+            deployment.id,
+            "deployment skipped: superseded before rollout",
+        )? {
+            return Ok(());
+        }
 
         // prepare shared env vars (all services inherit these)
         let mut env_vars = HashMap::new();
@@ -1019,6 +1054,21 @@ impl DeploymentWorker {
         );
         self.db.save_deployment(&updated)?;
         Ok(())
+    }
+
+    fn should_continue_deployment(
+        &self,
+        deployment_id: Uuid,
+        message: &str,
+    ) -> anyhow::Result<bool> {
+        let Some(deployment) = self.db.get_deployment(deployment_id)? else {
+            return Ok(false);
+        };
+        if deployment.status == DeploymentStatus::Stopped {
+            let _ = self.db.append_deployment_log(deployment_id, message);
+            return Ok(false);
+        }
+        Ok(true)
     }
 
     async fn send_proxy_refresh(&self, app_id: Uuid) {

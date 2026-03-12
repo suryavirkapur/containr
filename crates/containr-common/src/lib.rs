@@ -15,6 +15,7 @@ pub use error::{Error, Result};
 pub use managed_services::{
     DatabaseType, ManagedDatabase, ServiceStatus, StorageBucket,
 };
+pub use models::HttpRequestLog;
 pub use service_inventory::{
     ServiceInventoryItem, ServiceResourceKind, ServiceRuntimeStatus,
 };

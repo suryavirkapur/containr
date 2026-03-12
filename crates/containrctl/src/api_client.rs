@@ -59,6 +59,15 @@ impl ApiClient {
         self.send_json(request).await
     }
 
+    pub async fn patch_json<T: Serialize + ?Sized>(
+        &self,
+        path: &str,
+        body: &T,
+    ) -> Result<Value> {
+        let request = self.request(Method::PATCH, path).json(body);
+        self.send_json(request).await
+    }
+
     pub async fn post_empty(&self, path: &str) -> Result<Value> {
         let request = self.request(Method::POST, path);
         self.send_json(request).await

@@ -6,6 +6,7 @@ use dashmap::DashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tracing::info;
+use uuid::Uuid;
 
 use containr_common::config::LoadBalanceAlgorithm;
 
@@ -13,6 +14,8 @@ use containr_common::config::LoadBalanceAlgorithm;
 #[derive(Debug, Clone)]
 pub struct Route {
     pub domain: String,
+    pub app_id: Option<Uuid>,
+    pub service_id: Option<Uuid>,
     pub upstreams: Vec<Upstream>,
     pub ssl_enabled: bool,
     pub algorithm: LoadBalanceAlgorithm,
@@ -35,6 +38,8 @@ struct UpstreamState {
 #[derive(Debug)]
 struct RouteState {
     domain: String,
+    app_id: Option<Uuid>,
+    service_id: Option<Uuid>,
     upstreams: Vec<UpstreamState>,
     ssl_enabled: bool,
     algorithm: LoadBalanceAlgorithm,
@@ -45,6 +50,8 @@ impl RouteState {
     fn to_route(&self) -> Route {
         Route {
             domain: self.domain.clone(),
+            app_id: self.app_id,
+            service_id: self.service_id,
             upstreams: self
                 .upstreams
                 .iter()
@@ -94,6 +101,8 @@ impl RouteManager {
 
         info!(
             domain = %route.domain,
+            app_id = ?route.app_id,
+            service_id = ?route.service_id,
             upstreams = %upstream_summary,
             ssl = %route.ssl_enabled,
             algorithm = ?route.algorithm,
@@ -102,6 +111,8 @@ impl RouteManager {
 
         let state = Arc::new(RouteState {
             domain: route.domain.clone(),
+            app_id: route.app_id,
+            service_id: route.service_id,
             upstreams,
             ssl_enabled: route.ssl_enabled,
             algorithm: route.algorithm,
@@ -189,6 +200,18 @@ impl SelectedUpstream {
     pub fn address(&self) -> String {
         let upstream = &self.route.upstreams[self.index];
         format!("{}:{}", upstream.host, upstream.port)
+    }
+
+    pub fn app_id(&self) -> Option<Uuid> {
+        self.route.app_id
+    }
+
+    pub fn service_id(&self) -> Option<Uuid> {
+        self.route.service_id
+    }
+
+    pub fn domain(&self) -> &str {
+        &self.route.domain
     }
 
     pub fn complete(&self) {

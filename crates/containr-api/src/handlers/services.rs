@@ -7,8 +7,10 @@ use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::domain::services::{
-    CreateServiceRequest, InventoryServiceResponse, ListServicesQuery,
-    ServiceAction, ServiceLogsQuery, ServiceLogsResponse, ServiceSvc,
+    CreateServiceRequest, HttpRequestLogResponse, HttpRequestLogsQuery,
+    InventoryServiceResponse, ListServicesQuery, ServiceAction,
+    ServiceLogsQuery, ServiceLogsResponse, ServiceSettingsResponse, ServiceSvc,
+    UpdateServiceRequest,
 };
 use crate::handlers::auth::ErrorResponse;
 use crate::handlers::deployments::{
@@ -140,6 +142,58 @@ pub async fn get_service(
 
 #[utoipa::path(
     get,
+    path = "/api/services/{id}/settings",
+    tag = "services",
+    params(("id" = Uuid, Path, description = "service id")),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "service settings", body = ServiceSettingsResponse),
+        (status = 400, description = "settings not supported for this service", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 404, description = "service not found", body = ErrorResponse)
+    )
+)]
+pub async fn get_service_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ServiceSettingsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = get_user_id(&state, &headers).await?;
+    let settings = ServiceSvc::new(state)
+        .get_service_settings(user_id, id)
+        .await?;
+    Ok(Json(settings))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/services/{id}",
+    tag = "services",
+    params(("id" = Uuid, Path, description = "service id")),
+    security(("bearer" = [])),
+    request_body = UpdateServiceRequest,
+    responses(
+        (status = 200, description = "service updated", body = InventoryServiceResponse),
+        (status = 400, description = "invalid request", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 404, description = "service not found", body = ErrorResponse)
+    )
+)]
+pub async fn update_service(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateServiceRequest>,
+) -> Result<Json<InventoryServiceResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = get_user_id(&state, &headers).await?;
+    let service = ServiceSvc::new(state)
+        .update_service(user_id, id, req)
+        .await?;
+    Ok(Json(service))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/services/{id}/logs",
     tag = "services",
     params(
@@ -163,6 +217,39 @@ pub async fn get_service_logs(
     let logs = ServiceSvc::new(state)
         .get_service_logs(user_id, id, query.tail)
         .await?;
+    Ok(Json(logs))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/services/{id}/http-logs",
+    tag = "services",
+    params(
+        ("id" = Uuid, Path, description = "service id"),
+        HttpRequestLogsQuery
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "http request logs", body = Vec<HttpRequestLogResponse>),
+        (status = 400, description = "http request logs not supported for this service", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 404, description = "service not found", body = ErrorResponse)
+    )
+)]
+pub async fn list_service_http_logs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Query(query): Query<HttpRequestLogsQuery>,
+) -> Result<Json<Vec<HttpRequestLogResponse>>, (StatusCode, Json<ErrorResponse>)>
+{
+    let user_id = get_user_id(&state, &headers).await?;
+    let logs = ServiceSvc::new(state).list_http_request_logs(
+        user_id,
+        id,
+        query.limit,
+        query.offset,
+    )?;
     Ok(Json(logs))
 }
 

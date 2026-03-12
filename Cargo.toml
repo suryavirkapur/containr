@@ -80,6 +80,7 @@ base64 = "0.22"
 url = "2"
 trust-dns-resolver = { version = "0.23", default-features = false, features = ["tokio-runtime"] }
 croner = "3.0.1"
+globset = "0.4"
 
 # docker api
 bollard = "0.20"

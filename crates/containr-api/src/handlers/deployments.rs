@@ -1,6 +1,7 @@
 //! deployment types and helpers shared by service handlers
 
 use axum::{http::StatusCode, Json};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -87,8 +88,13 @@ pub(crate) async fn create_and_queue_deployment(
     branch: String,
     rollout_strategy: RolloutStrategy,
     rollback_from_deployment_id: Option<Uuid>,
+    source_override: Option<DeploymentSource>,
+    cleanup_stale_deployments: bool,
 ) -> Result<Deployment, (StatusCode, Json<ErrorResponse>)> {
-    let source = resolve_app_deployment_source(state, owner_id, app).await?;
+    let source = match source_override {
+        Some(source) => source,
+        None => resolve_app_deployment_source(state, owner_id, app).await?,
+    };
 
     let mut deployment = Deployment::new(app.id, commit_sha.clone());
     deployment.commit_message = commit_message.clone();
@@ -107,6 +113,10 @@ pub(crate) async fn create_and_queue_deployment(
         .save_deployment(&deployment)
         .map_err(internal_error)?;
 
+    if cleanup_stale_deployments {
+        supersede_stale_deployments(state, app.id, deployment.id)?;
+    }
+
     let job = DeploymentJob {
         deployment_id: deployment.id,
         app_id: app.id,
@@ -124,6 +134,69 @@ pub(crate) async fn create_and_queue_deployment(
     })?;
 
     Ok(deployment)
+}
+
+pub(crate) fn supersede_stale_deployments(
+    state: &AppState,
+    app_id: Uuid,
+    replacement_deployment_id: Uuid,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let deployments = state
+        .db
+        .list_deployments_by_app(app_id)
+        .map_err(internal_error)?;
+
+    for mut deployment in deployments.into_iter().filter(|deployment| {
+        deployment.id != replacement_deployment_id
+            && matches!(
+                deployment.status,
+                DeploymentStatus::Pending
+                    | DeploymentStatus::Cloning
+                    | DeploymentStatus::Building
+                    | DeploymentStatus::Pushing
+                    | DeploymentStatus::Starting
+            )
+    }) {
+        deployment.status = DeploymentStatus::Stopped;
+        deployment.finished_at = Some(Utc::now());
+        for service_deployment in &mut deployment.service_deployments {
+            if matches!(
+                service_deployment.status,
+                DeploymentStatus::Pending
+                    | DeploymentStatus::Cloning
+                    | DeploymentStatus::Building
+                    | DeploymentStatus::Pushing
+                    | DeploymentStatus::Starting
+            ) {
+                service_deployment.status = DeploymentStatus::Stopped;
+                service_deployment.finished_at = Some(Utc::now());
+                service_deployment.container_id = None;
+            }
+        }
+
+        state
+            .db
+            .append_deployment_log(
+                deployment.id,
+                &format!(
+                    "deployment superseded by {}",
+                    replacement_deployment_id
+                ),
+            )
+            .map_err(internal_error)?;
+        state
+            .db
+            .save_deployment(&deployment)
+            .map_err(internal_error)?;
+        for service_deployment in &deployment.service_deployments {
+            state
+                .db
+                .save_service_deployment(service_deployment)
+                .map_err(internal_error)?;
+        }
+    }
+
+    Ok(())
 }
 
 pub(crate) fn can_rollback_to_deployment(
