@@ -1,51 +1,57 @@
-import { useNavigate } from "@solidjs/router";
-import { type Component, createSignal, onMount } from "solid-js";
+import { useNavigate } from '@solidjs/router';
+import { createSignal, onMount, Show } from 'solid-js';
+import { finishGithubLogin } from '../api/auth';
+import { finishGithubAppSetup } from '../api/settings';
+import { Notice } from '../components/Plain';
+import { PublicShell } from '../components/Shell';
+import { describeError } from '../utils/format';
 
-/**
- * handles github app manifest callback
- */
-const GithubCallback: Component = () => {
-	const navigate = useNavigate();
-	const [error, setError] = createSignal<string | null>(null);
+const TOKEN_KEY = 'containr_token';
 
-	onMount(async () => {
-		const params = new URLSearchParams(window.location.search);
-		const code = params.get("code");
-		if (!code) {
-			setError("missing github code");
-			return;
-		}
+const GithubCallback = () => {
+  const navigate = useNavigate();
+  const [message, setMessage] = createSignal('processing github callback...');
+  const [error, setError] = createSignal<string | null>(null);
 
-		const token = localStorage.getItem("containr_token");
-		if (!token) {
-			setError("missing auth token");
-			return;
-		}
+  onMount(async () => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const state = params.get('state');
 
-		try {
-			const res = await fetch(`/api/github/app/callback?code=${encodeURIComponent(code)}`, {
-				headers: {
-					Authorization: `Bearer ${token}`,
-				},
-			});
+    if (!code) {
+      setError('missing github code');
+      return;
+    }
 
-			if (!res.ok) {
-				throw new Error("failed to create github app");
-			}
+    try {
+      if (state) {
+        setMessage('finishing github sign-in...');
+        const response = await finishGithubLogin(code, state);
+        localStorage.setItem(TOKEN_KEY, response.token);
+        window.location.replace('/services');
+        return;
+      }
 
-			navigate("/settings?github=created", { replace: true });
-		} catch (err) {
-			setError((err as Error).message);
-		}
-	});
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (!token) {
+        throw new Error('missing auth token');
+      }
 
-	return (
-		<div class="min-h-screen flex items-center justify-center bg-neutral-950 text-neutral-200">
-			<div class="text-sm">
-				{error() ? `github app setup failed: ${error()}` : "processing github app setup..."}
-			</div>
-		</div>
-	);
+      setMessage('saving github app configuration...');
+      await finishGithubAppSetup(code, token);
+      navigate('/settings?github=created', { replace: true });
+    } catch (requestError) {
+      setError(describeError(requestError));
+    }
+  });
+
+  return (
+    <PublicShell title='github callback' subtitle='Completing the requested GitHub flow.'>
+      <Show when={error()} fallback={<section class='panel'><p>{message()}</p></section>}>
+        {(currentError) => <Notice tone='error'>{currentError()}</Notice>}
+      </Show>
+    </PublicShell>
+  );
 };
 
 export default GithubCallback;

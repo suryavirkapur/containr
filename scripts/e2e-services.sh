@@ -142,13 +142,7 @@ need_bin curl
 need_bin jq
 need_bin rg
 
-if [ ! -x "$containr_bin" ]; then
-    fail "containr binary not found at $containr_bin"
-fi
-
-if [ ! -x "$containrctl_bin" ]; then
-    fail "containrctl binary not found at $containrctl_bin"
-fi
+cargo build -q --bin containr --bin containrctl
 
 tmpdir="$(mktemp -d /tmp/containr-e2e-services-XXXXXX)"
 client_config="$tmpdir/client.toml"
@@ -200,6 +194,10 @@ server_pid="$!"
 
 wait_for_health "${api_url}/health"
 
+curl -sf "${api_url}/api/auth/status" > "$tmpdir/auth-status-open.json"
+expect_eq "$(json "$tmpdir/auth-status-open.json" '.registration_open')" "true"
+expect_eq "$(json "$tmpdir/auth-status-open.json" '.user_count')" "0"
+
 ctl init \
     --url "$api_url" \
     --instance-id local \
@@ -214,8 +212,48 @@ ctl login \
     --email "$auth_email" \
     --password testpass123 >/dev/null
 
+curl -sf "${api_url}/api/auth/status" > "$tmpdir/auth-status-closed.json"
+expect_eq "$(json "$tmpdir/auth-status-closed.json" '.registration_open')" \
+    "false"
+expect_eq "$(json "$tmpdir/auth-status-closed.json" '.user_count')" "1"
+
+set +e
+second_register_status="$(
+    curl \
+        -sS \
+        -o "$tmpdir/register-closed.json" \
+        -w '%{http_code}' \
+        -H 'Content-Type: application/json' \
+        -d "{\"email\":\"closed-${auth_email}\",\"password\":\"testpass123\"}" \
+        "${api_url}/api/auth/register"
+)"
+set -e
+expect_eq "$second_register_status" "403"
+expect_contains "$(cat "$tmpdir/register-closed.json")" \
+    "public registration is closed"
+
 stored_token="$(extract_client_secret token)"
 [ -n "$stored_token" ] || fail "missing stored token in client config"
+
+extra_user_email="extra-$(date +%s)-$$@example.com"
+create_user_status="$(
+    curl \
+        -sS \
+        -o "$tmpdir/create-user.json" \
+        -w '%{http_code}' \
+        -H "Authorization: Bearer ${stored_token}" \
+        -H 'Content-Type: application/json' \
+        -d "{\"email\":\"${extra_user_email}\",\"password\":\"testpass123\"}" \
+        "${api_url}/api/admin/users"
+)"
+expect_eq "$create_user_status" "200"
+expect_eq "$(json "$tmpdir/create-user.json" '.email')" "$extra_user_email"
+
+curl \
+    -sf \
+    -H "Authorization: Bearer ${stored_token}" \
+    "${api_url}/api/admin/users" > "$tmpdir/list-users.json"
+expect_eq "$(jq 'length' "$tmpdir/list-users.json")" "2"
 
 ctl init \
     --name alt \

@@ -9,6 +9,129 @@
     "version": "1.0.0"
   },
   "paths": {
+    "/api/admin/users": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "list all local users",
+        "operationId": "list_users",
+        "responses": {
+          "200": {
+            "description": "list users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "create a new local user as the bootstrap admin",
+        "operationId": "create_user",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "user created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "email already registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/auth/github": {
       "get": {
         "tags": [
@@ -106,6 +229,42 @@
         }
       }
     },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "get the current authenticated user",
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "description": "current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/auth/register": {
       "post": {
         "tags": [
@@ -150,6 +309,27 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/status": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "get public registration status",
+        "operationId": "status",
+        "responses": {
+          "200": {
+            "description": "registration status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationStatusResponse"
                 }
               }
             }
@@ -3159,6 +3339,24 @@
           }
         ]
       },
+      "CreateUserRequest": {
+        "type": "object",
+        "description": "admin-managed local user creation request",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "user email address"
+          },
+          "password": {
+            "type": "string",
+            "description": "password (min 8 characters)"
+          }
+        }
+      },
       "DashboardCertResponse": {
         "type": "object",
         "description": "certificate issuance response",
@@ -3724,6 +3922,25 @@
           "password": {
             "type": "string",
             "description": "password (min 8 characters)"
+          }
+        }
+      },
+      "RegistrationStatusResponse": {
+        "type": "object",
+        "description": "public registration status",
+        "required": [
+          "registration_open",
+          "user_count"
+        ],
+        "properties": {
+          "registration_open": {
+            "type": "boolean",
+            "description": "whether the first account can still be registered publicly"
+          },
+          "user_count": {
+            "type": "integer",
+            "description": "total number of known users",
+            "minimum": 0
           }
         }
       },
@@ -4577,7 +4794,8 @@
         "description": "user info in responses",
         "required": [
           "id",
-          "email"
+          "email",
+          "is_admin"
         ],
         "properties": {
           "email": {
@@ -4595,6 +4813,10 @@
             "type": "string",
             "format": "uuid",
             "description": "unique user id"
+          },
+          "is_admin": {
+            "type": "boolean",
+            "description": "whether this user can manage server settings and users"
           }
         }
       },

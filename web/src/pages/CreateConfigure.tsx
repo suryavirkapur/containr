@@ -1,197 +1,151 @@
-import { useNavigate, useSearchParams } from "@solidjs/router";
-import { type Component, createEffect, createSignal, Show } from "solid-js";
-import { createService } from "../api/services";
-import EnvVarEditor from "../components/EnvVarEditor";
-import ServiceForm, {
-	applyServiceType,
-	createServiceForType,
-	type Service,
-	type ServiceType,
-	serviceTypeLabel,
-} from "../components/ServiceForm";
-import {
-	Alert,
-	Button,
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	Input,
-	PageHeader,
-} from "../components/ui";
-import { type EditableEnvVar, mapServiceToRequest } from "../utils/projectEditor";
+import { useNavigate, useSearchParams } from '@solidjs/router';
+import { createSignal } from 'solid-js';
+import { createService } from '../api/services';
+import { Notice, PageTitle, Panel } from '../components/Plain';
+import { describeError } from '../utils/format';
 
-const inferServiceName = (sourceUrl: string): string => {
-	const trimmed = sourceUrl.trim();
-	if (!trimmed) return "";
-	const cleaned = trimmed.replace(/\.git$/i, "").replace(/\/+$/, "");
-	const segments = cleaned.split(/[/:]/).filter(Boolean);
-	return segments[segments.length - 1] || "";
+const parseCommand = (value: string): string[] | null => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.split(/\s+/).filter(Boolean);
 };
 
-const searchParamValue = (value: string | string[] | undefined): string | undefined =>
-	Array.isArray(value) ? value[0] : value;
+const parseLines = (value: string): string[] =>
+  value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 
-const CreateConfigure: Component = () => {
-	const navigate = useNavigate();
-	const [searchParams] = useSearchParams();
+const parseEnvVars = (value: string) =>
+  parseLines(value).map((line) => {
+    const [key, ...rest] = line.split('=');
+    return { key: key.trim(), value: rest.join('=').trim(), secret: false };
+  });
 
-	const [selectedType, setSelectedType] = createSignal<ServiceType>("web_service");
-	const [githubUrl, setGithubUrl] = createSignal("");
-	const [branch, setBranch] = createSignal("main");
-	const [service, setService] = createSignal<Service>(createServiceForType("web_service"));
-	const [envVars, setEnvVars] = createSignal<EditableEnvVar[]>([]);
-	const [error, setError] = createSignal("");
-	const [loading, setLoading] = createSignal(false);
+const readParam = (value: string | string[] | undefined) => Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
 
-	createEffect(() => {
-		const repoUrl = searchParamValue(searchParams.repo);
-		const requestedServiceType = searchParamValue(searchParams.type);
-		const defaultBranch = searchParamValue(searchParams.branch);
+const CreateConfigure = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [port, setPort] = createSignal('3000');
+  const [dockerfilePath, setDockerfilePath] = createSignal('Dockerfile');
+  const [buildContext, setBuildContext] = createSignal('.');
+  const [domains, setDomains] = createSignal('');
+  const [envVars, setEnvVars] = createSignal('');
+  const [command, setCommand] = createSignal('');
+  const [workingDir, setWorkingDir] = createSignal('');
+  const [schedule, setSchedule] = createSignal('*/5 * * * *');
+  const [replicas, setReplicas] = createSignal('1');
+  const [saving, setSaving] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
 
-		if (repoUrl) setGithubUrl(repoUrl);
-		if (defaultBranch) setBranch(defaultBranch);
+  const serviceType = () => readParam(searchParams.type) || 'web_service';
+  const githubUrl = () => readParam(searchParams.github_url);
+  const branch = () => readParam(searchParams.branch);
+  const name = () => readParam(searchParams.name);
 
-		if (
-			requestedServiceType === "web_service" ||
-			requestedServiceType === "private_service" ||
-			requestedServiceType === "background_worker" ||
-			requestedServiceType === "cron_job"
-		) {
-			const type = requestedServiceType as ServiceType;
-			setSelectedType(type);
-			let nextService = applyServiceType(service(), type);
+  const create = async (event: Event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
 
-			if (repoUrl && !nextService.name.trim()) {
-				const inferred = inferServiceName(repoUrl);
-				if (inferred) nextService = { ...nextService, name: inferred };
-			}
-			setService(nextService);
-		}
-	});
+    try {
+      const created = await createService({
+        source: 'git_repository',
+        github_url: githubUrl(),
+        branch: branch() || null,
+        name: name(),
+        service: {
+          name: name(),
+          service_type: serviceType(),
+          port: Number.parseInt(port(), 10) || 3000,
+          expose_http: serviceType() === 'web_service',
+          dockerfile_path: dockerfilePath().trim() || null,
+          build_context: buildContext().trim() || null,
+          command: parseCommand(command()),
+          working_dir: workingDir().trim() || null,
+          domains: parseLines(domains()),
+          env_vars: parseEnvVars(envVars()),
+          schedule: serviceType() === 'cron_job' ? schedule().trim() || null : null,
+          replicas: Number.parseInt(replicas(), 10) || 1,
+        },
+      });
+      navigate(`/services/${created.id}`);
+    } catch (requestError) {
+      setError(describeError(requestError));
+    } finally {
+      setSaving(false);
+    }
+  };
 
-	const handleSubmit = async (event: Event) => {
-		event.preventDefault();
-		setError("");
-		setLoading(true);
+  return (
+    <div class='stack'>
+      <PageTitle title='configure repository service' subtitle='Step 2 of 2. Fill in runtime details and submit.' />
+      {error() ? <Notice tone='error'>{error()}</Notice> : null}
+      <Panel title='service request'>
+        <form class='form-stack' onSubmit={(event) => void create(event)}>
+          <div class='table-wrap'>
+            <table>
+              <tbody>
+                <tr><th>name</th><td>{name()}</td></tr>
+                <tr><th>type</th><td>{serviceType()}</td></tr>
+                <tr><th>github url</th><td class='mono'>{githubUrl()}</td></tr>
+                <tr><th>branch</th><td>{branch() || 'default'}</td></tr>
+              </tbody>
+            </table>
+          </div>
 
-		try {
-			const currentService = service();
-			if (!currentService.name.trim()) {
-				throw new Error("service name is required");
-			}
+          <div class='two-col'>
+            <label class='field'>
+              <span>port</span>
+              <input value={port()} onInput={(event) => setPort(event.currentTarget.value)} />
+            </label>
+            <label class='field'>
+              <span>replicas</span>
+              <input value={replicas()} onInput={(event) => setReplicas(event.currentTarget.value)} />
+            </label>
+            <label class='field'>
+              <span>dockerfile path</span>
+              <input value={dockerfilePath()} onInput={(event) => setDockerfilePath(event.currentTarget.value)} />
+            </label>
+            <label class='field'>
+              <span>build context</span>
+              <input value={buildContext()} onInput={(event) => setBuildContext(event.currentTarget.value)} />
+            </label>
+            <label class='field'>
+              <span>working directory</span>
+              <input value={workingDir()} onInput={(event) => setWorkingDir(event.currentTarget.value)} />
+            </label>
+            <label class='field'>
+              <span>command</span>
+              <input value={command()} onInput={(event) => setCommand(event.currentTarget.value)} placeholder='npm start' />
+            </label>
+          </div>
 
-			const data = await createService({
-				source: "git_repository",
-				name: currentService.name.trim(),
-				github_url: githubUrl().trim(),
-				branch: branch().trim() || "main",
-				env_vars: envVars().length > 0 ? envVars() : null,
-				service: mapServiceToRequest(currentService),
-			});
-			navigate(`/services/${data.id}`);
-		} catch (err) {
-			if (err instanceof Error) {
-				setError(err.message);
-			} else if (
-				typeof err === "object" &&
-				err !== null &&
-				"error" in err &&
-				typeof err.error === "string"
-			) {
-				setError(err.error);
-			} else {
-				setError("failed to create service");
-			}
-		} finally {
-			setLoading(false);
-		}
-	};
+          <label class='field'>
+            <span>domains (one per line)</span>
+            <textarea value={domains()} onInput={(event) => setDomains(event.currentTarget.value)} />
+          </label>
 
-	return (
-		<div class="mx-auto max-w-3xl space-y-8">
-			<PageHeader
-				eyebrow="configure"
-				title={`new ${serviceTypeLabel(selectedType())}`}
-				description={`deploying from ${githubUrl() || "your repository"}`}
-			/>
+          <label class='field'>
+            <span>environment variables (KEY=VALUE per line)</span>
+            <textarea value={envVars()} onInput={(event) => setEnvVars(event.currentTarget.value)} />
+          </label>
 
-			<Show when={error()}>
-				<Alert variant="destructive" title="create failed">
-					{error()}
-				</Alert>
-			</Show>
+          {serviceType() === 'cron_job' ? (
+            <label class='field'>
+              <span>cron schedule</span>
+              <input value={schedule()} onInput={(event) => setSchedule(event.currentTarget.value)} />
+            </label>
+          ) : null}
 
-			<form class="space-y-8" onSubmit={handleSubmit}>
-				<Card>
-					<CardHeader>
-						<p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
-							service identity
-						</p>
-						<CardTitle class="mt-2">basic settings</CardTitle>
-					</CardHeader>
-					<CardContent class="grid gap-4 md:grid-cols-2">
-						<Input
-							label="service name"
-							value={service().name}
-							onInput={(event) =>
-								setService({
-									...service(),
-									name: event.currentTarget.value,
-								})
-							}
-							placeholder="my-api"
-							required
-						/>
-						<Input
-							label="branch"
-							value={branch()}
-							onInput={(event) => setBranch(event.currentTarget.value)}
-							placeholder="main"
-						/>
-					</CardContent>
-				</Card>
-
-				<EnvVarEditor
-					envVars={envVars()}
-					onChange={setEnvVars}
-					title="environment variables"
-					description="configure shared environment variables securely."
-					emptyText="no environment variables configured"
-					addLabel="add variable"
-				/>
-
-				<div class="space-y-4">
-					<div class="space-y-2">
-						<p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
-							service definition
-						</p>
-						<h2 class="font-serif text-2xl text-[var(--foreground)]">
-							configure build, runtime, and storage
-						</h2>
-					</div>
-					<ServiceForm
-						service={service()}
-						index={0}
-						allServices={[service()]}
-						showServiceTypePicker={false}
-						onUpdate={(_, next) => {
-							setSelectedType(next.service_type);
-							setService(next);
-						}}
-						onRemove={() => {}}
-						allowRemove={false}
-					/>
-				</div>
-
-				<div class="flex justify-end border-t border-[var(--border)] pt-8">
-					<Button type="submit" isLoading={loading()} class="min-w-32">
-						create service
-					</Button>
-				</div>
-			</form>
-		</div>
-	);
+          <div class='button-row'>
+            <button type='submit' disabled={saving()}>{saving() ? 'creating...' : 'create service'}</button>
+          </div>
+        </form>
+      </Panel>
+    </div>
+  );
 };
 
 export default CreateConfigure;

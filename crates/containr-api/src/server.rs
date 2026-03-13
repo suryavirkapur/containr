@@ -116,10 +116,14 @@ pub async fn run_server(
             get(websocket::deployment_logs_ws),
         )
         // auth
+        .route("/api/auth/status", get(auth::status))
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))
+        .route("/api/auth/me", get(auth::me))
         .route("/api/auth/github", get(auth::github_start))
         .route("/api/auth/github/callback", get(auth::github_callback))
+        .route("/api/admin/users", get(auth::list_users))
+        .route("/api/admin/users", post(auth::create_user))
         // settings
         .route("/api/settings", get(settings::get_settings))
         .route("/api/settings", put(settings::update_settings))
