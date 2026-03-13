@@ -12,26 +12,38 @@ import {
 import {
 	deleteService,
 	getService,
+	getServiceCertificates,
+	getServiceDeployment,
 	getServiceDeploymentLogs,
 	getServiceHttpLogs,
 	getServiceLogs,
 	getServiceSettings,
 	listServiceDeployments,
+	reissueServiceCertificate,
+	rollbackServiceDeployment,
 	runServiceAction,
 	triggerServiceDeployment,
 	updateService,
-	type HttpRequestLog,
 	type Service as InventoryService,
 	type ServiceAction,
-	type ServiceDeployment,
 	type ServiceSettings,
 } from "../api/services";
 import ContainerMonitor from "../components/ContainerMonitor";
-import EnvVarEditor from "../components/EnvVarEditor";
-import ServiceForm, {
+import {
 	normalizeServiceType,
 	type Service as ServiceFormValue,
 } from "../components/ServiceForm";
+import { ServiceCertificatePanel } from "../components/service-detail/ServiceCertificatePanel";
+import { ServiceDeploymentPanel } from "../components/service-detail/ServiceDeploymentPanel";
+import {
+	describeError,
+	formatDate,
+	statusVariant,
+} from "../components/service-detail/formatters";
+import { ServiceHttpLogsPanel } from "../components/service-detail/ServiceHttpLogsPanel";
+import { ServiceLogsPanel } from "../components/service-detail/ServiceLogsPanel";
+import { ServiceSettingsPanel } from "../components/service-detail/ServiceSettingsPanel";
+import type { MetadataRow, SettingsFormState } from "../components/service-detail/types";
 import {
 	Alert,
 	Badge,
@@ -42,15 +54,12 @@ import {
 	CardHeader,
 	CardTitle,
 	EmptyState,
-	Input,
 	PageHeader,
 	Skeleton,
-	Switch,
 	Tabs,
 	TabsContent,
 	TabsList,
 	TabsTrigger,
-	Textarea,
 } from "../components/ui";
 import { parseAnsi } from "../utils/ansi";
 import { mapServiceToRequest, type EditableEnvVar } from "../utils/projectEditor";
@@ -66,65 +75,6 @@ type DetailTab =
 type Feedback = {
 	text: string;
 	variant: "default" | "destructive" | "success";
-};
-
-type SettingsFormState = {
-	githubUrl: string;
-	branch: string;
-	rolloutStrategy: string;
-	envVars: EditableEnvVar[];
-	service: ServiceFormValue;
-	autoDeployEnabled: boolean;
-	autoDeployWatchPathsText: string;
-	cleanupStaleDeployments: boolean;
-	webhookPath: string;
-	regenerateWebhookToken: boolean;
-};
-
-const describeError = (error: unknown): string => {
-	if (error instanceof Error) {
-		return error.message;
-	}
-
-	if (
-		typeof error === "object" &&
-		error !== null &&
-		"error" in error &&
-		typeof error.error === "string"
-	) {
-		return error.error;
-	}
-
-	return "request failed";
-};
-
-const statusVariant = (status: string): "outline" | "success" | "warning" | "error" => {
-	switch (status) {
-		case "running":
-			return "success";
-		case "starting":
-		case "partial":
-			return "warning";
-		case "failed":
-			return "error";
-		default:
-			return "outline";
-	}
-};
-
-const httpStatusVariant = (
-	status: number,
-): "outline" | "success" | "warning" | "error" => {
-	if (status >= 500) {
-		return "error";
-	}
-	if (status >= 400) {
-		return "warning";
-	}
-	if (status >= 200 && status < 400) {
-		return "success";
-	}
-	return "outline";
 };
 
 const serviceCategoryLabel = (service: InventoryService): string => {
@@ -212,17 +162,6 @@ const endpointLabel = (service: InventoryService): string => {
 	return "internal only";
 };
 
-const formatDate = (value?: string | null): string => {
-	if (!value) {
-		return "n/a";
-	}
-
-	return new Date(value).toLocaleString();
-};
-
-const formatDeploymentStatus = (deployment: ServiceDeployment): string =>
-	deployment.status.replaceAll("_", " ");
-
 const editableEntries = (
 	entries: { key: string; value: string; secret: boolean }[],
 ): EditableEnvVar[] => entries.map((entry) => ({ ...entry }));
@@ -287,9 +226,6 @@ const textToWatchPaths = (value: string): string[] =>
 		),
 	);
 
-const requestLabel = (request: HttpRequestLog): string =>
-	`${request.method} ${request.path}`;
-
 const ServiceDetail: Component = () => {
 	const params = useParams<{ id: string }>();
 	const navigate = useNavigate();
@@ -297,6 +233,9 @@ const ServiceDetail: Component = () => {
 	const [tab, setTab] = createSignal<DetailTab>("overview");
 	const [pendingAction, setPendingAction] = createSignal<ServiceAction | null>(null);
 	const [deploying, setDeploying] = createSignal(false);
+	const [rollbacking, setRollbacking] = createSignal(false);
+	const [reissuingCertificates, setReissuingCertificates] = createSignal(false);
+	const [reissuingDomain, setReissuingDomain] = createSignal<string | null>(null);
 	const [deleting, setDeleting] = createSignal(false);
 	const [savingSettings, setSavingSettings] = createSignal(false);
 	const [selectedContainerId, setSelectedContainerId] = createSignal("");
@@ -326,12 +265,27 @@ const ServiceDetail: Component = () => {
 		},
 		({ serviceId, deploymentId }) => getServiceDeploymentLogs(serviceId, deploymentId, 200, 0),
 	);
+	const [deploymentDetailResource, { refetch: refetchDeploymentDetail }] = createResource(
+		() => {
+			const serviceId = serviceResource()?.id;
+			const deploymentId = selectedDeploymentId();
+			return serviceId && deploymentId ? { serviceId, deploymentId } : null;
+		},
+		({ serviceId, deploymentId }) => getServiceDeployment(serviceId, deploymentId),
+	);
 	const [httpLogs, { refetch: refetchHttpLogs }] = createResource(
 		() => {
 			const current = serviceResource();
 			return current?.public_http ? current.id : null;
 		},
 		(id) => getServiceHttpLogs(id, 200, 0),
+	);
+	const [certificates, { refetch: refetchCertificates }] = createResource(
+		() => {
+			const current = serviceResource();
+			return current && current.domains.length > 0 ? current.id : null;
+		},
+		getServiceCertificates,
 	);
 	const [serviceSettingsResource, { refetch: refetchServiceSettings }] = createResource(
 		() => {
@@ -379,11 +333,19 @@ const ServiceDetail: Component = () => {
 	const canDeploy = createMemo(() => currentService()?.resource_kind === "app_service");
 	const canEditSettings = createMemo(() => currentService()?.resource_kind === "app_service");
 	const canShowHttpLogs = createMemo(() => Boolean(currentService()?.public_http));
-	const selectedDeployment = createMemo(() =>
-		(deployments() ?? []).find((deployment) => deployment.id === selectedDeploymentId()),
+	const canManageCertificates = createMemo(
+		() => (currentService()?.domains.length ?? 0) > 0,
 	);
+	const selectedDeployment = createMemo(() => {
+		const detail = deploymentDetailResource();
+		if (detail && detail.id === selectedDeploymentId()) {
+			return detail;
+		}
+		return (deployments() ?? []).find(
+			(deployment) => deployment.id === selectedDeploymentId(),
+		);
+	});
 	const logMarkup = createMemo(() => parseAnsi(logs() ?? ""));
-	const deploymentLogMarkup = createMemo(() => parseAnsi((deploymentLogs() ?? []).join("\n")));
 	const deployWebhookUrl = createMemo(() => {
 		const path = settingsForm()?.webhookPath;
 		if (!path) {
@@ -408,7 +370,7 @@ const ServiceDetail: Component = () => {
 			current.internal_host && current.port ? `${current.internal_host}:${current.port}` : null,
 		].filter((value): value is string => Boolean(value?.trim()));
 	});
-	const metadataRows = createMemo(() => {
+	const metadataRows = createMemo<MetadataRow[]>(() => {
 		const current = currentService();
 		if (!current) {
 			return [];
@@ -430,10 +392,14 @@ const ServiceDetail: Component = () => {
 		if (canShowHttpLogs()) {
 			await refetchHttpLogs();
 		}
+		if (canManageCertificates()) {
+			await refetchCertificates();
+		}
 		if (canDeploy()) {
 			await refetchDeployments();
 			await refetchServiceSettings();
 			if (selectedDeploymentId()) {
+				await refetchDeploymentDetail();
 				await refetchDeploymentLogs();
 			}
 		}
@@ -490,6 +456,36 @@ const ServiceDetail: Component = () => {
 		}
 	};
 
+	const handleRollbackDeployment = async (rolloutStrategy?: string) => {
+		const deploymentId = selectedDeploymentId();
+		if (!deploymentId) {
+			return;
+		}
+
+		setRollbacking(true);
+		setFeedback(null);
+
+		try {
+			const deployment = await rollbackServiceDeployment(params.id, deploymentId, rolloutStrategy
+				? { rollout_strategy: rolloutStrategy }
+				: undefined);
+			setSelectedDeploymentId(deployment.id);
+			setTab("deployments");
+			setFeedback({
+				text: "rollback deployment queued",
+				variant: "success",
+			});
+			await refreshAll();
+		} catch (error) {
+			setFeedback({
+				text: describeError(error),
+				variant: "destructive",
+			});
+		} finally {
+			setRollbacking(false);
+		}
+	};
+
 	const handleSaveSettings = async () => {
 		const current = settingsForm();
 		if (!current) {
@@ -529,6 +525,32 @@ const ServiceDetail: Component = () => {
 			});
 		} finally {
 			setSavingSettings(false);
+		}
+	};
+
+	const handleReissueCertificate = async (domain?: string) => {
+		setReissuingCertificates(!domain);
+		setReissuingDomain(domain ?? null);
+		setFeedback(null);
+
+		try {
+			const response = await reissueServiceCertificate(
+				params.id,
+				domain ? { domain } : undefined,
+			);
+			setFeedback({
+				text: response.message,
+				variant: "success",
+			});
+			await refetchCertificates();
+		} catch (error) {
+			setFeedback({
+				text: describeError(error),
+				variant: "destructive",
+			});
+		} finally {
+			setReissuingCertificates(false);
+			setReissuingDomain(null);
 		}
 	};
 
@@ -742,6 +764,21 @@ const ServiceDetail: Component = () => {
 									</CardContent>
 								</Card>
 
+								<Show when={canManageCertificates()}>
+									<ServiceCertificatePanel
+										domains={service().domains}
+										certificates={certificates() ?? []}
+										loading={Boolean(certificates.loading)}
+										error={certificates.error}
+										reissuingAll={reissuingCertificates() && !reissuingDomain()}
+										reissuingDomain={reissuingDomain()}
+										onRefresh={() => void refetchCertificates()}
+										onReissue={(domain) =>
+											void handleReissueCertificate(domain)
+										}
+									/>
+								</Show>
+
 								<Card>
 									<CardHeader>
 										<CardTitle>metadata</CardTitle>
@@ -768,385 +805,63 @@ const ServiceDetail: Component = () => {
 
 							<TabsContent value="settings" class="space-y-4">
 								<Show when={canEditSettings()}>
-									<>
-										<Alert title="save config, then deploy">
-											Settings are stored immediately, but runtime changes only apply after the next deployment.
-										</Alert>
-
-										<Show when={serviceSettingsResource.error}>
-											<Alert variant="destructive" title="failed to load settings">
-												{describeError(serviceSettingsResource.error)}
-											</Alert>
-										</Show>
-
-										<Show when={serviceSettingsResource.loading && !settingsForm()}>
-											<Skeleton class="h-80 w-full" />
-										</Show>
-
-										<Show when={settingsForm()}>
-											{(form) => (
-												<div class="space-y-4">
-													<Card>
-														<CardHeader>
-															<CardTitle>repository</CardTitle>
-															<CardDescription>
-																Git source and rollout behavior for this service.
-															</CardDescription>
-														</CardHeader>
-														<CardContent class="grid gap-4 md:grid-cols-2">
-															<Input
-																label="github url"
-																value={form().githubUrl}
-																onInput={(event) => updateSettings("githubUrl", event.currentTarget.value)}
-																placeholder="https://github.com/org/repo.git"
-															/>
-															<Input
-																label="branch"
-																value={form().branch}
-																onInput={(event) => updateSettings("branch", event.currentTarget.value)}
-																placeholder="main"
-															/>
-															<div class="space-y-2 md:col-span-2">
-																<label
-																	class="text-sm font-medium text-[var(--foreground)]"
-																	for="rollout-strategy"
-																>
-																	rollout strategy
-																</label>
-																<select
-																	id="rollout-strategy"
-																	class="flex h-11 w-full rounded-[var(--radius)] border border-[var(--border)] bg-[var(--input)] px-3 py-2 text-sm font-medium text-[var(--foreground)] focus:border-[var(--ring)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)]"
-																	value={form().rolloutStrategy}
-																	onChange={(event) =>
-																		updateSettings("rolloutStrategy", event.currentTarget.value)
-																	}
-																>
-																	<option value="stop_first">stop first</option>
-																	<option value="start_first">start first</option>
-																</select>
-															</div>
-														</CardContent>
-													</Card>
-
-													<EnvVarEditor
-														envVars={form().envVars}
-														onChange={(envVars) => updateSettings("envVars", envVars)}
-														title="shared environment variables"
-														description="applied to every container in this repository service."
-														emptyText="no shared variables configured"
-														addLabel="add shared variable"
-													/>
-
-													<div class="space-y-2">
-														<p class="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--muted-foreground)]">
-															service definition
-														</p>
-														<h2 class="font-serif text-2xl text-[var(--foreground)]">
-															build, runtime, and storage
-														</h2>
-													</div>
-													<ServiceForm
-														service={form().service}
-														index={0}
-														allServices={[form().service]}
-														showServiceTypePicker={false}
-														onUpdate={(_, next) => updateSettings("service", next)}
-														onRemove={() => {}}
-														allowRemove={false}
-													/>
-
-													<Card>
-														<CardHeader>
-															<CardTitle>auto deploy</CardTitle>
-															<CardDescription>
-																Control github push deploys, watched paths, and CI-triggered deploy hooks.
-															</CardDescription>
-														</CardHeader>
-														<CardContent class="space-y-4">
-															<div class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--border)] bg-[var(--muted)] px-4 py-4">
-																<div class="space-y-1">
-																	<p class="font-medium text-[var(--foreground)]">github push auto-deploy</p>
-																	<p class="text-sm text-[var(--muted-foreground)]">
-																		Deploy automatically when matching pushes land on the tracked branch.
-																	</p>
-																</div>
-																<Switch
-																	checked={form().autoDeployEnabled}
-																	onChange={(checked) =>
-																		updateSettings("autoDeployEnabled", checked)
-																	}
-																/>
-															</div>
-
-															<div class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--border)] bg-[var(--muted)] px-4 py-4">
-																<div class="space-y-1">
-																	<p class="font-medium text-[var(--foreground)]">cleanup stale auto-deploys</p>
-																	<p class="text-sm text-[var(--muted-foreground)]">
-																		Stop queued or in-progress auto-deploys when a newer deploy is triggered.
-																	</p>
-																</div>
-																<Switch
-																	checked={form().cleanupStaleDeployments}
-																	onChange={(checked) =>
-																		updateSettings("cleanupStaleDeployments", checked)
-																	}
-																/>
-															</div>
-
-															<Textarea
-																label="watch paths"
-																description="Optional newline-delimited repo paths or glob patterns. Leave empty to deploy on every push."
-																value={form().autoDeployWatchPathsText}
-																onInput={(event) =>
-																	updateSettings(
-																		"autoDeployWatchPathsText",
-																		event.currentTarget.value,
-																	)
-																}
-																placeholder={"apps/api/**\nDockerfile\npackage.json"}
-																class="min-h-32 font-mono"
-															/>
-
-															<Input
-																label="deploy webhook"
-																description="Use this webhook from CI to trigger a deployment without GitHub push webhooks."
-																value={deployWebhookUrl()}
-																readOnly
-																class="font-mono text-xs"
-															/>
-
-															<div class="flex flex-wrap gap-3">
-																<Button variant="outline" onClick={() => void handleCopyWebhook()}>
-																	copy webhook
-																</Button>
-																<Button
-																	variant={form().regenerateWebhookToken ? "secondary" : "outline"}
-																	onClick={() =>
-																		updateSettings(
-																			"regenerateWebhookToken",
-																			!form().regenerateWebhookToken,
-																		)
-																	}
-																>
-																	{form().regenerateWebhookToken ? "token rotates on save" : "rotate token on save"}
-																</Button>
-															</div>
-														</CardContent>
-													</Card>
-
-													<div class="flex justify-end">
-														<Button isLoading={savingSettings()} onClick={() => void handleSaveSettings()}>
-															save settings
-														</Button>
-													</div>
-												</div>
-											)}
-										</Show>
-									</>
+									<ServiceSettingsPanel
+										settingsForm={settingsForm()}
+										settingsLoading={Boolean(serviceSettingsResource.loading)}
+										settingsError={serviceSettingsResource.error}
+										deployWebhookUrl={deployWebhookUrl()}
+										saving={savingSettings()}
+										onUpdateSetting={updateSettings}
+										onCopyWebhook={() => void handleCopyWebhook()}
+										onSave={() => void handleSaveSettings()}
+									/>
 								</Show>
 							</TabsContent>
 
 							<TabsContent value="logs" class="space-y-4">
-								<Card>
-									<CardHeader class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-										<div>
-											<CardTitle>service logs</CardTitle>
-											<CardDescription>
-												Recent logs from the canonical service runtime endpoint.
-											</CardDescription>
-										</div>
-										<Button variant="outline" onClick={() => void refetchLogs()}>
-											refresh logs
-										</Button>
-									</CardHeader>
-									<CardContent>
-										<Show when={logs.error}>
-											<Alert variant="destructive" title="failed to load logs">
-												{describeError(logs.error)}
-											</Alert>
-										</Show>
-										<Show when={logs.loading}>
-											<Skeleton class="h-80 w-full" />
-										</Show>
-										<Show when={!logs.loading}>
-											<div
-												class="min-h-80 overflow-x-auto rounded-[var(--radius)] border border-[var(--border)] bg-black px-4 py-4 font-mono text-xs leading-6 text-white"
-												innerHTML={logMarkup()}
-											/>
-										</Show>
-									</CardContent>
-								</Card>
+								<ServiceLogsPanel
+									logMarkup={logMarkup()}
+									loading={Boolean(logs.loading)}
+									error={logs.error}
+									onRefresh={() => void refetchLogs()}
+								/>
 							</TabsContent>
 
 							<TabsContent value="http" class="space-y-4">
 								<Show when={canShowHttpLogs()}>
-									<Card>
-										<CardHeader class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-											<div>
-												<CardTitle>http request logs</CardTitle>
-												<CardDescription>
-													Recent request-level access logs captured by the proxy for this public service.
-												</CardDescription>
-											</div>
-											<Button variant="outline" onClick={() => void refetchHttpLogs()}>
-												refresh http logs
-											</Button>
-										</CardHeader>
-										<CardContent>
-											<Show when={httpLogs.error}>
-												<Alert variant="destructive" title="failed to load http logs">
-													{describeError(httpLogs.error)}
-												</Alert>
-											</Show>
-											<Show when={httpLogs.loading}>
-												<Skeleton class="h-64 w-full" />
-											</Show>
-											<Show
-												when={!httpLogs.loading && (httpLogs()?.length ?? 0) > 0}
-												fallback={
-													<EmptyState
-														title="no http requests yet"
-														description="request logs will appear here after traffic reaches the service."
-													/>
-												}
-											>
-												<div class="space-y-3">
-													<For each={httpLogs() ?? []}>
-														{(request) => (
-															<div class="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--card)] px-4 py-4">
-																<div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-																	<div class="space-y-2">
-																		<div class="flex flex-wrap items-center gap-2">
-																			<Badge variant="outline">{request.method}</Badge>
-																			<Badge variant={httpStatusVariant(request.status)}>
-																				{request.status}
-																			</Badge>
-																			<p class="text-xs text-[var(--muted-foreground)]">
-																				{request.domain}
-																			</p>
-																		</div>
-																		<p class="font-mono text-sm text-[var(--foreground)]">
-																			{requestLabel(request)}
-																			</p>
-																			<p class="text-xs text-[var(--muted-foreground)]">
-																				{request.protocol} {"->"} {request.upstream}
-																			</p>
-																	</div>
-																	<p class="text-xs text-[var(--muted-foreground)]">
-																		{formatDate(request.created_at)}
-																	</p>
-																</div>
-															</div>
-														)}
-													</For>
-												</div>
-											</Show>
-										</CardContent>
-									</Card>
+									<ServiceHttpLogsPanel
+										logs={httpLogs() ?? []}
+										loading={Boolean(httpLogs.loading)}
+										error={httpLogs.error}
+										onRefresh={() => void refetchHttpLogs()}
+									/>
 								</Show>
 							</TabsContent>
 
 							<TabsContent value="deployments" class="space-y-4">
 								<Show when={canDeploy()}>
-									<>
-										<Card>
-											<CardHeader class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-												<div>
-													<CardTitle>service deployments</CardTitle>
-													<CardDescription>
-														Deployments are now scoped to the service endpoint surface.
-													</CardDescription>
-												</div>
-												<Button isLoading={deploying()} onClick={() => void handleDeploy()}>
-													deploy latest
-												</Button>
-											</CardHeader>
-											<CardContent>
-												<Show when={deployments.error}>
-													<Alert variant="destructive" title="failed to load deployments">
-														{describeError(deployments.error)}
-													</Alert>
-												</Show>
-												<Show when={deployments.loading}>
-													<Skeleton class="h-56 w-full" />
-												</Show>
-												<Show
-													when={!deployments.loading && (deployments()?.length ?? 0) > 0}
-													fallback={
-														<EmptyState
-															title="no deployments yet"
-															description="queue a deployment to track rollout history for this service."
-														/>
-													}
-												>
-													<div class="divide-y divide-[var(--border)] border border-[var(--border)]">
-														<For each={deployments() ?? []}>
-															{(deployment) => (
-																<button
-																	type="button"
-																	class={`flex w-full flex-col gap-3 px-4 py-4 text-left transition-colors hover:bg-[var(--muted)] ${
-																		selectedDeploymentId() === deployment.id ? "bg-[var(--muted)]" : "bg-[var(--card)]"
-																	}`}
-																	onClick={() => setSelectedDeploymentId(deployment.id)}
-																>
-																	<div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-																		<div class="space-y-1">
-																			<p class="font-medium text-[var(--foreground)]">{deployment.commit_sha}</p>
-																			<p class="text-sm text-[var(--muted-foreground)]">
-																				{deployment.commit_message || "manual deployment"}
-																			</p>
-																		</div>
-																		<div class="flex items-center gap-3">
-																			<Badge variant={statusVariant(deployment.status)}>
-																				{formatDeploymentStatus(deployment)}
-																			</Badge>
-																			<p class="text-xs text-[var(--muted-foreground)]">
-																				{formatDate(deployment.created_at)}
-																			</p>
-																		</div>
-																	</div>
-																</button>
-															)}
-														</For>
-													</div>
-												</Show>
-											</CardContent>
-										</Card>
-
-										<Show when={selectedDeployment()}>
-											{(deployment) => (
-												<Card>
-													<CardHeader class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-														<div>
-															<CardTitle>deployment logs</CardTitle>
-															<CardDescription>
-																{deployment().commit_message || "manual deployment"} · {deployment().commit_sha}
-															</CardDescription>
-														</div>
-														<Button variant="outline" onClick={() => void refetchDeploymentLogs()}>
-															refresh deployment logs
-														</Button>
-													</CardHeader>
-													<CardContent>
-														<Show when={deploymentLogs.error}>
-															<Alert variant="destructive" title="failed to load deployment logs">
-																{describeError(deploymentLogs.error)}
-															</Alert>
-														</Show>
-														<Show when={deploymentLogs.loading}>
-															<Skeleton class="h-80 w-full" />
-														</Show>
-														<Show when={!deploymentLogs.loading}>
-															<div
-																class="min-h-80 overflow-x-auto rounded-[var(--radius)] border border-[var(--border)] bg-black px-4 py-4 font-mono text-xs leading-6 text-white"
-																innerHTML={deploymentLogMarkup()}
-															/>
-														</Show>
-													</CardContent>
-												</Card>
-											)}
-										</Show>
-									</>
+									<ServiceDeploymentPanel
+										deployments={deployments() ?? []}
+										deploymentsLoading={Boolean(deployments.loading)}
+										deploymentsError={deployments.error}
+										selectedDeploymentId={selectedDeploymentId()}
+										onSelectDeployment={setSelectedDeploymentId}
+										selectedDeployment={selectedDeployment()}
+										selectedDeploymentLoading={Boolean(deploymentDetailResource.loading)}
+										selectedDeploymentError={deploymentDetailResource.error}
+										deploymentLogs={deploymentLogs() ?? []}
+										deploymentLogsLoading={Boolean(deploymentLogs.loading)}
+										deploymentLogsError={deploymentLogs.error}
+										deploying={deploying()}
+										rollbacking={rollbacking()}
+										onDeploy={() => void handleDeploy()}
+										onRollback={(rolloutStrategy) =>
+											void handleRollbackDeployment(rolloutStrategy)
+										}
+										onRefreshDeployments={() => void refetchDeployments()}
+										onRefreshDeploymentDetails={() => void refetchDeploymentDetail()}
+										onRefreshDeploymentLogs={() => void refetchDeploymentLogs()}
+									/>
 								</Show>
 							</TabsContent>
 
