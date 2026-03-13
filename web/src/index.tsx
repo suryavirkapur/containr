@@ -1,20 +1,17 @@
 /* @refresh reload */
-import { Router } from "@solidjs/router";
-import { render } from "solid-js/web";
-
-import App from "./App";
-import { ThemeProvider } from "./context/ThemeContext";
-import "./index.css";
-
-const root = document.getElementById("root");
+import { Router } from '@solidjs/router';
+import { render } from 'solid-js/web';
+import App from './App';
+import { AuthProvider } from './context/AuthContext';
+import './index.css';
 
 render(
-	() => (
-		<ThemeProvider>
-			<Router>
-				<App />
-			</Router>
-		</ThemeProvider>
-	),
-	root!,
+  () => (
+    <AuthProvider>
+      <Router>
+        <App />
+      </Router>
+    </AuthProvider>
+  ),
+  document.getElementById('root')!,
 );

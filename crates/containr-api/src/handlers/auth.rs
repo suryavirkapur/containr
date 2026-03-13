@@ -2,7 +2,7 @@
 
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::Redirect,
     Json,
 };
@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::auth::{create_token, hash_password, verify_password};
+use crate::auth::{
+    create_token, extract_bearer_token, hash_password, validate_token,
+    verify_password,
+};
 use crate::github::{exchange_code_for_token, get_github_user};
 use crate::security::encrypt_value;
 use crate::state::AppState;
@@ -54,6 +57,26 @@ pub struct UserResponse {
     pub email: String,
     /// github username if linked
     pub github_username: Option<String>,
+    /// whether this user can manage server settings and users
+    pub is_admin: bool,
+}
+
+/// public registration status
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RegistrationStatusResponse {
+    /// whether the first account can still be registered publicly
+    pub registration_open: bool,
+    /// total number of known users
+    pub user_count: usize,
+}
+
+/// admin-managed local user creation request
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateUserRequest {
+    /// user email address
+    pub email: String,
+    /// password (min 8 characters)
+    pub password: String,
 }
 
 /// error response
@@ -61,6 +84,24 @@ pub struct UserResponse {
 pub struct ErrorResponse {
     /// error message
     pub error: String,
+}
+
+/// get public registration status
+#[utoipa::path(
+    get,
+    path = "/api/auth/status",
+    tag = "auth",
+    responses((status = 200, description = "registration status", body = RegistrationStatusResponse))
+)]
+pub async fn status(
+    State(state): State<AppState>,
+) -> Result<Json<RegistrationStatusResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let user_count = state.db.list_users().map_err(internal_error)?.len();
+
+    Ok(Json(RegistrationStatusResponse {
+        registration_open: user_count == 0,
+        user_count,
+    }))
 }
 
 /// github oauth callback query params
@@ -120,8 +161,20 @@ pub async fn github_start(State(state): State<AppState>) -> Redirect {
 )]
 pub async fn register(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let user_count = state.db.list_users().map_err(internal_error)?.len();
+    if user_count > 0 {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "public registration is closed; ask the admin to create your account"
+                    .to_string(),
+            }),
+        ));
+    }
+
     // check if user already exists
     if state
         .db
@@ -150,9 +203,8 @@ pub async fn register(
     // hash password and create user
     let password_hash = hash_password(&req.password).map_err(internal_error)?;
     let mut user = User::new_with_password(req.email.clone(), password_hash);
-    if !state.db.has_admin_user().map_err(internal_error)? {
-        user.is_admin = true;
-    }
+    let _ = headers;
+    user.is_admin = true;
 
     state.db.save_user(&user).map_err(internal_error)?;
 
@@ -172,8 +224,108 @@ pub async fn register(
             id: user.id,
             email: user.email,
             github_username: user.github_username,
+            is_admin: user.is_admin,
         },
     }))
+}
+
+/// get the current authenticated user
+#[utoipa::path(
+    get,
+    path = "/api/auth/me",
+    tag = "auth",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "current user", body = UserResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse)
+    )
+)]
+pub async fn me(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<UserResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let user = require_authenticated_user(&state, &headers).await?;
+    Ok(Json(user_response(&user)))
+}
+
+/// list all local users
+#[utoipa::path(
+    get,
+    path = "/api/admin/users",
+    tag = "auth",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "list users", body = [UserResponse]),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "admin access required", body = ErrorResponse)
+    )
+)]
+pub async fn list_users(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<UserResponse>>, (StatusCode, Json<ErrorResponse>)> {
+    let _admin = require_admin_user(&state, &headers).await?;
+    let users = state
+        .db
+        .list_users()
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|user| user_response(&user))
+        .collect();
+
+    Ok(Json(users))
+}
+
+/// create a new local user as the bootstrap admin
+#[utoipa::path(
+    post,
+    path = "/api/admin/users",
+    tag = "auth",
+    security(("bearer" = [])),
+    request_body = CreateUserRequest,
+    responses(
+        (status = 200, description = "user created", body = UserResponse),
+        (status = 400, description = "invalid request", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "admin access required", body = ErrorResponse),
+        (status = 409, description = "email already registered", body = ErrorResponse)
+    )
+)]
+pub async fn create_user(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<CreateUserRequest>,
+) -> Result<Json<UserResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let _admin = require_admin_user(&state, &headers).await?;
+
+    if state
+        .db
+        .get_user_by_email(&req.email)
+        .map_err(internal_error)?
+        .is_some()
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "email already registered".to_string(),
+            }),
+        ));
+    }
+
+    if req.password.len() < 8 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "password must be at least 8 characters".to_string(),
+            }),
+        ));
+    }
+
+    let password_hash = hash_password(&req.password).map_err(internal_error)?;
+    let user = User::new_with_password(req.email.clone(), password_hash);
+    state.db.save_user(&user).map_err(internal_error)?;
+
+    Ok(Json(user_response(&user)))
 }
 
 /// login with email/password
@@ -242,6 +394,7 @@ pub async fn login(
             id: user.id,
             email: user.email,
             github_username: user.github_username,
+            is_admin: user.is_admin,
         },
     }))
 }
@@ -336,15 +489,25 @@ pub async fn github_callback(
         state.db.save_user(&user).map_err(internal_error)?;
         user
     } else {
+        let existing_users = state.db.list_users().map_err(internal_error)?.len();
+        if existing_users > 0 {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse {
+                    error:
+                        "github signups are closed; ask the admin to provision your account"
+                            .to_string(),
+                }),
+            ));
+        }
+
         // create new user
         let email = github_user
             .email
             .unwrap_or_else(|| format!("{}@github.local", github_user.login));
         let mut user =
             User::new_with_github(email, github_user.id, github_user.login);
-        if !state.db.has_admin_user().map_err(internal_error)? {
-            user.is_admin = true;
-        }
+        user.is_admin = true;
         user.github_access_token = Some(token_to_store);
         state.db.save_user(&user).map_err(internal_error)?;
         user
@@ -366,8 +529,94 @@ pub async fn github_callback(
             id: user.id,
             email: user.email,
             github_username: user.github_username,
+            is_admin: user.is_admin,
         },
     }))
+}
+
+fn user_response(user: &User) -> UserResponse {
+    UserResponse {
+        id: user.id,
+        email: user.email.clone(),
+        github_username: user.github_username.clone(),
+        is_admin: user.is_admin,
+    }
+}
+
+async fn require_authenticated_user(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<User, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await;
+    let user_id = get_user_id(headers, &config.auth.jwt_secret)?;
+    drop(config);
+
+    state
+        .db
+        .get_user(user_id)
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "user not found".to_string(),
+                }),
+            )
+        })
+}
+
+async fn require_admin_user(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<User, (StatusCode, Json<ErrorResponse>)> {
+    let user = require_authenticated_user(state, headers).await?;
+    if !user.is_admin {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "admin access required".to_string(),
+            }),
+        ));
+    }
+
+    Ok(user)
+}
+
+fn get_user_id(
+    headers: &HeaderMap,
+    jwt_secret: &str,
+) -> Result<Uuid, (StatusCode, Json<ErrorResponse>)> {
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|h| h.to_str().ok())
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "missing authorization header".to_string(),
+                }),
+            )
+        })?;
+
+    let token = extract_bearer_token(auth_header).ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "invalid authorization header".to_string(),
+            }),
+        )
+    })?;
+
+    let claims = validate_token(token, jwt_secret).map_err(|error| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: error.to_string(),
+            }),
+        )
+    })?;
+
+    Ok(claims.sub)
 }
 
 /// helper to convert errors to internal server error
