@@ -1,917 +1,476 @@
-import { A, useNavigate, useParams } from "@solidjs/router";
+import { A, useNavigate, useParams } from '@solidjs/router';
+import { createEffect, createResource, createSignal, For, Show } from 'solid-js';
 import {
-	type Component,
-	createEffect,
-	createMemo,
-	createResource,
-	createSignal,
-	For,
-	Show,
-} from "solid-js";
+  deleteService,
+  getService,
+  getServiceCertificates,
+  getServiceDeploymentLogs,
+  getServiceHttpLogs,
+  getServiceLogs,
+  getServiceSettings,
+  listServiceDeployments,
+  reissueServiceCertificate,
+  rollbackServiceDeployment,
+  runServiceAction,
+  triggerServiceDeployment,
+  updateService,
+} from '../api/services';
+import { EmptyBlock, KeyValueTable, LoadingBlock, Notice, PageTitle, Panel } from '../components/Plain';
+import { copyText, describeError, formatDateTime, formatList } from '../utils/format';
 
-import {
-	deleteService,
-	getService,
-	getServiceCertificates,
-	getServiceDeployment,
-	getServiceDeploymentLogs,
-	getServiceHttpLogs,
-	getServiceLogs,
-	getServiceSettings,
-	listServiceDeployments,
-	reissueServiceCertificate,
-	rollbackServiceDeployment,
-	runServiceAction,
-	triggerServiceDeployment,
-	updateService,
-	type Service as InventoryService,
-	type ServiceAction,
-	type ServiceSettings,
-} from "../api/services";
-import ContainerMonitor from "../components/ContainerMonitor";
-import {
-	normalizeServiceType,
-	type Service as ServiceFormValue,
-} from "../components/ServiceForm";
-import { ServiceCertificatePanel } from "../components/service-detail/ServiceCertificatePanel";
-import { ServiceDeploymentPanel } from "../components/service-detail/ServiceDeploymentPanel";
-import {
-	describeError,
-	formatDate,
-	statusVariant,
-} from "../components/service-detail/formatters";
-import { ServiceHttpLogsPanel } from "../components/service-detail/ServiceHttpLogsPanel";
-import { ServiceLogsPanel } from "../components/service-detail/ServiceLogsPanel";
-import { ServiceSettingsPanel } from "../components/service-detail/ServiceSettingsPanel";
-import type { MetadataRow, SettingsFormState } from "../components/service-detail/types";
-import {
-	Alert,
-	Badge,
-	Button,
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-	EmptyState,
-	PageHeader,
-	Skeleton,
-	Tabs,
-	TabsContent,
-	TabsList,
-	TabsTrigger,
-} from "../components/ui";
-import { parseAnsi } from "../utils/ansi";
-import { mapServiceToRequest, type EditableEnvVar } from "../utils/projectEditor";
-
-type DetailTab =
-	| "overview"
-	| "settings"
-	| "logs"
-	| "http"
-	| "deployments"
-	| "containers";
-
-type Feedback = {
-	text: string;
-	variant: "default" | "destructive" | "success";
+const endpointFor = (service: Awaited<ReturnType<typeof getService>>): string => {
+  return (
+    service.default_urls[0] ??
+    service.proxy_connection_string ??
+    service.connection_string ??
+    (service.internal_host && service.port ? `${service.internal_host}:${service.port}` : 'internal only')
+  );
 };
 
-const serviceCategoryLabel = (service: InventoryService): string => {
-	switch (service.resource_kind) {
-		case "app_service":
-			return "repository";
-		case "managed_database":
-		case "managed_queue":
-			return "template";
-		default:
-			return service.resource_kind.replaceAll("_", " ");
-	}
-};
+const envText = (values: Array<{ key: string; value: string }>) =>
+  values.map((entry) => `${entry.key}=${entry.value}`).join('\n');
 
-const serviceTypeLabel = (serviceType: string): string => {
-	switch (serviceType) {
-		case "web_service":
-			return "web service";
-		case "private_service":
-			return "private service";
-		case "background_worker":
-			return "background worker";
-		case "cron_job":
-			return "cron service";
-		case "postgres":
-			return "postgres service";
-		case "redis":
-			return "valkey service";
-		case "mariadb":
-			return "mariadb service";
-		case "qdrant":
-			return "qdrant service";
-		case "rabbitmq":
-			return "rabbitmq service";
-		default:
-			return serviceType.replaceAll("_", " ");
-	}
-};
+const parseEnvText = (value: string) =>
+  value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [key, ...rest] = line.split('=');
+      return { key: key.trim(), value: rest.join('=').trim(), secret: false };
+    });
 
-const runtimeLabel = (service: InventoryService): string => {
-	if (service.schedule?.trim()) {
-		return service.schedule.trim();
-	}
+const parseLines = (value: string) =>
+  value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 
-	if (service.desired_instances > 1) {
-		return `${service.running_instances}/${service.desired_instances} running`;
-	}
+const ServiceDetail = () => {
+  const params = useParams();
+  const navigate = useNavigate();
+  const serviceId = () => params.id ?? '';
+  const [feedback, setFeedback] = createSignal<{ tone: 'success' | 'error'; text: string } | null>(null);
+  const [pendingAction, setPendingAction] = createSignal<string | null>(null);
+  const [selectedDeploymentId, setSelectedDeploymentId] = createSignal<string | null>(null);
+  const [settingsLoadedFor, setSettingsLoadedFor] = createSignal<string | null>(null);
+  const [githubUrl, setGithubUrl] = createSignal('');
+  const [branch, setBranch] = createSignal('');
+  const [rolloutStrategy, setRolloutStrategy] = createSignal('');
+  const [envVarsText, setEnvVarsText] = createSignal('');
+  const [watchPathsText, setWatchPathsText] = createSignal('');
+  const [serviceJson, setServiceJson] = createSignal('{}');
+  const [autoDeployEnabled, setAutoDeployEnabled] = createSignal(false);
+  const [cleanupStale, setCleanupStale] = createSignal(false);
 
-	if (service.desired_instances === 1) {
-		return service.running_instances > 0 ? "running" : "stopped";
-	}
+  const [service, { refetch: refetchService }] = createResource(serviceId, getService);
+  const [settings, { refetch: refetchSettings }] = createResource(serviceId, getServiceSettings);
+  const [logs, { refetch: refetchLogs }] = createResource(serviceId, (id) => getServiceLogs(id, 300));
+  const [httpLogs, { refetch: refetchHttpLogs }] = createResource(serviceId, (id) => getServiceHttpLogs(id, 200, 0));
+  const [deployments, { refetch: refetchDeployments }] = createResource(serviceId, listServiceDeployments);
+  const [certificates, { refetch: refetchCertificates }] = createResource(serviceId, getServiceCertificates);
+  const [deploymentLogs, { refetch: refetchDeploymentLogs }] = createResource(
+    () => ({ currentServiceId: serviceId(), deploymentId: selectedDeploymentId() }),
+    ({ currentServiceId, deploymentId }) => (
+      deploymentId ? getServiceDeploymentLogs(currentServiceId, deploymentId, 400, 0) : Promise.resolve([])
+    ),
+  );
 
-	return "managed";
-};
+  createEffect(() => {
+    const currentSettings = settings();
+    if (!currentSettings || settingsLoadedFor() === currentSettings.service_id) return;
+    setSettingsLoadedFor(currentSettings.service_id);
+    setGithubUrl(currentSettings.github_url);
+    setBranch(currentSettings.branch);
+    setRolloutStrategy(currentSettings.rollout_strategy);
+    setEnvVarsText(envText(currentSettings.env_vars));
+    setWatchPathsText(currentSettings.auto_deploy.watch_paths.join('\n'));
+    setServiceJson(JSON.stringify(currentSettings.service, null, 2));
+    setAutoDeployEnabled(currentSettings.auto_deploy.enabled);
+    setCleanupStale(currentSettings.auto_deploy.cleanup_stale_deployments);
+  });
 
-const endpointLabel = (service: InventoryService): string => {
-	if (service.default_urls.length > 0) {
-		return service.default_urls[0];
-	}
+  createEffect(() => {
+    const rows = deployments();
+    if (!rows || rows.length === 0) return;
+    if (!selectedDeploymentId()) {
+      setSelectedDeploymentId(rows[0].id);
+    }
+  });
 
-	if (service.proxy_enabled && service.proxy_connection_string) {
-		return service.proxy_connection_string;
-	}
+  const refreshAll = async () => {
+    await Promise.all([
+      refetchService(),
+      refetchSettings(),
+      refetchLogs(),
+      refetchHttpLogs(),
+      refetchDeployments(),
+      refetchCertificates(),
+      refetchDeploymentLogs(),
+    ]);
+  };
 
-	if (service.connection_string) {
-		return service.connection_string;
-	}
+  const runAction = async (action: 'start' | 'stop' | 'restart') => {
+    setPendingAction(action);
+    setFeedback(null);
+    try {
+      await runServiceAction(serviceId(), action);
+      await refreshAll();
+      setFeedback({ tone: 'success', text: `${action} request accepted` });
+    } catch (error) {
+      setFeedback({ tone: 'error', text: describeError(error) });
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
-	if (service.public_ip && service.proxy_external_port) {
-		return `${service.public_ip}:${service.proxy_external_port}`;
-	}
+  const deploy = async () => {
+    setPendingAction('deploy');
+    setFeedback(null);
+    try {
+      await triggerServiceDeployment(serviceId(), {});
+      await refreshAll();
+      setFeedback({ tone: 'success', text: 'deployment queued' });
+    } catch (error) {
+      setFeedback({ tone: 'error', text: describeError(error) });
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
-	if (service.public_ip && service.external_port) {
-		return `${service.public_ip}:${service.external_port}`;
-	}
+  const saveSettings = async (rotateWebhookToken = false) => {
+    setPendingAction(rotateWebhookToken ? 'rotate-webhook' : 'save');
+    setFeedback(null);
+    try {
+      const parsedService = JSON.parse(serviceJson());
+      await updateService(serviceId(), {
+        github_url: githubUrl().trim() || null,
+        branch: branch().trim() || null,
+        rollout_strategy: rolloutStrategy().trim() || null,
+        env_vars: parseEnvText(envVarsText()),
+        auto_deploy: {
+          enabled: autoDeployEnabled(),
+          cleanup_stale_deployments: cleanupStale(),
+          watch_paths: parseLines(watchPathsText()),
+          regenerate_webhook_token: rotateWebhookToken,
+        },
+        service: parsedService,
+      });
+      await refreshAll();
+      setFeedback({ tone: 'success', text: rotateWebhookToken ? 'webhook token rotated' : 'settings saved' });
+    } catch (error) {
+      setFeedback({ tone: 'error', text: describeError(error) });
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
-	if (service.internal_host && service.port) {
-		return `${service.internal_host}:${service.port}`;
-	}
+  const rollback = async (deploymentId: string) => {
+    setPendingAction(`rollback-${deploymentId}`);
+    setFeedback(null);
+    try {
+      await rollbackServiceDeployment(serviceId(), deploymentId, {});
+      await refreshAll();
+      setFeedback({ tone: 'success', text: 'rollback queued' });
+    } catch (error) {
+      setFeedback({ tone: 'error', text: describeError(error) });
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
-	if (service.schedule?.trim()) {
-		return service.schedule.trim();
-	}
+  const reissueCertificates = async () => {
+    setPendingAction('reissue-certificates');
+    setFeedback(null);
+    try {
+      const response = await reissueServiceCertificate(serviceId(), {});
+      await refetchCertificates();
+      setFeedback({ tone: 'success', text: response.message });
+    } catch (error) {
+      setFeedback({ tone: 'error', text: describeError(error) });
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
-	return "internal only";
-};
+  const removeService = async () => {
+    if (!confirm('delete this service?')) return;
+    setPendingAction('delete');
+    setFeedback(null);
+    try {
+      await deleteService(serviceId());
+      navigate('/services');
+    } catch (error) {
+      setFeedback({ tone: 'error', text: describeError(error) });
+      setPendingAction(null);
+    }
+  };
 
-const editableEntries = (
-	entries: { key: string; value: string; secret: boolean }[],
-): EditableEnvVar[] => entries.map((entry) => ({ ...entry }));
+  return (
+    <div class='stack'>
+      <Show when={service.loading}><LoadingBlock message='Loading service...' /></Show>
+      <Show when={service.error}>{(error) => <Notice tone='error'>Failed to load service: {describeError(error())}</Notice>}</Show>
+      <Show when={service()}>
+        {(currentService) => (
+          <>
+            <PageTitle
+              title={currentService().name}
+              subtitle={`${currentService().service_type} / ${currentService().resource_kind}`}
+              actions={
+                <>
+                  <A href='/services'>back to services</A>
+                  <button type='button' onClick={() => void refreshAll()}>refresh</button>
+                </>
+              }
+            />
 
-const serviceSettingsToFormState = (settings: ServiceSettings): SettingsFormState => ({
-	githubUrl: settings.github_url,
-	branch: settings.branch,
-	rolloutStrategy: settings.rollout_strategy,
-	envVars: editableEntries(settings.env_vars),
-	service: {
-		name: settings.service.name,
-		image: settings.service.image ?? "",
-		service_type: normalizeServiceType(settings.service.service_type),
-		port: settings.service.port,
-		expose_http: settings.service.expose_http,
-		domains: [...settings.service.domains],
-		additional_ports: [...settings.service.additional_ports],
-		replicas: settings.service.replicas,
-		memory_limit_mb: settings.service.memory_limit_mb ?? null,
-		cpu_limit: settings.service.cpu_limit ?? null,
-		depends_on: [...settings.service.depends_on],
-		health_check_path: settings.service.health_check?.path ?? "",
-		health_check_interval_secs: settings.service.health_check?.interval_secs ?? 30,
-		health_check_timeout_secs: settings.service.health_check?.timeout_secs ?? 5,
-		health_check_retries: settings.service.health_check?.retries ?? 3,
-		restart_policy: settings.service.restart_policy,
-		registry_auth: settings.service.registry_auth
-			? {
-					server: settings.service.registry_auth.server ?? "",
-					username: settings.service.registry_auth.username,
-					password: settings.service.registry_auth.password,
-				}
-			: null,
-		env_vars: editableEntries(settings.service.env_vars),
-		build_context: settings.service.build_context ?? "",
-		dockerfile_path: settings.service.dockerfile_path ?? "",
-		build_target: settings.service.build_target ?? "",
-		build_args: editableEntries(settings.service.build_args),
-		command: settings.service.command ?? [],
-		entrypoint: settings.service.entrypoint ?? [],
-		working_dir: settings.service.working_dir ?? "",
-		mounts: settings.service.mounts.map((mount) => ({
-			name: mount.name,
-			target: mount.target,
-			read_only: Boolean(mount.read_only),
-		})),
-	},
-	autoDeployEnabled: settings.auto_deploy.enabled,
-	autoDeployWatchPathsText: settings.auto_deploy.watch_paths.join("\n"),
-	cleanupStaleDeployments: settings.auto_deploy.cleanup_stale_deployments,
-	webhookPath: settings.auto_deploy.webhook_path,
-	regenerateWebhookToken: false,
-});
+            {feedback() ? <Notice tone={feedback()!.tone}>{feedback()!.text}</Notice> : null}
 
-const textToWatchPaths = (value: string): string[] =>
-	Array.from(
-		new Set(
-			value
-				.split(/[\n,]+/)
-				.map((entry) => entry.trim())
-				.filter((entry) => entry.length > 0),
-		),
-	);
+            <Panel title='actions'>
+              <div class='button-row'>
+                <button type='button' onClick={() => void runAction('start')} disabled={pendingAction() === 'start'}>start</button>
+                <button type='button' onClick={() => void runAction('stop')} disabled={pendingAction() === 'stop'}>stop</button>
+                <button type='button' onClick={() => void runAction('restart')} disabled={pendingAction() === 'restart'}>restart</button>
+                <button type='button' onClick={() => void deploy()} disabled={pendingAction() === 'deploy'}>deploy</button>
+                <button type='button' onClick={() => void removeService()} disabled={pendingAction() === 'delete'}>delete</button>
+              </div>
+            </Panel>
 
-const ServiceDetail: Component = () => {
-	const params = useParams<{ id: string }>();
-	const navigate = useNavigate();
+            <Panel title='summary'>
+              <KeyValueTable
+                rows={[
+                  ['status', <span class={`status-${currentService().status}`}>{currentService().status}</span>],
+                  ['endpoint', <span class='mono'>{endpointFor(currentService())}</span>],
+                  ['domains', <span>{formatList(currentService().domains)}</span>],
+                  ['network', <span>{currentService().network_name}</span>],
+                  ['containers', <span class='mono'>{formatList(currentService().container_ids)}</span>],
+                  ['deployment id', <span class='mono'>{currentService().deployment_id ?? 'n/a'}</span>],
+                  ['created', <span>{formatDateTime(currentService().created_at)}</span>],
+                  ['updated', <span>{formatDateTime(currentService().updated_at)}</span>],
+                ]}
+              />
+            </Panel>
 
-	const [tab, setTab] = createSignal<DetailTab>("overview");
-	const [pendingAction, setPendingAction] = createSignal<ServiceAction | null>(null);
-	const [deploying, setDeploying] = createSignal(false);
-	const [rollbacking, setRollbacking] = createSignal(false);
-	const [reissuingCertificates, setReissuingCertificates] = createSignal(false);
-	const [reissuingDomain, setReissuingDomain] = createSignal<string | null>(null);
-	const [deleting, setDeleting] = createSignal(false);
-	const [savingSettings, setSavingSettings] = createSignal(false);
-	const [selectedContainerId, setSelectedContainerId] = createSignal("");
-	const [selectedDeploymentId, setSelectedDeploymentId] = createSignal("");
-	const [feedback, setFeedback] = createSignal<Feedback | null>(null);
-	const [settingsForm, setSettingsForm] = createSignal<SettingsFormState | null>(null);
+            <Show when={settings.error}>{(error) => <Notice tone='error'>Settings unavailable: {describeError(error())}</Notice>}</Show>
+            <Show when={settings()}>
+              {(currentSettings) => (
+                <Panel title='configuration' subtitle='Raw text and JSON only. Save to update the next deployment.'>
+                  <form class='form-stack' onSubmit={(event) => { event.preventDefault(); void saveSettings(false); }}>
+                    <div class='two-col'>
+                      <label class='field'>
+                        <span>github url</span>
+                        <input value={githubUrl()} onInput={(event) => setGithubUrl(event.currentTarget.value)} />
+                      </label>
+                      <label class='field'>
+                        <span>branch</span>
+                        <input value={branch()} onInput={(event) => setBranch(event.currentTarget.value)} />
+                      </label>
+                      <label class='field'>
+                        <span>rollout strategy</span>
+                        <input value={rolloutStrategy()} onInput={(event) => setRolloutStrategy(event.currentTarget.value)} />
+                      </label>
+                      <label class='field'>
+                        <span>auto deploy enabled</span>
+                        <select value={autoDeployEnabled() ? 'yes' : 'no'} onChange={(event) => setAutoDeployEnabled(event.currentTarget.value === 'yes')}>
+                          <option value='yes'>yes</option>
+                          <option value='no'>no</option>
+                        </select>
+                      </label>
+                      <label class='field'>
+                        <span>cleanup stale deployments</span>
+                        <select value={cleanupStale() ? 'yes' : 'no'} onChange={(event) => setCleanupStale(event.currentTarget.value === 'yes')}>
+                          <option value='yes'>yes</option>
+                          <option value='no'>no</option>
+                        </select>
+                      </label>
+                    </div>
 
-	const [serviceResource, { refetch: refetchService }] = createResource(
-		() => params.id,
-		getService,
-	);
-	const [logs, { refetch: refetchLogs }] = createResource(() => params.id, (id) =>
-		getServiceLogs(id, 300),
-	);
-	const [deployments, { refetch: refetchDeployments }] = createResource(
-		() => {
-			const current = serviceResource();
-			return current && current.resource_kind === "app_service" ? current.id : null;
-		},
-		listServiceDeployments,
-	);
-	const [deploymentLogs, { refetch: refetchDeploymentLogs }] = createResource(
-		() => {
-			const serviceId = serviceResource()?.id;
-			const deploymentId = selectedDeploymentId();
-			return serviceId && deploymentId ? { serviceId, deploymentId } : null;
-		},
-		({ serviceId, deploymentId }) => getServiceDeploymentLogs(serviceId, deploymentId, 200, 0),
-	);
-	const [deploymentDetailResource, { refetch: refetchDeploymentDetail }] = createResource(
-		() => {
-			const serviceId = serviceResource()?.id;
-			const deploymentId = selectedDeploymentId();
-			return serviceId && deploymentId ? { serviceId, deploymentId } : null;
-		},
-		({ serviceId, deploymentId }) => getServiceDeployment(serviceId, deploymentId),
-	);
-	const [httpLogs, { refetch: refetchHttpLogs }] = createResource(
-		() => {
-			const current = serviceResource();
-			return current?.public_http ? current.id : null;
-		},
-		(id) => getServiceHttpLogs(id, 200, 0),
-	);
-	const [certificates, { refetch: refetchCertificates }] = createResource(
-		() => {
-			const current = serviceResource();
-			return current && current.domains.length > 0 ? current.id : null;
-		},
-		getServiceCertificates,
-	);
-	const [serviceSettingsResource, { refetch: refetchServiceSettings }] = createResource(
-		() => {
-			const current = serviceResource();
-			return current && current.resource_kind === "app_service" ? current.id : null;
-		},
-		getServiceSettings,
-	);
+                    <label class='field'>
+                      <span>environment variables</span>
+                      <small class='muted'>One KEY=VALUE entry per line.</small>
+                      <textarea value={envVarsText()} onInput={(event) => setEnvVarsText(event.currentTarget.value)} />
+                    </label>
 
-	createEffect(() => {
-		const containerIds = serviceResource()?.container_ids ?? [];
-		if (!containerIds.includes(selectedContainerId())) {
-			setSelectedContainerId(containerIds[0] ?? "");
-		}
-	});
+                    <label class='field'>
+                      <span>watch paths</span>
+                      <small class='muted'>One relative path per line.</small>
+                      <textarea value={watchPathsText()} onInput={(event) => setWatchPathsText(event.currentTarget.value)} />
+                    </label>
 
-	createEffect(() => {
-		const rows = deployments() ?? [];
-		const current = selectedDeploymentId();
-		if (!rows.some((deployment) => deployment.id === current)) {
-			setSelectedDeploymentId(rows[0]?.id ?? "");
-		}
-	});
+                    <label class='field'>
+                      <span>service JSON</span>
+                      <small class='muted'>Edit the canonical service request payload directly.</small>
+                      <textarea value={serviceJson()} onInput={(event) => setServiceJson(event.currentTarget.value)} />
+                    </label>
 
-	createEffect(() => {
-		const settings = serviceSettingsResource();
-		if (settings) {
-			setSettingsForm(serviceSettingsToFormState(settings));
-		}
-	});
+                    <div class='table-wrap'>
+                      <table>
+                        <tbody>
+                          <tr>
+                            <th>deploy webhook token</th>
+                            <td class='mono'>{currentSettings().auto_deploy.webhook_token}</td>
+                          </tr>
+                          <tr>
+                            <th>deploy webhook path</th>
+                            <td class='mono'>{currentSettings().auto_deploy.webhook_path}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
 
-	createEffect(() => {
-		if (tab() === "settings" && serviceResource()?.resource_kind !== "app_service") {
-			setTab("overview");
-		}
-		if (tab() === "http" && !serviceResource()?.public_http) {
-			setTab("overview");
-		}
-		if (tab() === "deployments" && serviceResource()?.resource_kind !== "app_service") {
-			setTab("overview");
-		}
-	});
+                    <div class='button-row'>
+                      <button type='submit' disabled={pendingAction() === 'save'}>save settings</button>
+                      <button type='button' onClick={() => void saveSettings(true)} disabled={pendingAction() === 'rotate-webhook'}>
+                        rotate webhook token
+                      </button>
+                      <button type='button' onClick={() => void copyText(currentSettings().auto_deploy.webhook_token)}>
+                        copy token
+                      </button>
+                    </div>
+                  </form>
+                </Panel>
+              )}
+            </Show>
 
-	const currentService = createMemo(() => serviceResource());
-	const canDeploy = createMemo(() => currentService()?.resource_kind === "app_service");
-	const canEditSettings = createMemo(() => currentService()?.resource_kind === "app_service");
-	const canShowHttpLogs = createMemo(() => Boolean(currentService()?.public_http));
-	const canManageCertificates = createMemo(
-		() => (currentService()?.domains.length ?? 0) > 0,
-	);
-	const selectedDeployment = createMemo(() => {
-		const detail = deploymentDetailResource();
-		if (detail && detail.id === selectedDeploymentId()) {
-			return detail;
-		}
-		return (deployments() ?? []).find(
-			(deployment) => deployment.id === selectedDeploymentId(),
-		);
-	});
-	const logMarkup = createMemo(() => parseAnsi(logs() ?? ""));
-	const deployWebhookUrl = createMemo(() => {
-		const path = settingsForm()?.webhookPath;
-		if (!path) {
-			return "";
-		}
-		if (typeof window === "undefined") {
-			return path;
-		}
-		return new URL(path, window.location.origin).toString();
-	});
-	const endpointDetails = createMemo(() => {
-		const current = currentService();
-		if (!current) {
-			return [];
-		}
+            <Panel title='service logs'>
+              <div class='button-row'>
+                <button type='button' onClick={() => void refetchLogs()}>refresh logs</button>
+              </div>
+              <pre>{logs() ?? ''}</pre>
+            </Panel>
 
-		return [
-			...current.default_urls,
-			...current.domains.map((domain) => `https://${domain}`),
-			current.proxy_connection_string,
-			current.connection_string,
-			current.internal_host && current.port ? `${current.internal_host}:${current.port}` : null,
-		].filter((value): value is string => Boolean(value?.trim()));
-	});
-	const metadataRows = createMemo<MetadataRow[]>(() => {
-		const current = currentService();
-		if (!current) {
-			return [];
-		}
+            <Panel title='http request logs'>
+              <div class='button-row'>
+                <button type='button' onClick={() => void refetchHttpLogs()}>refresh http logs</button>
+              </div>
+              <Show when={(httpLogs() ?? []).length > 0} fallback={<p>No request logs yet.</p>}>
+                <div class='table-wrap'>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>time</th>
+                        <th>method</th>
+                        <th>path</th>
+                        <th>status</th>
+                        <th>domain</th>
+                        <th>upstream</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <For each={httpLogs() ?? []}>
+                        {(entry) => (
+                          <tr>
+                            <td>{formatDateTime(entry.created_at)}</td>
+                            <td>{entry.method}</td>
+                            <td class='mono'>{entry.path}</td>
+                            <td>{entry.status}</td>
+                            <td>{entry.domain}</td>
+                            <td class='mono'>{entry.upstream}</td>
+                          </tr>
+                        )}
+                      </For>
+                    </tbody>
+                  </table>
+                </div>
+              </Show>
+            </Panel>
 
-		return [
-			{ label: "service id", value: current.id },
-			{ label: "group id", value: current.group_id ?? "standalone" },
-			{ label: "network", value: current.network_name },
-			{ label: "deployment id", value: current.deployment_id ?? "n/a" },
-			{ label: "created", value: formatDate(current.created_at) },
-			{ label: "updated", value: formatDate(current.updated_at) },
-		];
-	});
+            <Panel title='deployments'>
+              <div class='button-row'>
+                <button type='button' onClick={() => void refetchDeployments()}>refresh deployments</button>
+              </div>
+              <Show when={(deployments() ?? []).length > 0} fallback={<p>No deployments recorded yet.</p>}>
+                <div class='table-wrap'>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>id</th>
+                        <th>status</th>
+                        <th>commit</th>
+                        <th>message</th>
+                        <th>started</th>
+                        <th>finished</th>
+                        <th>actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <For each={deployments() ?? []}>
+                        {(deployment) => (
+                          <tr>
+                            <td class='mono'>{deployment.id}</td>
+                            <td class={`status-${deployment.status}`}>{deployment.status}</td>
+                            <td class='mono'>{deployment.commit_sha}</td>
+                            <td>{deployment.commit_message ?? 'manual deployment'}</td>
+                            <td>{formatDateTime(deployment.started_at)}</td>
+                            <td>{formatDateTime(deployment.finished_at)}</td>
+                            <td>
+                              <div class='inline-actions'>
+                                <button type='button' onClick={() => setSelectedDeploymentId(deployment.id)}>show logs</button>
+                                <button type='button' onClick={() => void rollback(deployment.id)} disabled={pendingAction() === `rollback-${deployment.id}`}>
+                                  rollback
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </For>
+                    </tbody>
+                  </table>
+                </div>
+              </Show>
 
-	const refreshAll = async () => {
-		await refetchService();
-		await refetchLogs();
-		if (canShowHttpLogs()) {
-			await refetchHttpLogs();
-		}
-		if (canManageCertificates()) {
-			await refetchCertificates();
-		}
-		if (canDeploy()) {
-			await refetchDeployments();
-			await refetchServiceSettings();
-			if (selectedDeploymentId()) {
-				await refetchDeploymentDetail();
-				await refetchDeploymentLogs();
-			}
-		}
-	};
+              <Show when={selectedDeploymentId()}>
+                {(deploymentId) => (
+                  <div class='stack'>
+                    <p><strong>selected deployment:</strong> <span class='mono'>{deploymentId()}</span></p>
+                    <div class='button-row'>
+                      <button type='button' onClick={() => void refetchDeploymentLogs()}>refresh selected deployment logs</button>
+                    </div>
+                    <pre>{(deploymentLogs() ?? []).join('\n')}</pre>
+                  </div>
+                )}
+              </Show>
+            </Panel>
 
-	const updateSettings = <K extends keyof SettingsFormState>(
-		key: K,
-		value: SettingsFormState[K],
-	) => {
-		setSettingsForm((current) => (current ? { ...current, [key]: value } : current));
-	};
-
-	const handleAction = async (action: ServiceAction) => {
-		setPendingAction(action);
-		setFeedback(null);
-
-		try {
-			await runServiceAction(params.id, action);
-			setFeedback({
-				text: `service ${action} completed`,
-				variant: "success",
-			});
-			await refreshAll();
-		} catch (error) {
-			setFeedback({
-				text: describeError(error),
-				variant: "destructive",
-			});
-		} finally {
-			setPendingAction(null);
-		}
-	};
-
-	const handleDeploy = async () => {
-		setDeploying(true);
-		setFeedback(null);
-
-		try {
-			const deployment = await triggerServiceDeployment(params.id);
-			setSelectedDeploymentId(deployment.id);
-			setTab("deployments");
-			setFeedback({
-				text: "deployment queued",
-				variant: "success",
-			});
-			await refreshAll();
-		} catch (error) {
-			setFeedback({
-				text: describeError(error),
-				variant: "destructive",
-			});
-		} finally {
-			setDeploying(false);
-		}
-	};
-
-	const handleRollbackDeployment = async (rolloutStrategy?: string) => {
-		const deploymentId = selectedDeploymentId();
-		if (!deploymentId) {
-			return;
-		}
-
-		setRollbacking(true);
-		setFeedback(null);
-
-		try {
-			const deployment = await rollbackServiceDeployment(params.id, deploymentId, rolloutStrategy
-				? { rollout_strategy: rolloutStrategy }
-				: undefined);
-			setSelectedDeploymentId(deployment.id);
-			setTab("deployments");
-			setFeedback({
-				text: "rollback deployment queued",
-				variant: "success",
-			});
-			await refreshAll();
-		} catch (error) {
-			setFeedback({
-				text: describeError(error),
-				variant: "destructive",
-			});
-		} finally {
-			setRollbacking(false);
-		}
-	};
-
-	const handleSaveSettings = async () => {
-		const current = settingsForm();
-		if (!current) {
-			return;
-		}
-
-		setSavingSettings(true);
-		setFeedback(null);
-
-		try {
-			await updateService(params.id, {
-				github_url: current.githubUrl.trim(),
-				branch: current.branch.trim() || "main",
-				env_vars: current.envVars,
-				rollout_strategy: current.rolloutStrategy,
-				auto_deploy: {
-					enabled: current.autoDeployEnabled,
-					watch_paths: textToWatchPaths(current.autoDeployWatchPathsText),
-					cleanup_stale_deployments: current.cleanupStaleDeployments,
-					regenerate_webhook_token: current.regenerateWebhookToken || undefined,
-				},
-				service: mapServiceToRequest(current.service),
-			});
-
-			setFeedback({
-				text: "settings saved; deploy to apply runtime changes",
-				variant: "success",
-			});
-			setSettingsForm((form) =>
-				form ? { ...form, regenerateWebhookToken: false } : form,
-			);
-			await refreshAll();
-		} catch (error) {
-			setFeedback({
-				text: describeError(error),
-				variant: "destructive",
-			});
-		} finally {
-			setSavingSettings(false);
-		}
-	};
-
-	const handleReissueCertificate = async (domain?: string) => {
-		setReissuingCertificates(!domain);
-		setReissuingDomain(domain ?? null);
-		setFeedback(null);
-
-		try {
-			const response = await reissueServiceCertificate(
-				params.id,
-				domain ? { domain } : undefined,
-			);
-			setFeedback({
-				text: response.message,
-				variant: "success",
-			});
-			await refetchCertificates();
-		} catch (error) {
-			setFeedback({
-				text: describeError(error),
-				variant: "destructive",
-			});
-		} finally {
-			setReissuingCertificates(false);
-			setReissuingDomain(null);
-		}
-	};
-
-	const handleCopyWebhook = async () => {
-		const url = deployWebhookUrl();
-		if (!url) {
-			return;
-		}
-
-		try {
-			await navigator.clipboard.writeText(url);
-			setFeedback({
-				text: "deploy webhook copied",
-				variant: "success",
-			});
-		} catch {
-			setFeedback({
-				text: "failed to copy deploy webhook",
-				variant: "destructive",
-			});
-		}
-	};
-
-	const handleDelete = async () => {
-		if (!confirm("delete this service?")) {
-			return;
-		}
-
-		setDeleting(true);
-		setFeedback(null);
-
-		try {
-			await deleteService(params.id);
-			navigate("/services");
-		} catch (error) {
-			setFeedback({
-				text: describeError(error),
-				variant: "destructive",
-			});
-			setDeleting(false);
-		}
-	};
-
-	return (
-		<div class="space-y-8">
-			<Show
-				when={currentService()}
-				fallback={
-					<Show
-						when={serviceResource.error}
-						fallback={
-							<div class="space-y-6">
-								<Skeleton class="h-28 w-full" />
-								<Skeleton class="h-80 w-full" />
-							</div>
-						}
-					>
-						<Alert variant="destructive" title="failed to load service">
-							{describeError(serviceResource.error)}
-						</Alert>
-					</Show>
-				}
-			>
-				{(service) => (
-					<>
-						<PageHeader
-							eyebrow="service detail"
-							title={service().name}
-							description={`${serviceTypeLabel(service().service_type)} in the ${serviceCategoryLabel(
-								service(),
-							)} service model.`}
-							actions={
-								<>
-									<A href="/services">
-										<Button variant="outline">all services</Button>
-									</A>
-									<Button
-										variant="secondary"
-										isLoading={pendingAction() === "start"}
-										onClick={() => void handleAction("start")}
-									>
-										start
-									</Button>
-									<Button
-										variant="secondary"
-										isLoading={pendingAction() === "stop"}
-										onClick={() => void handleAction("stop")}
-									>
-										stop
-									</Button>
-									<Button
-										variant="secondary"
-										isLoading={pendingAction() === "restart"}
-										onClick={() => void handleAction("restart")}
-									>
-										restart
-									</Button>
-									<Show when={canDeploy()}>
-										<Button isLoading={deploying()} onClick={() => void handleDeploy()}>
-											deploy
-										</Button>
-									</Show>
-									<Button variant="danger" isLoading={deleting()} onClick={() => void handleDelete()}>
-										delete
-									</Button>
-								</>
-							}
-						/>
-
-						<Show when={feedback()}>
-							{(currentFeedback) => (
-								<Alert
-									variant={currentFeedback().variant}
-									title={currentFeedback().variant === "success" ? "updated" : "error"}
-								>
-									{currentFeedback().text}
-								</Alert>
-							)}
-						</Show>
-
-						<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-							<Card>
-								<CardContent class="space-y-2">
-									<p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
-										status
-									</p>
-									<Badge variant={statusVariant(service().status)}>{service().status}</Badge>
-									<p class="text-sm text-[var(--muted-foreground)]">{runtimeLabel(service())}</p>
-								</CardContent>
-							</Card>
-							<Card>
-								<CardContent class="space-y-2">
-									<p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
-										service type
-									</p>
-									<p class="font-serif text-3xl text-[var(--foreground)]">
-										{serviceTypeLabel(service().service_type)}
-									</p>
-									<p class="text-sm text-[var(--muted-foreground)]">
-										{serviceCategoryLabel(service())}
-									</p>
-								</CardContent>
-							</Card>
-							<Card>
-								<CardContent class="space-y-2">
-									<p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
-										network
-									</p>
-									<p class="font-serif text-3xl text-[var(--foreground)]">
-										{service().project_name || service().network_name}
-									</p>
-									<p class="text-sm text-[var(--muted-foreground)]">{service().network_name}</p>
-								</CardContent>
-							</Card>
-							<Card>
-								<CardContent class="space-y-2">
-									<p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
-										endpoint
-									</p>
-									<p class="font-mono text-sm text-[var(--foreground)]">{endpointLabel(service())}</p>
-									<p class="text-sm text-[var(--muted-foreground)]">
-										{service().container_ids.length} tracked containers
-									</p>
-								</CardContent>
-							</Card>
-						</div>
-
-						<Tabs value={tab()} onValueChange={(value) => setTab(value as DetailTab)}>
-							<TabsList>
-								<TabsTrigger value="overview">overview</TabsTrigger>
-								<Show when={canEditSettings()}>
-									<TabsTrigger value="settings">settings</TabsTrigger>
-								</Show>
-								<TabsTrigger value="logs">logs</TabsTrigger>
-								<Show when={canShowHttpLogs()}>
-									<TabsTrigger value="http">http</TabsTrigger>
-								</Show>
-								<Show when={canDeploy()}>
-									<TabsTrigger value="deployments">deployments</TabsTrigger>
-								</Show>
-								<TabsTrigger value="containers">containers</TabsTrigger>
-							</TabsList>
-
-							<TabsContent value="overview" class="space-y-4">
-								<Card>
-									<CardHeader>
-										<CardTitle>connectivity</CardTitle>
-										<CardDescription>
-											URLs, ports, and connection strings exposed by this service.
-										</CardDescription>
-									</CardHeader>
-									<CardContent>
-										<Show
-											when={endpointDetails().length > 0}
-											fallback={
-												<p class="text-sm text-[var(--muted-foreground)]">
-													no public or connection endpoints are currently available.
-												</p>
-											}
-										>
-											<div class="space-y-3">
-												<For each={endpointDetails()}>
-													{(value) => (
-														<div class="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--muted)] px-4 py-3 font-mono text-xs text-[var(--foreground)]">
-															{value}
-														</div>
-													)}
-												</For>
-											</div>
-										</Show>
-									</CardContent>
-								</Card>
-
-								<Show when={canManageCertificates()}>
-									<ServiceCertificatePanel
-										domains={service().domains}
-										certificates={certificates() ?? []}
-										loading={Boolean(certificates.loading)}
-										error={certificates.error}
-										reissuingAll={reissuingCertificates() && !reissuingDomain()}
-										reissuingDomain={reissuingDomain()}
-										onRefresh={() => void refetchCertificates()}
-										onReissue={(domain) =>
-											void handleReissueCertificate(domain)
-										}
-									/>
-								</Show>
-
-								<Card>
-									<CardHeader>
-										<CardTitle>metadata</CardTitle>
-										<CardDescription>
-											Canonical service identifiers and timestamps.
-										</CardDescription>
-									</CardHeader>
-									<CardContent>
-										<div class="divide-y divide-[var(--border)] border border-[var(--border)]">
-											<For each={metadataRows()}>
-												{(row) => (
-													<div class="flex flex-col gap-2 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-														<p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted-foreground)]">
-															{row.label}
-														</p>
-														<p class="font-mono text-xs text-[var(--foreground)]">{row.value}</p>
-													</div>
-												)}
-											</For>
-										</div>
-									</CardContent>
-								</Card>
-							</TabsContent>
-
-							<TabsContent value="settings" class="space-y-4">
-								<Show when={canEditSettings()}>
-									<ServiceSettingsPanel
-										settingsForm={settingsForm()}
-										settingsLoading={Boolean(serviceSettingsResource.loading)}
-										settingsError={serviceSettingsResource.error}
-										deployWebhookUrl={deployWebhookUrl()}
-										saving={savingSettings()}
-										onUpdateSetting={updateSettings}
-										onCopyWebhook={() => void handleCopyWebhook()}
-										onSave={() => void handleSaveSettings()}
-									/>
-								</Show>
-							</TabsContent>
-
-							<TabsContent value="logs" class="space-y-4">
-								<ServiceLogsPanel
-									logMarkup={logMarkup()}
-									loading={Boolean(logs.loading)}
-									error={logs.error}
-									onRefresh={() => void refetchLogs()}
-								/>
-							</TabsContent>
-
-							<TabsContent value="http" class="space-y-4">
-								<Show when={canShowHttpLogs()}>
-									<ServiceHttpLogsPanel
-										logs={httpLogs() ?? []}
-										loading={Boolean(httpLogs.loading)}
-										error={httpLogs.error}
-										onRefresh={() => void refetchHttpLogs()}
-									/>
-								</Show>
-							</TabsContent>
-
-							<TabsContent value="deployments" class="space-y-4">
-								<Show when={canDeploy()}>
-									<ServiceDeploymentPanel
-										deployments={deployments() ?? []}
-										deploymentsLoading={Boolean(deployments.loading)}
-										deploymentsError={deployments.error}
-										selectedDeploymentId={selectedDeploymentId()}
-										onSelectDeployment={setSelectedDeploymentId}
-										selectedDeployment={selectedDeployment()}
-										selectedDeploymentLoading={Boolean(deploymentDetailResource.loading)}
-										selectedDeploymentError={deploymentDetailResource.error}
-										deploymentLogs={deploymentLogs() ?? []}
-										deploymentLogsLoading={Boolean(deploymentLogs.loading)}
-										deploymentLogsError={deploymentLogs.error}
-										deploying={deploying()}
-										rollbacking={rollbacking()}
-										onDeploy={() => void handleDeploy()}
-										onRollback={(rolloutStrategy) =>
-											void handleRollbackDeployment(rolloutStrategy)
-										}
-										onRefreshDeployments={() => void refetchDeployments()}
-										onRefreshDeploymentDetails={() => void refetchDeploymentDetail()}
-										onRefreshDeploymentLogs={() => void refetchDeploymentLogs()}
-									/>
-								</Show>
-							</TabsContent>
-
-							<TabsContent value="containers" class="space-y-4">
-								<Card>
-									<CardHeader>
-										<CardTitle>runtime containers</CardTitle>
-										<CardDescription>
-											Inspect live container state, logs, volumes, and terminal access.
-										</CardDescription>
-									</CardHeader>
-									<CardContent class="space-y-4">
-										<Show
-											when={service().container_ids.length > 0}
-											fallback={
-												<EmptyState
-													title="no active containers"
-													description="this service does not currently report any running container ids."
-												/>
-											}
-										>
-											<div class="flex flex-wrap gap-2">
-												<For each={service().container_ids}>
-													{(containerId) => (
-														<Button
-															variant={
-																selectedContainerId() === containerId ? "secondary" : "outline"
-															}
-															size="sm"
-															onClick={() => setSelectedContainerId(containerId)}
-														>
-															{containerId.slice(0, 12)}
-														</Button>
-													)}
-												</For>
-											</div>
-
-											<Show when={selectedContainerId()}>
-												<ContainerMonitor containerId={selectedContainerId()} defaultTab="overview" />
-											</Show>
-										</Show>
-									</CardContent>
-								</Card>
-							</TabsContent>
-						</Tabs>
-					</>
-				)}
-			</Show>
-		</div>
-	);
+            <Panel title='certificates'>
+              <div class='button-row'>
+                <button type='button' onClick={() => void reissueCertificates()} disabled={pendingAction() === 'reissue-certificates'}>
+                  reissue certificates
+                </button>
+                <button type='button' onClick={() => void refetchCertificates()}>refresh certificates</button>
+              </div>
+              <Show when={(certificates() ?? []).length > 0} fallback={<p>No managed certificates yet.</p>}>
+                <div class='table-wrap'>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>domain</th>
+                        <th>status</th>
+                        <th>issued</th>
+                        <th>expires</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <For each={certificates() ?? []}>
+                        {(certificate) => (
+                          <tr>
+                            <td>{certificate.domain}</td>
+                            <td>{certificate.status}</td>
+                            <td>{formatDateTime(certificate.issued_at)}</td>
+                            <td>{formatDateTime(certificate.expires_at)}</td>
+                          </tr>
+                        )}
+                      </For>
+                    </tbody>
+                  </table>
+                </div>
+              </Show>
+            </Panel>
+          </>
+        )}
+      </Show>
+    </div>
+  );
 };
 
 export default ServiceDetail;

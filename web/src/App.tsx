@@ -1,62 +1,50 @@
-import { Navigate, Route, useParams } from "@solidjs/router";
-import { type Component, lazy, Suspense } from "solid-js";
-import Layout from "./components/Layout";
-import Loading from "./components/Loading";
+import { Navigate, Route } from '@solidjs/router';
+import type { Component } from 'solid-js';
+import { Shell } from './components/Shell';
+import BucketDetail from './pages/BucketDetail';
+import CreateConfigure from './pages/CreateConfigure';
+import CreateFlow from './pages/CreateFlow';
+import CreateRepo from './pages/CreateRepo';
+import CreateTemplate from './pages/CreateTemplate';
+import GithubCallback from './pages/GithubCallback';
+import GithubInstallCallback from './pages/GithubInstallCallback';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Settings from './pages/Settings';
+import Storage from './pages/Storage';
+import ServiceDetail from './pages/service-detail';
+import Services from './pages/services';
 
-const Login = lazy(() => import("./pages/Login"));
-const Register = lazy(() => import("./pages/Register"));
-const Services = lazy(() => import("./pages/services"));
-const ServiceDetail = lazy(() => import("./pages/service-detail"));
-const CreateFlow = lazy(() => import("./pages/CreateFlow"));
-const CreateRepo = lazy(() => import("./pages/CreateRepo"));
-const CreateConfigure = lazy(() => import("./pages/CreateConfigure"));
-const CreateTemplate = lazy(() => import("./pages/CreateTemplate"));
-const Settings = lazy(() => import("./pages/Settings"));
-const Storage = lazy(() => import("./pages/Storage"));
-const BucketDetail = lazy(() => import("./pages/BucketDetail"));
-const GithubCallback = lazy(() => import("./pages/GithubCallback"));
-const GithubInstallCallback = lazy(() => import("./pages/GithubInstallCallback"));
+const RedirectServices: Component = () => <Navigate href='/services' />;
+const RedirectNew: Component = () => <Navigate href='/services/new' />;
 
-const RedirectToServices: Component = () => <Navigate href="/services" />;
-const RedirectToServicesNew: Component = () => <Navigate href="/services/new" />;
-const RedirectLegacyServiceDetail: Component = () => {
-	const params = useParams<{ id: string }>();
-	return <Navigate href={`/services/${params.id}`} />;
-};
-
-const App: Component = () => {
-	return (
-		<Suspense fallback={<Loading />}>
-			<Route path="/login" component={Login} />
-			<Route path="/register" component={Register} />
-			<Route path="/github/callback" component={GithubCallback} />
-			<Route path="/github/install/callback" component={GithubInstallCallback} />
-			<Route path="/" component={Layout}>
-				<Route path="/" component={RedirectToServices} />
-				<Route path="/services" component={Services} />
-				<Route path="/services/new" component={CreateFlow} />
-				<Route path="/services/new/repo" component={CreateRepo} />
-				<Route path="/services/new/configure" component={CreateConfigure} />
-				<Route path="/services/new/template" component={CreateTemplate} />
-				<Route path="/services/:id" component={ServiceDetail} />
-				<Route path="/apps" component={RedirectToServices} />
-				<Route path="/projects" component={RedirectToServices} />
-				<Route path="/projects/new" component={RedirectToServicesNew} />
-				<Route path="/projects/:id" component={RedirectToServices} />
-				<Route path="/apps/new" component={RedirectToServicesNew} />
-				<Route path="/apps/:id" component={RedirectToServices} />
-				<Route path="/databases/new" component={RedirectToServicesNew} />
-				<Route path="/databases" component={RedirectToServices} />
-				<Route path="/databases/:id" component={RedirectLegacyServiceDetail} />
-				<Route path="/queues/new" component={RedirectToServicesNew} />
-				<Route path="/queues" component={RedirectToServices} />
-				<Route path="/queues/:id" component={RedirectLegacyServiceDetail} />
-				<Route path="/storage" component={Storage} />
-				<Route path="/storage/:id" component={BucketDetail} />
-				<Route path="/settings" component={Settings} />
-			</Route>
-		</Suspense>
-	);
-};
+const App: Component = () => (
+  <>
+    <Route path='/login' component={Login} />
+    <Route path='/register' component={Register} />
+    <Route path='/github/callback' component={GithubCallback} />
+    <Route path='/github/install/callback' component={GithubInstallCallback} />
+    <Route path='/' component={Shell}>
+      <Route path='/' component={RedirectServices} />
+      <Route path='/services' component={Services} />
+      <Route path='/services/new' component={CreateFlow} />
+      <Route path='/services/new/repo' component={CreateRepo} />
+      <Route path='/services/new/configure' component={CreateConfigure} />
+      <Route path='/services/new/template' component={CreateTemplate} />
+      <Route path='/services/:id' component={ServiceDetail} />
+      <Route path='/storage' component={Storage} />
+      <Route path='/storage/:id' component={BucketDetail} />
+      <Route path='/settings' component={Settings} />
+      <Route path='/apps' component={RedirectServices} />
+      <Route path='/projects' component={RedirectServices} />
+      <Route path='/projects/new' component={RedirectNew} />
+      <Route path='/apps/new' component={RedirectNew} />
+      <Route path='/databases' component={RedirectServices} />
+      <Route path='/databases/new' component={RedirectNew} />
+      <Route path='/queues' component={RedirectServices} />
+      <Route path='/queues/new' component={RedirectNew} />
+    </Route>
+  </>
+);
 
 export default App;
