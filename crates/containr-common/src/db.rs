@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -620,8 +619,7 @@ impl SqliteJsonDatabase {
                 })?,
         ));
 
-        let options = SqliteConnectOptions::from_str("sqlite::memory:")
-            .map_err(Error::from)?
+        let options = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
@@ -1715,6 +1713,33 @@ mod tests {
             .get_github_app(owner.id)
             .expect("github app lookup should work")
             .is_some());
+    }
+
+    #[test]
+    fn sqlite_store_persists_entities_across_reopen() {
+        let config = temp_config("persist");
+        let db_path = config.sqlite_path();
+
+        let mut admin = User::new_with_password(
+            "persist-admin@example.com".to_string(),
+            "argon2:test-hash".to_string(),
+        );
+        admin.is_admin = true;
+
+        {
+            let db = Database::open(&config).expect("database should open");
+            db.save_user(&admin).expect("user save should work");
+            db.flush().expect("database flush should work");
+        }
+
+        assert!(db_path.exists(), "sqlite file should exist on disk");
+
+        let reopened =
+            Database::open(&config).expect("database should reopen");
+        let users = reopened.list_users().expect("users should load");
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].id, admin.id);
+        assert!(users[0].is_admin);
     }
 
     #[test]
