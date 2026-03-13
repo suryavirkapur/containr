@@ -2,8 +2,8 @@
   color-scheme: light;
   font-family: 'Courier New', Courier, monospace;
   line-height: 1.4;
-  background: #e8e5d8;
-  color: #111;
+  background: #fff;
+  color: #000;
 }
 
 * {
@@ -18,8 +18,8 @@ body,
 }
 
 body {
-  background: #e8e5d8;
-  color: #111;
+  background: #fff;
+  color: #000;
 }
 
 main,
@@ -50,31 +50,36 @@ textarea {
 }
 
 a {
-  color: #0000cc;
+  color: #000;
   text-decoration: underline;
 }
 
 a:hover {
-  color: #000099;
+  background: #000;
+  color: #fff;
 }
 
 button,
 input,
 select,
 textarea {
-  border: 1px solid #111;
+  border: 1px solid #000;
   background: #fff;
-  color: #111;
+  color: #000;
   padding: 0.35rem 0.45rem;
 }
 
 button {
   cursor: pointer;
+  background: #000;
+  color: #fff;
 }
 
 button:disabled {
   cursor: not-allowed;
-  color: #666;
+  background: #fff;
+  color: #777;
+  border-style: dashed;
 }
 
 textarea {
@@ -86,7 +91,7 @@ pre {
   white-space: pre-wrap;
   word-break: break-word;
   background: #fff;
-  border: 1px solid #111;
+  border: 1px solid #000;
   padding: 0.5rem;
   overflow-x: auto;
 }
@@ -115,8 +120,8 @@ h3 {
 }
 
 .panel {
-  border: 1px solid #111;
-  background: #f8f6ed;
+  border: 1px solid #000;
+  background: #fff;
   padding: 12px;
   margin-bottom: 12px;
 }
@@ -149,9 +154,10 @@ h3 {
 }
 
 .nav-link.is-current {
-  border-color: #111;
+  border-color: #000;
+  background: #000;
+  color: #fff;
   text-decoration: none;
-  color: #111;
 }
 
 .spacer {
@@ -184,22 +190,23 @@ h3 {
 }
 
 .muted {
-  color: #555;
+  color: #444;
 }
 
 .notice {
-  border: 1px solid #111;
+  border: 1px solid #000;
   padding: 8px;
   margin-bottom: 12px;
   background: #fff;
 }
 
 .notice-success {
-  background: #eef8ee;
+  border-style: double;
 }
 
 .notice-error {
-  background: #fff0f0;
+  background: #000;
+  color: #fff;
 }
 
 .table-wrap {
@@ -214,14 +221,14 @@ table {
 
 th,
 td {
-  border: 1px solid #111;
+  border: 1px solid #000;
   padding: 0.35rem 0.45rem;
   text-align: left;
   vertical-align: top;
 }
 
 th {
-  background: #ece8da;
+  background: #f3f3f3;
   width: 18rem;
 }
 
@@ -231,27 +238,32 @@ ul.plain-list {
 
 .status-running,
 .status-success {
-  color: #006400;
+  color: inherit;
+  font-weight: bold;
 }
 
 .status-failed,
 .status-error {
-  color: #8b0000;
+  color: inherit;
+  background: #000;
+  color: #fff;
+  font-weight: bold;
 }
 
 .status-pending,
 .status-warning {
-  color: #8b5a00;
+  color: inherit;
+  font-style: italic;
 }
 
 .form-note {
   font-size: 0.9rem;
-  color: #555;
+  color: #444;
 }
 
 hr {
   border: 0;
-  border-top: 1px solid #111;
+  border-top: 1px solid #000;
   margin: 12px 0;
 }
 

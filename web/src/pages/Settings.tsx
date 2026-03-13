@@ -1,3 +1,4 @@
+import { useSearchParams } from '@solidjs/router';
 import { createEffect, createResource, createSignal, For, Show } from 'solid-js';
 import { createUser, listUsers } from '../api/auth';
 import {
@@ -13,8 +14,14 @@ import { KeyValueTable, LoadingBlock, Notice, PageTitle, Panel } from '../compon
 import { useAuth } from '../context/AuthContext';
 import { describeError, formatDateTime } from '../utils/format';
 
+const appendGithubPath = (baseUrl: string | null | undefined, suffix: string) => {
+  if (!baseUrl) return null;
+  return `${baseUrl.replace(/\/+$/, '')}${suffix}`;
+};
+
 const Settings = () => {
   const auth = useAuth();
+  const [searchParams] = useSearchParams();
   const [feedback, setFeedback] = createSignal<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [loaded, setLoaded] = createSignal(false);
   const [baseDomain, setBaseDomain] = createSignal('');
@@ -35,6 +42,21 @@ const Settings = () => {
   const [stats, { refetch: refetchStats }] = createResource(isAdmin, async (enabled) => enabled ? getSystemStats() : null);
   const [githubApp, { refetch: refetchGithubApp }] = createResource(isAdmin, async (enabled) => enabled ? getGithubAppStatus() : null);
   const [users, { refetch: refetchUsers }] = createResource(isAdmin, async (enabled) => enabled ? listUsers() : []);
+
+  createEffect(() => {
+    const githubState = searchParams.github;
+    if (githubState === 'created') {
+      setFeedback({
+        tone: 'success',
+        text: 'GitHub App saved. Next step: use the install link below to install it on your account or org.',
+      });
+    } else if (githubState === 'installed') {
+      setFeedback({
+        tone: 'success',
+        text: 'GitHub installation callback received. Refresh the status below if the installation list is still empty.',
+      });
+    }
+  });
 
   createEffect(() => {
     const current = settings();
@@ -256,14 +278,61 @@ const Settings = () => {
 
         <Show when={githubApp()}>
           {(currentGithubApp) => (
-            <Panel title='github app'>
-              <Show when={currentGithubApp().configured} fallback={<p>No GitHub App is configured.</p>}>
+            <Panel title='github app' subtitle='Repository deploys only appear after you create and install the GitHub App.'>
+              <Show
+                when={currentGithubApp().configured}
+                fallback={
+                  <div class='stack'>
+                    <p>No GitHub App is configured yet.</p>
+                    <div class='table-wrap'>
+                      <table>
+                        <tbody>
+                          <tr><th>step 1</th><td>Click <strong>open github app creation form</strong>.</td></tr>
+                          <tr><th>step 2</th><td>GitHub opens the app creation page in a new tab. Submit that form.</td></tr>
+                          <tr><th>step 3</th><td>After GitHub redirects back here, use the install link that appears below.</td></tr>
+                          <tr><th>step 4</th><td>Refresh this section. Installations should be listed once the app is connected.</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                }
+              >
                 <KeyValueTable rows={[
                   ['app id', <span class='mono'>{currentGithubApp().app?.app_id ?? 'n/a'}</span>],
                   ['app name', <span>{currentGithubApp().app?.app_name ?? 'n/a'}</span>],
                   ['html url', <span class='mono'>{currentGithubApp().app?.html_url ?? 'n/a'}</span>],
                   ['installations', <span>{String(currentGithubApp().installations.length)}</span>],
                 ]} />
+                <div class='table-wrap'>
+                  <table>
+                    <tbody>
+                      <tr>
+                        <th>install app</th>
+                        <td>
+                          <Show
+                            when={appendGithubPath(currentGithubApp().app?.html_url, '/installations/new')}
+                            fallback={<span>available after the app is created</span>}
+                          >
+                            {(installUrl) => <a href={installUrl()} target='_blank' rel='noreferrer'>open GitHub installation page</a>}
+                          </Show>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th>manage app</th>
+                        <td>
+                          <Show when={currentGithubApp().app?.html_url} fallback={<span>available after the app is created</span>}>
+                            {(appUrl) => <a href={appUrl()} target='_blank' rel='noreferrer'>open GitHub app page</a>}
+                          </Show>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <Show when={currentGithubApp().installations.length === 0}>
+                  <Notice tone='info' title='Install still missing'>
+                    Create the app first, then click <strong>open GitHub installation page</strong>. Until an installation exists, repository deploys will not appear.
+                  </Notice>
+                </Show>
                 <div class='table-wrap'>
                   <table>
                     <thead>
@@ -285,7 +354,7 @@ const Settings = () => {
                 </div>
               </Show>
               <div class='button-row'>
-                <button type='button' onClick={() => void startGithubAppSetup()} disabled={pending() === 'create-github-app'}>create/update github app</button>
+                <button type='button' onClick={() => void startGithubAppSetup()} disabled={pending() === 'create-github-app'}>open github app creation form</button>
                 <button type='button' onClick={() => void removeGithubApp()} disabled={pending() === 'delete-github-app'}>delete github app</button>
                 <button type='button' onClick={() => void refetchGithubApp()}>refresh github app status</button>
               </div>
