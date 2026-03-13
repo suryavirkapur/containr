@@ -5,6 +5,9 @@ export type Service = components["schemas"]["InventoryServiceResponse"];
 export type ServiceDeployment = components["schemas"]["DeploymentResponse"];
 export type ServiceSettings = components["schemas"]["ServiceSettingsResponse"];
 export type HttpRequestLog = components["schemas"]["HttpRequestLogResponse"];
+export type ServiceCertificate = components["schemas"]["CertificateResponse"];
+export type ServiceCertificateReissue =
+	components["schemas"]["ReissueResponse"];
 export type ServiceAction = "start" | "stop" | "restart";
 
 type CreateServiceBody =
@@ -15,6 +18,8 @@ type DeploymentTriggerBody =
 	paths["/api/services/{id}/deployments"]["post"]["requestBody"]["content"]["application/json"];
 type DeploymentRollbackBody =
 	paths["/api/services/{id}/deployments/{deployment_id}/rollback"]["post"]["requestBody"]["content"]["application/json"];
+type CertificateReissueBody =
+	paths["/api/services/{id}/certificate/reissue"]["post"]["requestBody"]["content"]["application/json"];
 
 export const createService = async (body: CreateServiceBody): Promise<Service> => {
 	const { data, error } = await api.POST("/api/services", { body });
@@ -127,6 +132,41 @@ export const getServiceHttpLogs = async (
 	return data ?? [];
 };
 
+export const getServiceCertificates = async (
+	id: string,
+): Promise<ServiceCertificate[]> => {
+	const { data, error } = await api.GET("/api/services/{id}/certificate", {
+		params: { path: { id } },
+	});
+	if (error) {
+		throw error;
+	}
+
+	return data ?? [];
+};
+
+export const reissueServiceCertificate = async (
+	id: string,
+	body?: CertificateReissueBody,
+): Promise<ServiceCertificateReissue> => {
+	const { data, error } = await api.POST(
+		"/api/services/{id}/certificate/reissue",
+		{
+			params: { path: { id } },
+			body: body ?? {},
+		},
+	);
+	if (error) {
+		throw error;
+	}
+
+	if (!data) {
+		throw new Error("missing certificate reissue response");
+	}
+
+	return data;
+};
+
 export const runServiceAction = async (
 	id: string,
 	action: ServiceAction,
@@ -170,6 +210,32 @@ export const listServiceDeployments = async (
 	}
 
 	return data ?? [];
+};
+
+export const getServiceDeployment = async (
+	id: string,
+	deploymentId: string,
+): Promise<ServiceDeployment> => {
+	const { data, error } = await api.GET(
+		"/api/services/{id}/deployments/{deployment_id}",
+		{
+			params: {
+				path: {
+					id,
+					deployment_id: deploymentId,
+				},
+			},
+		},
+	);
+	if (error) {
+		throw error;
+	}
+
+	if (!data) {
+		throw new Error("missing deployment response");
+	}
+
+	return data;
 };
 
 export const triggerServiceDeployment = async (
