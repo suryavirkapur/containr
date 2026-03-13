@@ -1,108 +1,78 @@
-import { A, useNavigate } from "@solidjs/router";
-import { type Component, createSignal } from "solid-js";
+import { A, useNavigate } from '@solidjs/router';
+import { createResource, createSignal, Show } from 'solid-js';
+import { getRegistrationStatus } from '../api/auth';
+import { Notice } from '../components/Plain';
+import { PublicShell } from '../components/Shell';
+import { useAuth } from '../context/AuthContext';
+import { describeError } from '../utils/format';
 
-import { api } from "../api";
-import { Alert, Button, Card, CardContent, CardHeader, CardTitle, Input } from "../components/ui";
+const Register = () => {
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const [status] = createResource(getRegistrationStatus);
+  const [email, setEmail] = createSignal('');
+  const [password, setPassword] = createSignal('');
+  const [confirmPassword, setConfirmPassword] = createSignal('');
+  const [error, setError] = createSignal<string | null>(null);
+  const [saving, setSaving] = createSignal(false);
 
-const Register: Component = () => {
-	const [email, setEmail] = createSignal("");
-	const [password, setPassword] = createSignal("");
-	const [confirmPassword, setConfirmPassword] = createSignal("");
-	const [error, setError] = createSignal("");
-	const [loading, setLoading] = createSignal(false);
-	const navigate = useNavigate();
+  const submit = async (event: Event) => {
+    event.preventDefault();
+    if (password() !== confirmPassword()) {
+      setError('passwords do not match');
+      return;
+    }
 
-	const handleSubmit = async (event: Event) => {
-		event.preventDefault();
-		setError("");
+    setSaving(true);
+    setError(null);
 
-		if (password() !== confirmPassword()) {
-			setError("passwords do not match");
-			return;
-		}
+    try {
+      await auth.register(email().trim(), password());
+      navigate('/services');
+    } catch (requestError) {
+      setError(describeError(requestError));
+    } finally {
+      setSaving(false);
+    }
+  };
 
-		if (password().length < 8) {
-			setError("password must be at least 8 characters");
-			return;
-		}
-
-		setLoading(true);
-
-		try {
-			const { data, error: apiError } = await api.POST("/api/auth/register", {
-				body: { email: email(), password: password() },
-			});
-			if (apiError) throw apiError;
-			localStorage.setItem("containr_token", data.token);
-			navigate("/");
-		} catch (err: any) {
-			setError(err.message);
-		} finally {
-			setLoading(false);
-		}
-	};
-
-	return (
-		<div class="flex min-h-screen items-center justify-center px-4 py-10">
-			<Card class="w-full max-w-md">
-				<CardHeader class="space-y-4 text-center">
-					<p class="text-[11px] font-semibold uppercase tracking-[0.32em] text-[var(--muted-foreground)]">
-						containr
-					</p>
-					<div class="space-y-2">
-						<CardTitle class="text-3xl">create account</CardTitle>
-						<p class="text-sm text-[var(--muted-foreground)]">
-							spin up your own internal paas workspace and start deploying services
-						</p>
-					</div>
-				</CardHeader>
-				<CardContent class="space-y-6">
-					{error() ? (
-						<Alert variant="destructive" title="registration failed">
-							{error()}
-						</Alert>
-					) : null}
-
-					<form onSubmit={handleSubmit} class="space-y-4">
-						<Input
-							label="email"
-							type="email"
-							value={email()}
-							onInput={(event) => setEmail(event.currentTarget.value)}
-							placeholder="you@example.com"
-							required
-						/>
-						<Input
-							label="password"
-							type="password"
-							value={password()}
-							onInput={(event) => setPassword(event.currentTarget.value)}
-							placeholder="at least 8 characters"
-							required
-						/>
-						<Input
-							label="confirm password"
-							type="password"
-							value={confirmPassword()}
-							onInput={(event) => setConfirmPassword(event.currentTarget.value)}
-							placeholder="confirm your password"
-							required
-						/>
-						<Button type="submit" isLoading={loading()} class="w-full">
-							create account
-						</Button>
-					</form>
-
-					<p class="text-center text-sm text-[var(--muted-foreground)]">
-						already have an account?{" "}
-						<A href="/login" class="text-[var(--foreground)] underline underline-offset-4">
-							sign in
-						</A>
-					</p>
-				</CardContent>
-			</Card>
-		</div>
-	);
+  return (
+    <PublicShell title='bootstrap admin account' subtitle='This page only works before the first user exists.'>
+      <Show when={error()}>{(message) => <Notice tone='error'>{message()}</Notice>}</Show>
+      <Show when={status()} fallback={<section class='panel'><p>Checking registration status...</p></section>}>
+        {(current) => (
+          current().registration_open ? (
+            <section class='panel'>
+              <form class='form-stack' onSubmit={(event) => void submit(event)}>
+                <label class='field'>
+                  <span>email</span>
+                  <input type='email' value={email()} onInput={(event) => setEmail(event.currentTarget.value)} />
+                </label>
+                <label class='field'>
+                  <span>password</span>
+                  <input type='password' value={password()} onInput={(event) => setPassword(event.currentTarget.value)} />
+                </label>
+                <label class='field'>
+                  <span>confirm password</span>
+                  <input type='password' value={confirmPassword()} onInput={(event) => setConfirmPassword(event.currentTarget.value)} />
+                </label>
+                <div class='button-row'>
+                  <button type='submit' disabled={saving()}>{saving() ? 'creating...' : 'create first user'}</button>
+                  <a href='/api/auth/github'>use github instead</a>
+                </div>
+              </form>
+            </section>
+          ) : (
+            <section class='panel'>
+              <p>Public registration is closed.</p>
+              <p class='muted'>Sign in with an account created by the bootstrap admin.</p>
+              <p><A href='/login'>back to login</A></p>
+            </section>
+          )
+        )}
+      </Show>
+    </PublicShell>
+  );
 };
 
 export default Register;

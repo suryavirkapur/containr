@@ -1,56 +1,44 @@
-import { useNavigate } from "@solidjs/router";
-import { type Component, createSignal, onMount } from "solid-js";
+import { useNavigate } from '@solidjs/router';
+import { createSignal, onMount, Show } from 'solid-js';
+import { finishGithubAppInstall } from '../api/settings';
+import { Notice } from '../components/Plain';
+import { PublicShell } from '../components/Shell';
+import { describeError } from '../utils/format';
 
-/**
- * handles github app installation callback
- */
-const GithubInstallCallback: Component = () => {
-	const navigate = useNavigate();
-	const [error, setError] = createSignal<string | null>(null);
+const TOKEN_KEY = 'containr_token';
 
-	onMount(async () => {
-		const params = new URLSearchParams(window.location.search);
-		const installationId = params.get("installation_id");
-		const setupAction = params.get("setup_action");
+const GithubInstallCallback = () => {
+  const navigate = useNavigate();
+  const [message, setMessage] = createSignal('processing github installation...');
+  const [error, setError] = createSignal<string | null>(null);
 
-		const token = localStorage.getItem("containr_token");
-		if (!token) {
-			setError("missing auth token");
-			return;
-		}
+  onMount(async () => {
+    const params = new URLSearchParams(window.location.search);
+    const installationId = params.get('installation_id');
+    const setupAction = params.get('setup_action');
+    const token = localStorage.getItem(TOKEN_KEY);
 
-		const query = new URLSearchParams();
-		if (installationId) {
-			query.set("installation_id", installationId);
-		}
-		if (setupAction) {
-			query.set("setup_action", setupAction);
-		}
+    if (!token) {
+      setError('missing auth token');
+      return;
+    }
 
-		try {
-			const res = await fetch(`/api/github/app/install/callback?${query.toString()}`, {
-				headers: {
-					Authorization: `Bearer ${token}`,
-				},
-			});
+    try {
+      setMessage('saving github installation...');
+      await finishGithubAppInstall(installationId, setupAction, token);
+      navigate('/settings?github=installed', { replace: true });
+    } catch (requestError) {
+      setError(describeError(requestError));
+    }
+  });
 
-			if (!res.ok) {
-				throw new Error("failed to update github installation");
-			}
-
-			navigate("/settings?github=installed", { replace: true });
-		} catch (err) {
-			setError((err as Error).message);
-		}
-	});
-
-	return (
-		<div class="min-h-screen flex items-center justify-center bg-neutral-950 text-neutral-200">
-			<div class="text-sm">
-				{error() ? `github install failed: ${error()}` : "processing github installation..."}
-			</div>
-		</div>
-	);
+  return (
+    <PublicShell title='github installation' subtitle='Finalizing the GitHub App installation.'>
+      <Show when={error()} fallback={<section class='panel'><p>{message()}</p></section>}>
+        {(currentError) => <Notice tone='error'>{currentError()}</Notice>}
+      </Show>
+    </PublicShell>
+  );
 };
 
 export default GithubInstallCallback;

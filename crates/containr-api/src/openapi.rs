@@ -34,8 +34,12 @@ use crate::handlers::{
         // system
         system::get_system_stats,
         // auth
+        auth::status,
         auth::register,
         auth::login,
+        auth::me,
+        auth::list_users,
+        auth::create_user,
         auth::github_start,
         auth::github_callback,
         // settings
@@ -92,8 +96,10 @@ use crate::handlers::{
             // system
             system::SystemStats,
             // auth
+            auth::RegistrationStatusResponse,
             auth::LoginRequest,
             auth::RegisterRequest,
+            auth::CreateUserRequest,
             auth::AuthResponse,
             auth::UserResponse,
             auth::ErrorResponse,

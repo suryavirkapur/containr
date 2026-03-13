@@ -1,65 +1,138 @@
-import { type Accessor, createContext, createSignal, type JSX, useContext } from "solid-js";
-import { api, type components } from "../api";
+import {
+  type Accessor,
+  createContext,
+  createEffect,
+  createSignal,
+  type JSX,
+  useContext,
+} from 'solid-js';
+import {
+  type AuthUser,
+  getCurrentUser,
+  login as loginRequest,
+  register as registerRequest,
+} from '../api/auth';
 
-type User = components["schemas"]["UserResponse"];
-
-interface AuthContextType {
-	user: Accessor<User | null>;
-	token: Accessor<string | null>;
-	login: (email: string, password: string) => Promise<void>;
-	register: (email: string, password: string) => Promise<void>;
-	logout: () => void;
-	isAuthenticated: Accessor<boolean>;
+interface AuthContextValue {
+  user: Accessor<AuthUser | null>;
+  token: Accessor<string | null>;
+  ready: Accessor<boolean>;
+  isAuthenticated: Accessor<boolean>;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+  refreshUser: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType>();
+const TOKEN_KEY = 'containr_token';
+const USER_KEY = 'containr_user';
+const AuthContext = createContext<AuthContextValue>();
 
-/**
- * provides authentication state and methods
- */
-export function AuthProvider(props: { children: JSX.Element }) {
-	const [user, setUser] = createSignal<User | null>(null);
-	const [token, setToken] = createSignal<string | null>(localStorage.getItem("containr_token"));
+const readStoredUser = (): AuthUser | null => {
+  const raw = localStorage.getItem(USER_KEY);
+  if (!raw) return null;
 
-	const isAuthenticated = () => !!token();
+  try {
+    return JSON.parse(raw) as AuthUser;
+  } catch {
+    localStorage.removeItem(USER_KEY);
+    return null;
+  }
+};
 
-	const login = async (email: string, password: string) => {
-		const { data, error } = await api.POST("/api/auth/login", {
-			body: { email, password },
-		});
-		if (error) throw error;
-		setToken(data.token);
-		setUser(data.user);
-		localStorage.setItem("containr_token", data.token);
-	};
+export const AuthProvider = (props: { children: JSX.Element }) => {
+  const initialToken = localStorage.getItem(TOKEN_KEY);
+  const initialUser = initialToken ? readStoredUser() : null;
 
-	const register = async (email: string, password: string) => {
-		const { data, error } = await api.POST("/api/auth/register", {
-			body: { email, password },
-		});
-		if (error) throw error;
-		setToken(data.token);
-		setUser(data.user);
-		localStorage.setItem("containr_token", data.token);
-	};
+  const [token, setToken] = createSignal<string | null>(initialToken);
+  const [user, setUser] = createSignal<AuthUser | null>(initialUser);
+  const [ready, setReady] = createSignal(!initialToken || Boolean(initialUser));
 
-	const logout = () => {
-		setToken(null);
-		setUser(null);
-		localStorage.removeItem("containr_token");
-	};
+  const isAuthenticated = () => Boolean(token() && user());
 
-	return (
-		<AuthContext.Provider value={{ user, token, login, register, logout, isAuthenticated }}>
-			{props.children}
-		</AuthContext.Provider>
-	);
-}
+  const clearSession = () => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    setToken(null);
+    setUser(null);
+  };
 
-export function useAuth() {
-	const ctx = useContext(AuthContext);
-	if (!ctx) {
-		throw new Error("useAuth must be used within AuthProvider");
-	}
-	return ctx;
-}
+  const storeUser = (value: AuthUser | null) => {
+    if (!value) {
+      localStorage.removeItem(USER_KEY);
+      setUser(null);
+      return;
+    }
+
+    localStorage.setItem(USER_KEY, JSON.stringify(value));
+    setUser(value);
+  };
+
+  const refreshUser = async () => {
+    if (!token()) {
+      storeUser(null);
+      setReady(true);
+      return;
+    }
+
+    try {
+      const currentUser = await getCurrentUser();
+      storeUser(currentUser);
+    } catch {
+      clearSession();
+    } finally {
+      setReady(true);
+    }
+  };
+
+  createEffect(() => {
+    const currentToken = token();
+    if (!currentToken) {
+      setReady(true);
+      return;
+    }
+
+    if (user()) {
+      setReady(true);
+      return;
+    }
+
+    setReady(false);
+    void refreshUser();
+  });
+
+  const login = async (email: string, password: string) => {
+    const response = await loginRequest({ email, password });
+    localStorage.setItem(TOKEN_KEY, response.token);
+    setToken(response.token);
+    storeUser(response.user);
+    setReady(true);
+  };
+
+  const register = async (email: string, password: string) => {
+    const response = await registerRequest({ email, password });
+    localStorage.setItem(TOKEN_KEY, response.token);
+    setToken(response.token);
+    storeUser(response.user);
+    setReady(true);
+  };
+
+  const logout = () => {
+    clearSession();
+    setReady(true);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, token, ready, isAuthenticated, login, register, logout, refreshUser }}>
+      {props.children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+  return context;
+};
