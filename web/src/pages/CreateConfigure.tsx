@@ -23,12 +23,13 @@ const parseEnvVars = (value: string) =>
   });
 
 const readParam = (value: string | string[] | undefined) => Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+const DEFAULT_DOCKERFILE_PATH = 'Dockerfile';
 
 const CreateConfigure = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [port, setPort] = createSignal('3000');
-  const [dockerfilePath, setDockerfilePath] = createSignal('Dockerfile');
+  const [dockerfilePath, setDockerfilePath] = createSignal(DEFAULT_DOCKERFILE_PATH);
   const [buildContext, setBuildContext] = createSignal('.');
   const [domains, setDomains] = createSignal('');
   const [envVars, setEnvVars] = createSignal('');
@@ -50,6 +51,12 @@ const CreateConfigure = () => {
     setError(null);
 
     try {
+      const normalizedDockerfilePath = dockerfilePath().trim();
+      const dockerfilePathValue =
+        !normalizedDockerfilePath || normalizedDockerfilePath === DEFAULT_DOCKERFILE_PATH
+          ? null
+          : normalizedDockerfilePath;
+
       const created = await createService({
         source: 'git_repository',
         github_url: githubUrl(),
@@ -60,7 +67,7 @@ const CreateConfigure = () => {
           service_type: serviceType(),
           port: Number.parseInt(port(), 10) || 3000,
           expose_http: serviceType() === 'web_service',
-          dockerfile_path: dockerfilePath().trim() || null,
+          dockerfile_path: dockerfilePathValue,
           build_context: buildContext().trim() || null,
           command: parseCommand(command()),
           working_dir: workingDir().trim() || null,
