@@ -5,6 +5,7 @@ import {
   deleteGithubApp,
   getGithubAppManifest,
   getGithubAppStatus,
+  getHealth,
   getSettings,
   getSystemStats,
   issueDashboardCertificate,
@@ -12,7 +13,7 @@ import {
 } from '../api/settings';
 import { KeyValueTable, LoadingBlock, Notice, PageTitle, Panel } from '../components/Plain';
 import { useAuth } from '../context/AuthContext';
-import { describeError, formatDateTime } from '../utils/format';
+import { describeError, formatBytes, formatDateTime } from '../utils/format';
 
 const appendGithubPath = (baseUrl: string | null | undefined, suffix: string) => {
   if (!baseUrl) return null;
@@ -40,6 +41,7 @@ const Settings = () => {
   const isAdmin = () => auth.user()?.is_admin ?? false;
 
   const [settings, { refetch: refetchSettings }] = createResource(isAdmin, async (enabled) => enabled ? getSettings() : null);
+  const [health, { refetch: refetchHealth }] = createResource(getHealth);
   const [stats, { refetch: refetchStats }] = createResource(isAdmin, async (enabled) => enabled ? getSystemStats() : null);
   const [githubApp, { refetch: refetchGithubApp }] = createResource(isAdmin, async (enabled) => enabled ? getGithubAppStatus() : null);
   const [users, { refetch: refetchUsers }] = createResource(isAdmin, async (enabled) => enabled ? listUsers() : []);
@@ -180,6 +182,20 @@ const Settings = () => {
         ]} />
       </Panel>
 
+      <Show when={health()}>
+        {(currentHealth) => (
+          <Panel title='health'>
+            <KeyValueTable rows={[
+              ['status', <span>{currentHealth().status}</span>],
+              ['version', <span>{currentHealth().version}</span>],
+            ]} />
+            <div class='button-row'>
+              <button type='button' onClick={() => void refetchHealth()}>refresh health</button>
+            </div>
+          </Panel>
+        )}
+      </Show>
+
       <Show when={isAdmin()} fallback={<Panel title='access'><p>Only the first user can manage server settings or add users.</p></Panel>}>
         <Show when={settings.loading}><LoadingBlock message='Loading settings...' /></Show>
         <Show when={stats.loading}><LoadingBlock message='Loading system stats...' /></Show>
@@ -193,9 +209,9 @@ const Settings = () => {
             <Panel title='system stats'>
               <KeyValueTable rows={[
                 ['cpu %', <span>{currentStats().cpu_percent.toFixed(1)}</span>],
-                ['memory', <span>{currentStats().memory_used_bytes} / {currentStats().memory_total_bytes}</span>],
-                ['network rx', <span>{currentStats().network_rx_bytes}</span>],
-                ['network tx', <span>{currentStats().network_tx_bytes}</span>],
+                ['memory', <span>{formatBytes(currentStats().memory_used_bytes)} / {formatBytes(currentStats().memory_total_bytes)}</span>],
+                ['network rx', <span>{formatBytes(currentStats().network_rx_bytes)}</span>],
+                ['network tx', <span>{formatBytes(currentStats().network_tx_bytes)}</span>],
                 ['load avg', <span>{currentStats().load_avg.join(', ')}</span>],
                 ['uptime seconds', <span>{currentStats().uptime_seconds}</span>],
               ]} />
@@ -230,22 +246,18 @@ const Settings = () => {
                   {' '}
                   {currentSettings().wildcard_dns.detail}
                 </Notice>
-                <div class='table-wrap'>
-                  <table>
-                    <tbody>
-                      <tr><th>dashboard url</th><td>{currentSettings().dashboard_url ?? 'n/a'}</td></tr>
-                      <tr><th>public ip</th><td>{currentSettings().public_ip ?? 'n/a'}</td></tr>
-                      <tr><th>wildcard domain</th><td>{currentSettings().service_wildcard_domain ?? 'n/a'}</td></tr>
-                      <tr><th>default service domain</th><td>{currentSettings().default_service_domain_pattern ?? 'n/a'}</td></tr>
-                      <tr><th>wildcard dns sample</th><td>{currentSettings().wildcard_dns.sample_domain ?? 'n/a'}</td></tr>
-                      <tr><th>wildcard dns ready</th><td>{currentSettings().wildcard_dns.ready ? 'yes' : 'no'}</td></tr>
-                      <tr><th>wildcard dns detail</th><td>{currentSettings().wildcard_dns.detail}</td></tr>
-                      <tr><th>api port</th><td>{currentSettings().api_port}</td></tr>
-                      <tr><th>http/https</th><td>{currentSettings().http_port} / {currentSettings().https_port}</td></tr>
-                      <tr><th>log directory</th><td class='mono'>{currentSettings().log_dir}</td></tr>
-                    </tbody>
-                  </table>
-                </div>
+                <KeyValueTable rows={[
+                  ['dashboard url', <span>{currentSettings().dashboard_url ?? 'n/a'}</span>],
+                  ['public ip', <span>{currentSettings().public_ip ?? 'n/a'}</span>],
+                  ['wildcard domain', <span>{currentSettings().service_wildcard_domain ?? 'n/a'}</span>],
+                  ['default service domain', <span>{currentSettings().default_service_domain_pattern ?? 'n/a'}</span>],
+                  ['wildcard dns sample', <span>{currentSettings().wildcard_dns.sample_domain ?? 'n/a'}</span>],
+                  ['wildcard dns ready', <span>{currentSettings().wildcard_dns.ready ? 'yes' : 'no'}</span>],
+                  ['wildcard dns detail', <span>{currentSettings().wildcard_dns.detail}</span>],
+                  ['api port', <span>{currentSettings().api_port}</span>],
+                  ['http/https', <span>{currentSettings().http_port} / {currentSettings().https_port}</span>],
+                  ['log directory', <span class='mono'>{currentSettings().log_dir}</span>],
+                ]} />
               </form>
             </Panel>
           )}
@@ -263,27 +275,20 @@ const Settings = () => {
                   <button type='submit' disabled={pending() === 'create-user'}>add user</button>
                 </div>
               </form>
-              <div class='table-wrap'>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>email</th>
-                      <th>role</th>
-                      <th>github</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <For each={currentUsers()}>
-                      {(user) => (
-                        <tr>
-                          <td>{user.email}</td>
-                          <td>{user.is_admin ? 'bootstrap admin' : 'standard user'}</td>
-                          <td>{user.github_username ?? 'local password account'}</td>
-                        </tr>
-                      )}
-                    </For>
-                  </tbody>
-                </table>
+              <div class='repo-grid'>
+                <For each={currentUsers()}>
+                  {(user) => (
+                    <article class='repo-card'>
+                      <div class='choice-card-head'>
+                        <div>
+                          <h3>{user.email}</h3>
+                          <p class='muted'>{user.github_username ?? 'local password account'}</p>
+                        </div>
+                        <span class='badge'>{user.is_admin ? 'bootstrap admin' : 'standard user'}</span>
+                      </div>
+                    </article>
+                  )}
+                </For>
               </div>
             </Panel>
           )}
@@ -297,15 +302,18 @@ const Settings = () => {
                 fallback={
                   <div class='stack'>
                     <p>No GitHub App is configured yet.</p>
-                    <div class='table-wrap'>
-                      <table>
-                        <tbody>
-                          <tr><th>step 1</th><td>Click <strong>open github app creation form</strong>.</td></tr>
-                          <tr><th>step 2</th><td>GitHub opens the app creation page in a new tab. Submit that form.</td></tr>
-                          <tr><th>step 3</th><td>After GitHub redirects back here, use the install link that appears below.</td></tr>
-                          <tr><th>step 4</th><td>Refresh this section. Installations should be listed once the app is connected.</td></tr>
-                        </tbody>
-                      </table>
+                    <div class='repo-grid'>
+                      {[
+                        'Click open github app creation form.',
+                        'GitHub opens the app creation page in a new tab. Submit that form.',
+                        'After GitHub redirects back here, use the install link that appears below.',
+                        'Refresh this section. Installations should appear once the app is connected.',
+                      ].map((step, index) => (
+                        <article class='repo-card'>
+                          <p class='muted'>step {index + 1}</p>
+                          <p>{step}</p>
+                        </article>
+                      ))}
                     </div>
                   </div>
                 }
@@ -316,54 +324,48 @@ const Settings = () => {
                   ['html url', <span class='mono'>{currentGithubApp().app?.html_url ?? 'n/a'}</span>],
                   ['installations', <span>{String(currentGithubApp().installations.length)}</span>],
                 ]} />
-                <div class='table-wrap'>
-                  <table>
-                    <tbody>
-                      <tr>
-                        <th>install app</th>
-                        <td>
-                          <Show
-                            when={appendGithubPath(currentGithubApp().app?.html_url, '/installations/new')}
-                            fallback={<span>available after the app is created</span>}
-                          >
-                            {(installUrl) => <a href={installUrl()} target='_blank' rel='noreferrer'>open GitHub installation page</a>}
-                          </Show>
-                        </td>
-                      </tr>
-                      <tr>
-                        <th>manage app</th>
-                        <td>
-                          <Show when={currentGithubApp().app?.html_url} fallback={<span>available after the app is created</span>}>
-                            {(appUrl) => <a href={appUrl()} target='_blank' rel='noreferrer'>open GitHub app page</a>}
-                          </Show>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                <KeyValueTable rows={[
+                  [
+                    'install app',
+                    <Show
+                      when={appendGithubPath(currentGithubApp().app?.html_url, '/installations/new')}
+                      fallback={<span>available after the app is created</span>}
+                    >
+                      {(installUrl) => <a href={installUrl()} target='_blank' rel='noreferrer'>open GitHub installation page</a>}
+                    </Show>,
+                  ],
+                  [
+                    'manage app',
+                    <Show when={currentGithubApp().app?.html_url} fallback={<span>available after the app is created</span>}>
+                      {(appUrl) => <a href={appUrl()} target='_blank' rel='noreferrer'>open GitHub app page</a>}
+                    </Show>,
+                  ],
+                ]} />
                 <Show when={currentGithubApp().installations.length === 0}>
                   <Notice tone='info' title='Install still missing'>
                     Create the app first, then click <strong>open GitHub installation page</strong>. Until an installation exists, repository deploys will not appear.
                   </Notice>
                 </Show>
-                <div class='table-wrap'>
-                  <table>
-                    <thead>
-                      <tr><th>installation id</th><th>account</th><th>type</th><th>repo count</th></tr>
-                    </thead>
-                    <tbody>
-                      <For each={currentGithubApp().installations}>
-                        {(installation) => (
-                          <tr>
-                            <td class='mono'>{installation.id}</td>
-                            <td>{installation.account_login}</td>
-                            <td>{installation.account_type}</td>
-                            <td>{installation.repository_count ?? 'n/a'}</td>
-                          </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </table>
+                <div class='repo-grid'>
+                  <For each={currentGithubApp().installations}>
+                    {(installation) => (
+                      <article class='repo-card'>
+                        <div class='choice-card-head'>
+                          <div>
+                            <h3>{installation.account_login}</h3>
+                            <p class='muted mono'>{installation.id}</p>
+                          </div>
+                          <span class='badge'>{installation.account_type}</span>
+                        </div>
+                        <div class='summary-grid'>
+                          <div class='summary-card'>
+                            <p class='muted'>repositories</p>
+                            <p>{installation.repository_count ?? 'n/a'}</p>
+                          </div>
+                        </div>
+                      </article>
+                    )}
+                  </For>
                 </div>
               </Show>
               <div class='button-row'>

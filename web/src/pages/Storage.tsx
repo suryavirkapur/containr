@@ -77,37 +77,42 @@ const Storage = () => {
 
       <Show when={!buckets.loading && (buckets() ?? []).length > 0}>
         <Panel title='bucket inventory'>
-          <div class='table-wrap'>
-            <table>
-              <thead>
-                <tr>
-                  <th>name</th>
-                  <th>endpoint</th>
-                  <th>public</th>
-                  <th>size</th>
-                  <th>created</th>
-                  <th>actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={buckets() ?? []}>
-                  {(bucket) => (
-                    <tr>
-                      <td><A href={`/storage/${bucket.id}`}>{bucket.name}</A></td>
-                      <td class='mono'>{bucket.endpoint}</td>
-                      <td>{bucket.publicly_exposed ? bucket.public_endpoint ?? 'yes' : 'no'}</td>
-                      <td>{formatBytes(bucket.size_bytes)}</td>
-                      <td>{formatDateTime(bucket.created_at)}</td>
-                      <td>
-                        <button type='button' onClick={() => void removeBucket(bucket.id)} disabled={pendingDelete() === bucket.id}>
-                          delete
-                        </button>
-                      </td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
+          <div class='repo-grid'>
+            <For each={buckets() ?? []}>
+              {(bucket) => (
+                <article class='repo-card'>
+                  <div class='choice-card-head'>
+                    <div>
+                      <A class='service-title' href={`/storage/${bucket.id}`}>
+                        {bucket.name}
+                      </A>
+                      <p class='muted mono'>{bucket.endpoint}</p>
+                    </div>
+                    <span class='badge'>{bucket.publicly_exposed ? 'public' : 'private'}</span>
+                  </div>
+                  <div class='summary-grid'>
+                    <div class='summary-card'>
+                      <p class='muted'>public endpoint</p>
+                      <p class='mono'>{bucket.public_endpoint ?? 'not exposed'}</p>
+                    </div>
+                    <div class='summary-card'>
+                      <p class='muted'>size</p>
+                      <p>{formatBytes(bucket.size_bytes)}</p>
+                    </div>
+                    <div class='summary-card'>
+                      <p class='muted'>created</p>
+                      <p>{formatDateTime(bucket.created_at)}</p>
+                    </div>
+                  </div>
+                  <div class='button-row'>
+                    <A href={`/storage/${bucket.id}`}>open</A>
+                    <button type='button' onClick={() => void removeBucket(bucket.id)} disabled={pendingDelete() === bucket.id}>
+                      delete
+                    </button>
+                  </div>
+                </article>
+              )}
+            </For>
           </div>
         </Panel>
       </Show>

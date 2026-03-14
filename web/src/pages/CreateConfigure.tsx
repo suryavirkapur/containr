@@ -91,16 +91,28 @@ const CreateConfigure = () => {
       {error() ? <Notice tone='error'>{error()}</Notice> : null}
       <Panel title='service request'>
         <form class='form-stack' onSubmit={(event) => void create(event)}>
-          <div class='table-wrap'>
-            <table>
-              <tbody>
-                <tr><th>name</th><td>{name()}</td></tr>
-                <tr><th>type</th><td>{serviceType()}</td></tr>
-                <tr><th>github url</th><td class='mono'>{githubUrl()}</td></tr>
-                <tr><th>branch</th><td>{branch() || 'default'}</td></tr>
-              </tbody>
-            </table>
+          <div class='summary-grid'>
+            <div class='summary-card'>
+              <p class='muted'>name</p>
+              <p>{name()}</p>
+            </div>
+            <div class='summary-card'>
+              <p class='muted'>type</p>
+              <p>{serviceType()}</p>
+            </div>
+            <div class='summary-card'>
+              <p class='muted'>github url</p>
+              <p class='mono'>{githubUrl()}</p>
+            </div>
+            <div class='summary-card'>
+              <p class='muted'>branch</p>
+              <p>{branch() || 'default'}</p>
+            </div>
           </div>
+
+          <Notice tone='info'>
+            Repository-backed services create their own group boundary. Attach databases and queues to that group later from the services page.
+          </Notice>
 
           <div class='two-col'>
             <label class='field'>
