@@ -28,10 +28,10 @@ use containr_common::managed_services::{
     DatabaseType, ManagedDatabase, ManagedQueue, QueueType, ServiceStatus,
 };
 use containr_common::models::{
-    App, BuildArg, ContainerService, Deployment, DeploymentSource,
-    DeploymentStatus, EnvVar, HealthCheck, HttpRequestLog, RestartPolicy,
-    RolloutStrategy, ServiceDeployment, ServiceMount, ServiceRegistryAuth,
-    ServiceType,
+    default_service_domain, App, BuildArg, ContainerService, Deployment,
+    DeploymentSource, DeploymentStatus, EnvVar, HealthCheck, HttpRequestLog,
+    RestartPolicy, RolloutStrategy, ServiceDeployment, ServiceMount,
+    ServiceRegistryAuth, ServiceType,
 };
 use containr_common::service_inventory::ServiceInventoryItem;
 use containr_common::Config;
@@ -1340,25 +1340,9 @@ fn build_default_urls(
         return urls;
     }
 
-    let Some(project_name) = service.project_name.as_deref() else {
-        return urls;
-    };
-    let base_domain = base_domain.trim().trim_end_matches('.');
-    if base_domain.is_empty() {
-        return urls;
+    if let Some(domain) = default_service_domain(service.id, base_domain) {
+        push_unique(&mut urls, format!("https://{}", domain));
     }
-
-    if service.name == "web" {
-        push_unique(
-            &mut urls,
-            format!("https://{}.{}", project_name, base_domain),
-        );
-    }
-
-    push_unique(
-        &mut urls,
-        format!("https://{}.{}.{}", service.name, project_name, base_domain),
-    );
 
     urls
 }
@@ -2701,45 +2685,67 @@ async fn validate_domain(
         return Err("www subdomains are not supported".to_string());
     }
 
-    let public_ip = public_ip.ok_or_else(|| {
-        "public_ip must be configured for domain validation".to_string()
-    })?;
-    let public_ip: IpAddr = public_ip
-        .parse()
-        .map_err(|_| "public_ip is not a valid IP address".to_string())?;
-
     let resolver = TokioAsyncResolver::tokio(
         ResolverConfig::default(),
         ResolverOpts::default(),
     );
 
-    if let Ok(lookup) = resolver.lookup_ip(domain).await {
-        if lookup.iter().any(|ip| ip == public_ip) {
+    let domain_ips = lookup_resolved_ips(&resolver, domain).await;
+    if let Some(public_ip) =
+        public_ip.map(str::trim).filter(|value| !value.is_empty())
+    {
+        let public_ip: IpAddr = public_ip
+            .parse()
+            .map_err(|_| "public_ip is not a valid IP address".to_string())?;
+        if domain_ips.contains(&public_ip) {
             return Ok(());
         }
+    }
+
+    let base_domain_ips = lookup_resolved_ips(&resolver, &base_domain).await;
+    if !domain_ips.is_empty()
+        && !base_domain_ips.is_empty()
+        && domain_ips.iter().any(|ip| base_domain_ips.contains(ip))
+    {
+        return Ok(());
     }
 
     let cname_lookup = resolver
         .lookup(domain, RecordType::CNAME)
         .await
         .map_err(|_| {
-            "domain does not resolve to required records".to_string()
+            "domain must resolve to the same public target as the base domain"
+                .to_string()
         })?;
 
     let suffix = format!(".{}", base_domain.trim_end_matches('.'));
     for record in cname_lookup.iter() {
         if let trust_dns_resolver::proto::rr::RData::CNAME(cname) = record {
             let target = cname.to_utf8();
-            if target.trim_end_matches('.').ends_with(&suffix) {
+            let target = target.trim_end_matches('.');
+            if target.eq_ignore_ascii_case(&base_domain)
+                || target.ends_with(&suffix)
+            {
                 return Ok(());
             }
         }
     }
 
     Err(
-        "domain must have an A record pointing to the public IP or CNAME to the base domain"
+        "domain must resolve to the same public target as the base domain or CNAME to it"
             .to_string(),
     )
+}
+
+async fn lookup_resolved_ips(
+    resolver: &TokioAsyncResolver,
+    domain: &str,
+) -> HashSet<IpAddr> {
+    resolver
+        .lookup_ip(domain)
+        .await
+        .map(|lookup| lookup.iter().collect::<HashSet<_>>())
+        .unwrap_or_default()
 }
 
 fn sort_deployments_desc(mut deployments: Vec<Deployment>) -> Vec<Deployment> {

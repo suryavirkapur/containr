@@ -4516,6 +4516,7 @@
         "type": "object",
         "description": "settings response - only exposes safe fields",
         "required": [
+          "wildcard_dns",
           "api_port",
           "base_domain",
           "storage_management_endpoint",
@@ -4553,6 +4554,13 @@
               "null"
             ],
             "description": "dashboard url served by the proxy"
+          },
+          "default_service_domain_pattern": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "default hostname pattern used for public services"
           },
           "http_port": {
             "type": "integer",
@@ -4610,6 +4618,10 @@
               "null"
             ],
             "description": "optional public s3 hostname routed to rustfs"
+          },
+          "wildcard_dns": {
+            "$ref": "#/components/schemas/WildcardDomainStatusResponse",
+            "description": "wildcard dns readiness for default service hostnames"
           }
         }
       },
@@ -4848,6 +4860,38 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "WildcardDomainStatusResponse": {
+        "type": "object",
+        "description": "wildcard dns readiness for default service domains",
+        "required": [
+          "ready",
+          "detail"
+        ],
+        "properties": {
+          "detail": {
+            "type": "string",
+            "description": "human-readable explanation of the current state"
+          },
+          "ready": {
+            "type": "boolean",
+            "description": "whether the current wildcard dns setup appears ready"
+          },
+          "sample_domain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "sample default service hostname checked against dns"
+          },
+          "wildcard_domain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "wildcard domain admins should configure in dns"
           }
         }
       }

@@ -1,18 +1,37 @@
 //! server settings handlers
 
+use std::collections::HashSet;
+use std::net::IpAddr;
+
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     Json,
 };
 use serde::{Deserialize, Serialize};
+use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
+use trust_dns_resolver::proto::rr::RecordType;
+use trust_dns_resolver::TokioAsyncResolver;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
-use containr_common::models::User;
+use containr_common::models::{default_service_domain_pattern, User};
+
+/// wildcard dns readiness for default service domains
+#[derive(Debug, Serialize, ToSchema)]
+pub struct WildcardDomainStatusResponse {
+    /// wildcard domain admins should configure in dns
+    pub wildcard_domain: Option<String>,
+    /// sample default service hostname checked against dns
+    pub sample_domain: Option<String>,
+    /// whether the current wildcard dns setup appears ready
+    pub ready: bool,
+    /// human-readable explanation of the current state
+    pub detail: String,
+}
 
 /// settings response - only exposes safe fields
 #[derive(Debug, Serialize, ToSchema)]
@@ -21,6 +40,10 @@ pub struct SettingsResponse {
     pub dashboard_url: Option<String>,
     /// wildcard suffix used for default service subdomains
     pub service_wildcard_domain: Option<String>,
+    /// default hostname pattern used for public services
+    pub default_service_domain_pattern: Option<String>,
+    /// wildcard dns readiness for default service hostnames
+    pub wildcard_dns: WildcardDomainStatusResponse,
     /// configured api port
     pub api_port: u16,
     /// base domain for all apps
@@ -99,30 +122,7 @@ pub async fn get_settings(
 ) -> Result<Json<SettingsResponse>, (StatusCode, Json<ErrorResponse>)> {
     let _ = require_admin_user(&state, &headers).await?;
     let config = state.config.read().await;
-    let dashboard_url = dashboard_url(&config.proxy.base_domain);
-    let service_wildcard_domain =
-        service_wildcard_domain(&config.proxy.base_domain);
-
-    Ok(Json(SettingsResponse {
-        dashboard_url,
-        service_wildcard_domain,
-        api_port: config.server.port,
-        base_domain: config.proxy.base_domain.clone(),
-        public_ip: config.proxy.public_ip.clone(),
-        storage_public_hostname: config.storage.rustfs_public_hostname.clone(),
-        storage_management_endpoint: config
-            .storage
-            .rustfs_management_endpoint
-            .clone(),
-        storage_internal_host: config.storage.rustfs_internal_host.clone(),
-        storage_port: config.storage.rustfs_port,
-        log_dir: config.logging.dir.clone(),
-        log_retention_days: config.logging.retention_days,
-        http_port: config.proxy.http_port,
-        https_port: config.proxy.https_port,
-        acme_email: config.acme.email.clone(),
-        acme_staging: config.acme.staging,
-    }))
+    Ok(Json(build_settings_response(&config).await))
 }
 
 /// update server settings
@@ -234,28 +234,7 @@ pub async fn update_settings(
 
     tracing::info!(base_domain = %config.proxy.base_domain, "settings updated");
 
-    Ok(Json(SettingsResponse {
-        dashboard_url: dashboard_url(&config.proxy.base_domain),
-        service_wildcard_domain: service_wildcard_domain(
-            &config.proxy.base_domain,
-        ),
-        api_port: config.server.port,
-        base_domain: config.proxy.base_domain.clone(),
-        public_ip: config.proxy.public_ip.clone(),
-        storage_public_hostname: config.storage.rustfs_public_hostname.clone(),
-        storage_management_endpoint: config
-            .storage
-            .rustfs_management_endpoint
-            .clone(),
-        storage_internal_host: config.storage.rustfs_internal_host.clone(),
-        storage_port: config.storage.rustfs_port,
-        log_dir: config.logging.dir.clone(),
-        log_retention_days: config.logging.retention_days,
-        http_port: config.proxy.http_port,
-        https_port: config.proxy.https_port,
-        acme_email: config.acme.email.clone(),
-        acme_staging: config.acme.staging,
-    }))
+    Ok(Json(build_settings_response(&config).await))
 }
 
 fn dashboard_url(base_domain: &str) -> Option<String> {
@@ -274,6 +253,147 @@ fn service_wildcard_domain(base_domain: &str) -> Option<String> {
     }
 
     Some(format!("*.{}", base_domain))
+}
+
+async fn build_settings_response(
+    config: &containr_common::Config,
+) -> SettingsResponse {
+    SettingsResponse {
+        dashboard_url: dashboard_url(&config.proxy.base_domain),
+        service_wildcard_domain: service_wildcard_domain(
+            &config.proxy.base_domain,
+        ),
+        default_service_domain_pattern: default_service_domain_pattern(
+            &config.proxy.base_domain,
+        ),
+        wildcard_dns: wildcard_domain_status(
+            &config.proxy.base_domain,
+            config.proxy.public_ip.as_deref(),
+        )
+        .await,
+        api_port: config.server.port,
+        base_domain: config.proxy.base_domain.clone(),
+        public_ip: config.proxy.public_ip.clone(),
+        storage_public_hostname: config.storage.rustfs_public_hostname.clone(),
+        storage_management_endpoint: config
+            .storage
+            .rustfs_management_endpoint
+            .clone(),
+        storage_internal_host: config.storage.rustfs_internal_host.clone(),
+        storage_port: config.storage.rustfs_port,
+        log_dir: config.logging.dir.clone(),
+        log_retention_days: config.logging.retention_days,
+        http_port: config.proxy.http_port,
+        https_port: config.proxy.https_port,
+        acme_email: config.acme.email.clone(),
+        acme_staging: config.acme.staging,
+    }
+}
+
+async fn wildcard_domain_status(
+    base_domain: &str,
+    public_ip: Option<&str>,
+) -> WildcardDomainStatusResponse {
+    let base_domain = base_domain.trim().trim_end_matches('.').to_lowercase();
+    if base_domain.is_empty() {
+        return WildcardDomainStatusResponse {
+            wildcard_domain: None,
+            sample_domain: None,
+            ready: false,
+            detail: "set the base domain first".to_string(),
+        };
+    }
+
+    let wildcard_domain = format!("*.{}", base_domain);
+    let sample_domain = format!("service-abcde.{}", base_domain);
+
+    match wildcard_domain_resolves(&sample_domain, &base_domain, public_ip)
+        .await
+    {
+        Ok(()) => WildcardDomainStatusResponse {
+            wildcard_domain: Some(wildcard_domain),
+            sample_domain: Some(sample_domain),
+            ready: true,
+            detail: "wildcard dns looks ready for default service domains"
+                .to_string(),
+        },
+        Err(error) => WildcardDomainStatusResponse {
+            wildcard_domain: Some(wildcard_domain),
+            sample_domain: Some(sample_domain),
+            ready: false,
+            detail: error,
+        },
+    }
+}
+
+async fn wildcard_domain_resolves(
+    sample_domain: &str,
+    base_domain: &str,
+    public_ip: Option<&str>,
+) -> Result<(), String> {
+    let resolver = TokioAsyncResolver::tokio(
+        ResolverConfig::default(),
+        ResolverOpts::default(),
+    );
+
+    let sample_ips = lookup_ips(&resolver, sample_domain).await;
+    let base_ips = lookup_ips(&resolver, base_domain).await;
+
+    if let Some(public_ip) =
+        public_ip.map(str::trim).filter(|value| !value.is_empty())
+    {
+        let public_ip: IpAddr = public_ip
+            .parse()
+            .map_err(|_| "public_ip is not a valid IP address".to_string())?;
+        if sample_ips.contains(&public_ip) {
+            return Ok(());
+        }
+    }
+
+    if !sample_ips.is_empty()
+        && !base_ips.is_empty()
+        && sample_ips.iter().any(|ip| base_ips.contains(ip))
+    {
+        return Ok(());
+    }
+
+    let cname_lookup = resolver
+        .lookup(sample_domain, RecordType::CNAME)
+        .await
+        .map_err(|_| {
+            format!(
+                "set {} to a wildcard A record or CNAME that points at {}",
+                format!("*.{}", base_domain),
+                base_domain
+            )
+        })?;
+
+    for record in cname_lookup.iter() {
+        if let trust_dns_resolver::proto::rr::RData::CNAME(cname) = record {
+            let target = cname.to_utf8();
+            let target = target.trim_end_matches('.');
+            if target.eq_ignore_ascii_case(base_domain) {
+                return Ok(());
+            }
+        }
+    }
+
+    Err(format!(
+        "set {} to a wildcard A record or CNAME that points at {}",
+        format!("*.{}", base_domain),
+        base_domain
+    ))
+}
+
+async fn lookup_ips(
+    resolver: &TokioAsyncResolver,
+    domain: &str,
+) -> HashSet<IpAddr> {
+    resolver
+        .lookup_ip(domain)
+        .await
+        .map(|lookup| lookup.iter().collect::<HashSet<_>>())
+        .unwrap_or_default()
 }
 
 /// request certificate for dashboard domain
