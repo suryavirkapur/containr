@@ -525,6 +525,46 @@ impl ContainerService {
     }
 }
 
+pub fn default_service_domain_label(service_id: Uuid) -> String {
+    let bytes = service_id.as_bytes();
+    let mut suffix = String::with_capacity(5);
+
+    for index in 0..5 {
+        let mixed = bytes[index] ^ bytes[index + 11];
+        suffix.push(char::from(b'a' + (mixed % 26)));
+    }
+
+    format!("service-{}", suffix)
+}
+
+pub fn default_service_domain(
+    service_id: Uuid,
+    base_domain: &str,
+) -> Option<String> {
+    let base_domain = base_domain.trim().trim_end_matches('.');
+    if base_domain.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "{}.{}",
+        default_service_domain_label(service_id),
+        base_domain
+    ))
+}
+
+pub fn default_service_domain_pattern(base_domain: &str) -> Option<String> {
+    let base_domain = base_domain.trim().trim_end_matches('.');
+    if base_domain.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "service-{{random 5 lowercase letters}}.{}",
+        base_domain
+    ))
+}
+
 /// health status of a service instance
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default,
@@ -1438,5 +1478,30 @@ mod tests {
             let encoded = serde_json::to_string(&health).unwrap();
             assert_eq!(encoded, format!("\"{}\"", expected));
         }
+    }
+
+    #[test]
+    fn test_default_service_domain_helpers() {
+        let service_id =
+            Uuid::parse_str("12345678-1234-5678-9abc-def012345678")
+                .expect("uuid should parse");
+
+        let label = default_service_domain_label(service_id);
+        assert!(label.starts_with("service-"));
+        assert_eq!(label.len(), "service-".len() + 5);
+        assert!(label["service-".len()..]
+            .chars()
+            .all(|value| value.is_ascii_lowercase()));
+
+        assert_eq!(
+            default_service_domain(service_id, "adm.svk77.com")
+                .expect("domain should build"),
+            format!("{}.adm.svk77.com", label)
+        );
+        assert_eq!(
+            default_service_domain_pattern("adm.svk77.com")
+                .expect("pattern should build"),
+            "service-{random 5 lowercase letters}.adm.svk77.com"
+        );
     }
 }

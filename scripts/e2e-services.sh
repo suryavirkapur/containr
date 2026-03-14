@@ -329,6 +329,7 @@ web_host="$(
         sed -E 's#^https?://##; s#/.*$##'
 )"
 expect_nonempty "$web_host"
+expect_contains "$web_host" '^service-[a-z]{5}\.containr\.local$'
 
 ctl services settings "$web_id" > "$tmpdir/web-settings.json"
 expect_eq "$(json "$tmpdir/web-settings.json" '.service_id')" "$web_id"

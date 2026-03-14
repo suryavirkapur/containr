@@ -158,32 +158,8 @@ pub async fn get_github_app(
 
     match app_config {
         Some(app) => {
-            // refresh installations from github
-            let mut installations = app.installations.clone();
-
-            // try to sync with github
-            if let Ok(pem) = decrypt_value(
-                &config,
-                &app.private_key,
-                Some(&config.auth.jwt_secret),
-            ) {
-                if let Ok(jwt) = generate_app_jwt(app.app_id, &pem) {
-                    if let Ok(github_installations) =
-                        list_app_installations(&jwt).await
-                    {
-                        installations = github_installations
-                            .into_iter()
-                            .map(|i| {
-                                GithubInstallation::new(
-                                    i.id,
-                                    i.account.login,
-                                    i.account.account_type,
-                                )
-                            })
-                            .collect();
-                    }
-                }
-            }
+            let app = sync_installations(&state, &config, app).await;
+            let installations = app.installations.clone();
 
             Ok(Json(GithubAppStatusResponse {
                 configured: true,
@@ -437,10 +413,7 @@ pub async fn get_app_repos(
                 }),
             )
         })?;
-
-    if app_config.installations.is_empty() {
-        return Ok(Json(AppReposResponse { repos: vec![] }));
-    }
+    let app_config = sync_installations(&state, &config, app_config).await;
 
     // decrypt private key
     let pem = decrypt_value(
@@ -551,6 +524,77 @@ pub async fn delete_github_app(
         .map_err(internal_error)?;
 
     Ok(StatusCode::OK)
+}
+
+async fn sync_installations(
+    state: &AppState,
+    config: &containr_common::Config,
+    mut app_config: GithubAppConfig,
+) -> GithubAppConfig {
+    let pem = match decrypt_value(
+        config,
+        &app_config.private_key,
+        Some(&config.auth.jwt_secret),
+    ) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(error = %error, "failed to decrypt github app private key");
+            return app_config;
+        }
+    };
+
+    let jwt = match generate_app_jwt(app_config.app_id, &pem) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(error = %error, "failed to generate github app jwt");
+            return app_config;
+        }
+    };
+
+    let refreshed_installations = match list_app_installations(&jwt).await {
+        Ok(installations) => installations
+            .into_iter()
+            .map(|installation| {
+                GithubInstallation::new(
+                    installation.id,
+                    installation.account.login,
+                    installation.account.account_type,
+                )
+            })
+            .collect::<Vec<_>>(),
+        Err(error) => {
+            tracing::warn!(error = %error, "failed to refresh github installations");
+            return app_config;
+        }
+    };
+
+    if same_installations(&app_config.installations, &refreshed_installations) {
+        return app_config;
+    }
+
+    app_config.installations = refreshed_installations;
+    app_config.updated_at = chrono::Utc::now();
+    if let Err(error) = state.db.save_github_app(&app_config) {
+        tracing::warn!(error = %error, "failed to persist github installation refresh");
+    }
+
+    app_config
+}
+
+fn same_installations(
+    left: &[GithubInstallation],
+    right: &[GithubInstallation],
+) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+
+    left.iter().zip(right.iter()).all(|(left, right)| {
+        left.id == right.id
+            && left.account_login == right.account_login
+            && left.account_type == right.account_type
+            && left.repository_count == right.repository_count
+    })
 }
 
 /// helper for internal errors

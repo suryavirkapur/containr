@@ -18,7 +18,7 @@ use tokio::sync::RwLock;
 use tokio::time::MissedTickBehavior;
 use tracing::{info, warn};
 
-use containr_common::models::User;
+use containr_common::models::{default_service_domain, User};
 use containr_common::{Config, Database};
 
 mod logging;
@@ -801,10 +801,9 @@ async fn refresh_routes_for_app(
 
     remove_app_routes(routes, &app, base_domain);
 
-    let primary_service = match select_exposed_service(&routing_app) {
-        Some(service) => service,
-        None => return,
-    };
+    if select_exposed_service(&routing_app).is_none() {
+        return;
+    }
 
     for service in public_services {
         upstreams.clear();
@@ -854,8 +853,7 @@ async fn refresh_routes_for_app(
             }
         }
 
-        let service_domain =
-            service_subdomain(&routing_app, &service, base_domain);
+        let service_domain = service_subdomain(&service, base_domain);
         if upstreams.is_empty() {
             routes.remove_route(&service_domain);
             continue;
@@ -885,19 +883,6 @@ async fn refresh_routes_for_app(
                 service = %service.name,
                 "refreshed custom domain route for service"
             );
-        }
-
-        if service.id == primary_service.id {
-            let subdomain = app_subdomain(&routing_app, base_domain);
-            routes.add_route(containr_proxy::routes::Route {
-                domain: subdomain.clone(),
-                app_id: Some(app.id),
-                service_id: Some(service.id),
-                upstreams: upstreams.clone(),
-                ssl_enabled: false,
-                algorithm,
-            });
-            tracing::info!(subdomain = %subdomain, "refreshed subdomain route for app");
         }
     }
 }
@@ -1049,11 +1034,11 @@ fn app_subdomain(
 }
 
 fn service_subdomain(
-    app: &containr_common::models::App,
     service: &containr_common::models::ContainerService,
     base_domain: &str,
 ) -> String {
-    format!("{}.{}.{}", service.name, app.name, base_domain)
+    default_service_domain(service.id, base_domain)
+        .unwrap_or_else(|| service.name.clone())
 }
 
 fn active_http_container_ids(
