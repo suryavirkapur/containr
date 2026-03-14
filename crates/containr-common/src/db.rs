@@ -1734,8 +1734,7 @@ mod tests {
 
         assert!(db_path.exists(), "sqlite file should exist on disk");
 
-        let reopened =
-            Database::open(&config).expect("database should reopen");
+        let reopened = Database::open(&config).expect("database should reopen");
         let users = reopened.list_users().expect("users should load");
         assert_eq!(users.len(), 1);
         assert_eq!(users[0].id, admin.id);
