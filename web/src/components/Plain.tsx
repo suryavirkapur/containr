@@ -59,16 +59,12 @@ export const EmptyBlock = (props: { title: string; children?: JSX.Element }) => 
 );
 
 export const KeyValueTable = (props: { rows: Array<[string, JSX.Element]> }) => (
-  <div class='table-wrap'>
-    <table>
-      <tbody>
-        {props.rows.map(([label, value]) => (
-          <tr>
-            <th>{label}</th>
-            <td>{value}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
+  <dl class='kv-grid'>
+    {props.rows.map(([label, value]) => (
+      <div class='kv-item'>
+        <dt>{label}</dt>
+        <dd>{value}</dd>
+      </div>
+    ))}
+  </dl>
 );

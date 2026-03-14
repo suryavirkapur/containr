@@ -2,6 +2,8 @@ import { Navigate, Route } from '@solidjs/router';
 import type { Component } from 'solid-js';
 import { Shell } from './components/Shell';
 import BucketDetail from './pages/BucketDetail';
+import ContainerDetail from './pages/container-detail';
+import Containers from './pages/containers';
 import CreateConfigure from './pages/CreateConfigure';
 import CreateFlow from './pages/CreateFlow';
 import CreateRepo from './pages/CreateRepo';
@@ -32,6 +34,8 @@ const App: Component = () => (
       <Route path='/services/new/configure' component={CreateConfigure} />
       <Route path='/services/new/template' component={CreateTemplate} />
       <Route path='/services/:id' component={ServiceDetail} />
+      <Route path='/containers' component={Containers} />
+      <Route path='/containers/:id' component={ContainerDetail} />
       <Route path='/storage' component={Storage} />
       <Route path='/storage/:id' component={BucketDetail} />
       <Route path='/settings' component={Settings} />

@@ -3,6 +3,7 @@ import { api, type components } from './index';
 export type Settings = components['schemas']['SettingsResponse'];
 export type SystemStats = components['schemas']['SystemStats'];
 export type GithubAppStatus = components['schemas']['GithubAppStatusResponse'];
+export type Health = components['schemas']['HealthResponse'];
 
 type UpdateSettingsBody = components['schemas']['UpdateSettingsRequest'];
 
@@ -43,6 +44,13 @@ export const getSystemStats = async (): Promise<SystemStats> => {
   const { data, error } = await api.GET('/api/system/stats');
   if (error) throw error;
   if (!data) throw new Error('missing system stats response');
+  return data;
+};
+
+export const getHealth = async (): Promise<Health> => {
+  const { data, error } = await api.GET('/health');
+  if (error) throw error;
+  if (!data) throw new Error('missing health response');
   return data;
 };
 

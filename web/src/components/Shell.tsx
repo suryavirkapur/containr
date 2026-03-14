@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 
 const links = [
   { href: '/services', label: 'services' },
+  { href: '/containers', label: 'containers' },
   { href: '/storage', label: 'storage' },
   { href: '/settings', label: 'settings' },
 ];
@@ -27,10 +28,10 @@ export const Shell = (props: { children?: JSX.Element }) => {
   return (
     <main class='shell'>
       <header class='panel shell-header'>
-        <div>
-          <div class='muted'>containr control panel</div>
+        <div class='brand-block'>
+          <div class='eyebrow'>containr control panel</div>
           <h1>containr</h1>
-          <p class='muted'>Plain interface. Tables, forms, logs. No decoration.</p>
+          <p class='muted'>Services define the platform. Groups only define the network boundary.</p>
         </div>
         <div class='account-box'>
           <div><strong>{auth.user()?.email}</strong></div>
