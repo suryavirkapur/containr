@@ -40,6 +40,8 @@ deploy_remote_tmp_path="${DEPLOY_REMOTE_TMP_PATH:-/root/containr.new}"
 deploy_verify_url="${DEPLOY_VERIFY_URL:-https://adm.svk77.com/}"
 deploy_favicon_url="${DEPLOY_FAVICON_URL:-https://adm.svk77.com/favicon.svg}"
 deploy_service_health_url="${DEPLOY_SERVICE_HEALTH_URL:-http://127.0.0.1:3000/health}"
+deploy_service_health_attempts="${DEPLOY_SERVICE_HEALTH_ATTEMPTS:-60}"
+deploy_service_health_delay_secs="${DEPLOY_SERVICE_HEALTH_DELAY_SECS:-1}"
 deploy_rustfs_container="${DEPLOY_RUSTFS_CONTAINER:-rustfs}"
 deploy_docker_platform="${DEPLOY_DOCKER_PLATFORM:-linux/amd64}"
 worktree_dir="${DEPLOY_WORKTREE_DIR:-/tmp/containr-release}"
@@ -173,6 +175,7 @@ EOF
 trap cleanup EXIT
 
 git -C "$repo_root" rev-parse --verify "${commit}^{commit}" >/dev/null
+git -C "$repo_root" worktree prune >/dev/null
 
 if git -C "$repo_root" worktree list --porcelain | grep -Fq "worktree $worktree_dir"; then
     git -C "$repo_root" worktree remove --force "$worktree_dir" >/dev/null 2>&1 || true
@@ -203,7 +206,9 @@ ssh "$deploy_target" bash -s -- \
     "$deploy_remote_tmp_path" \
     "$wipe_state" \
     "$deploy_rustfs_container" \
-    "$deploy_service_health_url" <<'EOF'
+    "$deploy_service_health_url" \
+    "$deploy_service_health_attempts" \
+    "$deploy_service_health_delay_secs" <<'EOF'
 set -euo pipefail
 
 deploy_service="$1"
@@ -212,6 +217,8 @@ deploy_remote_tmp_path="$3"
 wipe_state="$4"
 deploy_rustfs_container="$5"
 deploy_service_health_url="$6"
+deploy_service_health_attempts="$7"
+deploy_service_health_delay_secs="$8"
 
 if [ "$wipe_state" = "1" ]; then
     systemctl stop "$deploy_service" || true
@@ -256,7 +263,22 @@ install -m 755 "$deploy_remote_tmp_path" "$deploy_binary_path"
 systemctl restart "$deploy_service"
 systemctl is-active "$deploy_service"
 systemctl --no-pager --full status "$deploy_service" | sed -n '1,12p'
-curl --fail --silent --show-error "$deploy_service_health_url" >/dev/null
+
+health_ok=0
+for attempt in $(seq 1 "$deploy_service_health_attempts"); do
+    if curl --fail --silent "$deploy_service_health_url" >/dev/null 2>&1; then
+        health_ok=1
+        break
+    fi
+
+    sleep "$deploy_service_health_delay_secs"
+done
+
+if [ "$health_ok" != "1" ]; then
+    curl --fail --silent --show-error "$deploy_service_health_url" >/dev/null
+    journalctl -u "$deploy_service" --no-pager -n 40 || true
+    exit 1
+fi
 EOF
 
 curl --fail --silent --show-error --location --head "$deploy_verify_url" >/dev/null
