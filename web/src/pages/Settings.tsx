@@ -25,6 +25,7 @@ const Settings = () => {
   const [feedback, setFeedback] = createSignal<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [loaded, setLoaded] = createSignal(false);
   const [baseDomain, setBaseDomain] = createSignal('');
+  const [publicIp, setPublicIp] = createSignal('');
   const [storagePublicHostname, setStoragePublicHostname] = createSignal('');
   const [storageManagementEndpoint, setStorageManagementEndpoint] = createSignal('');
   const [storageInternalHost, setStorageInternalHost] = createSignal('');
@@ -63,6 +64,7 @@ const Settings = () => {
     if (!current || loaded()) return;
     setLoaded(true);
     setBaseDomain(current.base_domain);
+    setPublicIp(current.public_ip ?? '');
     setStoragePublicHostname(current.storage_public_hostname ?? '');
     setStorageManagementEndpoint(current.storage_management_endpoint);
     setStorageInternalHost(current.storage_internal_host);
@@ -79,6 +81,7 @@ const Settings = () => {
     try {
       await updateSettings({
         base_domain: baseDomain().trim() || null,
+        public_ip: publicIp().trim() || null,
         storage_public_hostname: storagePublicHostname().trim() || null,
         storage_management_endpoint: storageManagementEndpoint().trim() || null,
         storage_internal_host: storageInternalHost().trim() || null,
@@ -209,6 +212,7 @@ const Settings = () => {
               <form class='form-stack' onSubmit={(event) => void saveSettingsForm(event)}>
                 <div class='two-col'>
                   <label class='field'><span>base domain</span><input value={baseDomain()} onInput={(event) => setBaseDomain(event.currentTarget.value)} /></label>
+                  <label class='field'><span>public ip</span><input value={publicIp()} onInput={(event) => setPublicIp(event.currentTarget.value)} /></label>
                   <label class='field'><span>public s3 hostname</span><input value={storagePublicHostname()} onInput={(event) => setStoragePublicHostname(event.currentTarget.value)} /></label>
                   <label class='field'><span>rustfs management endpoint</span><input value={storageManagementEndpoint()} onInput={(event) => setStorageManagementEndpoint(event.currentTarget.value)} /></label>
                   <label class='field'><span>rustfs internal host</span><input value={storageInternalHost()} onInput={(event) => setStorageInternalHost(event.currentTarget.value)} /></label>
@@ -221,12 +225,21 @@ const Settings = () => {
                   <button type='submit' disabled={pending() === 'save-settings'}>save settings</button>
                   <button type='button' onClick={() => void queueCertificate()} disabled={pending() === 'issue-certificate'}>issue dashboard certificate</button>
                 </div>
+                <Notice tone={currentSettings().wildcard_dns.ready ? 'success' : 'info'} title='default service domains'>
+                  Set <strong>{currentSettings().wildcard_dns.wildcard_domain ?? 'the wildcard DNS record'}</strong> so public services can open on <strong>{currentSettings().default_service_domain_pattern ?? 'service-{random 5 lowercase letters}.domain.com'}</strong>.
+                  {' '}
+                  {currentSettings().wildcard_dns.detail}
+                </Notice>
                 <div class='table-wrap'>
                   <table>
                     <tbody>
                       <tr><th>dashboard url</th><td>{currentSettings().dashboard_url ?? 'n/a'}</td></tr>
                       <tr><th>public ip</th><td>{currentSettings().public_ip ?? 'n/a'}</td></tr>
                       <tr><th>wildcard domain</th><td>{currentSettings().service_wildcard_domain ?? 'n/a'}</td></tr>
+                      <tr><th>default service domain</th><td>{currentSettings().default_service_domain_pattern ?? 'n/a'}</td></tr>
+                      <tr><th>wildcard dns sample</th><td>{currentSettings().wildcard_dns.sample_domain ?? 'n/a'}</td></tr>
+                      <tr><th>wildcard dns ready</th><td>{currentSettings().wildcard_dns.ready ? 'yes' : 'no'}</td></tr>
+                      <tr><th>wildcard dns detail</th><td>{currentSettings().wildcard_dns.detail}</td></tr>
                       <tr><th>api port</th><td>{currentSettings().api_port}</td></tr>
                       <tr><th>http/https</th><td>{currentSettings().http_port} / {currentSettings().https_port}</td></tr>
                       <tr><th>log directory</th><td class='mono'>{currentSettings().log_dir}</td></tr>

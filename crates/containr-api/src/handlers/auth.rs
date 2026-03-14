@@ -95,7 +95,8 @@ pub struct ErrorResponse {
 )]
 pub async fn status(
     State(state): State<AppState>,
-) -> Result<Json<RegistrationStatusResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<RegistrationStatusResponse>, (StatusCode, Json<ErrorResponse>)>
+{
     let user_count = state.db.list_users().map_err(internal_error)?.len();
 
     Ok(Json(RegistrationStatusResponse {
@@ -489,7 +490,8 @@ pub async fn github_callback(
         state.db.save_user(&user).map_err(internal_error)?;
         user
     } else {
-        let existing_users = state.db.list_users().map_err(internal_error)?.len();
+        let existing_users =
+            state.db.list_users().map_err(internal_error)?.len();
         if existing_users > 0 {
             return Err((
                 StatusCode::FORBIDDEN,
