@@ -119,7 +119,7 @@ const CreateRepo = () => {
             >
               <Show
                 when={status().installations.length > 0}
-                fallback={<Notice tone='info'>The GitHub App exists, but it is not installed on any account or org yet. Finish the installation in settings, then refresh this table.</Notice>}
+                fallback={<Notice tone='info'>The GitHub App exists, but it is not installed on any account or org yet. Finish the installation in settings, then refresh this list.</Notice>}
               >
                 <div class='form-stack'>
                   <label class='field'>
@@ -131,34 +131,33 @@ const CreateRepo = () => {
                     <button type='button' onClick={() => void refetchGithubAppStatus()}>refresh github status</button>
                   </div>
                   <Show when={filteredRepos().length > 0} fallback={<EmptyBlock title='No repositories found'>The installed GitHub App did not return any repositories for this account.</EmptyBlock>}>
-                    <div class='table-wrap'>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>repository</th>
-                            <th>default branch</th>
-                            <th>visibility</th>
-                            <th>use</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <For each={filteredRepos()}>
-                            {(repo) => (
-                              <tr>
-                                <td>
-                                  <div>{repo.full_name}</div>
-                                  <div class='muted mono'>{repo.clone_url}</div>
-                                </td>
-                                <td>{repo.default_branch}</td>
-                                <td>{repo.private ? 'private' : 'public'}</td>
-                                <td>
-                                  <button type='button' onClick={() => chooseRepo(repo)}>pick</button>
-                                </td>
-                              </tr>
-                            )}
-                          </For>
-                        </tbody>
-                      </table>
+                    <div class='repo-grid'>
+                      <For each={filteredRepos()}>
+                        {(repo) => (
+                          <article class='repo-card'>
+                            <div class='choice-card-head'>
+                              <div>
+                                <h3>{repo.full_name}</h3>
+                                <p class='muted mono'>{repo.clone_url}</p>
+                              </div>
+                              <span class='badge'>{repo.private ? 'private' : 'public'}</span>
+                            </div>
+                            <div class='summary-grid'>
+                              <div class='summary-card'>
+                                <p class='muted'>default branch</p>
+                                <p>{repo.default_branch}</p>
+                              </div>
+                              <div class='summary-card'>
+                                <p class='muted'>description</p>
+                                <p>{repo.description ?? 'No description provided.'}</p>
+                              </div>
+                            </div>
+                            <div class='button-row'>
+                              <button type='button' onClick={() => chooseRepo(repo)}>use this repository</button>
+                            </div>
+                          </article>
+                        )}
+                      </For>
                     </div>
                   </Show>
                 </div>
