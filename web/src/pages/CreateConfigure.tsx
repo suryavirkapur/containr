@@ -86,27 +86,27 @@ const CreateConfigure = () => {
   };
 
   return (
-    <div class='stack'>
-      <PageTitle title='configure repository service' subtitle='Step 2 of 2. Fill in runtime details and submit.' />
+    <div class='flex flex-col gap-8'>
+      <PageTitle title='Configure Repository Service' subtitle='Step 2 of 2. Fill in runtime details and submit.' />
       {error() ? <Notice tone='error'>{error()}</Notice> : null}
-      <Panel title='service request'>
-        <form class='form-stack' onSubmit={(event) => void create(event)}>
-          <div class='summary-grid'>
-            <div class='summary-card'>
-              <p class='muted'>name</p>
-              <p>{name()}</p>
+      <Panel title='Service Request'>
+        <form class='flex flex-col gap-6' onSubmit={(event) => void create(event)}>
+          <div class='grid grid-cols-2 lg:grid-cols-4 gap-4 rounded-lg border bg-accent/30 p-4 border-border mb-2 text-sm'>
+            <div class='flex flex-col gap-1'>
+              <p class='font-semibold uppercase tracking-wider text-xs text-muted-foreground'>Name</p>
+              <p class="font-medium truncate" title={name()}>{name()}</p>
             </div>
-            <div class='summary-card'>
-              <p class='muted'>type</p>
-              <p>{serviceType()}</p>
+            <div class='flex flex-col gap-1'>
+              <p class='font-semibold uppercase tracking-wider text-xs text-muted-foreground'>Type</p>
+              <p class="font-medium">{serviceType()}</p>
             </div>
-            <div class='summary-card'>
-              <p class='muted'>github url</p>
-              <p class='mono'>{githubUrl()}</p>
+            <div class='flex flex-col gap-1'>
+              <p class='font-semibold uppercase tracking-wider text-xs text-muted-foreground'>GitHub URL</p>
+              <p class='font-mono text-xs truncate' title={githubUrl()}>{githubUrl()}</p>
             </div>
-            <div class='summary-card'>
-              <p class='muted'>branch</p>
-              <p>{branch() || 'default'}</p>
+            <div class='flex flex-col gap-1'>
+              <p class='font-semibold uppercase tracking-wider text-xs text-muted-foreground'>Branch</p>
+              <p class="font-medium truncate" title={branch() || 'default'}>{branch() || 'default'}</p>
             </div>
           </div>
 
@@ -114,52 +114,96 @@ const CreateConfigure = () => {
             Repository-backed services create their own group boundary. Attach databases and queues to that group later from the services page.
           </Notice>
 
-          <div class='two-col'>
-            <label class='field'>
-              <span>port</span>
-              <input value={port()} onInput={(event) => setPort(event.currentTarget.value)} />
+          <div class='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
+            <label class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>Port</span>
+              <input 
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={port()} 
+                onInput={(event) => setPort(event.currentTarget.value)} 
+              />
             </label>
-            <label class='field'>
-              <span>replicas</span>
-              <input value={replicas()} onInput={(event) => setReplicas(event.currentTarget.value)} />
+            <label class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>Replicas</span>
+              <input 
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={replicas()} 
+                onInput={(event) => setReplicas(event.currentTarget.value)} 
+              />
             </label>
-            <label class='field'>
-              <span>dockerfile path</span>
-              <input value={dockerfilePath()} onInput={(event) => setDockerfilePath(event.currentTarget.value)} />
+            <label class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>Dockerfile Path</span>
+              <input 
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={dockerfilePath()} 
+                onInput={(event) => setDockerfilePath(event.currentTarget.value)} 
+              />
             </label>
-            <label class='field'>
-              <span>build context</span>
-              <input value={buildContext()} onInput={(event) => setBuildContext(event.currentTarget.value)} />
+            <label class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>Build Context</span>
+              <input 
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={buildContext()} 
+                onInput={(event) => setBuildContext(event.currentTarget.value)} 
+              />
             </label>
-            <label class='field'>
-              <span>working directory</span>
-              <input value={workingDir()} onInput={(event) => setWorkingDir(event.currentTarget.value)} />
+            <label class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>Working Directory</span>
+              <input 
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={workingDir()} 
+                onInput={(event) => setWorkingDir(event.currentTarget.value)} 
+              />
             </label>
-            <label class='field'>
-              <span>command</span>
-              <input value={command()} onInput={(event) => setCommand(event.currentTarget.value)} placeholder='npm start' />
+            <label class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>Command</span>
+              <input 
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={command()} 
+                onInput={(event) => setCommand(event.currentTarget.value)} 
+                placeholder='npm start' 
+              />
+            </label>
+            {serviceType() === 'cron_job' ? (
+              <label class='flex flex-col gap-2'>
+                <span class='text-sm font-medium leading-none'>Cron Schedule</span>
+                <input 
+                  class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  value={schedule()} 
+                  onInput={(event) => setSchedule(event.currentTarget.value)} 
+                />
+              </label>
+            ) : null}
+          </div>
+
+          <div class='flex flex-col gap-4 border-t border-border pt-6'>
+            <label class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>Domains (one per line)</span>
+              <textarea 
+                class="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-mono"
+                value={domains()} 
+                onInput={(event) => setDomains(event.currentTarget.value)} 
+              />
+            </label>
+
+            <label class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>Environment Variables (KEY=VALUE per line)</span>
+              <textarea 
+                class="flex min-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-mono"
+                value={envVars()} 
+                onInput={(event) => setEnvVars(event.currentTarget.value)} 
+              />
             </label>
           </div>
 
-          <label class='field'>
-            <span>domains (one per line)</span>
-            <textarea value={domains()} onInput={(event) => setDomains(event.currentTarget.value)} />
-          </label>
-
-          <label class='field'>
-            <span>environment variables (KEY=VALUE per line)</span>
-            <textarea value={envVars()} onInput={(event) => setEnvVars(event.currentTarget.value)} />
-          </label>
-
-          {serviceType() === 'cron_job' ? (
-            <label class='field'>
-              <span>cron schedule</span>
-              <input value={schedule()} onInput={(event) => setSchedule(event.currentTarget.value)} />
-            </label>
-          ) : null}
-
-          <div class='button-row'>
-            <button type='submit' disabled={saving()}>{saving() ? 'creating...' : 'create service'}</button>
+          <div class='flex flex-wrap gap-2 pt-4 border-t border-border mt-2'>
+            <button 
+              type='submit' 
+              disabled={saving()}
+              class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm h-9 px-4 py-2 disabled:opacity-50"
+            >
+              {saving() ? 'Creating...' : 'Create Service'}
+            </button>
           </div>
         </form>
       </Panel>

@@ -46,8 +46,8 @@ const GithubCallback = () => {
   });
 
   return (
-    <PublicShell title='github callback' subtitle='Completing the requested GitHub flow.'>
-      <Show when={error()} fallback={<section class='panel'><p>{message()}</p></section>}>
+    <PublicShell title='GitHub Callback' subtitle='Completing the requested GitHub flow.'>
+      <Show when={error()} fallback={<section class='rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm'><p class="text-sm font-medium">{message()}</p></section>}>
         {(currentError) => <Notice tone='error'>{currentError()}</Notice>}
       </Show>
     </PublicShell>
