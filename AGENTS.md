@@ -9,8 +9,6 @@ current context:
 - redefining "groups" to purely enforce a network boundary rather than strict container or multi-service lifecycle isolation.
 
 pending tasks:
-- rewrite solid.js frontend ui to remove the heavy "project" scaffolding.
-- replace project-centric routing with a flat service list.
 - update pingora and backend routing to support domain mapping per service rather than per project.
 
 important decisions:

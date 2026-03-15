@@ -32,34 +32,37 @@ const CreateFlow = () => {
   };
 
   return (
-    <div class='stack'>
+    <div class='flex flex-col gap-8'>
       <PageTitle
-        title='new service'
+        title='New Service'
         subtitle='Create a repository-backed root service or attach a managed service to a group.'
       />
 
       <Show when={selectedGroupId()}>
         <Notice tone='info'>
-          Managed templates created here will default to <strong>{selectedGroupName() || 'the selected group'}</strong>.
+          Managed templates created here will default to <strong class="font-semibold">{selectedGroupName() || 'the selected group'}</strong>.
           Repository-backed services always create their own network boundary.
         </Notice>
       </Show>
 
-      <Panel title='repository-backed services' subtitle='Each repository service defines a group root.'>
-        <div class='choice-grid'>
+      <Panel title='Repository-Backed Services' subtitle='Each repository service defines a group root.'>
+        <div class='grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4'>
           <For each={repoTypes}>
             {([value, label, description]) => (
-              <A class='choice-card' href={`/services/new/repo?type=${value}`}>
-                <div class='choice-card-head'>
-                  <div>
-                    <h3>{label}</h3>
-                    <p class='muted'>{description}</p>
+              <A 
+                class='group relative flex flex-col justify-between rounded-xl border bg-card text-card-foreground shadow-sm hover:border-primary hover:shadow-md transition-all p-5 h-full' 
+                href={`/services/new/repo?type=${value}`}
+              >
+                <div>
+                  <div class='flex items-center justify-between mb-3'>
+                    <h3 class='font-semibold tracking-tight text-lg capitalize group-hover:text-primary transition-colors'>{label}</h3>
+                    <span class='inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-primary text-primary-foreground'>New Boundary</span>
                   </div>
-                  <span class='badge'>new boundary</span>
+                  <p class='text-sm text-muted-foreground leading-relaxed'>{description}</p>
                 </div>
-                <div class='choice-meta'>
-                  <span class='muted'>continue to repo setup</span>
-                  <strong>open</strong>
+                <div class='flex items-center justify-between mt-6 pt-4 border-t border-border'>
+                  <span class='text-xs text-muted-foreground font-medium'>Continue to repo setup</span>
+                  <span class='text-sm font-semibold text-primary group-hover:underline'>Open &rarr;</span>
                 </div>
               </A>
             )}
@@ -67,23 +70,30 @@ const CreateFlow = () => {
         </div>
       </Panel>
 
-      <Panel title='managed templates' subtitle='Managed services can stay isolated or join an existing group.'>
-        <div class='choice-grid'>
+      <Panel title='Managed Templates' subtitle='Managed services can stay isolated or join an existing group.'>
+        <div class='grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3'>
           <For each={templateTypes}>
             {([value, label, description]) => (
-              <A class='choice-card' href={templateHref(value)}>
-                <div class='choice-card-head'>
-                  <div>
-                    <h3>{label}</h3>
-                    <p class='muted'>{description}</p>
+              <A 
+                class='group relative flex flex-col justify-between rounded-xl border bg-card text-card-foreground shadow-sm hover:border-primary hover:shadow-md transition-all p-5 h-full' 
+                href={templateHref(value)}
+              >
+                <div>
+                  <div class='flex items-center justify-between mb-3'>
+                    <h3 class='font-semibold tracking-tight text-lg capitalize group-hover:text-primary transition-colors'>{label}</h3>
+                    <span class={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider ${
+                      selectedGroupId() ? 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800' : 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'
+                    }`}>
+                      {selectedGroupId() ? 'Attachable' : 'Managed'}
+                    </span>
                   </div>
-                  <span class='badge'>{selectedGroupId() ? 'attachable' : 'managed'}</span>
+                  <p class='text-sm text-muted-foreground leading-relaxed'>{description}</p>
                 </div>
-                <div class='choice-meta'>
-                  <span class='muted'>
-                    {selectedGroupId() ? `join ${selectedGroupName() || 'selected group'}` : 'pick placement next'}
+                <div class='flex items-center justify-between mt-6 pt-4 border-t border-border'>
+                  <span class='text-xs text-muted-foreground font-medium'>
+                    {selectedGroupId() ? `Join ${selectedGroupName() || 'selected group'}` : 'Pick placement next'}
                   </span>
-                  <strong>open</strong>
+                  <span class='text-sm font-semibold text-primary group-hover:underline'>Open &rarr;</span>
                 </div>
               </A>
             )}

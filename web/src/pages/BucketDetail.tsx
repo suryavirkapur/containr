@@ -10,7 +10,7 @@ const BucketDetail = () => {
   const [connection] = createResource(() => params.id, getBucketConnection);
 
   return (
-    <div class='stack'>
+    <div class='flex flex-col gap-8'>
       <Show when={bucket.loading}><LoadingBlock message='Loading bucket...' /></Show>
       <Show when={bucket.error}>{(error) => <Notice tone='error'>Failed to load bucket: {describeError(error())}</Notice>}</Show>
       <Show when={bucket()}>
@@ -19,17 +19,24 @@ const BucketDetail = () => {
             <PageTitle
               title={currentBucket().name}
               subtitle='Bucket details and shared S3 credentials.'
-              actions={<A href='/storage'>back to storage</A>}
+              actions={
+                <A 
+                  href='/storage'
+                  class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2"
+                >
+                  Back to Storage
+                </A>
+              }
             />
-            <Panel title='bucket summary'>
+            <Panel title='Bucket Summary'>
               <KeyValueTable
                 rows={[
-                  ['id', <span class='mono'>{currentBucket().id}</span>],
-                  ['endpoint', <span class='mono'>{currentBucket().endpoint}</span>],
-                  ['internal endpoint', <span class='mono'>{currentBucket().internal_endpoint}</span>],
-                  ['public endpoint', <span class='mono'>{currentBucket().public_endpoint ?? 'none'}</span>],
-                  ['size', <span>{formatBytes(currentBucket().size_bytes)}</span>],
-                  ['created', <span>{formatDateTime(currentBucket().created_at)}</span>],
+                  ['ID', <span class='font-mono text-muted-foreground'>{currentBucket().id}</span>],
+                  ['Endpoint', <span class='font-mono'>{currentBucket().endpoint}</span>],
+                  ['Internal Endpoint', <span class='font-mono'>{currentBucket().internal_endpoint}</span>],
+                  ['Public Endpoint', <span class='font-mono'>{currentBucket().public_endpoint ?? 'none'}</span>],
+                  ['Size', <span>{formatBytes(currentBucket().size_bytes)}</span>],
+                  ['Created', <span>{formatDateTime(currentBucket().created_at)}</span>],
                 ]}
               />
             </Panel>
@@ -40,20 +47,34 @@ const BucketDetail = () => {
       <Show when={connection.error}>{(error) => <Notice tone='error'>Failed to load connection data: {describeError(error())}</Notice>}</Show>
       <Show when={connection()}>
         {(currentConnection) => (
-          <Panel title='connection details'>
-            <KeyValueTable
-              rows={[
-                ['bucket', <span>{currentConnection().bucket_name}</span>],
-                ['endpoint', <span class='mono'>{currentConnection().endpoint}</span>],
-                ['internal endpoint', <span class='mono'>{currentConnection().internal_endpoint}</span>],
-                ['access key', <span class='mono'>{currentConnection().access_key}</span>],
-                ['secret key', <span class='mono'>{currentConnection().secret_key}</span>],
-                ['note', <span>{currentConnection().note}</span>],
-              ]}
-            />
-            <div class='button-row'>
-              <button type='button' onClick={() => void copyText(currentConnection().access_key)}>copy access key</button>
-              <button type='button' onClick={() => void copyText(currentConnection().secret_key)}>copy secret key</button>
+          <Panel title='Connection Details'>
+            <div class='flex flex-col gap-6'>
+              <KeyValueTable
+                rows={[
+                  ['Bucket', <span class="font-medium">{currentConnection().bucket_name}</span>],
+                  ['Endpoint', <span class='font-mono'>{currentConnection().endpoint}</span>],
+                  ['Internal Endpoint', <span class='font-mono'>{currentConnection().internal_endpoint}</span>],
+                  ['Access Key', <span class='font-mono'>{currentConnection().access_key}</span>],
+                  ['Secret Key', <span class='font-mono'>{currentConnection().secret_key}</span>],
+                  ['Note', <span>{currentConnection().note}</span>],
+                ]}
+              />
+              <div class='flex flex-wrap gap-2 pt-4 border-t border-border'>
+                <button 
+                  type='button' 
+                  onClick={() => void copyText(currentConnection().access_key)}
+                  class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2"
+                >
+                  Copy Access Key
+                </button>
+                <button 
+                  type='button' 
+                  onClick={() => void copyText(currentConnection().secret_key)}
+                  class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2"
+                >
+                  Copy Secret Key
+                </button>
+              </div>
             </div>
           </Panel>
         )}
