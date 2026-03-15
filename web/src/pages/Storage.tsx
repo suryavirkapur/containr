@@ -45,26 +45,47 @@ const Storage = () => {
   };
 
   return (
-    <div class='stack'>
-      <PageTitle title='storage' subtitle='Managed S3-compatible buckets backed by rustfs.' />
+    <div class='flex flex-col gap-6'>
+      <PageTitle title='Storage' subtitle='Managed S3-compatible buckets backed by rustfs.' />
+      
       {feedback() ? <Notice tone={feedback()!.tone}>{feedback()!.text}</Notice> : null}
+      
       <Show when={createdEndpoint()}>
         {(endpoint) => (
           <Notice tone='success'>
-            endpoint ready: <span class='mono'>{endpoint()}</span>{' '}
-            <button type='button' onClick={() => void copyText(endpoint())}>copy</button>
+            <div class="flex items-center gap-2">
+              <span>Endpoint ready:</span>
+              <span class='font-mono text-sm bg-background/50 px-1.5 py-0.5 rounded'>{endpoint()}</span>
+              <button 
+                type='button' 
+                onClick={() => void copyText(endpoint())}
+                class="inline-flex items-center justify-center rounded-md text-xs font-medium transition-colors hover:bg-background/50 h-6 px-2 ml-2"
+              >
+                Copy
+              </button>
+            </div>
           </Notice>
         )}
       </Show>
 
-      <Panel title='create bucket'>
-        <form class='form-stack' onSubmit={(event) => void submit(event)}>
-          <label class='field'>
-            <span>bucket name</span>
-            <input value={name()} onInput={(event) => setName(event.currentTarget.value)} />
+      <Panel title='Create Bucket'>
+        <form class='flex flex-col gap-4' onSubmit={(event) => void submit(event)}>
+          <label class='flex flex-col gap-2'>
+            <span class='text-sm font-medium leading-none'>Bucket Name</span>
+            <input 
+              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={name()} 
+              onInput={(event) => setName(event.currentTarget.value)} 
+            />
           </label>
-          <div class='button-row'>
-            <button type='submit' disabled={saving()}>{saving() ? 'creating...' : 'create bucket'}</button>
+          <div class='flex gap-2 pt-2'>
+            <button 
+              type='submit' 
+              disabled={saving()}
+              class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm h-9 px-4 py-2 disabled:opacity-50"
+            >
+              {saving() ? 'Creating...' : 'Create Bucket'}
+            </button>
           </div>
         </form>
       </Panel>
@@ -76,38 +97,56 @@ const Storage = () => {
       </Show>
 
       <Show when={!buckets.loading && (buckets() ?? []).length > 0}>
-        <Panel title='bucket inventory'>
-          <div class='repo-grid'>
+        <Panel title='Bucket Inventory'>
+          <div class='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
             <For each={buckets() ?? []}>
               {(bucket) => (
-                <article class='repo-card'>
-                  <div class='choice-card-head'>
-                    <div>
-                      <A class='service-title' href={`/storage/${bucket.id}`}>
+                <article class='rounded-xl border bg-card text-card-foreground shadow-sm p-4 flex flex-col gap-4 hover:border-primary/20 transition-colors'>
+                  <div class='flex justify-between items-start gap-4'>
+                    <div class='min-w-0'>
+                      <A class='font-semibold tracking-tight hover:underline text-base truncate block' href={`/storage/${bucket.id}`}>
                         {bucket.name}
                       </A>
-                      <p class='muted mono'>{bucket.endpoint}</p>
+                      <p class='text-xs text-muted-foreground font-mono truncate mt-1 flex gap-1 items-center'>
+                        {bucket.endpoint}
+                      </p>
                     </div>
-                    <span class='badge'>{bucket.publicly_exposed ? 'public' : 'private'}</span>
+                    <span class={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider whitespace-nowrap ${
+                      bucket.publicly_exposed ? 'bg-secondary text-secondary-foreground border-border' : 'bg-muted text-muted-foreground border-border'
+                    }`}>
+                      {bucket.publicly_exposed ? 'Public' : 'Private'}
+                    </span>
                   </div>
-                  <div class='summary-grid'>
-                    <div class='summary-card'>
-                      <p class='muted'>public endpoint</p>
-                      <p class='mono'>{bucket.public_endpoint ?? 'not exposed'}</p>
+                  
+                  <div class='grid grid-cols-2 gap-4 py-3 border-y border-border text-sm'>
+                    <div class='flex flex-col gap-1 col-span-2'>
+                      <p class='text-[0.7rem] font-semibold uppercase text-muted-foreground tracking-wider'>Public Endpoint</p>
+                      <p class='text-xs font-mono truncate'>{bucket.public_endpoint ?? 'Not exposed'}</p>
                     </div>
-                    <div class='summary-card'>
-                      <p class='muted'>size</p>
-                      <p>{formatBytes(bucket.size_bytes)}</p>
+                    <div class='flex flex-col gap-1'>
+                      <p class='text-[0.7rem] font-semibold uppercase text-muted-foreground tracking-wider'>Size</p>
+                      <p class='text-xs'>{formatBytes(bucket.size_bytes)}</p>
                     </div>
-                    <div class='summary-card'>
-                      <p class='muted'>created</p>
-                      <p>{formatDateTime(bucket.created_at)}</p>
+                    <div class='flex flex-col gap-1'>
+                      <p class='text-[0.7rem] font-semibold uppercase text-muted-foreground tracking-wider'>Created</p>
+                      <p class='text-xs'>{formatDateTime(bucket.created_at)}</p>
                     </div>
                   </div>
-                  <div class='button-row'>
-                    <A href={`/storage/${bucket.id}`}>open</A>
-                    <button type='button' onClick={() => void removeBucket(bucket.id)} disabled={pendingDelete() === bucket.id}>
-                      delete
+                  
+                  <div class='flex justify-end gap-2'>
+                    <A 
+                      href={`/storage/${bucket.id}`}
+                      class="inline-flex items-center justify-center rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-8 px-3"
+                    >
+                      Open
+                    </A>
+                    <button 
+                      type='button' 
+                      onClick={() => void removeBucket(bucket.id)} 
+                      disabled={pendingDelete() === bucket.id}
+                      class="inline-flex items-center justify-center rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background hover:bg-destructive hover:text-destructive-foreground hover:border-destructive shadow-sm h-8 px-3 disabled:opacity-50"
+                    >
+                      Delete
                     </button>
                   </div>
                 </article>

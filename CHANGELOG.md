@@ -4,6 +4,9 @@ changelog
 =========
 
 0.1.15-alpha - 2026-03-11
+- redesign entire dashboard to use Shadcn-style UI components with Tailwind CSS v4, supporting dynamic Light and Dark modes.
+- flatten dashboard hierarchy and routing away from `/projects` towards a unified `/services` view.
+- replace legacy css classes with tailwind utility classes across all pages and components.
 - created prd.txt to outline the hybrid render/caprover model with network-only groups
 - created agent.txt to maintain current context and architectural rules
 - refactor service creation flow into step-by-step render-style pipeline with dedicated routing
