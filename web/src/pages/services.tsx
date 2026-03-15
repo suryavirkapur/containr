@@ -100,15 +100,24 @@ const Services = () => {
   };
 
   return (
-    <div class='stack'>
+    <div class='flex flex-col gap-6'>
       <PageTitle
-        title='services'
+        title='Services'
         subtitle='Groups are the network boundary. App services define them, and managed services can join them.'
         actions={
           <>
-            <A href='/services/new'>new service</A>
-            <button type='button' onClick={() => void refetch()}>
-              refresh
+            <A 
+              href='/services/new'
+              class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm h-9 px-4 py-2"
+            >
+              New Service
+            </A>
+            <button 
+              type='button' 
+              onClick={() => void refetch()}
+              class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2"
+            >
+              Refresh
             </button>
           </>
         }
@@ -117,53 +126,62 @@ const Services = () => {
       <Show when={actionError()}>{(message) => <Notice tone='error'>{message()}</Notice>}</Show>
 
       <Show when={!services.loading && allServices().length > 0}>
-        <div class='stats-grid'>
-          <div class='stat-card'>
-            <p class='muted'>services</p>
-            <div class='stat-value'>{stats().total}</div>
-            <p class='muted'>Everything active in this account.</p>
+        <div class='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
+          <div class='rounded-xl border bg-card text-card-foreground shadow-sm p-6 flex flex-col gap-2'>
+            <p class='text-sm text-muted-foreground font-medium'>Services</p>
+            <div class='text-3xl font-bold tracking-tight'>{stats().total}</div>
+            <p class='text-xs text-muted-foreground'>Everything active in this account.</p>
           </div>
-          <div class='stat-card'>
-            <p class='muted'>network groups</p>
-            <div class='stat-value'>{stats().groups}</div>
-            <p class='muted'>Repository-backed roots available for shared networking.</p>
+          <div class='rounded-xl border bg-card text-card-foreground shadow-sm p-6 flex flex-col gap-2'>
+            <p class='text-sm text-muted-foreground font-medium'>Network Groups</p>
+            <div class='text-3xl font-bold tracking-tight'>{stats().groups}</div>
+            <p class='text-xs text-muted-foreground'>Repository-backed roots available for shared networking.</p>
           </div>
-          <div class='stat-card'>
-            <p class='muted'>managed services</p>
-            <div class='stat-value'>{stats().managed}</div>
-            <p class='muted'>Databases and queues you can place into a group.</p>
+          <div class='rounded-xl border bg-card text-card-foreground shadow-sm p-6 flex flex-col gap-2'>
+            <p class='text-sm text-muted-foreground font-medium'>Managed Services</p>
+            <div class='text-3xl font-bold tracking-tight'>{stats().managed}</div>
+            <p class='text-xs text-muted-foreground'>Databases and queues you can place into a group.</p>
           </div>
-          <div class='stat-card'>
-            <p class='muted'>running instances</p>
-            <div class='stat-value'>{stats().running}</div>
-            <p class='muted'>Total live containers across the platform.</p>
+          <div class='rounded-xl border bg-card text-card-foreground shadow-sm p-6 flex flex-col gap-2'>
+            <p class='text-sm text-muted-foreground font-medium'>Running Instances</p>
+            <div class='text-3xl font-bold tracking-tight'>{stats().running}</div>
+            <p class='text-xs text-muted-foreground'>Total live containers across the platform.</p>
           </div>
         </div>
       </Show>
 
-      <Panel title='filter services' subtitle='Search by service, endpoint, network, or group.'>
-        <div class='filter-grid'>
-          <label class='field'>
-            <span>query</span>
+      <Panel title='Filter Services' subtitle='Search by service, endpoint, network, or group.'>
+        <div class='grid gap-4 md:grid-cols-3 mb-6'>
+          <label class='flex flex-col gap-2'>
+            <span class='text-sm font-medium leading-none'>Query</span>
             <input
+              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={query()}
               onInput={(event) => setQuery(event.currentTarget.value)}
-              placeholder='search by name, endpoint, or network'
+              placeholder='Search by name, endpoint, or network...'
             />
           </label>
-          <label class='field'>
-            <span>status</span>
-            <select value={statusFilter()} onChange={(event) => setStatusFilter(event.currentTarget.value)}>
-              <option value='all'>all statuses</option>
+          <label class='flex flex-col gap-2'>
+            <span class='text-sm font-medium leading-none'>Status</span>
+            <select 
+              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={statusFilter()} 
+              onChange={(event) => setStatusFilter(event.currentTarget.value)}
+            >
+              <option value='all'>All Statuses</option>
               <For each={statusOptions()}>
                 {(status) => <option value={status}>{humanize(status)}</option>}
               </For>
             </select>
           </label>
-          <label class='field'>
-            <span>kind</span>
-            <select value={kindFilter()} onChange={(event) => setKindFilter(event.currentTarget.value)}>
-              <option value='all'>all kinds</option>
+          <label class='flex flex-col gap-2'>
+            <span class='text-sm font-medium leading-none'>Kind</span>
+            <select 
+              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={kindFilter()} 
+              onChange={(event) => setKindFilter(event.currentTarget.value)}
+            >
+              <option value='all'>All Kinds</option>
               <For each={kindOptions()}>
                 {(kind) => <option value={kind}>{humanize(kind)}</option>}
               </For>
@@ -171,21 +189,25 @@ const Services = () => {
           </label>
         </div>
 
-        <div class='field'>
-          <span>group</span>
-          <div class='segmented'>
+        <div class='flex flex-col gap-2'>
+          <span class='text-sm font-medium leading-none'>Group</span>
+          <div class='flex flex-wrap gap-2'>
             <button
               type='button'
-              class={searchParams.group ? 'chip' : 'chip is-active'}
+              class={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-medium transition-colors border ${
+                !searchParams.group ? 'border-primary/20 bg-primary/10 text-foreground' : 'border-border bg-card text-muted-foreground hover:bg-secondary/80'
+              }`}
               onClick={() => setGroupFilter('all')}
             >
-              all groups
+              All Groups
             </button>
             <For each={allGroups()}>
               {(group) => (
                 <button
                   type='button'
-                  class={searchParams.group === group.key ? 'chip is-active' : 'chip'}
+                  class={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-medium transition-colors border ${
+                    searchParams.group === group.key ? 'border-primary/20 bg-primary/10 text-foreground' : 'border-border bg-card text-muted-foreground hover:bg-secondary/80'
+                  }`}
                   onClick={() => setGroupFilter(group.key)}
                 >
                   {group.filterLabel}
@@ -211,7 +233,7 @@ const Services = () => {
       </Show>
 
       <Show when={!services.loading && filteredServices().length > 0}>
-        <div class='group-stack'>
+        <div class='flex flex-col gap-8'>
           <For each={groupedServices()}>
             {(group) => (
               <Panel
@@ -222,91 +244,110 @@ const Services = () => {
                     : `Isolated boundary on ${group.networkName}`
                 }
               >
-                <div class='stack'>
-                  <div class='group-head'>
-                    <div class='badge-row'>
-                      <span class='badge'>{group.runningCount} running</span>
-                      <span class='badge'>{group.managedCount} managed</span>
-                      <span class='badge mono'>{group.networkName}</span>
+                <div class='flex flex-col gap-4'>
+                  <div class='flex flex-wrap items-center justify-between gap-4 mb-2'>
+                    <div class='flex flex-wrap gap-2'>
+                      <span class='inline-flex items-center rounded-full border border-border bg-secondary text-secondary-foreground px-2.5 py-0.5 text-xs font-semibold'>{group.runningCount} running</span>
+                      <span class='inline-flex items-center rounded-full border border-border bg-secondary text-secondary-foreground px-2.5 py-0.5 text-xs font-semibold'>{group.managedCount} managed</span>
+                      <span class='inline-flex items-center rounded-full border border-border bg-secondary text-secondary-foreground px-2.5 py-0.5 text-xs font-semibold font-mono'>{group.networkName}</span>
                     </div>
-                    <div class='group-actions'>
-                      <Show when={group.id} fallback={<A href='/services/new'>create service</A>}>
-                        <A href={`/services/new?group_id=${group.id!}&group_name=${encodeURIComponent(group.label)}`}>
-                          add database or queue
+                    <div class='flex items-center gap-2'>
+                      <Show when={group.id} fallback={
+                        <A href='/services/new' class="text-sm text-primary hover:underline font-medium">Create Service</A>
+                      }>
+                        <A 
+                          href={`/services/new?group_id=${group.id!}&group_name=${encodeURIComponent(group.label)}`}
+                          class="inline-flex items-center justify-center rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-8 px-3"
+                        >
+                          Add Database or Queue
                         </A>
                       </Show>
                     </div>
                   </div>
 
-                  <div class='service-grid'>
+                  <div class='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
                     <For each={group.services}>
                       {(service) => (
-                        <article class='service-card'>
-                          <div class='service-card-head'>
+                        <article class='rounded-xl border bg-card text-card-foreground shadow-sm p-5 flex flex-col gap-4 hover:border-primary/20 transition-colors'>
+                          <div class='flex justify-between items-start gap-4'>
                             <div>
-                              <A class='service-title' href={`/services/${service.id}`}>
+                              <A class='font-semibold tracking-tight hover:underline text-lg' href={`/services/${service.id}`}>
                                 {service.name}
                               </A>
-                              <p class='muted'>
+                              <p class='text-xs text-muted-foreground mt-0.5 uppercase tracking-wider font-semibold'>
                                 {humanize(service.service_type)} / {humanize(service.resource_kind)}
                               </p>
                             </div>
-                            <span class={`status-pill status-${service.status}`}>{humanize(service.status)}</span>
+                            <span class={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider ${
+                              service.status === 'running' || service.status === 'success' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' :
+                              service.status === 'failed' || service.status === 'error' ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800' :
+                              service.status === 'pending' || service.status === 'starting' ? 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800' :
+                              'bg-muted text-muted-foreground border-border'
+                            }`}>
+                              {humanize(service.status)}
+                            </span>
                           </div>
 
-                          <div class='service-card-meta'>
-                            <span class='badge mono'>{endpointFor(service)}</span>
+                          <div class='flex flex-wrap gap-2 text-xs'>
+                            <span class='inline-flex items-center rounded border border-border bg-secondary/50 px-2 py-0.5 font-mono truncate max-w-full'>{endpointFor(service)}</span>
                             <Show when={service.domains.length > 0}>
-                              <span class='badge'>
+                              <span class='inline-flex items-center rounded border border-border bg-secondary/50 px-2 py-0.5'>
                                 {service.domains.length} domain{service.domains.length === 1 ? '' : 's'}
                               </span>
                             </Show>
                             <Show when={service.container_ids.length > 0}>
-                              <span class='badge'>
+                              <span class='inline-flex items-center rounded border border-border bg-secondary/50 px-2 py-0.5'>
                                 {service.container_ids.length} container{service.container_ids.length === 1 ? '' : 's'}
                               </span>
                             </Show>
                           </div>
 
-                            <div class='summary-grid'>
-                              <div class='summary-card'>
-                                <p class='muted'>network</p>
-                                <p class='mono'>{service.network_name}</p>
-                              </div>
-                            <div class='summary-card'>
-                              <p class='muted'>updated</p>
-                              <p>{formatDateTime(service.updated_at)}</p>
+                          <div class='grid grid-cols-2 gap-4 pt-4 border-t border-border mt-auto'>
+                            <div class='flex flex-col gap-1'>
+                              <p class='text-[0.7rem] font-semibold uppercase text-muted-foreground tracking-wider'>Network</p>
+                              <p class='text-xs font-mono truncate'>{service.network_name}</p>
                             </div>
-                              <div class='summary-card'>
-                                <p class='muted'>containers</p>
-                                <Show
-                                  when={service.container_ids.length > 0}
-                                  fallback={<p>none</p>}
-                                >
-                                  <div class='link-list'>
-                                    <For each={service.container_ids}>
-                                      {(containerId) => <A href={`/containers/${containerId}`}>{containerId}</A>}
-                                    </For>
-                                  </div>
-                                </Show>
-                              </div>
+                            <div class='flex flex-col gap-1'>
+                              <p class='text-[0.7rem] font-semibold uppercase text-muted-foreground tracking-wider'>Updated</p>
+                              <p class='text-xs truncate'>{formatDateTime(service.updated_at)}</p>
                             </div>
+                            <div class='flex flex-col gap-1 col-span-2'>
+                              <p class='text-[0.7rem] font-semibold uppercase text-muted-foreground tracking-wider'>Containers</p>
+                              <Show
+                                when={service.container_ids.length > 0}
+                                fallback={<p class="text-xs text-muted-foreground">None</p>}
+                              >
+                                <div class='flex flex-col gap-1'>
+                                  <For each={service.container_ids}>
+                                    {(containerId) => <A class="text-xs text-primary hover:underline font-mono truncate" href={`/containers/${containerId}`}>{containerId}</A>}
+                                  </For>
+                                </div>
+                              </Show>
+                            </div>
+                          </div>
 
-                          <div class='service-card-actions'>
-                            <A href={`/services/${service.id}`}>open</A>
+                          <div class='flex justify-end gap-2 pt-4 border-t border-border'>
+                            <A 
+                              href={`/services/${service.id}`}
+                              class="inline-flex items-center justify-center rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-8 px-3"
+                            >
+                              Open
+                            </A>
                             <button
                               type='button'
+                              class="inline-flex items-center justify-center rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-8 px-3 disabled:opacity-50"
                               onClick={() => void runAction(service.id, 'restart')}
                               disabled={pendingId() === service.id}
                             >
-                              restart
+                              Restart
                             </button>
                             <button
                               type='button'
+                              class="inline-flex items-center justify-center rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-8 px-3 disabled:opacity-50"
                               onClick={() => void runAction(service.id, service.running_instances > 0 ? 'stop' : 'start')}
                               disabled={pendingId() === service.id}
                             >
-                              {service.running_instances > 0 ? 'stop' : 'start'}
+                              {service.running_instances > 0 ? 'Stop' : 'Start'}
                             </button>
                           </div>
                         </article>

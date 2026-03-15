@@ -33,8 +33,8 @@ const GithubInstallCallback = () => {
   });
 
   return (
-    <PublicShell title='github installation' subtitle='Finalizing the GitHub App installation.'>
-      <Show when={error()} fallback={<section class='panel'><p>{message()}</p></section>}>
+    <PublicShell title='GitHub Installation' subtitle='Finalizing the GitHub App installation.'>
+      <Show when={error()} fallback={<section class='rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm'><p class="text-sm font-medium">{message()}</p></section>}>
         {(currentError) => <Notice tone='error'>{currentError()}</Notice>}
       </Show>
     </PublicShell>

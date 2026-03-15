@@ -187,15 +187,26 @@ const ContainerDetail = () => {
   };
 
   return (
-    <div class='stack'>
+    <div class='flex flex-col gap-8'>
       <PageTitle
         title={currentContainer()?.name ?? containerId()}
         subtitle='Container runtime, files, and shell access.'
         actions={
-          <>
-            <A href='/containers'>back to containers</A>
-            <button type='button' onClick={() => void refreshAll()}>refresh</button>
-          </>
+          <div class="flex items-center gap-2">
+            <A 
+              href='/containers'
+              class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2"
+            >
+              Back to Containers
+            </A>
+            <button 
+              type='button' 
+              onClick={() => void refreshAll()}
+              class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2"
+            >
+              Refresh
+            </button>
+          </div>
         }
       />
 
@@ -209,99 +220,145 @@ const ContainerDetail = () => {
         {(error) => <Notice tone='error'>Failed to load container status: {describeError(error())}</Notice>}
       </Show>
 
-      <Panel title='summary'>
+      <Panel title='Summary'>
         <KeyValueTable
           rows={[
-            ['container id', <span class='mono'>{containerId()}</span>],
-            ['name', <span>{currentContainer()?.name ?? 'unknown'}</span>],
-            ['resource type', <span>{currentContainer()?.resource_type ?? 'unknown'}</span>],
-            ['resource id', <span class='mono'>{currentContainer()?.resource_id ?? 'unknown'}</span>],
-            ['status', <span>{status()?.status ?? 'unknown'}</span>],
-            ['health', <span>{status()?.health_status ?? 'n/a'}</span>],
-            ['cpu', <span>{status() ? `${status()!.cpu_percent.toFixed(1)}%` : 'n/a'}</span>],
-            ['memory', <span>{status() ? `${formatBytes(status()!.mem_usage_bytes)} / ${formatBytes(status()!.mem_limit_bytes)}` : 'n/a'}</span>],
-            ['started', <span>{formatDateTime(status()?.started_at)}</span>],
-            ['finished', <span>{formatDateTime(status()?.finished_at)}</span>],
-            ['restarts', <span>{String(status()?.restart_count ?? 0)}</span>],
+            ['Container ID', <span class='font-mono text-muted-foreground'>{containerId()}</span>],
+            ['Name', <span class="font-medium">{currentContainer()?.name ?? 'Unknown'}</span>],
+            ['Resource Type', <span class="capitalize">{currentContainer()?.resource_type ?? 'Unknown'}</span>],
+            ['Resource ID', <span class='font-mono text-muted-foreground'>{currentContainer()?.resource_id ?? 'Unknown'}</span>],
+            ['Status', <span class={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider ${
+              status()?.status === 'running' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' :
+              status()?.status === 'exited' || status()?.status === 'dead' ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800' :
+              'bg-muted text-muted-foreground border-border'
+            }`}>{status()?.status ?? 'Unknown'}</span>],
+            ['Health', <span class={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider ${
+              status()?.health_status === 'healthy' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' :
+              status()?.health_status === 'unhealthy' ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800' :
+              status()?.health_status === 'starting' ? 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800' :
+              'bg-secondary text-secondary-foreground border-border'
+            }`}>{status()?.health_status || 'N/A'}</span>],
+            ['CPU', <span>{status() ? `${status()!.cpu_percent.toFixed(1)}%` : 'n/a'}</span>],
+            ['Memory', <span>{status() ? `${formatBytes(status()!.mem_usage_bytes)} / ${formatBytes(status()!.mem_limit_bytes)}` : 'n/a'}</span>],
+            ['Started', <span>{formatDateTime(status()?.started_at)}</span>],
+            ['Finished', <span>{formatDateTime(status()?.finished_at)}</span>],
+            ['Restarts', <span>{String(status()?.restart_count ?? 0)}</span>],
           ]}
         />
       </Panel>
 
-      <Panel title='shell access' subtitle='Requests an exec token and opens a browser shell session.'>
-        <div class='two-col'>
-          <label class='field'>
-            <span>shell</span>
-            <select value={shellChoice()} onChange={(event) => setShellChoice(event.currentTarget.value)}>
-              <For each={shellOptions}>
-                {([value, label]) => <option value={value}>{label}</option>}
-              </For>
-            </select>
-          </label>
-          <div class='field'>
-            <span>session</span>
-            <div class='button-row'>
-              <button type='button' onClick={() => void connectShell()} disabled={pending() === 'exec'}>
-                {socketState() === 'open' ? 'reconnect shell' : 'open shell'}
+      <Panel title='Shell Access' subtitle='Requests an exec token and opens a browser shell session.'>
+        <div class='flex flex-col gap-6'>
+          <div class='grid gap-4 sm:grid-cols-2'>
+            <label class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>Shell</span>
+              <select 
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={shellChoice()} 
+                onChange={(event) => setShellChoice(event.currentTarget.value)}
+              >
+                <For each={shellOptions}>
+                  {([value, label]) => <option value={value}>{label}</option>}
+                </For>
+              </select>
+            </label>
+            <div class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>Session</span>
+              <div class='flex flex-wrap gap-2'>
+                <button 
+                  type='button' 
+                  onClick={() => void connectShell()} 
+                  disabled={pending() === 'exec'}
+                  class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm h-9 px-4 py-2 disabled:opacity-50"
+                >
+                  {socketState() === 'open' ? 'Reconnect Shell' : 'Open Shell'}
+                </button>
+                <Show when={execInfo()}>
+                  {(info) => (
+                    <button 
+                      type='button' 
+                      onClick={() => void copyText(info().token)}
+                      class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2"
+                    >
+                      Copy Exec Token
+                    </button>
+                  )}
+                </Show>
+              </div>
+            </div>
+          </div>
+          
+          <Show when={execInfo()}>
+            {(info) => (
+              <KeyValueTable
+                rows={[
+                  ['Token', <span class='font-mono break-all text-xs'>{info().token}</span>],
+                  ['Expires', <span>{formatDateTime(info().expires_at)}</span>],
+                  ['State', <span class="capitalize">{socketState()}</span>],
+                ]}
+              />
+            )}
+          </Show>
+          
+          <div class="flex flex-col border rounded-lg overflow-hidden border-border">
+            <pre class='bg-[#111] text-[#fafafa] p-4 overflow-x-auto text-sm font-mono min-h-[16rem] whitespace-pre-wrap'>{shellOutput() || 'Shell output will appear here...'}</pre>
+            <div class='flex bg-muted/50 border-t border-border p-2 gap-2'>
+              <input
+                class='flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-mono'
+                value={shellCommand()}
+                onInput={(event) => setShellCommand(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    sendShellLine();
+                  }
+                }}
+                placeholder='Type a shell command and press Enter...'
+              />
+              <button 
+                type='button' 
+                onClick={sendShellLine} 
+                disabled={socketState() !== 'open'}
+                class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm h-9 px-4 py-2 disabled:opacity-50 whitespace-nowrap"
+              >
+                Send
               </button>
-              <Show when={execInfo()}>
-                {(info) => (
-                  <button type='button' onClick={() => void copyText(info().token)}>copy exec token</button>
-                )}
-              </Show>
             </div>
           </div>
         </div>
-        <Show when={execInfo()}>
-          {(info) => (
-            <KeyValueTable
-              rows={[
-                ['token', <span class='mono'>{info().token}</span>],
-                ['expires', <span>{formatDateTime(info().expires_at)}</span>],
-                ['state', <span>{socketState()}</span>],
-              ]}
+      </Panel>
+
+      <Panel title='Container Logs'>
+        <div class='flex flex-col sm:flex-row items-end gap-4 mb-4'>
+          <label class='flex flex-col gap-2 max-w-[12rem] w-full'>
+            <span class='text-sm font-medium leading-none'>Tail Lines</span>
+            <input 
+              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={logsTail()} 
+              onInput={(event) => setLogsTail(event.currentTarget.value)} 
             />
-          )}
-        </Show>
-        <pre class='terminal-output'>{shellOutput() || 'shell output will appear here'}</pre>
-        <div class='button-row'>
-          <input
-            class='terminal-input'
-            value={shellCommand()}
-            onInput={(event) => setShellCommand(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                sendShellLine();
-              }
-            }}
-            placeholder='type a shell command and press Enter'
-          />
-          <button type='button' onClick={sendShellLine} disabled={socketState() !== 'open'}>
-            send
+          </label>
+          <button 
+            type='button' 
+            onClick={() => void refetchLogs()}
+            class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2"
+          >
+            Refresh Logs
           </button>
         </div>
+        <pre class="bg-card border border-border rounded-lg p-4 overflow-x-auto text-sm font-mono text-muted-foreground min-h-[14rem]">{logs() ?? ''}</pre>
       </Panel>
 
-      <Panel title='container logs'>
-        <div class='button-row'>
-          <label class='field'>
-            <span>tail lines</span>
-            <input value={logsTail()} onInput={(event) => setLogsTail(event.currentTarget.value)} />
-          </label>
-          <button type='button' onClick={() => void refetchLogs()}>refresh logs</button>
-        </div>
-        <pre>{logs() ?? ''}</pre>
-      </Panel>
-
-      <Panel title='mounts and files'>
+      <Panel title='Mounts and Files'>
         <Show when={mounts.error}>
           {(error) => <Notice tone='error'>Failed to load mounts: {describeError(error())}</Notice>}
         </Show>
-        <Show when={(mounts() ?? []).length > 0} fallback={<p>No writable or mounted volumes detected.</p>}>
-          <div class='two-col'>
-            <label class='field'>
-              <span>mount</span>
+        <Show when={(mounts() ?? []).length > 0} fallback={<p class="text-sm text-muted-foreground p-4 text-center border rounded-lg border-dashed">No writable or mounted volumes detected.</p>}>
+          <div class='grid gap-4 sm:grid-cols-2 mb-6'>
+            <label class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>Mount</span>
               <select
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 value={selectedMount()}
                 onChange={(event) => {
                   setSelectedMount(event.currentTarget.value);
@@ -317,37 +374,67 @@ const ContainerDetail = () => {
                 </For>
               </select>
             </label>
-            <label class='field'>
-              <span>current path</span>
+            <label class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>Current Path</span>
               <input
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-mono"
                 value={currentPath()}
                 onInput={(event) => setCurrentPath(event.currentTarget.value)}
-                placeholder='relative path within selected mount'
+                placeholder='Relative path within selected mount'
               />
             </label>
           </div>
 
-          <div class='button-row'>
-            <button type='button' onClick={() => setCurrentPath(parentPath(currentPath()))} disabled={!currentPath()}>
-              up one level
+          <div class='flex flex-wrap gap-2 mb-8'>
+            <button 
+              type='button' 
+              onClick={() => setCurrentPath(parentPath(currentPath()))} 
+              disabled={!currentPath()}
+              class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2 disabled:opacity-50"
+            >
+              Up One Level
             </button>
-            <button type='button' onClick={() => void refetchFiles()} disabled={!selectedMount()}>
-              refresh files
+            <button 
+              type='button' 
+              onClick={() => void refetchFiles()} 
+              disabled={!selectedMount()}
+              class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2 disabled:opacity-50"
+            >
+              Refresh Files
             </button>
           </div>
 
-          <div class='two-col'>
-            <label class='field'>
-              <span>new directory</span>
-              <input value={newDirectory()} onInput={(event) => setNewDirectory(event.currentTarget.value)} />
+          <div class='grid gap-4 sm:grid-cols-2 mb-6 pb-6 border-b border-border'>
+            <label class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>New Directory</span>
+              <input 
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={newDirectory()} 
+                onInput={(event) => setNewDirectory(event.currentTarget.value)} 
+              />
             </label>
-            <div class='field'>
-              <span>actions</span>
-              <div class='button-row'>
-                <button type='button' onClick={() => void createDirectory()} disabled={pending() === 'mkdir' || !selectedMount()}>
-                  create directory
+            <div class='flex flex-col gap-2'>
+              <span class='text-sm font-medium leading-none'>Actions</span>
+              <div class='flex flex-col sm:flex-row gap-2'>
+                <button 
+                  type='button' 
+                  onClick={() => void createDirectory()} 
+                  disabled={pending() === 'mkdir' || !selectedMount()}
+                  class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm h-9 px-4 py-2 disabled:opacity-50 whitespace-nowrap"
+                >
+                  Create Directory
                 </button>
-                <input type='file' multiple onChange={(event) => void uploadFiles(event.currentTarget.files)} />
+                <div class="relative w-full">
+                  <input 
+                    type='file' 
+                    multiple 
+                    onChange={(event) => void uploadFiles(event.currentTarget.files)} 
+                    class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <div class="inline-flex w-full items-center justify-center rounded-md text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2 pointer-events-none whitespace-nowrap">
+                    Upload Files
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -362,45 +449,66 @@ const ContainerDetail = () => {
             <EmptyState path={currentPath()} />
           </Show>
           <Show when={!files.loading && (files() ?? []).length > 0}>
-            <div class='repo-grid'>
+            <div class='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
               <For each={files() ?? []}>
                 {(entry) => (
-                  <article class='repo-card'>
-                    <div class='choice-card-head'>
-                      <div>
-                        <h3>{entry.name}</h3>
-                        <p class='muted mono'>{entry.path}</p>
+                  <article class='rounded-xl border bg-card text-card-foreground shadow-sm p-4 flex flex-col gap-4'>
+                    <div class='flex justify-between items-start gap-4'>
+                      <div class="min-w-0">
+                        <h3 class="font-semibold tracking-tight truncate text-base">{entry.name}</h3>
+                        <p class='text-xs text-muted-foreground font-mono truncate mt-1'>{entry.path}</p>
                       </div>
-                      <span class='badge'>{entry.is_dir ? 'directory' : 'file'}</span>
+                      <span class={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider ${
+                        entry.is_dir ? 'bg-secondary text-secondary-foreground border-border' : 'bg-muted text-muted-foreground border-border'
+                      }`}>
+                        {entry.is_dir ? (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+                             Dir
+                          </>
+                        ) : (
+                          <>
+                             File
+                          </>
+                        )}
+                      </span>
                     </div>
-                    <div class='summary-grid'>
-                      <div class='summary-card'>
-                        <p class='muted'>size</p>
+                    <div class='grid grid-cols-2 gap-4 py-3 border-y border-border text-xs mt-auto'>
+                      <div class='flex flex-col gap-1'>
+                        <p class='font-semibold uppercase text-muted-foreground tracking-wider'>Size</p>
                         <p>{entry.is_dir ? 'folder' : formatBytes(entry.size_bytes)}</p>
                       </div>
-                      <div class='summary-card'>
-                        <p class='muted'>modified</p>
+                      <div class='flex flex-col gap-1'>
+                        <p class='font-semibold uppercase text-muted-foreground tracking-wider'>Modified</p>
                         <p>{formatDateTime(entry.modified_at)}</p>
                       </div>
                     </div>
-                    <div class='button-row'>
+                    <div class='flex justify-end gap-2'>
                       <Show when={entry.is_dir} fallback={
                         <button
                           type='button'
                           onClick={() => void downloadEntry(entry.path)}
                           disabled={pending() === `download-${entry.path}`}
+                          class="inline-flex items-center justify-center rounded-md text-xs font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-8 px-3 disabled:opacity-50"
                         >
-                          download
+                          Download
                         </button>
                       }>
-                        <button type='button' onClick={() => setCurrentPath(entry.path)}>open folder</button>
+                        <button 
+                          type='button' 
+                          onClick={() => setCurrentPath(entry.path)}
+                          class="inline-flex items-center justify-center rounded-md text-xs font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-8 px-3"
+                        >
+                          Open Folder
+                        </button>
                       </Show>
                       <button
                         type='button'
                         onClick={() => void removeEntry(entry.path)}
                         disabled={pending() === `delete-${entry.path}`}
+                        class="inline-flex items-center justify-center rounded-md text-xs font-medium transition-colors border border-input bg-background hover:bg-destructive hover:text-destructive-foreground hover:border-destructive shadow-sm h-8 px-3 disabled:opacity-50"
                       >
-                        delete
+                        Delete
                       </button>
                     </div>
                   </article>
@@ -415,9 +523,9 @@ const ContainerDetail = () => {
 };
 
 const EmptyState = (props: { path: string }) => (
-  <div class='panel'>
-    <p><strong>No files here</strong></p>
-    <p class='muted'>{props.path ? `The directory ${props.path} is empty.` : 'The selected mount root is empty.'}</p>
+  <div class='rounded-xl border border-dashed border-border bg-card p-8 text-center'>
+    <p class="font-semibold text-lg">No files here</p>
+    <p class="text-sm text-muted-foreground mt-2">{props.path ? `The directory ${props.path} is empty.` : 'The selected mount root is empty.'}</p>
   </div>
 );
 
