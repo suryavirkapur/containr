@@ -1,24 +1,24 @@
 import { A, useSearchParams } from '@solidjs/router';
-import { Show } from 'solid-js';
-import { Notice, PageTitle } from '../components/Plain';
+import { For, Show } from 'solid-js';
+import { CreateServiceCard } from '../components/CreateServiceCard';
+import { Notice, PageTitle, Panel } from '../components/Plain';
 
 const repoTypes = [
-  ['web_service', 'Web Service', 'Public HTTP service. Becomes the root of a network group.'],
-  ['private_service', 'Private Service', 'Internal service with no public routing by default.'],
-  ['background_worker', 'Background Worker', 'Long-running worker that defines its own boundary.'],
-  ['cron_job', 'Cron Job', 'Scheduled job with no always-on container requirement.'],
+  ['web_service', 'web service', 'Public HTTP service that becomes the root of a group.'],
+  ['private_service', 'private service', 'Internal service with no public routing by default.'],
+  ['background_worker', 'background worker', 'Long-running worker that still defines its own boundary.'],
+  ['cron_job', 'cron job', 'Scheduled job with no always-on container requirement.'],
 ] as const;
 
 const templateTypes = [
-  ['postgresql', 'PostgreSQL', 'Managed relational database.'],
-  ['redis', 'Valkey / Redis', 'Managed in-memory store for caching.'],
-  ['mariadb', 'MariaDB', 'Managed MySQL-compatible database.'],
-  ['qdrant', 'Qdrant', 'Managed vector database for search and embeddings.'],
-  ['rabbitmq', 'RabbitMQ', 'Managed queue service for background processing.'],
+  ['postgresql', 'postgresql', 'Managed relational database that can join an existing group.'],
+  ['redis', 'valkey', 'Managed in-memory store for caching and ephemeral state.'],
+  ['mariadb', 'mariadb', 'Managed MySQL-compatible database service.'],
+  ['qdrant', 'qdrant', 'Managed vector database for search and embeddings.'],
+  ['rabbitmq', 'rabbitmq', 'Managed queue service for background processing.'],
 ] as const;
 
-const readParam = (value: string | string[] | undefined) =>
-  Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+const readParam = (value: string | string[] | undefined) => Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
 
 const CreateFlow = () => {
   const [searchParams] = useSearchParams();
@@ -33,67 +33,76 @@ const CreateFlow = () => {
   };
 
   return (
-    <div class="flex flex-col gap-6 max-w-xl">
+    <div class='flex flex-col gap-6'>
       <PageTitle
-        title="New Service"
-        subtitle="Deploy from a repository or attach a managed service."
+        title='New Service'
+        subtitle='CapRover-style service creation flow adapted to containr services and network groups.'
       />
 
       <Show when={selectedGroupId()}>
-        <Notice tone="info">
-          Templates created here will join{' '}
-          <strong class="font-medium">
-            {selectedGroupName() || 'the selected group'}
-          </strong>
-          .
+        <Notice tone='info'>
+          Managed templates created here can join <strong class='font-semibold'>{selectedGroupName() || 'the selected group'}</strong>.
+          Repository-backed services still create their own network boundary.
         </Notice>
       </Show>
 
-      {/* Repo services */}
-      <div class="flex flex-col gap-1">
-        <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-          Repository
-        </p>
-        <div class="border border-border divide-y divide-border">
-          {repoTypes.map(([value, label, description]) => (
-            <A
-              href={`/services/new/repo?type=${value}`}
-              class="flex items-center justify-between px-4 py-3 bg-card hover:bg-secondary/30 transition-colors group"
-            >
-              <div>
-                <p class="text-sm font-medium">{label}</p>
-                <p class="text-xs text-muted-foreground mt-0.5">{description}</p>
-              </div>
-              <span class="text-muted-foreground text-sm group-hover:text-foreground transition-colors ml-4 shrink-0">
-                →
-              </span>
-            </A>
-          ))}
-        </div>
-      </div>
+      <CreateServiceCard groupId={selectedGroupId()} groupName={selectedGroupName()} />
 
-      {/* Managed templates */}
-      <div class="flex flex-col gap-1">
-        <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-          Managed Templates
-        </p>
-        <div class="border border-border divide-y divide-border">
-          {templateTypes.map(([value, label, description]) => (
-            <A
-              href={templateHref(value)}
-              class="flex items-center justify-between px-4 py-3 bg-card hover:bg-secondary/30 transition-colors group"
-            >
-              <div>
-                <p class="text-sm font-medium">{label}</p>
-                <p class="text-xs text-muted-foreground mt-0.5">{description}</p>
-              </div>
-              <span class="text-muted-foreground text-sm group-hover:text-foreground transition-colors ml-4 shrink-0">
-                →
-              </span>
-            </A>
-          ))}
+      <Panel title='Repository-Backed Services' subtitle='Each repository-backed service creates its own group root.'>
+        <div class='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>
+          <For each={repoTypes}>
+            {([value, label, description]) => (
+              <A 
+                class='group flex h-full flex-col justify-between rounded-lg border border-border bg-card p-5 text-card-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md' 
+                href={`/services/new/repo?type=${value}`}
+              >
+                <div>
+                  <div class='mb-3 flex items-center justify-between'>
+                    <h3 class='text-lg font-semibold capitalize tracking-tight transition-colors group-hover:text-primary'>{label}</h3>
+                    <span class='cr-chip border-primary/20 bg-accent text-accent-foreground'>New Boundary</span>
+                  </div>
+                  <p class='text-sm leading-relaxed text-muted-foreground'>{description}</p>
+                </div>
+                <div class='mt-6 flex items-center justify-between border-t border-border pt-4'>
+                  <span class='text-xs font-medium text-muted-foreground'>Continue to repo setup</span>
+                  <span class='text-sm font-semibold text-primary group-hover:underline'>Open &rarr;</span>
+                </div>
+              </A>
+            )}
+          </For>
         </div>
-      </div>
+      </Panel>
+
+      <Panel title='Managed Templates' subtitle='Managed services can stay isolated or join an existing group.'>
+        <div class='grid gap-4 sm:grid-cols-2 xl:grid-cols-3'>
+          <For each={templateTypes}>
+            {([value, label, description]) => (
+              <A 
+                class='group flex h-full flex-col justify-between rounded-lg border border-border bg-card p-5 text-card-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md' 
+                href={templateHref(value)}
+              >
+                <div>
+                  <div class='mb-3 flex items-center justify-between'>
+                    <h3 class='text-lg font-semibold capitalize tracking-tight transition-colors group-hover:text-primary'>{label}</h3>
+                    <span class={`cr-chip ${
+                      selectedGroupId() ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                    }`}>
+                      {selectedGroupId() ? 'Attachable' : 'Managed'}
+                    </span>
+                  </div>
+                  <p class='text-sm leading-relaxed text-muted-foreground'>{description}</p>
+                </div>
+                <div class='mt-6 flex items-center justify-between border-t border-border pt-4'>
+                  <span class='text-xs font-medium text-muted-foreground'>
+                    {selectedGroupId() ? `Join ${selectedGroupName() || 'selected group'}` : 'Pick placement next'}
+                  </span>
+                  <span class='text-sm font-semibold text-primary group-hover:underline'>Open &rarr;</span>
+                </div>
+              </A>
+            )}
+          </For>
+        </div>
+      </Panel>
     </div>
   );
 };

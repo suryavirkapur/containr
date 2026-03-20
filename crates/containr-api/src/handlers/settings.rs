@@ -441,10 +441,6 @@ pub async fn issue_dashboard_certificate(
         ));
     }
 
-    for domain in &domains {
-        let _ = state.db.delete_certificate(domain);
-    }
-
     if let Some(ref tx) = state.cert_request_tx {
         for domain in &domains {
             let _ = tx.try_send(domain.clone());

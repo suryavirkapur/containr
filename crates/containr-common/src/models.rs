@@ -129,6 +129,7 @@ impl Project {
             registry_auth: None,
             env_vars: Vec::new(),
             domains: Vec::new(),
+            http_only_domains: Vec::new(),
             build_context: None,
             dockerfile_path: None,
             build_target: None,
@@ -211,6 +212,19 @@ impl Project {
             for domain in &service.domains {
                 if !domains.iter().any(|existing| existing == domain) {
                     domains.push(domain.clone());
+                }
+            }
+        }
+        domains
+    }
+
+    /// returns all custom domains with managed https enabled
+    pub fn managed_certificate_domains(&self) -> Vec<String> {
+        let mut domains = Vec::new();
+        for service in &self.services {
+            for domain in service.https_domains() {
+                if !domains.iter().any(|existing| existing == &domain) {
+                    domains.push(domain);
                 }
             }
         }
@@ -401,6 +415,8 @@ pub struct ContainerService {
     #[serde(default)]
     pub domains: Vec<String>,
     #[serde(default)]
+    pub http_only_domains: Vec<String>,
+    #[serde(default)]
     pub build_context: Option<String>,
     #[serde(default)]
     pub dockerfile_path: Option<String>,
@@ -448,6 +464,7 @@ impl ContainerService {
             registry_auth: None,
             env_vars: Vec::new(),
             domains: Vec::new(),
+            http_only_domains: Vec::new(),
             build_context: None,
             dockerfile_path: None,
             build_target: None,
@@ -511,6 +528,36 @@ impl ContainerService {
             }
         }
         domains
+    }
+
+    /// returns the custom domains configured without managed https
+    pub fn http_only_domains(&self) -> Vec<String> {
+        let custom_domains = self.custom_domains();
+        let mut domains = Vec::new();
+        for domain in &self.http_only_domains {
+            if custom_domains.iter().any(|existing| existing == domain)
+                && !domains.iter().any(|existing| existing == domain)
+            {
+                domains.push(domain.clone());
+            }
+        }
+        domains
+    }
+
+    /// returns the custom domains configured with managed https
+    pub fn https_domains(&self) -> Vec<String> {
+        let http_only_domains = self.http_only_domains();
+        self.custom_domains()
+            .into_iter()
+            .filter(|domain| {
+                !http_only_domains.iter().any(|existing| existing == domain)
+            })
+            .collect()
+    }
+
+    /// returns true when the given custom domain should enforce https
+    pub fn domain_https_enabled(&self, domain: &str) -> bool {
+        self.https_domains().iter().any(|existing| existing == domain)
     }
 
     /// infers a service type from legacy fields
