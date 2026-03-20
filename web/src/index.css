@@ -1,31 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: 'Avenir Next', 'Helvetica Neue', 'Segoe UI', sans-serif;
+  --font-sans: 'Geist', 'Inter', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'Fira Code', monospace;
+
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
-
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
-
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
-
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
-
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
 
@@ -35,50 +29,52 @@
 }
 
 @layer base {
+  /* Dark mode is the default */
   :root {
-    /* Shadcn defaults mapped to standard flowbite/render vibes - light mode */
-    --background: #f4efe8; /* using original containr bg */
-    --foreground: #1f1a17; /* using original ink */
-    --card: #fffdf9; /* surface-strong */
-    --card-foreground: #1f1a17;
-    --popover: #fffdf9;
-    --popover-foreground: #1f1a17;
-    --primary: #1f1a17;
-    --primary-foreground: #fffdf9;
-    --secondary: #e6ded3;
-    --secondary-foreground: #1f1a17;
-    --muted: #e6ded3;
-    --muted-foreground: #6b6259;
-    --accent: rgba(159, 93, 47, 0.12);
-    --accent-foreground: #9f5d2f;
-    --destructive: #fee2e2;
-    --destructive-foreground: #dc2626;
-    --border: rgba(76, 58, 35, 0.14);
-    --input: rgba(76, 58, 35, 0.14);
-    --ring: rgba(159, 93, 47, 0.4);
-    --radius: 0.8rem;
+    --background: #0a0a0a;
+    --foreground: #ededed;
+    --card: #111111;
+    --card-foreground: #ededed;
+    --popover: #111111;
+    --popover-foreground: #ededed;
+    --primary: #ededed;
+    --primary-foreground: #0a0a0a;
+    --secondary: #1a1a1a;
+    --secondary-foreground: #ededed;
+    --muted: #1a1a1a;
+    --muted-foreground: #737373;
+    --accent: #1a1a1a;
+    --accent-foreground: #ededed;
+    --destructive: #3f1118;
+    --destructive-foreground: #f87171;
+    --border: rgba(255, 255, 255, 0.08);
+    --input: rgba(255, 255, 255, 0.08);
+    --ring: rgba(255, 255, 255, 0.2);
+    --radius: 0px;
   }
 
-  .dark {
-    --background: #09090b;
-    --foreground: #fafafa;
-    --card: #18181b;
-    --card-foreground: #fafafa;
-    --popover: #18181b;
-    --popover-foreground: #fafafa;
-    --primary: #fafafa;
-    --primary-foreground: #18181b;
-    --secondary: #27272a;
-    --secondary-foreground: #fafafa;
-    --muted: #27272a;
-    --muted-foreground: #a1a1aa;
-    --accent: #27272a;
-    --accent-foreground: #fafafa;
-    --destructive: #7f1d1d;
-    --destructive-foreground: #fafafa;
-    --border: #27272a;
-    --input: #27272a;
-    --ring: #d4d4d8;
+  /* Light mode opt-in */
+  .light {
+    --background: #ffffff;
+    --foreground: #0a0a0a;
+    --card: #f9f9f9;
+    --card-foreground: #0a0a0a;
+    --popover: #ffffff;
+    --popover-foreground: #0a0a0a;
+    --primary: #0a0a0a;
+    --primary-foreground: #ffffff;
+    --secondary: #f1f1f1;
+    --secondary-foreground: #0a0a0a;
+    --muted: #f1f1f1;
+    --muted-foreground: #737373;
+    --accent: #f1f1f1;
+    --accent-foreground: #0a0a0a;
+    --destructive: #fff0f0;
+    --destructive-foreground: #dc2626;
+    --border: rgba(0, 0, 0, 0.1);
+    --input: rgba(0, 0, 0, 0.06);
+    --ring: rgba(0, 0, 0, 0.2);
+    --radius: 0px;
   }
 }
 
@@ -90,15 +86,8 @@
     background-color: var(--background);
     color: var(--foreground);
     min-height: 100vh;
-    position: relative;
     font-family: var(--font-sans);
-  }
-  
-  /* Original containr background gradients for light mode */
-  :root:not(.dark) body {
-    background:
-      radial-gradient(circle at top left, rgba(159, 93, 47, 0.14), transparent 28rem),
-      radial-gradient(circle at right 20%, rgba(85, 119, 87, 0.12), transparent 26rem),
-      linear-gradient(180deg, #f7f1e9 0%, #efe6da 100%);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }

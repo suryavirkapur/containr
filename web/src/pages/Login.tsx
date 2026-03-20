@@ -34,13 +34,13 @@ const Login = () => {
     <PublicShell title='Sign In' subtitle='Use the account created by the bootstrap admin.'>
       <Show when={error()}>{(message) => <Notice tone='error'>{message()}</Notice>}</Show>
 
-      <section class='rounded-xl border border-border bg-card text-card-foreground shadow-sm p-6 mb-6'>
+      <section class='border border-border bg-card text-card-foreground p-6 mb-6'>
         <form class='flex flex-col gap-4' onSubmit={(event) => void submit(event)}>
           <label class='flex flex-col gap-2'>
             <span class='text-sm font-medium leading-none'>Email</span>
             <input 
               type='email' 
-              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              class="flex h-9 w-full border border-input bg-transparent px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={email()} 
               onInput={(event) => setEmail(event.currentTarget.value)} 
             />
@@ -49,7 +49,7 @@ const Login = () => {
             <span class='text-sm font-medium leading-none'>Password</span>
             <input 
               type='password' 
-              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              class="flex h-9 w-full border border-input bg-transparent px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={password()} 
               onInput={(event) => setPassword(event.currentTarget.value)} 
             />
@@ -58,13 +58,13 @@ const Login = () => {
             <button 
               type='submit' 
               disabled={saving()}
-              class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm h-9 px-4 py-2 disabled:opacity-50 w-full sm:w-auto"
+              class="inline-flex items-center justify-center text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 py-2 disabled:opacity-50 w-full sm:w-auto"
             >
               {saving() ? 'Signing In...' : 'Sign In'}
             </button>
             <a 
               href='/api/auth/github'
-              class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2 w-full sm:w-auto"
+              class="inline-flex items-center justify-center text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2 w-full sm:w-auto"
             >
               Sign In with GitHub
             </a>
@@ -72,7 +72,7 @@ const Login = () => {
         </form>
       </section>
 
-      <section class='rounded-xl border border-dashed border-border bg-card p-6 text-center text-sm'>
+      <section class='border border-dashed border-border bg-card p-6 text-center text-sm'>
         <Show when={status()} fallback={<p class='text-muted-foreground'>Checking registration status...</p>}>
           {(current) => (
             current().registration_open ? (
