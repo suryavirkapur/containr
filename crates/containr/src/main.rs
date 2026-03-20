@@ -639,13 +639,6 @@ fn normalize_config_paths(args: &ServerArgs, config: &mut Config) {
             .to_string();
     }
 
-    let default_cache = containr_common::CacheConfig::default().path;
-    if config.cache.path.trim().is_empty() || config.cache.path == default_cache
-    {
-        config.cache.path =
-            args.data_dir.join("cache").to_string_lossy().to_string();
-    }
-
     let default_logs = containr_common::LoggingConfig::default().dir;
     if config.logging.dir.trim().is_empty()
         || config.logging.dir == default_logs

@@ -461,7 +461,6 @@ mod tests {
             PathBuf::from("containr.toml"),
             PathBuf::from("data"),
             db,
-            root.join("cache"),
             deployment_tx,
             None,
             None,

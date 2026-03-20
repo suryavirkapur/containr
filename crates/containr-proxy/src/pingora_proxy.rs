@@ -306,12 +306,11 @@ impl ProxyHttp for ContainrProxy {
             .unwrap_or(false);
         let https_required = if host.is_empty() {
             false
-        } else if host == base_domain {
-            true
-        } else if storage_public_hostname
-            .as_deref()
-            .map(|storage_host| storage_host == host)
-            .unwrap_or(false)
+        } else if host == base_domain
+            || storage_public_hostname
+                .as_deref()
+                .map(|storage_host| storage_host == host)
+                .unwrap_or(false)
         {
             true
         } else if let Some(route) = self.routes.get_route(host) {
@@ -571,6 +570,7 @@ impl ProxyHttp for ContainrProxy {
 }
 
 /// Creates and runs the pingora proxy server
+#[allow(clippy::too_many_arguments)]
 pub fn create_proxy_server(
     routes: RouteManager,
     challenges: ChallengeStore,

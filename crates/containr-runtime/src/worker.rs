@@ -471,26 +471,25 @@ impl DeploymentWorker {
                     self.docker_manager.create_container(config).await?;
 
                 // wait for dependencies to be healthy before continuing
-                if service.health_check.is_some() {
-                    if !self
+                if service.health_check.is_some()
+                    && !self
                         .docker_manager
                         .wait_for_healthy(&container_id, 60)
                         .await?
-                    {
-                        let _ = self
-                            .docker_manager
-                            .stop_container(&container_id)
-                            .await;
-                        let _ = self
-                            .docker_manager
-                            .remove_container(&container_id)
-                            .await;
-                        return Err(anyhow::anyhow!(
-                            "service {} replica {} failed health check",
-                            service.name,
-                            replica_idx
-                        ));
-                    }
+                {
+                    let _ = self
+                        .docker_manager
+                        .stop_container(&container_id)
+                        .await;
+                    let _ = self
+                        .docker_manager
+                        .remove_container(&container_id)
+                        .await;
+                    return Err(anyhow::anyhow!(
+                        "service {} replica {} failed health check",
+                        service.name,
+                        replica_idx
+                    ));
                 }
 
                 // create service deployment record

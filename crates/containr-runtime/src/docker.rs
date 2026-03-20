@@ -1084,6 +1084,12 @@ fn build_container_hostname(id: &str) -> String {
     }
 }
 
+impl Default for DockerContainerManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1117,11 +1123,5 @@ mod tests {
         assert!(hostname.starts_with("containr-12345678-service-with-spaces"));
         assert!(hostname.len() <= 63);
         assert!(!hostname.contains('_'));
-    }
-}
-
-impl Default for DockerContainerManager {
-    fn default() -> Self {
-        Self::new()
     }
 }

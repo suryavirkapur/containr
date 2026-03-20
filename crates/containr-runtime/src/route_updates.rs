@@ -6,5 +6,5 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub enum ProxyRouteUpdate {
     RefreshApp { app_id: Uuid },
-    RemoveApp { app: App },
+    RemoveApp { app: Box<App> },
 }

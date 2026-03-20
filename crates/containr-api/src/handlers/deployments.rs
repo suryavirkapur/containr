@@ -79,6 +79,7 @@ fn deployment_source_url(source: &DeploymentSource) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn create_and_queue_deployment(
     state: &AppState,
     owner_id: Uuid,
