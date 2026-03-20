@@ -1,24 +1,29 @@
-import { createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
+import { createEffect, createSignal, onCleanup } from 'solid-js';
 
 type Theme = 'light' | 'dark' | 'system';
 
+// Dark is the default — toggle adds `.light` class for light mode.
 export function createTheme() {
   const [theme, setTheme] = createSignal<Theme>('system');
-  const [resolvedTheme, setResolvedTheme] = createSignal<'light' | 'dark'>('light');
+  const [resolvedTheme, setResolvedTheme] = createSignal<'light' | 'dark'>(
+    'dark',
+  );
 
   const applyTheme = (t: 'light' | 'dark') => {
     setResolvedTheme(t);
-    if (t === 'dark') {
-      document.documentElement.classList.add('dark');
+    if (t === 'light') {
+      document.documentElement.classList.add('light');
     } else {
-      document.documentElement.classList.remove('dark');
+      document.documentElement.classList.remove('light');
     }
   };
 
   const updateResolvedTheme = () => {
     const t = theme();
     if (t === 'system') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const prefersDark = window.matchMedia(
+        '(prefers-color-scheme: dark)',
+      ).matches;
       applyTheme(prefersDark ? 'dark' : 'light');
     } else {
       applyTheme(t);
