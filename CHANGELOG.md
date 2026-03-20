@@ -3,6 +3,10 @@
 changelog
 =========
 
+0.1.17-alpha - 2026-03-21
+- deployments tab: each row is now an accordion — click to expand inline metadata grid (status, created, started, finished, commit sha), action buttons (rollback, reconnect logs), and scrollable build log panel inside the row
+- service summary: endpoint for managed services (postgres, redis, rabbitmq, etc.) is now hidden behind a blur/reveal toggle instead of displayed in plaintext
+
 0.1.16-alpha - 2026-03-20
 - overhaul dashboard ui to dark-first minimalist design using Geist font, radius 0, and a flat border-centric palette
 - rename "HTTP Settings" to "Networking Settings" in service-detail
