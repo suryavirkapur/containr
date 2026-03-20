@@ -9,9 +9,9 @@ export type ServiceCertificate = components['schemas']['CertificateResponse'];
 export type ServiceCertificateReissue = components['schemas']['ReissueResponse'];
 export type ServiceAction = 'start' | 'stop' | 'restart';
 
-type CreateServiceBody = paths['/api/services']['post']['requestBody']['content']['application/json'];
-type UpdateServiceBody = paths['/api/services/{id}']['patch']['requestBody']['content']['application/json'];
-type DeploymentTriggerBody = paths['/api/services/{id}/deployments']['post']['requestBody']['content']['application/json'];
+export type CreateServiceBody = paths['/api/services']['post']['requestBody']['content']['application/json'];
+export type UpdateServiceBody = paths['/api/services/{id}']['patch']['requestBody']['content']['application/json'];
+export type DeploymentTriggerBody = paths['/api/services/{id}/deployments']['post']['requestBody']['content']['application/json'];
 type DeploymentRollbackBody = paths['/api/services/{id}/deployments/{deployment_id}/rollback']['post']['requestBody']['content']['application/json'];
 type CertificateReissueBody = paths['/api/services/{id}/certificate/reissue']['post']['requestBody']['content']['application/json'];
 

@@ -12,10 +12,6 @@ port = 2077
 # metadata database path
 path = "./data/containr.sqlite3"
 
-[cache]
-# sled-backed ephemeral cache path
-path = "./data/cache"
-
 [logging]
 # append-only containr log directory
 dir = "./data/logs"

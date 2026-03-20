@@ -270,7 +270,7 @@ pub enum CreateServiceRequest {
         github_url: String,
         branch: Option<String>,
         env_vars: Option<Vec<EnvVarRequest>>,
-        service: ServiceRequest,
+        service: Box<ServiceRequest>,
         rollout_strategy: Option<String>,
     },
     Template {
@@ -330,6 +330,7 @@ impl TemplateKind {
         }
     }
 
+    #[allow(dead_code)]
     fn api_name(self) -> &'static str {
         match self {
             Self::Postgresql => "postgresql",
@@ -346,7 +347,10 @@ impl TemplateKind {
 }
 
 enum OwnedServiceRecord {
-    App { app: App, service: ContainerService },
+    App {
+        app: App,
+        service: Box<ContainerService>,
+    },
     ManagedDatabase(ManagedDatabase),
     ManagedQueue(ManagedQueue),
 }
@@ -442,7 +446,7 @@ impl ServiceSvc {
                     github_url,
                     branch,
                     env_vars,
-                    service,
+                    *service,
                     rollout_strategy,
                 )
                 .await?
@@ -1058,6 +1062,7 @@ impl ServiceSvc {
             .map_err(internal_error)
     }
 
+    #[allow(clippy::too_many_arguments, dead_code)]
     async fn create_repository_service(
         &self,
         config: &Config,
@@ -1164,6 +1169,7 @@ impl ServiceSvc {
         Ok(service_id)
     }
 
+    #[allow(clippy::too_many_arguments, dead_code)]
     async fn create_template_service(
         &self,
         config: &Config,
@@ -1467,7 +1473,10 @@ fn resolve_owned_service_record(
             .cloned()
             .unwrap_or(service);
 
-        return Ok(OwnedServiceRecord::App { app, service });
+        return Ok(OwnedServiceRecord::App {
+            app,
+            service: Box::new(service),
+        });
     }
 
     if let Some(database) = state
@@ -1518,7 +1527,7 @@ fn resolve_owned_app_service_record(
     service_id: Uuid,
 ) -> ApiResult<(App, ContainerService)> {
     match resolve_owned_service_record(state, user_id, service_id)? {
-        OwnedServiceRecord::App { app, service } => Ok((app, service)),
+        OwnedServiceRecord::App { app, service } => Ok((app, *service)),
         OwnedServiceRecord::ManagedDatabase(_)
         | OwnedServiceRecord::ManagedQueue(_) => Err(bad_request(
             "deployments are only supported for repository services",
@@ -2795,7 +2804,7 @@ fn resolve_app_service_deployment(
         .cloned()
         .or_else(|| {
             deployments.into_iter().find(|deployment| {
-                deployment_has_service_image(&deployment, service)
+                deployment_has_service_image(deployment, service)
             })
         }))
 }
@@ -3412,7 +3421,8 @@ fn parse_rollout_strategy(value: &str) -> Option<RolloutStrategy> {
     }
 }
 
-pub(crate) async fn replay_deployment_job(
+    #[allow(dead_code)]
+    pub(crate) async fn replay_deployment_job(
     state: &AppState,
     app: &App,
     deployment: &Deployment,
@@ -3455,7 +3465,8 @@ pub(crate) async fn replay_deployment_job(
     Ok(())
 }
 
-fn deployment_source_url(source: &DeploymentSource) -> String {
+    #[allow(dead_code)]
+    fn deployment_source_url(source: &DeploymentSource) -> String {
     match source {
         DeploymentSource::RemoteGit { url, .. } => url.clone(),
         DeploymentSource::LocalPath { path } => path.clone(),
@@ -3463,7 +3474,8 @@ fn deployment_source_url(source: &DeploymentSource) -> String {
     }
 }
 
-pub(crate) async fn resolve_source_deployment_source(
+    #[allow(dead_code)]
+    pub(crate) async fn resolve_source_deployment_source(
     state: &AppState,
     owner_id: Uuid,
     source_url: &str,

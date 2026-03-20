@@ -49,7 +49,6 @@ pub async fn run_server(
         config_path,
         data_dir,
         db,
-        PathBuf::from(config_snapshot.cache.path.clone()),
         tx,
         proxy_update_tx,
         cert_request_tx,

@@ -131,9 +131,7 @@ impl ClientConfig {
     }
 
     pub fn ensure_instance(&mut self, name: &str) -> &mut ClientInstanceConfig {
-        self.instances
-            .entry(name.to_string())
-            .or_insert_with(ClientInstanceConfig::default)
+        self.instances.entry(name.to_string()).or_default()
     }
 
     pub fn masked(&self) -> Self {

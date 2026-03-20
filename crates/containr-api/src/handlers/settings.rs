@@ -362,8 +362,8 @@ async fn wildcard_domain_resolves(
         .await
         .map_err(|_| {
             format!(
-                "set {} to a wildcard A record or CNAME that points at {}",
-                format!("*.{}", base_domain),
+                "set *.{} to a wildcard A record or CNAME that points at {}",
+                base_domain,
                 base_domain
             )
         })?;
@@ -379,8 +379,8 @@ async fn wildcard_domain_resolves(
     }
 
     Err(format!(
-        "set {} to a wildcard A record or CNAME that points at {}",
-        format!("*.{}", base_domain),
+        "set *.{} to a wildcard A record or CNAME that points at {}",
+        base_domain,
         base_domain
     ))
 }
