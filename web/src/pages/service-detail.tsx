@@ -136,6 +136,25 @@ const parseLines = (value: string) =>
 		.map((line) => line.trim())
 		.filter(Boolean);
 
+// ---- MaskedValue — reveals secret strings on click ----
+const MaskedValue = (props: { value: string }) => {
+	const [shown, setShown] = createSignal(false);
+	return (
+		<span class="inline-flex items-center gap-2 font-mono text-sm">
+			<span class={shown() ? '' : 'blur-sm select-none pointer-events-none'}>
+				{props.value}
+			</span>
+			<button
+				type="button"
+				class="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
+				onClick={() => setShown((v) => !v)}
+			>
+				{shown() ? 'hide' : 'reveal'}
+			</button>
+		</span>
+	);
+};
+
 // ---- Shared input styles ----
 const inputClass =
 	"flex h-8 w-full border border-border bg-card px-3 py-1 text-sm " +
@@ -685,20 +704,22 @@ const ServiceDetail = () => {
 												],
 												[
 													"Endpoint",
-													isUrl(endpointFor(currentService())) ? (
-														<a
-															href={endpointFor(currentService())}
-															target="_blank"
-															rel="noopener noreferrer"
-															class="font-mono text-sm hover:underline text-muted-foreground hover:text-foreground transition-colors"
-														>
-															{endpointFor(currentService())}
-														</a>
-													) : (
-														<span class="font-mono text-sm text-muted-foreground">
-															{endpointFor(currentService())}
-														</span>
-													),
+													// Managed services: hide connection string behind reveal toggle
+													// App services: show as clickable link or plain text
+													currentService().resource_kind !== 'app_service'
+													? (<MaskedValue value={endpointFor(currentService())} />)
+													: isUrl(endpointFor(currentService()))
+													? (<a
+														href={endpointFor(currentService())}
+														target="_blank"
+														rel="noopener noreferrer"
+														class="font-mono text-sm hover:underline text-muted-foreground hover:text-foreground transition-colors"
+													>
+														{endpointFor(currentService())}
+													</a>)
+													: (<span class="font-mono text-sm text-muted-foreground">
+														{endpointFor(currentService())}
+													</span>),
 												],
 												[
 													"Group",
@@ -1139,143 +1160,110 @@ const ServiceDetail = () => {
 											when={(deployments() ?? []).length > 0}
 											fallback={<EmptyBlock title="No deployments yet." />}
 										>
-											<div class="border border-border divide-y divide-border mb-6">
+											<div class="border border-border divide-y divide-border">
 												<For each={deployments() ?? []}>
-													{(deployment) => (
-														<div
-															class={`flex items-center gap-4 px-4 py-3 w-full transition-colors hover:bg-secondary/30 cursor-pointer ${
-																selectedDeploymentId() === deployment.id
-																	? "bg-secondary/40"
-																	: ""
-															}`}
-															onClick={() =>
-																setSelectedDeploymentId(deployment.id)
-															}
-														>
-															<div class="flex-1 min-w-0">
-																<p class="text-sm font-medium truncate">
-																	{deployment.commit_message ??
-																		"Manual deployment"}
-																</p>
-																<p class="text-xs text-muted-foreground mt-0.5 font-mono truncate">
-																	{deployment.commit_sha ?? "—"}
-																</p>
+													{(deployment) => {
+														const isOpen = () =>
+															selectedDeploymentId() === deployment.id;
+														const toggle = () =>
+															setSelectedDeploymentId(
+																isOpen() ? null : deployment.id,
+															);
+														return (
+															<div class="divide-y divide-border">
+																{/* Accordion header row */}
+																<div
+																	class={`flex items-center gap-4 px-4 py-3 w-full transition-colors hover:bg-secondary/30 cursor-pointer ${
+																		isOpen() ? 'bg-secondary/30' : ''
+																	}`}
+																	onClick={toggle}
+																>
+																	{/* Chevron */}
+																	<span class={`text-muted-foreground text-xs transition-transform shrink-0 ${isOpen() ? 'rotate-90' : ''}`}>
+																		›
+																	</span>
+																	<div class="flex-1 min-w-0">
+																		<p class="text-sm font-medium truncate">
+																			{deployment.commit_message ?? 'Manual deployment'}
+																		</p>
+																		<p class="text-xs text-muted-foreground mt-0.5 font-mono truncate">
+																			{deployment.commit_sha
+																				? deployment.commit_sha.slice(0, 7)
+																				: '—'}
+																		</p>
+																	</div>
+																	<StatusBadge status={deployment.status} />
+																	<span class="text-xs text-muted-foreground shrink-0 hidden lg:block">
+																		{formatDateTime(deployment.started_at)}
+																	</span>
+																</div>
+
+																{/* Accordion body */}
+																<Show when={isOpen()}>
+																	<div class="px-4 py-4 bg-secondary/10 flex flex-col gap-4">
+																		{/* Metadata */}
+																		<div class="grid gap-3 sm:grid-cols-2 md:grid-cols-3 text-xs">
+																			<div class="flex flex-col gap-0.5">
+																				<dt class="text-muted-foreground uppercase tracking-wider">Status</dt>
+																				<dd><StatusBadge status={deployment.status} /></dd>
+																			</div>
+																			<div class="flex flex-col gap-0.5">
+																				<dt class="text-muted-foreground uppercase tracking-wider">Created</dt>
+																				<dd>{formatDateTime(deployment.created_at)}</dd>
+																			</div>
+																			<div class="flex flex-col gap-0.5">
+																				<dt class="text-muted-foreground uppercase tracking-wider">Started</dt>
+																				<dd>{formatDateTime(deployment.started_at)}</dd>
+																			</div>
+																			<div class="flex flex-col gap-0.5">
+																				<dt class="text-muted-foreground uppercase tracking-wider">Finished</dt>
+																				<dd>{formatDateTime(deployment.finished_at)}</dd>
+																			</div>
+																			<div class="flex flex-col gap-0.5 col-span-full">
+																				<dt class="text-muted-foreground uppercase tracking-wider">Commit</dt>
+																				<dd class="font-mono">{deployment.commit_sha ?? '—'}</dd>
+																			</div>
+																		</div>
+
+																		{/* Action buttons */}
+																		<div class="flex flex-wrap gap-2">
+																			<button
+																				class={`${btnSecondary} text-xs`}
+																				type="button"
+																				onClick={() => void rollback(deployment.id)}
+																				disabled={pendingAction() === `rollback-${deployment.id}`}
+																			>
+																				Rollback
+																			</button>
+																			<button
+																				class={`${btnSecondary} text-xs`}
+																				type="button"
+																				onClick={() => deploymentLogStream.connect()}
+																			>
+																				Reconnect Logs
+																			</button>
+																		</div>
+
+																		{/* Build log */}
+																		<pre class="bg-[#0d0d0d] text-[#e4e4e4] border border-border p-4 overflow-x-auto text-xs font-mono min-h-[10rem] max-h-[24rem] overflow-y-auto">
+																			<Show when={deploymentLogStream.isStreaming()}>
+																				<div class="flex items-center gap-2 mb-2 text-green-400">
+																					<span class="relative flex h-1.5 w-1.5">
+																						<span class="absolute inline-flex h-full w-full bg-green-400 opacity-75 animate-ping" />
+																						<span class="relative inline-flex h-1.5 w-1.5 bg-green-500" />
+																					</span>
+																					streaming live
+																				</div>
+																			</Show>
+																			{deploymentLogStream.logs().join('\n') || 'No logs yet. Click Reconnect Logs to stream.'}
+																		</pre>
+																	</div>
+																</Show>
 															</div>
-															<StatusBadge status={deployment.status} />
-															<span class="text-xs text-muted-foreground shrink-0 hidden lg:block">
-																{formatDateTime(deployment.started_at)}
-															</span>
-															<button
-																class={`${btnSecondary} text-xs shrink-0`}
-																type="button"
-																onClick={(e) => {
-																	e.stopPropagation();
-																	void rollback(deployment.id);
-																}}
-																disabled={
-																	pendingAction() ===
-																	`rollback-${deployment.id}`
-																}
-															>
-																Rollback
-															</button>
-														</div>
-													)}
+														);
+													}}
 												</For>
 											</div>
-										</Show>
-
-										<Show when={selectedDeploymentId()}>
-											<div class="flex flex-col gap-4 border border-border p-4">
-													<div class="flex items-center justify-between">
-														<p class="text-sm font-medium">
-															{selectedDeployment()?.commit_message ??
-																"Manual deployment"}
-														</p>
-														<div class="flex gap-2">
-															<button
-																class={btnSecondary}
-																type="button"
-																onClick={() =>
-																	void refetchSelectedDeployment()
-																}
-															>
-																Refresh Status
-															</button>
-															<button
-																class={btnSecondary}
-																type="button"
-																onClick={() =>
-																	deploymentLogStream.connect()
-																}
-															>
-																Reconnect Logs
-															</button>
-														</div>
-													</div>
-
-													<Show when={selectedDeployment()}>
-														{(deployment) => (
-															<KeyValueTable
-																rows={[
-																	[
-																		"Status",
-																		<StatusBadge
-																			status={deployment().status}
-																		/>,
-																	],
-																	[
-																		"Commit",
-																		<span class="font-mono text-xs text-muted-foreground">
-																			{deployment().commit_sha ?? "—"}
-																		</span>,
-																	],
-																	[
-																		"Message",
-																		<span>
-																			{deployment().commit_message ??
-																				"Manual deployment"}
-																		</span>,
-																	],
-																	[
-																		"Created",
-																		<span>
-																			{formatDateTime(deployment().created_at)}
-																		</span>,
-																	],
-																	[
-																		"Started",
-																		<span>
-																			{formatDateTime(deployment().started_at)}
-																		</span>,
-																	],
-																	[
-																		"Finished",
-																		<span>
-																			{formatDateTime(deployment().finished_at)}
-																		</span>,
-																	],
-																]}
-															/>
-														)}
-													</Show>
-
-													<pre class="bg-[#0d0d0d] text-[#e4e4e4] border border-border p-4 overflow-x-auto text-xs font-mono min-h-[12rem]">
-														<Show
-															when={deploymentLogStream.isStreaming()}
-														>
-															<div class="flex items-center gap-2 mb-2 text-green-400">
-																<span class="relative flex h-1.5 w-1.5">
-																	<span class="absolute inline-flex h-full w-full bg-green-400 opacity-75 animate-ping" />
-																	<span class="relative inline-flex h-1.5 w-1.5 bg-green-500" />
-																</span>
-																streaming live
-															</div>
-														</Show>
-														{deploymentLogStream.logs().join("\n") ||
-															"No logs available."}
-													</pre>
-												</div>
 										</Show>
 									</Panel>
 								</Match>
