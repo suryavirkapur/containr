@@ -1,5 +1,20 @@
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 
+const ESC_CODE = 27;
+const ESC = String.fromCharCode(ESC_CODE);
+const ANSI_PATTERN = new RegExp(`${ESC}\\[[0-9;]*[a-zA-Z]`, "g");
+
+const stripAnsi = (text: string): string => {
+	return text.replace(ANSI_PATTERN, "");
+};
+
+const filterLogLine = (line: string): boolean => {
+	const clean = line.trim();
+	if (clean.startsWith("[connected to")) return false;
+	if (clean.startsWith("[error reading logs")) return false;
+	return true;
+};
+
 export const useLogStream = (
 	serviceId: () => string,
 	autoConnect = true,
@@ -10,20 +25,29 @@ export const useLogStream = (
 	const [error, setError] = createSignal<string | null>(null);
 	const [autoScroll, setAutoScroll] = createSignal(true);
 	let ws: WebSocket | null = null;
-	let pollInterval: ReturnType<typeof setInterval> | null = null;
+	let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+	let manuallyDisconnected = false;
 
 	const buildWsUrl = () => {
 		const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 		const host = window.location.host;
-		return `${protocol}//${host}/api/services/${serviceId()}/logs/ws`;
+		const token = localStorage.getItem("containr_token");
+		const query = token ? `?token=${encodeURIComponent(token)}` : "";
+		return `${protocol}//${host}/api/services/${serviceId()}/logs/ws${query}`;
 	};
 
 	const connect = () => {
 		if (!serviceId()) return;
+		if (reconnectTimeout) {
+			clearTimeout(reconnectTimeout);
+			reconnectTimeout = null;
+		}
+		manuallyDisconnected = false;
 		setIsStreaming(true);
 		setError(null);
 
 		try {
+			ws?.close();
 			ws = new WebSocket(buildWsUrl());
 
 			ws.onopen = () => {
@@ -32,7 +56,7 @@ export const useLogStream = (
 			};
 
 			ws.onmessage = (event: MessageEvent<string>) => {
-				const lines: string[] = event.data.split("\n").filter(Boolean);
+				const lines: string[] = event.data.split("\n").filter(Boolean).map(stripAnsi).filter(filterLogLine);
 				setLogs((prev) => [...prev, ...lines]);
 				lines.forEach((line: string) => {
 					onLog?.(line);
@@ -40,53 +64,34 @@ export const useLogStream = (
 			};
 
 			ws.onerror = () => {
-				setError("WebSocket connection failed, falling back to polling");
+				setError("WebSocket connection failed");
 				setIsStreaming(false);
-				startPolling();
 			};
 
 			ws.onclose = () => {
 				setIsStreaming(false);
 				ws = null;
+				if (!manuallyDisconnected && autoConnect && serviceId()) {
+					setError("Disconnected from log stream");
+					reconnectTimeout = setTimeout(() => {
+						reconnectTimeout = null;
+						connect();
+					}, 2000);
+				}
 			};
 		} catch {
-			setError("Failed to connect, using polling");
-			startPolling();
+			setError("Failed to connect to log stream");
+			setIsStreaming(false);
 		}
 	};
 
-	const startPolling = () => {
-		if (pollInterval) return;
-		pollInterval = setInterval(async () => {
-			try {
-				const token = localStorage.getItem("containr_token");
-				const response = await fetch(`/api/services/${serviceId()}/logs?tail=50`, {
-					headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-				});
-				if (response.ok) {
-					const data: { logs?: string } = await response.json();
-					const newLogs: string[] = (data.logs || "").split("\n").filter(Boolean);
-					if (newLogs.length > 0) {
-						setLogs((prev) => {
-							const seen = new Set(prev);
-							const appended = newLogs.filter((line: string) => !seen.has(line));
-							if (appended.length === 0) return prev;
-							return [...prev, ...appended];
-						});
-					}
-				}
-			} catch {
-				// Silently fail polling
-			}
-		}, 3000);
-	};
-
-	const disconnect = () => {
+	const disconnect = (manual = true) => {
+		manuallyDisconnected = manual;
 		ws?.close();
 		ws = null;
-		if (pollInterval) {
-			clearInterval(pollInterval);
-			pollInterval = null;
+		if (reconnectTimeout) {
+			clearTimeout(reconnectTimeout);
+			reconnectTimeout = null;
 		}
 		setIsStreaming(false);
 	};
@@ -95,6 +100,8 @@ export const useLogStream = (
 
 	createEffect(() => {
 		if (autoConnect && serviceId()) {
+			setLogs([]);
+			disconnect(false);
 			connect();
 		}
 	});
@@ -146,7 +153,7 @@ export const LogViewer = (props: LogViewerProps) => {
 							/>
 						</span>
 						<span class="text-sm text-muted-foreground">
-							{isStreaming() ? "Streaming" : "Polling"}
+							{isStreaming() ? "Streaming" : "Disconnected"}
 						</span>
 					</div>
 					<Show when={error()}>

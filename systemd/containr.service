@@ -1,0 +1,19 @@
+[Unit]
+Description=containr paas
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/containr
+Environment=PATH=/root/.cargo/bin:/root/.local/share/mise/installs/node/24.14.0/bin:/root/.local/share/mise/installs/pnpm/10.30.3:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStartPre=/root/containr/scripts/systemd-build.sh
+ExecStart=/root/containr/scripts/systemd-run.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

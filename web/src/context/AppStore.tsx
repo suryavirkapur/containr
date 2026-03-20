@@ -1,6 +1,5 @@
 import { createContext, type JSX, useContext } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
-import { listContainers as apiListContainers, type Container } from "../api/containers";
 import {
 	createService as apiCreateService,
 	deleteService as apiDeleteService,
@@ -17,11 +16,8 @@ import {
 
 interface AppState {
 	services: Service[];
-	containers: Container[];
 	servicesLoading: boolean;
-	containersLoading: boolean;
 	servicesError: string | null;
-	containersError: string | null;
 	pendingServiceId: string | null;
 	pollingServiceId: string | null;
 }
@@ -30,7 +26,6 @@ interface AppStoreValue {
 	state: AppState;
 	set: SetStoreFunction<AppState>;
 	loadServices: () => Promise<void>;
-	loadContainers: () => Promise<void>;
 	refreshAll: () => Promise<void>;
 	runAction: (id: string, action: ServiceAction) => Promise<Service>;
 	removeService: (id: string) => Promise<void>;
@@ -43,11 +38,8 @@ interface AppStoreValue {
 
 const initialState: AppState = {
 	services: [],
-	containers: [],
 	servicesLoading: false,
-	containersLoading: false,
 	servicesError: null,
-	containersError: null,
 	pendingServiceId: null,
 	pollingServiceId: null,
 };
@@ -72,21 +64,8 @@ export const AppStoreProvider = (props: { children: JSX.Element }) => {
 		}
 	};
 
-	const loadContainers = async () => {
-		set("containersLoading", true);
-		set("containersError", null);
-		try {
-			const data = await apiListContainers();
-			set("containers", data);
-		} catch (error) {
-			set("containersError", error instanceof Error ? error.message : "Failed to load containers");
-		} finally {
-			set("containersLoading", false);
-		}
-	};
-
 	const refreshAll = async () => {
-		await Promise.all([loadServices(), loadContainers()]);
+		await loadServices();
 	};
 
 	const pollServiceStatus = (id: string) => {
@@ -182,7 +161,6 @@ export const AppStoreProvider = (props: { children: JSX.Element }) => {
 				state,
 				set,
 				loadServices,
-				loadContainers,
 				refreshAll,
 				runAction,
 				removeService,

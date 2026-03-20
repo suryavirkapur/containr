@@ -58,45 +58,37 @@ const CreateRepo = () => {
   };
 
   return (
-    <div class='flex flex-col gap-8'>
-      <PageTitle title='New Repository Service' subtitle='Step 1 of 2. Capture the repo and runtime type.' />
+    <div class='flex flex-col gap-6'>
+      <PageTitle title='New Repository Service' subtitle='Step 1 of 2. Capture the repository and runtime type.' />
       {error() ? <Notice tone='error'>{error()}</Notice> : null}
       <Panel title='Repository Details'>
         <form class='flex flex-col gap-6' onSubmit={continueToConfigure}>
-          <div class='grid gap-4 sm:grid-cols-2 lg:grid-cols-2'>
-            <label class='flex flex-col gap-2'>
-              <span class='text-sm font-medium leading-none'>Service Name</span>
-              <input 
-                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={name()} 
-                onInput={(event) => setName(event.currentTarget.value)} 
+          <div class='grid gap-4 sm:grid-cols-2'>
+            <label class='cr-field'>
+              <span class='cr-label'>Service Name</span>
+              <input class='cr-input' value={name()} onInput={(event) => setName(event.currentTarget.value)} />
+            </label>
+            <label class='cr-field'>
+              <span class='cr-label'>GitHub URL</span>
+              <input
+                class='cr-input'
+                value={githubUrl()}
+                onInput={(event) => setGithubUrl(event.currentTarget.value)}
+                placeholder='https://github.com/org/repo'
               />
             </label>
-            <label class='flex flex-col gap-2'>
-              <span class='text-sm font-medium leading-none'>GitHub URL</span>
-              <input 
-                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={githubUrl()} 
-                onInput={(event) => setGithubUrl(event.currentTarget.value)} 
-                placeholder='https://github.com/org/repo' 
+            <label class='cr-field'>
+              <span class='cr-label'>Branch</span>
+              <input
+                class='cr-input'
+                value={branch()}
+                onInput={(event) => setBranch(event.currentTarget.value)}
+                placeholder='Default branch if empty'
               />
             </label>
-            <label class='flex flex-col gap-2'>
-              <span class='text-sm font-medium leading-none'>Branch</span>
-              <input 
-                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={branch()} 
-                onInput={(event) => setBranch(event.currentTarget.value)} 
-                placeholder='Default branch if empty' 
-              />
-            </label>
-            <label class='flex flex-col gap-2'>
-              <span class='text-sm font-medium leading-none'>Service Type</span>
-              <select 
-                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={serviceType()} 
-                onChange={(event) => setServiceType(event.currentTarget.value)}
-              >
+            <label class='cr-field'>
+              <span class='cr-label'>Service Type</span>
+              <select class='cr-select' value={serviceType()} onChange={(event) => setServiceType(event.currentTarget.value)}>
                 <option value='web_service'>Web Service</option>
                 <option value='private_service'>Private Service</option>
                 <option value='background_worker'>Background Worker</option>
@@ -104,11 +96,11 @@ const CreateRepo = () => {
               </select>
             </label>
           </div>
-          <div class='flex flex-wrap gap-2 pt-4 border-t border-border mt-2'>
-            <button 
-              type='submit'
-              class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm h-9 px-4 py-2"
-            >
+          <Notice tone='info'>
+            Creating the service here does not assign a domain. Public routing is configured later from the service detail page.
+          </Notice>
+          <div class='flex flex-wrap gap-2 border-t border-border pt-4'>
+            <button type='submit' class='cr-btn cr-btn-primary'>
               Continue
             </button>
           </div>
@@ -147,29 +139,21 @@ const CreateRepo = () => {
                 fallback={<Notice tone='info'>The GitHub App exists, but it is not installed on any account or org yet. Finish the installation in settings, then refresh this list.</Notice>}
               >
                 <div class='flex flex-col gap-6'>
-                  <div class='flex flex-col sm:flex-row gap-4 items-end'>
-                    <label class='flex flex-col gap-2 flex-1'>
-                      <span class='text-sm font-medium leading-none'>Repo Search</span>
-                      <input 
-                        class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        value={repoQuery()} 
-                        onInput={(event) => setRepoQuery(event.currentTarget.value)} 
-                        placeholder="Search by name or description..."
+                  <div class='flex flex-col items-end gap-4 sm:flex-row'>
+                    <label class='cr-field flex-1'>
+                      <span class='cr-label'>Repo Search</span>
+                      <input
+                        class='cr-input'
+                        value={repoQuery()}
+                        onInput={(event) => setRepoQuery(event.currentTarget.value)}
+                        placeholder='Search by name or description...'
                       />
                     </label>
                     <div class='flex flex-wrap gap-2'>
-                      <button 
-                        type='button' 
-                        onClick={() => void refetchRepos()}
-                        class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2"
-                      >
+                      <button type='button' onClick={() => void refetchRepos()} class='cr-btn cr-btn-secondary'>
                         Refresh Repos
                       </button>
-                      <button 
-                        type='button' 
-                        onClick={() => void refetchGithubAppStatus()}
-                        class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-9 px-4 py-2"
-                      >
+                      <button type='button' onClick={() => void refetchGithubAppStatus()} class='cr-btn cr-btn-secondary'>
                         Refresh status
                       </button>
                     </div>
@@ -179,32 +163,28 @@ const CreateRepo = () => {
                     <div class='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
                       <For each={filteredRepos()}>
                         {(repo) => (
-                          <article class='rounded-xl border bg-card text-card-foreground shadow-sm p-4 flex flex-col gap-4'>
-                            <div class='flex justify-between items-start gap-4'>
-                              <div class="min-w-0">
-                                <h3 class="font-semibold tracking-tight truncate text-base" title={repo.full_name}>{repo.full_name}</h3>
+                          <article class='flex flex-col gap-4 rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm'>
+                            <div class='flex items-start justify-between gap-4'>
+                              <div class='min-w-0'>
+                                <h3 class='truncate text-base font-semibold tracking-tight' title={repo.full_name}>{repo.full_name}</h3>
                                 <p class='text-xs text-muted-foreground font-mono truncate mt-1' title={repo.clone_url}>{repo.clone_url}</p>
                               </div>
-                              <span class={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider shrink-0 break-keep ${
+                              <span class={`cr-chip shrink-0 ${
                                 repo.private ? 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800' : 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800'
                               }`}>{repo.private ? 'Private' : 'Public'}</span>
                             </div>
-                            <div class='grid grid-cols-1 gap-4 py-3 border-y border-border text-xs mt-auto'>
+                            <div class='mt-auto grid grid-cols-1 gap-4 border-y border-border py-3 text-xs'>
                               <div class='flex flex-col gap-1'>
                                 <p class='font-semibold uppercase tracking-wider text-muted-foreground'>Default Branch</p>
-                                <p class="font-medium text-sm">{repo.default_branch}</p>
+                                <p class='text-sm font-medium'>{repo.default_branch}</p>
                               </div>
                               <div class='flex flex-col gap-1'>
                                 <p class='font-semibold uppercase tracking-wider text-muted-foreground'>Description</p>
-                                <p class="text-muted-foreground line-clamp-2" title={repo.description || undefined}>{repo.description ?? 'No description provided.'}</p>
+                                <p class='line-clamp-2 text-muted-foreground' title={repo.description || undefined}>{repo.description ?? 'No description provided.'}</p>
                               </div>
                             </div>
                             <div class='flex flex-wrap gap-2'>
-                              <button 
-                                type='button' 
-                                onClick={() => chooseRepo(repo)}
-                                class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-sm h-8 px-3 py-1 w-full"
-                              >
+                              <button type='button' onClick={() => chooseRepo(repo)} class='cr-btn cr-btn-secondary w-full'>
                                 Use this repository
                               </button>
                             </div>

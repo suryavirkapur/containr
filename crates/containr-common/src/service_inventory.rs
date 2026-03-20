@@ -83,6 +83,7 @@ pub struct ServiceInventoryItem {
     pub connection_string: Option<String>,
     pub proxy_connection_string: Option<String>,
     pub domains: Vec<String>,
+    pub http_only_domains: Vec<String>,
     pub schedule: Option<String>,
     pub public_http: bool,
     pub desired_instances: u32,

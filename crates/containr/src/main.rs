@@ -23,7 +23,7 @@ use containr_common::{Config, Database};
 
 mod logging;
 
-const CERT_RENEWAL_CHECK_INTERVAL_SECS: u64 = 12 * 60 * 60;
+const CERT_RENEWAL_CHECK_INTERVAL_SECS: u64 = 6 * 60 * 60;
 
 /// containr paas command line interface
 #[derive(Parser, Debug)]
@@ -224,9 +224,13 @@ async fn run_server_command(
         };
 
         if let Some(manager) = acme_manager.as_ref() {
-            if let Err(error) = manager.sync_stored_certificates_to_disk().await
+            if let Err(error) =
+                manager.migrate_legacy_certificate_files_to_db().await
             {
-                warn!(error = %error, "failed to restore stored certificates to disk");
+                warn!(
+                    error = %error,
+                    "failed to migrate legacy certificate files into sqlite"
+                );
             }
 
             if let Err(error) =
@@ -333,7 +337,6 @@ async fn run_server_command(
     let proxy_challenges = challenges.clone();
     let http_port = config.proxy.http_port;
     let https_port = config.proxy.https_port;
-    let certs_dir = PathBuf::from(config.acme.certs_dir.clone());
     let base_domain = config.proxy.base_domain.clone();
     let api_host = resolve_api_host(&config.server.host);
     let api_upstream = format!("{}:{}", api_host, config.server.port);
@@ -346,7 +349,6 @@ async fn run_server_command(
             proxy_challenges,
             http_port,
             https_port,
-            certs_dir,
             proxy_config,
             api_upstream,
             proxy_db,
@@ -758,7 +760,7 @@ async fn refresh_routes_for_app(
             deployment.status
                 == containr_common::models::DeploymentStatus::Running
         });
-    let routing_app = latest_running_deployment
+    let runtime_app = latest_running_deployment
         .as_ref()
         .and_then(|deployment| deployment.app_snapshot.clone())
         .unwrap_or_else(|| app.clone());
@@ -785,7 +787,7 @@ async fn refresh_routes_for_app(
         }
     };
 
-    let public_services = exposed_services(&routing_app);
+    let public_services = exposed_services(&app);
     if public_services.is_empty() {
         remove_app_routes(routes, &app, base_domain);
         tracing::warn!(app_id = %app.id, "no exposed http service selected for app");
@@ -794,20 +796,27 @@ async fn refresh_routes_for_app(
 
     remove_app_routes(routes, &app, base_domain);
 
-    if select_exposed_service(&routing_app).is_none() {
+    if select_exposed_service(&app).is_none() {
         return;
     }
 
     for service in public_services {
+        let runtime_service = runtime_app
+            .services
+            .iter()
+            .find(|candidate| candidate.id == service.id)
+            .cloned()
+            .unwrap_or_else(|| service.clone());
         upstreams.clear();
 
         let active_container_ids =
             latest_running_deployment.as_ref().and_then(|deployment| {
                 active_http_container_ids(deployment, service.id)
             });
-        let service_prefix = format!("containr-{}-{}-", app.id, service.name);
+        let service_prefix =
+            format!("containr-{}-{}-", app.id, runtime_service.name);
         let legacy_prefix =
-            legacy_service_container_prefix(&routing_app, &service);
+            legacy_service_container_prefix(&runtime_app, &runtime_service);
 
         for container in &containers {
             if let Some(names) = &container.names {
@@ -839,28 +848,17 @@ async fn refresh_routes_for_app(
                     {
                         upstreams.push(containr_proxy::routes::Upstream {
                             host: ip,
-                            port: service.port,
+                            port: runtime_service.port,
                         });
                     }
                 }
             }
         }
 
-        let service_domain = service_subdomain(&service, base_domain);
         if upstreams.is_empty() {
-            routes.remove_route(&service_domain);
+            routes.remove_route(&service_subdomain(&service, base_domain));
             continue;
         }
-
-        routes.add_route(containr_proxy::routes::Route {
-            domain: service_domain.clone(),
-            app_id: Some(app.id),
-            service_id: Some(service.id),
-            upstreams: upstreams.clone(),
-            ssl_enabled: false,
-            algorithm,
-        });
-        tracing::info!(domain = %service_domain, "refreshed service route for app");
 
         for custom_domain in service.custom_domains() {
             routes.add_route(containr_proxy::routes::Route {
@@ -868,7 +866,7 @@ async fn refresh_routes_for_app(
                 app_id: Some(app.id),
                 service_id: Some(service.id),
                 upstreams: upstreams.clone(),
-                ssl_enabled: true,
+                ssl_enabled: service.domain_https_enabled(&custom_domain),
                 algorithm,
             });
             tracing::info!(
@@ -954,7 +952,7 @@ async fn collect_managed_certificate_domains(
     }
 
     for app in db.list_apps()? {
-        for domain in app.custom_domains() {
+        for domain in app.managed_certificate_domains() {
             let normalized = domain.trim().to_lowercase();
             if !normalized.is_empty() {
                 domains.insert(normalized);

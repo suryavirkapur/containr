@@ -37,9 +37,12 @@ export const getService = async (id: string): Promise<Service> => {
   return data;
 };
 
-export const getServiceSettings = async (id: string): Promise<ServiceSettings> => {
-  const { data, error } = await api.GET('/api/services/{id}/settings', { params: { path: { id } } });
-  if (error) throw error;
+export const getServiceSettings = async (id: string): Promise<ServiceSettings | null> => {
+  const { data, error, response } = await api.GET('/api/services/{id}/settings', { params: { path: { id } } });
+  if (error || !response.ok) {
+    if (response.status === 400) return null;
+    throw error ?? new Error(`settings request failed: ${response.status}`);
+  }
   if (!data) throw new Error('missing service settings response');
   return data;
 };
@@ -51,14 +54,14 @@ export const updateService = async (id: string, body: UpdateServiceBody): Promis
   return data;
 };
 
-export const getServiceLogs = async (id: string, tail = 200): Promise<string> => {
-  const { data, error } = await api.GET('/api/services/{id}/logs', {
+export const getServiceLogs = async (id: string, tail = 200): Promise<string | null> => {
+  const { data, error, response } = await api.GET('/api/services/{id}/logs', {
     params: {
       path: { id },
       query: { tail },
     },
   });
-  if (error) throw error;
+  if (error || !response.ok) return null;
   return data?.logs ?? '';
 };
 
@@ -112,8 +115,9 @@ export const deleteService = async (id: string): Promise<void> => {
 };
 
 export const listServiceDeployments = async (id: string): Promise<ServiceDeployment[]> => {
-  const { data, error } = await api.GET('/api/services/{id}/deployments', { params: { path: { id } } });
-  if (error) throw error;
+  const { data, error, response } = await api.GET('/api/services/{id}/deployments', { params: { path: { id } } });
+  if (error || (!response.ok && response.status !== 400)) throw error;
+  if (!response.ok) return [];
   return data ?? [];
 };
 

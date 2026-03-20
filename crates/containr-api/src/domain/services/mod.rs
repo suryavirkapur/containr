@@ -28,10 +28,10 @@ use containr_common::managed_services::{
     DatabaseType, ManagedDatabase, ManagedQueue, QueueType, ServiceStatus,
 };
 use containr_common::models::{
-    default_service_domain, App, BuildArg, ContainerService, Deployment,
-    DeploymentSource, DeploymentStatus, EnvVar, HealthCheck, HttpRequestLog,
-    RestartPolicy, RolloutStrategy, ServiceDeployment, ServiceMount,
-    ServiceRegistryAuth, ServiceType,
+    App, BuildArg, ContainerService, Deployment, DeploymentSource,
+    DeploymentStatus, EnvVar, HealthCheck, HttpRequestLog, RestartPolicy,
+    RolloutStrategy, ServiceDeployment, ServiceMount, ServiceRegistryAuth,
+    ServiceType,
 };
 use containr_common::service_inventory::ServiceInventoryItem;
 use containr_common::Config;
@@ -78,6 +78,7 @@ pub struct InventoryServiceResponse {
     pub connection_string: Option<String>,
     pub proxy_connection_string: Option<String>,
     pub domains: Vec<String>,
+    pub http_only_domains: Vec<String>,
     pub default_urls: Vec<String>,
     pub schedule: Option<String>,
     pub public_http: bool,
@@ -134,6 +135,7 @@ pub struct ServiceSettingsServiceResponse {
     pub port: u16,
     pub expose_http: bool,
     pub domains: Vec<String>,
+    pub http_only_domains: Vec<String>,
     pub additional_ports: Vec<u16>,
     pub replicas: u32,
     pub memory_limit_mb: Option<u64>,
@@ -242,6 +244,7 @@ pub struct ServiceRequest {
     pub expose_http: Option<bool>,
     pub domains: Option<Vec<String>>,
     pub domain: Option<String>,
+    pub http_only_domains: Option<Vec<String>>,
     pub additional_ports: Option<Vec<u16>>,
     pub replicas: Option<u32>,
     pub memory_limit_mb: Option<u64>,
@@ -385,6 +388,7 @@ impl InventoryServiceResponse {
             connection_string: service.connection_string.clone(),
             proxy_connection_string: service.proxy_connection_string.clone(),
             domains: service.domains.clone(),
+            http_only_domains: service.http_only_domains.clone(),
             default_urls: build_default_urls(service, base_domain),
             schedule: service.schedule.clone(),
             public_http: service.public_http,
@@ -575,6 +579,7 @@ impl ServiceSvc {
         let config = self.state.config.read().await.clone();
         let (mut app, service) =
             resolve_owned_app_service_record(&self.state, user_id, service_id)?;
+        let previous_service = service.clone();
 
         if let Some(github_url) = req.github_url {
             app.github_url = github_url.trim().to_string();
@@ -645,9 +650,40 @@ impl ServiceSvc {
             ));
         }
 
+        let updated_service = app
+            .services
+            .iter()
+            .find(|candidate| candidate.id == service_id)
+            .cloned()
+            .ok_or_else(|| internal_error("updated service not found"))?;
         validate_app_service_domains(&self.state, &config, &app).await?;
         app.updated_at = Utc::now();
         self.state.db.save_app(&app).map_err(internal_error)?;
+
+        if previous_service.replicas != updated_service.replicas {
+            reconcile_app_service_replicas(
+                &self.state,
+                &app,
+                &updated_service,
+                resolve_encryption_secret(&config),
+            )
+            .await?;
+        }
+
+        if previous_service.is_public_http() || updated_service.is_public_http() {
+            refresh_proxy_routes(&self.state, app.id).await;
+        }
+
+        let managed_certificate_domains = app.managed_certificate_domains();
+        if !managed_certificate_domains.is_empty() {
+            if let Some(tx) = &self.state.cert_request_tx {
+                for domain in managed_certificate_domains {
+                    let _ = tx.try_send(domain);
+                }
+            } else {
+                warn!("certificate issuance not available for updated app domain");
+            }
+        }
 
         self.service_response(
             user_id,
@@ -857,7 +893,7 @@ impl ServiceSvc {
         Ok(deployments
             .iter()
             .filter(|deployment| {
-                deployment_has_service_image(deployment, &service)
+                deployment_is_for_service(deployment, &service)
             })
             .map(DeploymentResponse::from)
             .collect())
@@ -1129,8 +1165,7 @@ impl ServiceSvc {
             ));
         }
 
-        let domains =
-            validate_app_service_domains(&self.state, config, &app).await?;
+        validate_app_service_domains(&self.state, config, &app).await?;
 
         self.state.db.save_app(&app).map_err(internal_error)?;
 
@@ -1152,9 +1187,10 @@ impl ServiceSvc {
             return Err(error);
         }
 
-        if !domains.is_empty() {
+        let managed_certificate_domains = app.managed_certificate_domains();
+        if !managed_certificate_domains.is_empty() {
             if let Some(tx) = &self.state.cert_request_tx {
-                for domain in domains {
+                for domain in managed_certificate_domains {
                     let _ = tx.try_send(domain);
                 }
             } else {
@@ -1332,24 +1368,24 @@ fn push_unique(values: &mut Vec<String>, value: String) {
 
 fn build_default_urls(
     service: &ServiceInventoryItem,
-    base_domain: &str,
+    _base_domain: &str,
 ) -> Vec<String> {
     let mut urls = Vec::new();
     for domain in &service.domains {
         let domain = domain.trim();
         if !domain.is_empty() {
-            push_unique(&mut urls, format!("https://{}", domain));
+            let scheme = if service
+                .http_only_domains
+                .iter()
+                .any(|existing| existing == domain)
+            {
+                "http"
+            } else {
+                "https"
+            };
+            push_unique(&mut urls, format!("{}://{}", scheme, domain));
         }
     }
-
-    if !service.public_http {
-        return urls;
-    }
-
-    if let Some(domain) = default_service_domain(service.id, base_domain) {
-        push_unique(&mut urls, format!("https://{}", domain));
-    }
-
     urls
 }
 
@@ -1593,6 +1629,7 @@ fn service_settings_service_response(
         port: service.port,
         expose_http: service.expose_http,
         domains: service.domains.clone(),
+        http_only_domains: service.http_only_domains(),
         additional_ports: service.additional_ports.clone(),
         replicas: service.replicas,
         memory_limit_mb: service.memory_limit.map(|value| value / 1024 / 1024),
@@ -1660,6 +1697,11 @@ fn service_request_from_model(service: &ContainerService) -> ServiceRequest {
             Some(service.domains.clone())
         },
         domain: None,
+        http_only_domains: if service.http_only_domains().is_empty() {
+            None
+        } else {
+            Some(service.http_only_domains())
+        },
         additional_ports: if service.additional_ports.is_empty() {
             None
         } else {
@@ -2365,6 +2407,8 @@ fn build_services(
             });
         let service_type = resolve_service_type(&request, Some(&service))?;
         let requested_domains = requested_service_domains(&request);
+        let requested_http_only_domains =
+            requested_http_only_domains(&request);
         let port = request.port;
         let schedule = normalize_cron_schedule(
             request.schedule,
@@ -2513,6 +2557,18 @@ fn build_services(
         } else {
             Vec::new()
         };
+        service.http_only_domains = if matches!(
+            service_type,
+            ServiceType::WebService
+        ) {
+            normalize_http_only_domains(
+                requested_http_only_domains
+                    .unwrap_or_else(|| service.http_only_domains()),
+                &service.domains,
+            )
+        } else {
+            Vec::new()
+        };
         service.build_context = normalize_repo_relative_path(
             "service build context",
             request.build_context,
@@ -2560,7 +2616,14 @@ fn build_services(
 }
 
 fn normalize_domain(input: &str) -> Option<String> {
-    let trimmed = input.trim().trim_end_matches('.');
+    let trimmed = input
+        .trim()
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches('.');
     if trimmed.is_empty() {
         return None;
     }
@@ -2577,6 +2640,16 @@ fn normalize_domains(domains: Vec<String>) -> Vec<String> {
         }
     }
     normalized
+}
+
+fn normalize_http_only_domains(
+    http_only_domains: Vec<String>,
+    domains: &[String],
+) -> Vec<String> {
+    normalize_domains(http_only_domains)
+        .into_iter()
+        .filter(|domain| domains.iter().any(|existing| existing == domain))
+        .collect()
 }
 
 fn merge_domains(
@@ -2602,6 +2675,12 @@ fn requested_service_domains(request: &ServiceRequest) -> Option<Vec<String>> {
         request.domain.clone(),
         request.domains.clone(),
     ))
+}
+
+fn requested_http_only_domains(
+    request: &ServiceRequest,
+) -> Option<Vec<String>> {
+    request.http_only_domains.clone().map(normalize_domains)
 }
 
 async fn validate_app_service_domains(
@@ -2762,7 +2841,7 @@ fn sort_deployments_desc(mut deployments: Vec<Deployment>) -> Vec<Deployment> {
     deployments
 }
 
-fn deployment_has_service_image(
+ fn deployment_has_service_image(
     deployment: &Deployment,
     service: &ContainerService,
 ) -> bool {
@@ -2781,6 +2860,20 @@ fn deployment_has_service_image(
             service_deployment.service_id == service.id
                 && service_deployment.image_id.is_some()
         })
+}
+
+fn deployment_is_for_service(
+    deployment: &Deployment,
+    service: &ContainerService,
+) -> bool {
+    if !service.image.trim().is_empty() {
+        return true;
+    }
+
+    deployment
+        .service_deployments
+        .iter()
+        .any(|sd| sd.service_id == service.id)
 }
 
 fn resolve_app_service_deployment(
@@ -3107,6 +3200,94 @@ async fn start_app_service(
     Ok(())
 }
 
+async fn reconcile_app_service_replicas(
+    state: &AppState,
+    app: &App,
+    service: &ContainerService,
+    encryption_secret: Option<String>,
+) -> ApiResult<()> {
+    if service.is_cron_job() {
+        return Ok(());
+    }
+
+    let Some(mut deployment) =
+        resolve_app_service_deployment(state, app, service)?
+    else {
+        return Ok(());
+    };
+    let manager = app_service_manager(state, encryption_secret).await?;
+    let desired_replicas = service.replicas.max(1);
+    let mut changed = false;
+
+    for replica_index in 0..desired_replicas {
+        let index = ensure_service_deployment_index(
+            &mut deployment,
+            service.id,
+            replica_index,
+        );
+        let already_running = deployment.service_deployments[index].status
+            == DeploymentStatus::Running
+            && deployment.service_deployments[index].container_id.is_some();
+        if already_running {
+            continue;
+        }
+
+        let image = resolve_service_image(&deployment, service, replica_index)
+            .ok_or_else(|| bad_request("service has no deployed image"))?;
+        let container_id = manager
+            .start_service_replica(
+                app,
+                service,
+                &deployment,
+                &image,
+                replica_index,
+            )
+            .await
+            .map_err(|error| service_manager_error("scale service", error))?;
+
+        let service_deployment = &mut deployment.service_deployments[index];
+        service_deployment.image_id = Some(image);
+        service_deployment.container_id = Some(container_id);
+        service_deployment.status = DeploymentStatus::Running;
+        service_deployment.started_at = Some(Utc::now());
+        service_deployment.finished_at = None;
+        changed = true;
+    }
+
+    for service_deployment in deployment
+        .service_deployments
+        .iter_mut()
+        .filter(|service_deployment| {
+            service_deployment.service_id == service.id
+                && service_deployment.replica_index >= desired_replicas
+        })
+    {
+        if let Some(container_id) = service_deployment.container_id.clone() {
+            let _ = manager.stop_service_replica(&container_id).await;
+        }
+        service_deployment.status = DeploymentStatus::Stopped;
+        service_deployment.finished_at = Some(Utc::now());
+        service_deployment.container_id = None;
+        changed = true;
+    }
+
+    if changed {
+        if deployment.started_at.is_none() {
+            deployment.started_at = Some(Utc::now());
+        }
+        deployment.finished_at = Some(Utc::now());
+        if deployment.service_deployments.iter().any(|service_deployment| {
+            service_deployment.service_id == service.id
+                && service_deployment.status == DeploymentStatus::Running
+        }) {
+            deployment.status = DeploymentStatus::Running;
+        }
+        persist_deployment(state, &deployment)?;
+    }
+
+    Ok(())
+}
+
 async fn delete_app_runtime(state: &AppState, app: &App) -> ApiResult<()> {
     let db_manager = DatabaseManager::new();
     let grouped_databases = state
@@ -3268,7 +3449,7 @@ async fn delete_app_service(
         refresh_proxy_routes(state, app.id).await;
     }
 
-    let domains = updated_app.custom_domains();
+    let domains = updated_app.managed_certificate_domains();
     if !domains.is_empty() {
         if let Some(tx) = &state.cert_request_tx {
             for domain in domains {
