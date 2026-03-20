@@ -5,11 +5,10 @@
 //! WebSocket upgrades, gRPC (HTTP/2), and Server-Sent Events.
 
 use std::net::ToSocketAddrs;
-use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::SystemTime;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use containr_common::Config as AppConfig;
 use containr_common::{Database, HttpRequestLog};
 use dashmap::DashMap;
@@ -26,6 +25,7 @@ use pingora_http::{RequestHeader, ResponseHeader};
 use pingora_proxy::{ProxyHttp, Session};
 use tokio::sync::RwLock;
 use tracing::{info, warn};
+use uuid::Uuid;
 
 use crate::acme::ChallengeStore;
 use crate::routes::{RouteManager, SelectedUpstream};
@@ -50,7 +50,6 @@ pub struct ContainrProxy {
     challenges: Arc<ChallengeStore>,
     config: Arc<RwLock<AppConfig>>,
     api_upstream: String,
-    certs_dir: PathBuf,
     db: Database,
 }
 
@@ -61,7 +60,6 @@ impl ContainrProxy {
         challenges: ChallengeStore,
         config: Arc<RwLock<AppConfig>>,
         api_upstream: String,
-        certs_dir: PathBuf,
         db: Database,
     ) -> Self {
         Self {
@@ -69,34 +67,38 @@ impl ContainrProxy {
             challenges: Arc::new(challenges),
             config,
             api_upstream,
-            certs_dir,
             db,
         }
     }
 
     fn has_certificate(&self, domain: &str) -> bool {
-        self.certs_dir.join(format!("{}.pem", domain)).exists()
+        self.db
+            .get_certificate(domain)
+            .ok()
+            .flatten()
+            .map(|cert| cert.expires_at > Utc::now())
+            .unwrap_or(false)
     }
 }
 
 pub struct DynamicCertResolver {
-    certs_dir: PathBuf,
+    db: Database,
     cache: Arc<DashMap<String, CachedCertificate>>,
 }
 
 #[derive(Clone)]
 struct CachedCertificate {
-    cert_modified: Option<SystemTime>,
-    key_modified: Option<SystemTime>,
+    id: Uuid,
+    expires_at: DateTime<Utc>,
     leaf: X509,
     chain: Vec<X509>,
     key: PKey<Private>,
 }
 
 impl DynamicCertResolver {
-    pub fn new(certs_dir: PathBuf) -> Self {
+    pub fn new(db: Database) -> Self {
         Self {
-            certs_dir,
+            db,
             cache: Arc::new(DashMap::new()),
         }
     }
@@ -105,21 +107,16 @@ impl DynamicCertResolver {
         &self,
         domain: &str,
     ) -> Option<(X509, Vec<X509>, PKey<Private>)> {
-        let cert_path = self.certs_dir.join(format!("{}.pem", domain));
-        let key_path = self.certs_dir.join(format!("{}.key", domain));
-        let cert_modified = tokio::fs::metadata(&cert_path)
-            .await
-            .ok()
-            .and_then(|metadata| metadata.modified().ok());
-        let key_modified = tokio::fs::metadata(&key_path)
-            .await
-            .ok()
-            .and_then(|metadata| metadata.modified().ok());
+        let cert = match self.db.get_certificate(domain).ok().flatten() {
+            Some(cert) if cert.expires_at > Utc::now() => cert,
+            _ => {
+                self.cache.remove(domain);
+                return None;
+            }
+        };
 
         if let Some(cached) = self.cache.get(domain) {
-            if cached.cert_modified == cert_modified
-                && cached.key_modified == key_modified
-            {
+            if cached.id == cert.id && cached.expires_at == cert.expires_at {
                 return Some((
                     cached.leaf.clone(),
                     cached.chain.clone(),
@@ -128,22 +125,19 @@ impl DynamicCertResolver {
             }
         }
 
-        let cert_bytes = tokio::fs::read(cert_path).await.ok()?;
-        let key_bytes = tokio::fs::read(key_path).await.ok()?;
-
         // Support fullchain PEM files: first cert is leaf, remainder is the chain.
-        let mut certs = X509::stack_from_pem(&cert_bytes).ok()?;
+        let mut certs = X509::stack_from_pem(cert.cert_pem.as_bytes()).ok()?;
         if certs.is_empty() {
             return None;
         }
         let leaf = certs.remove(0);
         let chain = certs;
 
-        let key = PKey::private_key_from_pem(&key_bytes).ok()?;
+        let key = PKey::private_key_from_pem(cert.key_pem.as_bytes()).ok()?;
 
         let cached = CachedCertificate {
-            cert_modified,
-            key_modified,
+            id: cert.id,
+            expires_at: cert.expires_at,
             leaf,
             chain,
             key,
@@ -576,7 +570,6 @@ pub fn create_proxy_server(
     challenges: ChallengeStore,
     http_port: u16,
     https_port: u16,
-    certs_dir: PathBuf,
     config: Arc<RwLock<AppConfig>>,
     api_upstream: String,
     db: Database,
@@ -589,8 +582,7 @@ pub fn create_proxy_server(
         challenges,
         config,
         api_upstream,
-        certs_dir.clone(),
-        db,
+        db.clone(),
     );
 
     let mut proxy_service =
@@ -598,7 +590,7 @@ pub fn create_proxy_server(
 
     proxy_service.add_tcp(&format!("0.0.0.0:{}", http_port));
 
-    let resolver = DynamicCertResolver::new(certs_dir);
+    let resolver = DynamicCertResolver::new(db);
     let callbacks: TlsAcceptCallbacks = Box::new(resolver);
     let mut tls_settings = TlsSettings::with_callbacks(callbacks)?;
     tls_settings.enable_h2();

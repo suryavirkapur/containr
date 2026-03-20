@@ -916,6 +916,7 @@ export interface components {
             /** Format: int32 */
             desired_instances: number;
             domains: string[];
+            http_only_domains: string[];
             /** Format: int32 */
             external_port?: number | null;
             group_id?: string | null;
@@ -1023,6 +1024,7 @@ export interface components {
             dockerfile_path?: string | null;
             domain?: string | null;
             domains?: string[] | null;
+            http_only_domains?: string[] | null;
             entrypoint?: string[] | null;
             env_vars?: components["schemas"]["EnvVarRequest"][] | null;
             expose_http?: boolean | null;
@@ -1063,6 +1065,7 @@ export interface components {
             depends_on: string[];
             dockerfile_path?: string | null;
             domains: string[];
+            http_only_domains: string[];
             entrypoint?: string[] | null;
             env_vars: components["schemas"]["EditableEnvVarResponse"][];
             expose_http: boolean;

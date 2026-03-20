@@ -8,18 +8,11 @@ import {
 	Show,
 } from "solid-js";
 import type { Service } from "../api/services";
-import {
-	EmptyBlock,
-	LoadingBlock,
-	Notice,
-	PageTitle,
-} from "../components/Plain";
+import { CreateServiceCard } from "../components/CreateServiceCard";
+import { EmptyBlock, LoadingBlock, Notice, PageTitle, Panel } from "../components/Plain";
 import { StatusBadge } from "../components/StatusBadge";
 import { useAppStore } from "../context/AppStore";
-import {
-	describeError,
-	formatDateTime,
-} from "../utils/format";
+import { describeError, formatDateTime } from "../utils/format";
 import { groupServices, humanize, listAttachableGroups } from "../utils/service-groups";
 
 const endpointFor = (service: Service): string => {
@@ -33,13 +26,12 @@ const endpointFor = (service: Service): string => {
 	);
 };
 
-const isUrl = (s: string) =>
-	s.startsWith("http://") || s.startsWith("https://");
-
 const Services = () => {
 	const store = useAppStore();
 	const [searchParams, setSearchParams] = useSearchParams();
 	const [query, setQuery] = createSignal("");
+	const [statusFilter, setStatusFilter] = createSignal("all");
+	const [kindFilter, setKindFilter] = createSignal("all");
 	const [actionError, setActionError] = createSignal<string | null>(null);
 
 	createEffect(() => {
@@ -52,6 +44,17 @@ const Services = () => {
 	const allServices = createMemo(() => store.state.services);
 	const allGroups = createMemo(() => groupServices(allServices()));
 	const attachableGroups = createMemo(() => listAttachableGroups(allServices()));
+
+	const statusOptions = createMemo(() =>
+		[...new Set(allServices().map((service) => service.status))].sort((left, right) =>
+			left.localeCompare(right),
+		),
+	);
+	const kindOptions = createMemo(() =>
+		[...new Set(allServices().map((service) => service.resource_kind))].sort((left, right) =>
+			left.localeCompare(right),
+		),
+	);
 
 	const filteredServices = createMemo(() => {
 		const needle = query().trim().toLowerCase();
@@ -75,6 +78,14 @@ const Services = () => {
 				return false;
 			}
 
+			if (statusFilter() !== "all" && service.status !== statusFilter()) {
+				return false;
+			}
+
+			if (kindFilter() !== "all" && service.resource_kind !== kindFilter()) {
+				return false;
+			}
+
 			if (activeGroup !== "all") {
 				const currentKey = service.group_id ?? `isolated:${service.network_name}`;
 				if (currentKey !== activeGroup) return false;
@@ -83,8 +94,6 @@ const Services = () => {
 			return true;
 		});
 	});
-
-	const groupedServices = createMemo(() => groupServices(filteredServices()));
 
 	const runAction = async (id: string, action: "start" | "stop" | "restart") => {
 		setActionError(null);
@@ -101,206 +110,212 @@ const Services = () => {
 	};
 
 	return (
-		<div class="flex flex-col gap-5">
+		<div class="flex flex-col gap-6">
 			<PageTitle
 				title="Services"
+				subtitle="Homepage now mirrors CapRover's apps view, but uses containr services and your existing proxy/runtime."
 				actions={
 					<>
-						<A
-							href="/services/new"
-							class="inline-flex items-center px-3 py-1.5 text-xs font-medium border border-border bg-secondary hover:bg-secondary/70 text-foreground transition-colors"
-						>
-							+ New Service
+						<A href="/services/new" class="cr-btn cr-btn-primary">
+							New Service
 						</A>
-						<button
-							type="button"
-							onClick={() => void store.loadServices()}
-							class="inline-flex items-center px-3 py-1.5 text-xs font-medium border border-border text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-						>
+						<button type="button" onClick={() => void store.loadServices()} class="cr-btn cr-btn-secondary">
 							Refresh
 						</button>
 					</>
 				}
 			/>
 
-			<Show when={actionError()}>
-				{(message) => <Notice tone="error">{message()}</Notice>}
-			</Show>
+			<Show when={actionError()}>{(message) => <Notice tone="error">{message()}</Notice>}</Show>
 
-			{/* Filter bar */}
-			<div class="flex flex-col gap-3">
-				<input
-					class="flex h-8 w-full max-w-sm border border-border bg-card px-3 py-1 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-					value={query()}
-					onInput={(e) => setQuery(e.currentTarget.value)}
-					placeholder="Filter services..."
-				/>
-				<div class="flex flex-wrap gap-1.5">
-					<button
-						type="button"
-						class={`px-2.5 py-1 text-xs border transition-colors ${
-							!searchParams.group
-								? "border-foreground/30 bg-secondary text-foreground"
-								: "border-border text-muted-foreground hover:text-foreground"
-						}`}
-						onClick={() => setGroupFilter("all")}
-					>
-						All
-					</button>
-					<For each={allGroups()}>
-						{(group) => (
-							<button
-								type="button"
-								class={`px-2.5 py-1 text-xs border transition-colors ${
-									searchParams.group === group.key
-										? "border-foreground/30 bg-secondary text-foreground"
-										: "border-border text-muted-foreground hover:text-foreground"
-								}`}
-								onClick={() => setGroupFilter(group.key)}
-							>
-								{group.filterLabel}
-							</button>
-						)}
-					</For>
+			<CreateServiceCard />
+
+			<Panel title="Services" subtitle="Create services at the top, then manage the existing inventory here.">
+				<div class="mb-5 grid gap-4 lg:grid-cols-[minmax(0,2fr)_repeat(2,minmax(0,0.8fr))]">
+					<label class="cr-field">
+						<span class="cr-label">Search</span>
+						<input
+							class="cr-input"
+							value={query()}
+							onInput={(event) => setQuery(event.currentTarget.value)}
+							placeholder="Search by name, endpoint, or network..."
+						/>
+					</label>
+					<label class="cr-field">
+						<span class="cr-label">Status</span>
+						<select class="cr-select" value={statusFilter()} onChange={(event) => setStatusFilter(event.currentTarget.value)}>
+							<option value="all">All Statuses</option>
+							<For each={statusOptions()}>
+								{(status) => <option value={status}>{humanize(status)}</option>}
+							</For>
+						</select>
+					</label>
+					<label class="cr-field">
+						<span class="cr-label">Kind</span>
+						<select class="cr-select" value={kindFilter()} onChange={(event) => setKindFilter(event.currentTarget.value)}>
+							<option value="all">All Kinds</option>
+							<For each={kindOptions()}>
+								{(kind) => <option value={kind}>{humanize(kind)}</option>}
+							</For>
+						</select>
+					</label>
+					<div class="flex items-end">
+						<div class="rounded-md border border-border bg-secondary px-4 py-3 text-sm text-muted-foreground">
+							{allServices().length} total services, {attachableGroups().length} network groups
+						</div>
+					</div>
 				</div>
-			</div>
+
+				<div class="mb-6 flex flex-col gap-2">
+					<span class="cr-label">Group</span>
+					<div class="flex flex-wrap gap-2">
+						<button
+							type="button"
+							class={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+								!searchParams.group
+									? "border-primary/20 bg-accent text-accent-foreground"
+									: "border-border bg-card text-muted-foreground hover:bg-secondary"
+							}`}
+							onClick={() => setGroupFilter("all")}
+						>
+							All Groups
+						</button>
+						<For each={allGroups()}>
+							{(group) => (
+								<button
+									type="button"
+									class={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+										searchParams.group === group.key
+											? "border-primary/20 bg-accent text-accent-foreground"
+											: "border-border bg-card text-muted-foreground hover:bg-secondary"
+									}`}
+									onClick={() => setGroupFilter(group.key)}
+								>
+									{group.filterLabel}
+								</button>
+							)}
+						</For>
+					</div>
+				</div>
+			</Panel>
 
 			<Show when={store.state.servicesError}>
-				<Notice tone="error">
-					Failed to load services: {store.state.servicesError}
-				</Notice>
+				<Notice tone="error">Failed to load services: {store.state.servicesError}</Notice>
 			</Show>
 
-			<Show when={store.state.servicesLoading}>
+			<Show when={store.state.servicesLoading} fallback={null}>
 				<LoadingBlock message="Loading services..." />
 			</Show>
 
 			<Show when={!store.state.servicesLoading && filteredServices().length === 0}>
-				<EmptyBlock title="No services found">
-					Create a new service or adjust your filter.
+				<EmptyBlock title="No services match the current filters">
+					Clear the filters or create a new service from a repo or a managed template.
 				</EmptyBlock>
 			</Show>
 
 			<Show when={!store.state.servicesLoading && filteredServices().length > 0}>
-				<div class="flex flex-col gap-6">
-					<For each={groupedServices()}>
-						{(group) => (
-							<div class="flex flex-col gap-1">
-								{/* Group header */}
-								<div class="flex items-center justify-between mb-2">
-									<div class="flex items-center gap-3">
-										<span class="text-xs font-medium text-foreground">
-											{group.label}
-										</span>
-										<span class="text-xs font-mono text-muted-foreground">
-											{group.networkName}
-										</span>
-										<span class="text-xs text-muted-foreground">
-											{group.services.length} service
-											{group.services.length === 1 ? "" : "s"}
-										</span>
-									</div>
-									<Show when={group.id}>
-										<A
-											href={`/services/new?group_id=${group.id!}&group_name=${encodeURIComponent(group.label)}`}
-											class="text-xs text-muted-foreground hover:text-foreground transition-colors"
-										>
-											+ Add
-										</A>
-									</Show>
-								</div>
+				<Panel title="Service Inventory" subtitle="CapRover-style list view, adapted to groups and services.">
+					<div class="overflow-x-auto">
+						<table class="cr-table min-w-[980px]">
+							<thead>
+								<tr>
+									<th>Service</th>
+									<th>Endpoint</th>
+									<th>Status</th>
+									<th>Group</th>
+									<th>Updated</th>
+									<th>Open</th>
+									<th>Actions</th>
+								</tr>
+							</thead>
+							<tbody>
+								<For each={filteredServices()}>
+									{(service) => {
+										const groupKey = service.group_id ?? `isolated:${service.network_name}`;
+										const groupMeta = allGroups().find((group) => group.key === groupKey);
 
-								{/* Service rows */}
-								<div class="border border-border divide-y divide-border">
-									<For each={group.services}>
-										{(service) => (
-											<div class="flex items-center gap-4 px-4 py-3 bg-card hover:bg-secondary/30 transition-colors">
-												{/* Status dot */}
-												<StatusBadge status={service.status} />
-
-												{/* Name + type */}
-												<div class="flex-1 min-w-0">
-													<A
-														class="text-sm font-medium hover:underline truncate block"
-														href={`/services/${service.id}`}
-													>
-														{service.name}
-													</A>
-													<p class="text-xs text-muted-foreground mt-0.5">
-														{humanize(service.service_type)}
-													</p>
-												</div>
-
-												{/* Endpoint / domains */}
-												<div class="hidden sm:flex items-center gap-2 shrink-0">
-													<Show
-														when={isUrl(endpointFor(service))}
-														fallback={
-															<span class="text-xs font-mono text-muted-foreground">
-																{endpointFor(service)}
-															</span>
-														}
-													>
-														<a
-															href={endpointFor(service)}
-															target="_blank"
-															rel="noopener noreferrer"
-															class="text-xs font-mono text-muted-foreground hover:text-foreground hover:underline transition-colors"
-														>
-															{endpointFor(service)}
-														</a>
-													</Show>
-													<Show when={service.domains.length > 0}>
+										return (
+											<tr>
+												<td>
+													<div class="flex flex-col gap-1">
+														<A class="text-sm font-semibold text-primary hover:underline" href={`/services/${service.id}`}>
+															{service.name}
+														</A>
+														<div class="flex flex-wrap gap-2">
+															<span class="cr-chip">{humanize(service.service_type)}</span>
+															<span class="cr-chip">{humanize(service.resource_kind)}</span>
+															<Show when={service.domains.length > 0}>
+																<span class="cr-chip">{service.domains.length} domain{service.domains.length === 1 ? '' : 's'}</span>
+															</Show>
+														</div>
+													</div>
+												</td>
+												<td>
+													<div class="flex flex-col gap-1">
+														<span class="font-code text-xs">{endpointFor(service)}</span>
 														<span class="text-xs text-muted-foreground">
-															+{service.domains.length} domain
-															{service.domains.length === 1 ? "" : "s"}
+															{service.container_ids.length} container{service.container_ids.length === 1 ? '' : 's'}
 														</span>
-													</Show>
-												</div>
-
-												{/* Updated */}
-												<div class="hidden lg:block text-xs text-muted-foreground shrink-0 w-28 text-right">
+													</div>
+												</td>
+												<td>
+													<StatusBadge status={service.status} />
+												</td>
+												<td>
+													<div class="flex flex-col gap-1">
+														<span class="text-sm font-medium">{groupMeta?.label ?? 'Isolated'}</span>
+														<span class="font-code text-xs text-muted-foreground">{service.network_name}</span>
+													</div>
+												</td>
+												<td class="text-sm text-muted-foreground">
 													{formatDateTime(service.updated_at)}
-												</div>
-
-												{/* Actions */}
-												<div class="flex items-center gap-1 shrink-0">
-													<button
-														type="button"
-														class="px-2 py-1 text-xs border border-border text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-														onClick={() => void runAction(service.id, "restart")}
-														disabled={store.state.pendingServiceId === service.id}
-													>
-														Restart
-													</button>
-													<button
-														type="button"
-														class="px-2 py-1 text-xs border border-border text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-														onClick={() =>
-															void runAction(
-																service.id,
-																service.running_instances > 0 ? "stop" : "start",
-															)
-														}
-														disabled={store.state.pendingServiceId === service.id}
-													>
-														{service.running_instances > 0 ? "Stop" : "Start"}
-													</button>
-													<A
-														href={`/services/${service.id}`}
-														class="px-2 py-1 text-xs border border-border text-muted-foreground hover:text-foreground transition-colors"
-													>
-														Open
+												</td>
+												<td>
+													<A href={`/services/${service.id}`} class="text-sm font-medium text-primary hover:underline">
+														Manage
 													</A>
-												</div>
-											</div>
-										)}
-									</For>
-								</div>
-							</div>
-						)}
-					</For>
-				</div>
+												</td>
+												<td>
+													<div class="flex flex-wrap gap-2">
+														<button
+															type="button"
+															class="cr-btn cr-btn-secondary !px-3 !py-2 !text-xs disabled:opacity-50"
+															onClick={() => void runAction(service.id, 'restart')}
+															disabled={store.state.pendingServiceId === service.id}
+														>
+															Restart
+														</button>
+														<button
+															type="button"
+															class="cr-btn cr-btn-secondary !px-3 !py-2 !text-xs disabled:opacity-50"
+															onClick={() =>
+																void runAction(
+																	service.id,
+																	service.running_instances > 0 ? 'stop' : 'start',
+																)
+															}
+															disabled={store.state.pendingServiceId === service.id}
+														>
+															{service.running_instances > 0 ? 'Stop' : 'Start'}
+														</button>
+														<Show when={groupMeta?.id}>
+															<A
+																href={`/services/new?group_id=${groupMeta!.id!}&group_name=${encodeURIComponent(groupMeta!.label)}`}
+																class="cr-btn cr-btn-secondary !px-3 !py-2 !text-xs"
+															>
+																Add Managed
+															</A>
+														</Show>
+													</div>
+												</td>
+											</tr>
+										);
+									}}
+								</For>
+							</tbody>
+						</table>
+					</div>
+				</Panel>
 			</Show>
 		</div>
 	);

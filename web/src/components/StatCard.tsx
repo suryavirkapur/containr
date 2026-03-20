@@ -2,7 +2,7 @@ import { type JSX, Show } from 'solid-js';
 
 type Props = {
   title: string;
-  value: string | number;
+  value: JSX.Element | string | number;
   description?: string;
   icon?: JSX.Element;
   iconBg?: string;
@@ -12,16 +12,16 @@ type Props = {
 
 export const StatCard = (props: Props) => {
   return (
-    <div class={`rounded-xl border bg-card text-card-foreground shadow-sm p-5 flex flex-col gap-3 ${props.class ?? ''}`}>
+    <div class={`rounded-lg border border-border bg-card text-card-foreground shadow-sm p-5 flex flex-col gap-3 ${props.class ?? ''}`}>
       <div class="flex items-center justify-between">
-        <p class="text-sm font-medium text-muted-foreground">{props.title}</p>
+        <p class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{props.title}</p>
         <Show when={props.icon}>
-          <div class={`p-2 rounded-lg ${props.iconBg ?? 'bg-secondary'}`}>
+          <div class={`rounded-md p-2 ${props.iconBg ?? 'bg-secondary'}`}>
             {props.icon}
           </div>
         </Show>
       </div>
-      <div class="text-3xl font-bold tracking-tight">{props.value}</div>
+      <div class="text-[1.8rem] font-semibold tracking-tight">{props.value}</div>
       <Show when={props.description}>
         <p class="text-xs text-muted-foreground">{props.description}</p>
       </Show>

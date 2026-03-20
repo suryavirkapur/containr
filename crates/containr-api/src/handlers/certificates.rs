@@ -63,10 +63,10 @@ pub async fn get_certificate(
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let svc = crate::domain::services::ServiceSvc::new(state.clone());
-    let (app, _container_service) =
+    let (_app, container_service) =
         svc.resolve_owned_app_service(user_id, service_id)?;
 
-    let domains = app.custom_domains();
+    let domains = container_service.https_domains();
     if domains.is_empty() {
         return Ok(Json(Vec::new()));
     }
@@ -122,10 +122,10 @@ pub async fn reissue_certificate(
     let config = state.config.read().await;
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     let svc = crate::domain::services::ServiceSvc::new(state.clone());
-    let (app, _container_service) =
+    let (_app, container_service) =
         svc.resolve_owned_app_service(user_id, service_id)?;
 
-    let mut domains = app.custom_domains();
+    let mut domains = container_service.https_domains();
     if domains.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,

@@ -48,7 +48,7 @@ const CreateTemplate = () => {
   };
 
   return (
-    <div class='flex flex-col gap-8'>
+    <div class='flex flex-col gap-6'>
       <PageTitle
         title='New Managed Template'
         subtitle='Create a database, queue, or vector service and choose whether it shares a group.'
@@ -63,14 +63,14 @@ const CreateTemplate = () => {
       </Show>
       <Panel title='Template Request'>
         <form class='flex flex-col gap-6' onSubmit={(event) => void create(event)}>
-          <div class='grid grid-cols-2 gap-4 rounded-lg border bg-accent/30 p-4 border-border mb-2'>
+          <div class='grid grid-cols-2 gap-4 rounded-md border border-border bg-secondary p-4'>
             <div class='flex flex-col gap-1'>
               <p class='font-semibold uppercase tracking-wider text-xs text-muted-foreground'>Template</p>
-              <p class="font-medium capitalize">{templateType()}</p>
+              <p class='font-medium capitalize'>{templateType()}</p>
             </div>
             <div class='flex flex-col gap-1'>
               <p class='font-semibold uppercase tracking-wider text-xs text-muted-foreground'>Placement</p>
-              <p class="font-medium">{selectedGroup()?.label ?? (groupName() || 'Isolated Network')}</p>
+              <p class='font-medium'>{selectedGroup()?.label ?? (groupName() || 'Isolated Network')}</p>
             </div>
           </div>
 
@@ -78,22 +78,14 @@ const CreateTemplate = () => {
             Groups only control the internal network boundary. Choose a repository-backed service group to share networking, or leave this managed service isolated.
           </Notice>
 
-          <label class='flex flex-col gap-2'>
-            <span class='text-sm font-medium leading-none'>Service Name</span>
-            <input 
-              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              value={name()} 
-              onInput={(event) => setName(event.currentTarget.value)} 
-            />
+          <label class='cr-field'>
+            <span class='cr-label'>Service Name</span>
+            <input class='cr-input' value={name()} onInput={(event) => setName(event.currentTarget.value)} />
           </label>
 
-          <label class='flex flex-col gap-2'>
-            <span class='text-sm font-medium leading-none'>Group</span>
-            <select 
-              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              value={groupId()} 
-              onChange={(event) => setGroupId(event.currentTarget.value)}
-            >
+          <label class='cr-field'>
+            <span class='cr-label'>Group</span>
+            <select class='cr-select' value={groupId()} onChange={(event) => setGroupId(event.currentTarget.value)}>
               <option value=''>Isolated Network</option>
               <For each={availableGroups()}>
                 {(group) => (
@@ -106,30 +98,17 @@ const CreateTemplate = () => {
           </label>
 
           <div class='grid gap-4 sm:grid-cols-3'>
-            <label class='flex flex-col gap-2'>
-              <span class='text-sm font-medium leading-none'>Version</span>
-              <input 
-                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={version()} 
-                onInput={(event) => setVersion(event.currentTarget.value)} 
-                placeholder='Default if empty' 
-              />
+            <label class='cr-field'>
+              <span class='cr-label'>Version</span>
+              <input class='cr-input' value={version()} onInput={(event) => setVersion(event.currentTarget.value)} placeholder='Default if empty' />
             </label>
-            <label class='flex flex-col gap-2'>
-              <span class='text-sm font-medium leading-none'>Memory Limit (MB)</span>
-              <input 
-                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={memory()} 
-                onInput={(event) => setMemory(event.currentTarget.value)} 
-              />
+            <label class='cr-field'>
+              <span class='cr-label'>Memory Limit (MB)</span>
+              <input class='cr-input' value={memory()} onInput={(event) => setMemory(event.currentTarget.value)} />
             </label>
-            <label class='flex flex-col gap-2'>
-              <span class='text-sm font-medium leading-none'>CPU Limit</span>
-              <input 
-                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={cpu()} 
-                onInput={(event) => setCpu(event.currentTarget.value)} 
-              />
+            <label class='cr-field'>
+              <span class='cr-label'>CPU Limit</span>
+              <input class='cr-input' value={cpu()} onInput={(event) => setCpu(event.currentTarget.value)} />
             </label>
           </div>
 
@@ -139,12 +118,8 @@ const CreateTemplate = () => {
             </Notice>
           </Show>
 
-          <div class='flex flex-wrap gap-2 pt-4 border-t border-border mt-2'>
-            <button 
-              type='submit' 
-              disabled={saving()}
-              class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm h-9 px-4 py-2 disabled:opacity-50"
-            >
+          <div class='mt-2 flex flex-wrap gap-2 border-t border-border pt-4'>
+            <button type='submit' disabled={saving()} class='cr-btn cr-btn-primary disabled:opacity-50'>
               {saving() ? 'Creating...' : 'Create Service'}
             </button>
           </div>

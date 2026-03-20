@@ -1,86 +1,124 @@
+import { A } from '@solidjs/router';
 import { Show } from 'solid-js';
-import { A, useLocation } from '@solidjs/router';
+import { NavMain } from './NavMain';
 import { ThemeContext } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 
-const navItems = [
-  { title: 'Services', href: '/services' },
-  { title: 'Containers', href: '/containers' },
-  { title: 'Storage', href: '/storage' },
-  { title: 'Settings', href: '/settings' },
+const navPlatform = [
+  { title: 'Services', href: '/services', icon: '◫' },
+  { title: 'Storage', href: '/storage', icon: '◪' },
 ];
 
-export const Sidebar = () => {
+const navAccess = [
+  { title: 'Settings', href: '/settings', icon: '⚙' },
+];
+
+const navActions = [
+  { title: 'New Service', href: '/services/new', icon: '+' },
+];
+
+type Props = {
+  collapsed?: boolean;
+  onToggle?: () => void;
+};
+
+export const Sidebar = (props: Props) => {
   const auth = useAuth();
   const { resolvedTheme, toggleTheme } = ThemeContext;
-  const location = useLocation();
-
-  const isActive = (href: string) =>
-    location.pathname === href ||
-    (href !== '/' && location.pathname.startsWith(href));
+  const isCollapsed = () => props.collapsed ?? false;
 
   return (
-    <aside class="fixed left-0 top-0 h-screen w-52 flex flex-col border-r border-border bg-card z-50">
-      {/* Logo */}
-      <div class="h-14 flex items-center px-5 border-b border-border">
-        <A href="/services" class="text-sm font-semibold tracking-tight">
-          containr
-        </A>
+    <aside class={`fixed left-0 top-16 z-40 hidden h-[calc(100vh-4rem)] flex-col border-r border-border bg-[var(--sidebar-bg)] transition-all duration-200 lg:flex ${
+      isCollapsed() ? 'w-20' : 'w-[200px]'
+    }`}>
+      <div class='flex items-center justify-between border-b border-border px-4 py-4'>
+        <Show
+          when={!isCollapsed()}
+          fallback={
+            <span class='text-lg font-semibold'>C</span>
+          }
+        >
+          <div>
+            <span class='text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground'>Platform</span>
+            <h1 class='text-lg font-semibold tracking-tight'>containr</h1>
+          </div>
+        </Show>
+        <button
+          type="button"
+          onClick={props.onToggle}
+          class='rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground'
+          title={isCollapsed() ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <span class='text-lg'>{isCollapsed() ? '→' : '←'}</span>
+        </button>
       </div>
 
-      {/* Nav */}
-      <nav class="flex-1 overflow-y-auto py-3">
-        {navItems.map((item) => (
-          <A
-            href={item.href}
-            class={`flex items-center px-5 py-2 text-sm transition-colors ${
-              isActive(item.href)
-                ? 'text-foreground font-medium'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {item.title}
-          </A>
-        ))}
+      <nav class='flex-1 overflow-y-auto py-4'>
+        <NavMain items={navPlatform} label='Platform' collapsed={isCollapsed()} />
+        <NavMain items={navAccess} label='System' collapsed={isCollapsed()} />
       </nav>
 
-      {/* Bottom */}
-      <div class="border-t border-border px-5 py-4 flex flex-col gap-3">
-        <A
-          href="/services/new"
-          class="flex items-center justify-center w-full px-3 py-1.5 text-xs font-medium border border-border bg-secondary hover:bg-secondary/70 text-foreground transition-colors"
-        >
-          + New Service
-        </A>
-        <div class="flex items-center justify-between">
-          <Show when={auth.user()}>
-            <p class="text-xs text-muted-foreground truncate flex-1">
-              {auth.user()?.email}
-            </p>
-          </Show>
-          <div class="flex items-center gap-2 ml-2 shrink-0">
-            <button
-              type="button"
-              onClick={toggleTheme}
-              class="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              title={
-                resolvedTheme() === 'dark'
-                  ? 'Switch to light'
-                  : 'Switch to dark'
-              }
+      <div class='space-y-2 border-t border-border p-3'>
+        <Show
+          when={!isCollapsed()}
+          fallback={
+            <A
+              href="/services/new"
+              class='cr-btn cr-btn-primary w-full'
+              title="New Service"
             >
-              {resolvedTheme() === 'dark' ? '☀' : '☾'}
-            </button>
+              +
+            </A>
+          }
+        >
+          <A
+            href="/services/new"
+            class='cr-btn cr-btn-primary w-full'
+          >
+            + New Service
+          </A>
+        </Show>
+
+        <button
+          type="button"
+          onClick={toggleTheme}
+          class={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+            isCollapsed() ? 'justify-center' : ''
+          } text-muted-foreground hover:bg-secondary hover:text-foreground`}
+          title={resolvedTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          <span>{resolvedTheme() === 'dark' ? '☀' : '☾'}</span>
+          <Show when={!isCollapsed()}>
+            <span>{resolvedTheme() === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+          </Show>
+        </button>
+
+        <Show when={!isCollapsed()}>
+          <div class='border-t border-border pt-2'>
+            <div class='px-3 py-2'>
+              <p class='truncate text-sm font-medium'>{auth.user()?.email}</p>
+              <p class='text-xs text-muted-foreground'>{auth.user()?.is_admin ? 'admin' : 'user'}</p>
+            </div>
             <button
               type="button"
               onClick={auth.logout}
-              class="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              title="Log out"
+              class='flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground'
             >
-              →
+              <span>→</span>
+              <span>Log Out</span>
             </button>
           </div>
-        </div>
+        </Show>
+        <Show when={isCollapsed()}>
+          <button
+            type="button"
+            onClick={auth.logout}
+            class='flex w-full items-center justify-center rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground'
+            title="Log Out"
+          >
+            <span>→</span>
+          </button>
+        </Show>
       </div>
     </aside>
   );
