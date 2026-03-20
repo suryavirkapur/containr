@@ -3,6 +3,20 @@
 changelog
 =========
 
+0.1.16-alpha - 2026-03-20
+- overhaul dashboard ui to dark-first minimalist design using Geist font, radius 0, and a flat border-centric palette
+- rename "HTTP Settings" to "Networking Settings" in service-detail
+- add per-domain http/https enable toggles in networking settings tab; settings persist as CONTAINR_DOMAIN_CONFIG env var for the proxy to consume
+- add network group selector in networking settings tab
+- make service endpoint and domain names clickable links throughout services list and service detail
+- remove all displays of internal ids (service id, container id, deployment id) from every ui surface
+- simplify services list to flat table-style rows grouped by network boundary with inline filter bar (no stat cards)
+- simplify service creation flow to two-section list layout replacing card grid
+- simplify sidebar to fixed 208px with text-only nav, no icons, no collapsing
+- clean up shell layout to match new sidebar width
+- fix theme context to default dark mode using .light class toggle instead of .dark
+- fix nested button html warning in deployments tab by converting outer row to a div
+
 0.1.15-alpha - 2026-03-11
 - redesign entire dashboard to use Shadcn-style UI components with Tailwind CSS v4, supporting dynamic Light and Dark modes.
 - flatten dashboard hierarchy and routing away from `/projects` towards a unified `/services` view.

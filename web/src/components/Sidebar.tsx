@@ -1,105 +1,86 @@
-import { createSignal, For, Show, type JSX } from 'solid-js';
+import { Show } from 'solid-js';
 import { A, useLocation } from '@solidjs/router';
-import { NavMain } from './NavMain';
 import { ThemeContext } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 
-const navPlatform = [
-  { title: 'Services', href: '/services', icon: '◇' },
-  { title: 'Containers', href: '/containers', icon: '□' },
-  { title: 'Storage', href: '/storage', icon: '▣' },
+const navItems = [
+  { title: 'Services', href: '/services' },
+  { title: 'Containers', href: '/containers' },
+  { title: 'Storage', href: '/storage' },
+  { title: 'Settings', href: '/settings' },
 ];
 
-const navAccess = [
-  { title: 'Settings', href: '/settings', icon: '⚙' },
-];
-
-const navActions = [
-  { title: 'New Service', href: '/services/new', icon: '+' },
-];
-
-type Props = {
-  collapsed?: boolean;
-  onToggle?: () => void;
-};
-
-export const Sidebar = (props: Props) => {
+export const Sidebar = () => {
   const auth = useAuth();
   const { resolvedTheme, toggleTheme } = ThemeContext;
-  const isCollapsed = () => props.collapsed ?? false;
+  const location = useLocation();
+
+  const isActive = (href: string) =>
+    location.pathname === href ||
+    (href !== '/' && location.pathname.startsWith(href));
 
   return (
-    <aside class={`fixed left-0 top-0 h-screen flex flex-col border-r border-border bg-card transition-all duration-200 z-50 ${
-      isCollapsed() ? 'w-16' : 'w-64'
-    }`}>
-      <div class="flex items-center justify-between h-16 px-4 border-b border-border">
-        <Show
-          when={!isCollapsed()}
-          fallback={
-            <span class="text-lg font-bold">C</span>
-          }
-        >
-          <div>
-            <span class="text-xs font-bold tracking-widest uppercase text-muted-foreground">containr</span>
-            <h1 class="text-xl font-bold tracking-tight">containr</h1>
-          </div>
-        </Show>
-        <button
-          type="button"
-          onClick={props.onToggle}
-          class="p-1.5 rounded-md hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
-          title={isCollapsed() ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <span class="text-lg">{isCollapsed() ? '→' : '←'}</span>
-        </button>
+    <aside class="fixed left-0 top-0 h-screen w-52 flex flex-col border-r border-border bg-card z-50">
+      {/* Logo */}
+      <div class="h-14 flex items-center px-5 border-b border-border">
+        <A href="/services" class="text-sm font-semibold tracking-tight">
+          containr
+        </A>
       </div>
 
-      <nav class="flex-1 overflow-y-auto py-4">
-        <NavMain items={navPlatform} label="Platform" />
-        <NavMain items={navAccess} label="Access" />
+      {/* Nav */}
+      <nav class="flex-1 overflow-y-auto py-3">
+        {navItems.map((item) => (
+          <A
+            href={item.href}
+            class={`flex items-center px-5 py-2 text-sm transition-colors ${
+              isActive(item.href)
+                ? 'text-foreground font-medium'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {item.title}
+          </A>
+        ))}
       </nav>
 
-      <div class="border-t border-border p-3 space-y-2">
-        <Show when={!isCollapsed()}>
-          <A
-            href="/services/new"
-            class="flex items-center justify-center gap-2 w-full px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-medium text-sm transition-colors"
-          >
-            <span>+</span>
-            <span>New Service</span>
-          </A>
-        </Show>
-
-        <button
-          type="button"
-          onClick={toggleTheme}
-          class={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors w-full ${
-            isCollapsed() ? 'justify-center' : ''
-          } text-muted-foreground hover:text-foreground hover:bg-secondary/50`}
-          title={resolvedTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      {/* Bottom */}
+      <div class="border-t border-border px-5 py-4 flex flex-col gap-3">
+        <A
+          href="/services/new"
+          class="flex items-center justify-center w-full px-3 py-1.5 text-xs font-medium border border-border bg-secondary hover:bg-secondary/70 text-foreground transition-colors"
         >
-          <span>{resolvedTheme() === 'dark' ? '☀' : '☾'}</span>
-          <Show when={!isCollapsed()}>
-            <span>{resolvedTheme() === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+          + New Service
+        </A>
+        <div class="flex items-center justify-between">
+          <Show when={auth.user()}>
+            <p class="text-xs text-muted-foreground truncate flex-1">
+              {auth.user()?.email}
+            </p>
           </Show>
-        </button>
-
-        <Show when={!isCollapsed()}>
-          <div class="pt-2 border-t border-border">
-            <div class="px-3 py-2">
-              <p class="text-sm font-medium truncate">{auth.user()?.email}</p>
-              <p class="text-xs text-muted-foreground">{auth.user()?.is_admin ? 'admin' : 'user'}</p>
-            </div>
+          <div class="flex items-center gap-2 ml-2 shrink-0">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              class="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              title={
+                resolvedTheme() === 'dark'
+                  ? 'Switch to light'
+                  : 'Switch to dark'
+              }
+            >
+              {resolvedTheme() === 'dark' ? '☀' : '☾'}
+            </button>
             <button
               type="button"
               onClick={auth.logout}
-              class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors w-full text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+              class="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              title="Log out"
             >
-              <span>→</span>
-              <span>Log Out</span>
+              →
             </button>
           </div>
-        </Show>
+        </div>
       </div>
     </aside>
   );
