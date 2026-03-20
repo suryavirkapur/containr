@@ -9,8 +9,6 @@ pub struct Config {
     pub server: ServerConfig,
     pub database: DatabaseConfig,
     #[serde(default)]
-    pub cache: CacheConfig,
-    #[serde(default)]
     pub logging: LoggingConfig,
     pub proxy: ProxyConfig,
     pub github: GithubConfig,
@@ -60,20 +58,6 @@ impl DatabaseConfig {
             return path.join("containr.sqlite3");
         }
         path
-    }
-}
-
-/// ephemeral cache configuration backed by sled
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheConfig {
-    pub path: String,
-}
-
-impl Default for CacheConfig {
-    fn default() -> Self {
-        Self {
-            path: "./data/cache".to_string(),
-        }
     }
 }
 
@@ -355,7 +339,6 @@ staging = true
 
         assert!(config.security.encryption_key.is_empty());
         assert_eq!(config.database.path, "./data/containr.sqlite3");
-        assert_eq!(config.cache.path, "./data/cache");
         assert_eq!(config.logging.dir, "./data/logs");
         assert_eq!(config.logging.retention_days, 14);
         assert!(config
@@ -365,7 +348,7 @@ staging = true
         assert_eq!(config.proxy.public_ip, None);
         assert_eq!(config.proxy.load_balance, LoadBalanceAlgorithm::RoundRobin);
         assert_eq!(config.storage.data_dir, PathBuf::from("/data/containr"));
-        assert_eq!(config.storage.backup_enabled, false);
+        assert!(!config.storage.backup_enabled);
         assert_eq!(
             config.storage.rustfs_management_endpoint,
             "http://127.0.0.1:9000"

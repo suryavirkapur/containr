@@ -29,3 +29,10 @@ web/node_modules/
 # temporary files
 *.tmp
 *.bak
+
+# rivetr submodule / project
+/rivetr/
+
+# local config
+containr.local.toml
+/data-local/

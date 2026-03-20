@@ -707,6 +707,7 @@ pub struct HttpRequestLog {
 }
 
 impl HttpRequestLog {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         service_id: Uuid,
         app_id: Uuid,
