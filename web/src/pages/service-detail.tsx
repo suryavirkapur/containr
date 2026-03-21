@@ -1217,133 +1217,90 @@ const ServiceDetail = () => {
                               <EmptyBlock title="No deployments yet" />
                             }
                           >
-                            <div class="border border-border">
+                            <div class="border border-border divide-y divide-border">
                               <For each={deployments() ?? []}>
-                                {(deployment) => {
-                                  const isOpen = () =>
-                                    selectedDeploymentId() === deployment.id;
-                                  const toggle = () =>
-                                    setSelectedDeploymentId(
-                                      isOpen() ? null : deployment.id,
-                                    );
-                                  return (
-                                    <div class="border-b border-border last:border-0">
-                                      <div
-                                        class={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-secondary transition-colors ${isOpen() ? 'bg-secondary' : ''}`}
-                                        onClick={toggle}
-                                      >
-                                        <span class="text-muted-foreground text-xs shrink-0">
-                                          {isOpen() ? '▾' : '▸'}
-                                        </span>
-                                        <div class="flex-1 min-w-0">
-                                          <p class="text-sm font-medium truncate">
-                                            {deployment.commit_message ??
-                                              'Manual deployment'}
-                                          </p>
-                                          <p class="text-xs text-muted-foreground font-mono mt-0.5">
-                                            {deployment.commit_sha
-                                              ? deployment.commit_sha.slice(
-                                                  0,
-                                                  7,
-                                                )
-                                              : '—'}
-                                          </p>
+                                {(deployment, index) => (
+                                  <details
+                                    class="group"
+                                    open={index() === 0}
+                                    onToggle={(e) => {
+                                      if ((e.currentTarget as HTMLDetailsElement).open) {
+                                        setSelectedDeploymentId(deployment.id);
+                                        deploymentLogStream.connect();
+                                      }
+                                    }}
+                                  >
+                                    <summary class="flex items-center gap-3 px-4 py-3 cursor-pointer list-none select-none hover:bg-secondary transition-colors">
+                                      <span class="text-muted-foreground text-xs shrink-0 transition-transform group-open:rotate-90">
+                                        ▸
+                                      </span>
+                                      <div class="flex-1 min-w-0">
+                                        <p class="text-sm font-medium truncate">
+                                          {deployment.commit_message ?? 'Manual deployment'}
+                                        </p>
+                                        <p class="text-xs text-muted-foreground font-mono mt-0.5">
+                                          {deployment.commit_sha
+                                            ? deployment.commit_sha.slice(0, 7)
+                                            : '—'}
+                                        </p>
+                                      </div>
+                                      <StatusBadge status={deployment.status} />
+                                      <span class="text-xs text-muted-foreground shrink-0 hidden lg:block">
+                                        {formatDateTime(deployment.started_at)}
+                                      </span>
+                                    </summary>
+
+                                    <div class="px-4 py-4 border-t border-border bg-card flex flex-col gap-4">
+                                      <dl class="grid gap-3 sm:grid-cols-3 text-xs">
+                                        <div class="flex flex-col gap-0.5">
+                                          <dt class="text-muted-foreground uppercase tracking-wider">Status</dt>
+                                          <dd><StatusBadge status={deployment.status} /></dd>
                                         </div>
-                                        <StatusBadge
-                                          status={deployment.status}
-                                        />
-                                        <span class="text-xs text-muted-foreground shrink-0 hidden lg:block">
-                                          {formatDateTime(deployment.started_at)}
-                                        </span>
+                                        <div class="flex flex-col gap-0.5">
+                                          <dt class="text-muted-foreground uppercase tracking-wider">Started</dt>
+                                          <dd>{formatDateTime(deployment.started_at)}</dd>
+                                        </div>
+                                        <div class="flex flex-col gap-0.5">
+                                          <dt class="text-muted-foreground uppercase tracking-wider">Finished</dt>
+                                          <dd>{formatDateTime(deployment.finished_at)}</dd>
+                                        </div>
+                                        <div class="flex flex-col gap-0.5 col-span-full">
+                                          <dt class="text-muted-foreground uppercase tracking-wider">Commit</dt>
+                                          <dd class="font-mono break-all">{deployment.commit_sha ?? '—'}</dd>
+                                        </div>
+                                      </dl>
+
+                                      <div class="flex gap-2">
+                                        <button
+                                          type="button"
+                                          class="cr-btn cr-btn-secondary"
+                                          onClick={() => void rollback(deployment.id)}
+                                          disabled={pendingAction() === `rollback-${deployment.id}`}
+                                        >
+                                          Rollback
+                                        </button>
+                                        <button
+                                          type="button"
+                                          class="cr-btn cr-btn-secondary"
+                                          onClick={() => deploymentLogStream.connect()}
+                                        >
+                                          Reconnect Logs
+                                        </button>
                                       </div>
 
-                                      <Show when={isOpen()}>
-                                        <div class="px-4 py-4 border-t border-border bg-card flex flex-col gap-4">
-                                          <div class="grid gap-3 sm:grid-cols-3 text-xs">
-                                            <div class="flex flex-col gap-0.5">
-                                              <dt class="text-muted-foreground uppercase tracking-wider">
-                                                Status
-                                              </dt>
-                                              <dd>
-                                                <StatusBadge
-                                                  status={deployment.status}
-                                                />
-                                              </dd>
-                                            </div>
-                                            <div class="flex flex-col gap-0.5">
-                                              <dt class="text-muted-foreground uppercase tracking-wider">
-                                                Started
-                                              </dt>
-                                              <dd>
-                                                {formatDateTime(
-                                                  deployment.started_at,
-                                                )}
-                                              </dd>
-                                            </div>
-                                            <div class="flex flex-col gap-0.5">
-                                              <dt class="text-muted-foreground uppercase tracking-wider">
-                                                Finished
-                                              </dt>
-                                              <dd>
-                                                {formatDateTime(
-                                                  deployment.finished_at,
-                                                )}
-                                              </dd>
-                                            </div>
-                                            <div class="flex flex-col gap-0.5 col-span-full">
-                                              <dt class="text-muted-foreground uppercase tracking-wider">
-                                                Commit
-                                              </dt>
-                                              <dd class="font-mono">
-                                                {deployment.commit_sha ?? '—'}
-                                              </dd>
-                                            </div>
+                                      <pre class="bg-[#0d0d0d] text-[#d4d4d4] border border-border p-4 overflow-x-auto text-xs font-mono min-h-[8rem] max-h-[28rem] overflow-y-auto">
+                                        <Show when={deploymentLogStream.isStreaming()}>
+                                          <div class="flex items-center gap-2 mb-2 text-green-400">
+                                            <span class="inline-flex h-1.5 w-1.5 bg-green-400 animate-ping" />
+                                            {' '}streaming live
                                           </div>
-
-                                          <div class="flex gap-2">
-                                            <button
-                                              type="button"
-                                              class="cr-btn cr-btn-secondary"
-                                              onClick={() =>
-                                                void rollback(deployment.id)
-                                              }
-                                              disabled={
-                                                pendingAction() ===
-                                                `rollback-${deployment.id}`
-                                              }
-                                            >
-                                              Rollback
-                                            </button>
-                                            <button
-                                              type="button"
-                                              class="cr-btn cr-btn-secondary"
-                                              onClick={() =>
-                                                deploymentLogStream.connect()
-                                              }
-                                            >
-                                              Reconnect Logs
-                                            </button>
-                                          </div>
-
-                                          <pre class="bg-[#0d0d0d] text-[#d4d4d4] border border-border p-4 overflow-x-auto text-xs font-mono min-h-[8rem] max-h-[24rem] overflow-y-auto">
-                                            <Show
-                                              when={deploymentLogStream.isStreaming()}
-                                            >
-                                              <div class="flex items-center gap-2 mb-2 text-green-400">
-                                                <span class="flex h-1.5 w-1.5 bg-green-400 animate-ping" />
-                                                streaming live
-                                              </div>
-                                            </Show>
-                                            {deploymentLogStream
-                                              .logs()
-                                              .join('\n') ||
-                                              'No logs. Click Reconnect Logs.'}
-                                          </pre>
-                                        </div>
-                                      </Show>
+                                        </Show>
+                                        {deploymentLogStream.logs().join('\n') ||
+                                          'No logs yet. Click Reconnect Logs to stream.'}
+                                      </pre>
                                     </div>
-                                  );
-                                }}
+                                  </details>
+                                )}
                               </For>
                             </div>
                           </Show>
