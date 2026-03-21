@@ -82,6 +82,7 @@ impl RouteManager {
 
     // adds or updates a route
     pub fn add_route(&self, route: Route) {
+        let normalized_domain = normalize_domain(&route.domain);
         let upstreams: Vec<UpstreamState> = route
             .upstreams
             .iter()
@@ -100,7 +101,7 @@ impl RouteManager {
             .join(", ");
 
         info!(
-            domain = %route.domain,
+            domain = %normalized_domain,
             app_id = ?route.app_id,
             service_id = ?route.service_id,
             upstreams = %upstream_summary,
@@ -110,7 +111,7 @@ impl RouteManager {
         );
 
         let state = Arc::new(RouteState {
-            domain: route.domain.clone(),
+            domain: normalized_domain.clone(),
             app_id: route.app_id,
             service_id: route.service_id,
             upstreams,
@@ -119,25 +120,28 @@ impl RouteManager {
             rr_cursor: AtomicUsize::new(0),
         });
 
-        self.routes.insert(route.domain.clone(), state);
+        self.routes.insert(normalized_domain, state);
     }
 
     // removes a route
     pub fn remove_route(&self, domain: &str) {
-        info!(domain = %domain, "removing route");
-        self.routes.remove(domain);
+        let normalized_domain = normalize_domain(domain);
+        info!(domain = %normalized_domain, "removing route");
+        self.routes.remove(&normalized_domain);
     }
 
     // gets a route by domain
     pub fn get_route(&self, domain: &str) -> Option<Route> {
         self.routes
-            .get(domain)
+            .get(&normalize_domain(domain))
             .map(|route| route.value().to_route())
     }
 
     pub fn select_upstream(&self, domain: &str) -> Option<SelectedUpstream> {
-        let route =
-            self.routes.get(domain).map(|route| route.value().clone())?;
+        let route = self
+            .routes
+            .get(&normalize_domain(domain))
+            .map(|route| route.value().clone())?;
 
         if route.upstreams.is_empty() {
             return None;
@@ -181,7 +185,7 @@ impl RouteManager {
 
     // checks if a route exists
     pub fn has_route(&self, domain: &str) -> bool {
-        self.routes.contains_key(domain)
+        self.routes.contains_key(&normalize_domain(domain))
     }
 }
 
@@ -189,6 +193,10 @@ impl Default for RouteManager {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn normalize_domain(domain: &str) -> String {
+    domain.trim().trim_end_matches('.').to_lowercase()
 }
 
 pub struct SelectedUpstream {

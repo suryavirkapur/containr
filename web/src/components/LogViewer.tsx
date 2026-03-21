@@ -1,5 +1,7 @@
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 
+import { getServiceLogs } from "../api/services";
+
 const ESC_CODE = 27;
 const ESC = String.fromCharCode(ESC_CODE);
 const ANSI_PATTERN = new RegExp(`${ESC}\\[[0-9;]*[a-zA-Z]`, "g");
@@ -22,6 +24,7 @@ export const useLogStream = (
 ) => {
 	const [logs, setLogs] = createSignal<string[]>([]);
 	const [isStreaming, setIsStreaming] = createSignal(false);
+	const [isLoadingHistory, setIsLoadingHistory] = createSignal(false);
 	const [error, setError] = createSignal<string | null>(null);
 	const [autoScroll, setAutoScroll] = createSignal(true);
 	let ws: WebSocket | null = null;
@@ -32,8 +35,31 @@ export const useLogStream = (
 		const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 		const host = window.location.host;
 		const token = localStorage.getItem("containr_token");
-		const query = token ? `?token=${encodeURIComponent(token)}` : "";
+		const params = new URLSearchParams({ tail: "0" });
+		if (token) {
+			params.set("token", token);
+		}
+		const query = `?${params.toString()}`;
 		return `${protocol}//${host}/api/services/${serviceId()}/logs/ws${query}`;
+	};
+
+	const loadHistory = async () => {
+		if (!serviceId()) return;
+		setIsLoadingHistory(true);
+		try {
+			const history = await getServiceLogs(serviceId(), 300);
+			const lines = (history ?? "")
+				.split("\n")
+				.map(stripAnsi)
+				.map((line) => line.trimEnd())
+				.filter(Boolean);
+			setLogs(lines);
+			setError(null);
+		} catch {
+			setError("Failed to load recent logs");
+		} finally {
+			setIsLoadingHistory(false);
+		}
 	};
 
 	const connect = () => {
@@ -56,7 +82,11 @@ export const useLogStream = (
 			};
 
 			ws.onmessage = (event: MessageEvent<string>) => {
-				const lines: string[] = event.data.split("\n").filter(Boolean).map(stripAnsi).filter(filterLogLine);
+				const lines: string[] = event.data
+					.split("\n")
+					.filter(Boolean)
+					.map(stripAnsi)
+					.filter(filterLogLine);
 				setLogs((prev) => [...prev, ...lines]);
 				lines.forEach((line: string) => {
 					onLog?.(line);
@@ -100,8 +130,8 @@ export const useLogStream = (
 
 	createEffect(() => {
 		if (autoConnect && serviceId()) {
-			setLogs([]);
 			disconnect(false);
+			void loadHistory();
 			connect();
 		}
 	});
@@ -113,6 +143,7 @@ export const useLogStream = (
 	return {
 		logs,
 		isStreaming,
+		isLoadingHistory,
 		error,
 		autoScroll,
 		setAutoScroll,
@@ -128,9 +159,8 @@ type LogViewerProps = {
 };
 
 export const LogViewer = (props: LogViewerProps) => {
-	const { logs, isStreaming, error, autoScroll, setAutoScroll, clearLogs } = useLogStream(
-		() => props.serviceId,
-	);
+	const { logs, isStreaming, isLoadingHistory, error, autoScroll, setAutoScroll, clearLogs } =
+		useLogStream(() => props.serviceId);
 	let logsEndRef: HTMLDivElement | undefined;
 
 	createEffect(() => {
@@ -156,6 +186,9 @@ export const LogViewer = (props: LogViewerProps) => {
 							{isStreaming() ? "Streaming" : "Disconnected"}
 						</span>
 					</div>
+					<Show when={isLoadingHistory()}>
+						<span class="text-xs text-muted-foreground">(loading recent logs)</span>
+					</Show>
 					<Show when={error()}>
 						<span class="text-xs text-yellow-600">({error()})</span>
 					</Show>
@@ -181,7 +214,9 @@ export const LogViewer = (props: LogViewerProps) => {
 			</div>
 			<pre class="bg-zinc-900 text-zinc-100 border border-border rounded-lg p-4 overflow-auto text-xs font-mono min-h-[16rem] max-h-[32rem]">
 				<Show when={logs().length === 0}>
-					<span class="text-zinc-500">Waiting for logs...</span>
+					<span class="text-zinc-500">
+						{isLoadingHistory() ? "Loading logs..." : "Waiting for logs..."}
+					</span>
 				</Show>
 				{logs().map((line) => (
 					<div class="whitespace-pre-wrap">{line}</div>
