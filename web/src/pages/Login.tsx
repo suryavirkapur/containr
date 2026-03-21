@@ -19,7 +19,6 @@ const Login = () => {
     event.preventDefault();
     setSaving(true);
     setError(null);
-
     try {
       await auth.login(email().trim(), password());
       navigate('/services');
@@ -31,58 +30,67 @@ const Login = () => {
   };
 
   return (
-    <PublicShell title='Sign In' subtitle='Use the account created by the bootstrap admin.'>
-      <Show when={error()}>{(message) => <Notice tone='error'>{message()}</Notice>}</Show>
+    <PublicShell title="Sign In" subtitle="Enter your credentials below.">
+      <Show when={error()}>
+        {(message) => <Notice tone="error">{message()}</Notice>}
+      </Show>
 
-      <section class='border border-border bg-card text-card-foreground p-6 mb-6'>
-        <form class='flex flex-col gap-4' onSubmit={(event) => void submit(event)}>
-          <label class='flex flex-col gap-2'>
-            <span class='text-sm font-medium leading-none'>Email</span>
-            <input 
-              type='email' 
-              class="flex h-9 w-full border border-input bg-transparent px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              value={email()} 
-              onInput={(event) => setEmail(event.currentTarget.value)} 
-            />
-          </label>
-          <label class='flex flex-col gap-2'>
-            <span class='text-sm font-medium leading-none'>Password</span>
-            <input 
-              type='password' 
-              class="flex h-9 w-full border border-input bg-transparent px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              value={password()} 
-              onInput={(event) => setPassword(event.currentTarget.value)} 
-            />
-          </label>
-          <div class='flex flex-wrap items-center gap-4 mt-2'>
-            <button 
-              type='submit' 
-              disabled={saving()}
-              class="inline-flex items-center justify-center text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 py-2 disabled:opacity-50 w-full sm:w-auto"
-            >
-              {saving() ? 'Signing In...' : 'Sign In'}
-            </button>
-            <a 
-              href='/api/auth/github'
-              class="inline-flex items-center justify-center text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2 w-full sm:w-auto"
-            >
-              Sign In with GitHub
-            </a>
-          </div>
-        </form>
-      </section>
+      <form class="flex flex-col gap-4 mt-4" onSubmit={(e) => void submit(e)}>
+        <label class="cr-field">
+          <span class="cr-label">Email</span>
+          <input
+            type="email"
+            class="cr-input"
+            value={email()}
+            onInput={(e) => setEmail(e.currentTarget.value)}
+          />
+        </label>
+        <label class="cr-field">
+          <span class="cr-label">Password</span>
+          <input
+            type="password"
+            class="cr-input"
+            value={password()}
+            onInput={(e) => setPassword(e.currentTarget.value)}
+          />
+        </label>
+        <div class="flex flex-col gap-2 pt-2">
+          <button
+            type="submit"
+            disabled={saving()}
+            class="cr-btn cr-btn-primary w-full"
+          >
+            {saving() ? 'Signing in...' : 'Sign In'}
+          </button>
+          <a href="/api/auth/github" class="cr-btn cr-btn-secondary w-full">
+            Sign In with GitHub
+          </a>
+        </div>
+      </form>
 
-      <section class='border border-dashed border-border bg-card p-6 text-center text-sm'>
-        <Show when={status()} fallback={<p class='text-muted-foreground'>Checking registration status...</p>}>
-          {(current) => (
-            current().registration_open ? (
-              <p>Bootstrap registration is still open. <A href='/register' class="font-medium underline underline-offset-4">Create the first admin user.</A></p>
+      <Show
+        when={status()}
+        fallback={
+          <p class="text-xs text-muted-foreground mt-4">
+            Checking registration status...
+          </p>
+        }
+      >
+        {(current) => (
+          <p class="text-xs text-muted-foreground mt-4">
+            {current().registration_open ? (
+              <>
+                Bootstrap registration open.{' '}
+                <A href="/register" class="underline text-foreground">
+                  Create first admin.
+                </A>
+              </>
             ) : (
-              <p class='text-muted-foreground'>Public signup is closed. The bootstrap admin must create additional users.</p>
-            )
-          )}
-        </Show>
-      </section>
+              'Public signup is closed.'
+            )}
+          </p>
+        )}
+      </Show>
     </PublicShell>
   );
 };
