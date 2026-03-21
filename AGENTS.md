@@ -12,8 +12,7 @@ current context:
 - redefining "groups" to purely enforce a network boundary rather than strict container or multi-service lifecycle isolation.
 
 pending tasks:
-- update pingora and backend routing to support domain mapping per service rather than per project.
-
+remove
 important decisions:
 - documentation lives in Markdown (.md) with normal capitalization; prefer README.md + CHANGELOG.md.
 - rust format max width to 80, explicitly handle errors without unwrap().
