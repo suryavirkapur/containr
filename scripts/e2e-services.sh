@@ -2,7 +2,7 @@
 set -euo pipefail
 
 containr_bin="${CONTAINR_BIN:-target/debug/containr}"
-containrctl_bin="${CONTAINRCTL_BIN:-target/debug/containrctl}"
+containrcmd_bin="${CONTAINRCMD_BIN:-target/debug/containr-cmd}"
 
 need_bin() {
     if ! command -v "$1" >/dev/null 2>&1; then
@@ -20,7 +20,7 @@ sedi() {
 }
 
 ctl() {
-    "$containrctl_bin" --config-path "$client_config" "$@"
+    "$containrcmd_bin" --config-path "$client_config" "$@"
 }
 
 json() {
@@ -142,7 +142,7 @@ need_bin curl
 need_bin jq
 need_bin rg
 
-cargo build -q --bin containr --bin containrctl
+cargo build -q --bin containr --bin containr-cmd
 
 tmpdir="$(mktemp -d /tmp/containr-e2e-services-XXXXXX)"
 client_config="$tmpdir/client.toml"
