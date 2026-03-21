@@ -21,6 +21,7 @@ pub struct DeploymentResponse {
     pub app_id: Uuid,
     pub commit_sha: String,
     pub commit_message: Option<String>,
+    pub image_id: Option<String>,
     #[schema(value_type = String)]
     pub status: DeploymentStatus,
     pub container_id: Option<String>,
@@ -62,6 +63,7 @@ impl From<&Deployment> for DeploymentResponse {
             app_id: d.app_id,
             commit_sha: d.commit_sha.clone(),
             commit_message: d.commit_message.clone(),
+            image_id: d.image_id.clone(),
             status: d.status,
             container_id: d.container_id.clone(),
             created_at: d.created_at.to_rfc3339(),

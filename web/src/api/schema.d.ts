@@ -820,6 +820,7 @@ export interface components {
             container_id?: string | null;
             created_at: string;
             finished_at?: string | null;
+            image_id?: string | null;
             /** Format: uuid */
             id: string;
             started_at?: string | null;
@@ -1100,8 +1101,6 @@ export interface components {
             base_domain: string;
             /** @description dashboard url served by the proxy */
             dashboard_url?: string | null;
-            /** @description default hostname pattern used for public services */
-            default_service_domain_pattern?: string | null;
             /**
              * Format: int32
              * @description http port for proxy
@@ -1121,8 +1120,6 @@ export interface components {
             log_retention_days: number;
             /** @description public ip used for direct port access and domain validation */
             public_ip?: string | null;
-            /** @description wildcard suffix used for default service subdomains */
-            service_wildcard_domain?: string | null;
             /** @description rustfs hostname exposed on the shared docker network */
             storage_internal_host: string;
             /** @description rustfs endpoint used by containr for management operations */
@@ -1134,8 +1131,6 @@ export interface components {
             storage_port: number;
             /** @description optional public s3 hostname routed to rustfs */
             storage_public_hostname?: string | null;
-            /** @description wildcard dns readiness for default service hostnames */
-            wildcard_dns: components["schemas"]["WildcardDomainStatusResponse"];
         };
         /** @description system statistics response */
         SystemStats: {
@@ -1209,17 +1204,6 @@ export interface components {
             path: string;
             /** Format: int64 */
             size_bytes: number;
-        };
-        /** @description wildcard dns readiness for default service domains */
-        WildcardDomainStatusResponse: {
-            /** @description human-readable explanation of the current state */
-            detail: string;
-            /** @description whether the current wildcard dns setup appears ready */
-            ready: boolean;
-            /** @description sample default service hostname checked against dns */
-            sample_domain?: string | null;
-            /** @description wildcard domain admins should configure in dns */
-            wildcard_domain?: string | null;
         };
     };
     responses: never;

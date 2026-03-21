@@ -1,5 +1,5 @@
 import { useNavigate, useSearchParams } from '@solidjs/router';
-import { createSignal } from 'solid-js';
+import { createSignal, For, Show } from 'solid-js';
 import { createService } from '../api/services';
 import { Notice, PageTitle, Panel } from '../components/Plain';
 import { describeError } from '../utils/format';
@@ -24,6 +24,11 @@ const parseEnvVars = (value: string) =>
 
 const readParam = (value: string | string[] | undefined) => Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
 const DEFAULT_DOCKERFILE_PATH = 'Dockerfile';
+type ServiceMount = {
+  name: string;
+  target: string;
+  read_only: boolean;
+};
 
 const CreateConfigure = () => {
   const navigate = useNavigate();
@@ -36,6 +41,10 @@ const CreateConfigure = () => {
   const [workingDir, setWorkingDir] = createSignal('');
   const [schedule, setSchedule] = createSignal('*/5 * * * *');
   const [replicas, setReplicas] = createSignal('1');
+  const [mounts, setMounts] = createSignal<ServiceMount[]>([]);
+  const [newMountName, setNewMountName] = createSignal('');
+  const [newMountTarget, setNewMountTarget] = createSignal('');
+  const [newMountReadOnly, setNewMountReadOnly] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -43,6 +52,27 @@ const CreateConfigure = () => {
   const githubUrl = () => readParam(searchParams.github_url);
   const branch = () => readParam(searchParams.branch);
   const name = () => readParam(searchParams.name);
+
+  const addMount = () => {
+    const nameValue = newMountName().trim();
+    const targetValue = newMountTarget().trim();
+    if (!nameValue || !targetValue) return;
+    setMounts((prev) => [
+      ...prev,
+      {
+        name: nameValue,
+        target: targetValue,
+        read_only: newMountReadOnly(),
+      },
+    ]);
+    setNewMountName('');
+    setNewMountTarget('');
+    setNewMountReadOnly(false);
+  };
+
+  const removeMount = (index: number) => {
+    setMounts((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
+  };
 
   const create = async (event: Event) => {
     event.preventDefault();
@@ -73,6 +103,11 @@ const CreateConfigure = () => {
           env_vars: parseEnvVars(envVars()),
           schedule: serviceType() === 'cron_job' ? schedule().trim() || null : null,
           replicas: Number.parseInt(replicas(), 10) || 1,
+          mounts: mounts().map((mount) => ({
+            name: mount.name,
+            target: mount.target,
+            read_only: mount.read_only,
+          })),
         },
       });
       navigate(`/services/${created.id}`);
@@ -150,6 +185,78 @@ const CreateConfigure = () => {
               <span class='cr-label'>Environment Variables (KEY=VALUE per line)</span>
               <textarea class='cr-textarea font-code' value={envVars()} onInput={(event) => setEnvVars(event.currentTarget.value)} />
             </label>
+
+            <div class='flex flex-col gap-3'>
+              <span class='cr-label'>Persistent Mounts</span>
+              <div class='grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto_auto] lg:items-end'>
+                <label class='cr-field'>
+                  <span class='cr-label'>Name</span>
+                  <input
+                    class='cr-input font-mono'
+                    value={newMountName()}
+                    onInput={(event) => setNewMountName(event.currentTarget.value)}
+                    placeholder='data'
+                  />
+                </label>
+                <label class='cr-field'>
+                  <span class='cr-label'>Target Path</span>
+                  <input
+                    class='cr-input font-mono'
+                    value={newMountTarget()}
+                    onInput={(event) => setNewMountTarget(event.currentTarget.value)}
+                    placeholder='/app/data'
+                  />
+                </label>
+                <label class='flex items-center gap-2 text-sm text-muted-foreground pb-2'>
+                  <input
+                    type='checkbox'
+                    checked={newMountReadOnly()}
+                    onChange={(event) => setNewMountReadOnly(event.currentTarget.checked)}
+                    class='h-4 w-4'
+                  />
+                  Read-only
+                </label>
+                <button type='button' onClick={addMount} class='cr-btn cr-btn-secondary'>
+                  Add Mount
+                </button>
+              </div>
+
+              <Show when={mounts().length > 0}>
+                <table class='cr-table'>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Target</th>
+                      <th>Mode</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={mounts()}>
+                      {(mount, index) => (
+                        <tr>
+                          <td class='font-mono text-xs'>{mount.name}</td>
+                          <td class='font-mono text-xs'>{mount.target}</td>
+                          <td>{mount.read_only ? 'Read-only' : 'Read/write'}</td>
+                          <td class='text-right'>
+                            <button
+                              type='button'
+                              onClick={() => removeMount(index())}
+                              class='text-xs text-muted-foreground hover:text-foreground'
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
+              </Show>
+              <p class='text-xs text-muted-foreground'>
+                Mount names become persistent directories managed by containr and attached to the service at the target path.
+              </p>
+            </div>
           </div>
 
           <div class='mt-2 flex flex-wrap gap-2 border-t border-border pt-4'>

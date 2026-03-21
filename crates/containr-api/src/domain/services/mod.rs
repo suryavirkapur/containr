@@ -895,7 +895,9 @@ impl ServiceSvc {
             .filter(|deployment| {
                 deployment_is_for_service(deployment, &service)
             })
-            .map(DeploymentResponse::from)
+            .map(|deployment| {
+                deployment_response_for_service(deployment, &service)
+            })
             .collect())
     }
 
@@ -940,7 +942,7 @@ impl ServiceSvc {
             ));
         }
 
-        Ok(DeploymentResponse::from(&deployment))
+        Ok(deployment_response_for_service(&deployment, &service))
     }
 
     pub async fn trigger_service_deployment(
@@ -949,7 +951,7 @@ impl ServiceSvc {
         service_id: Uuid,
         body: Option<DeploymentTriggerRequest>,
     ) -> ApiResult<DeploymentResponse> {
-        let (app, _) =
+        let (app, service) =
             resolve_owned_app_service_record(&self.state, user_id, service_id)?;
         let trigger = body;
         let commit_sha = trigger
@@ -985,7 +987,7 @@ impl ServiceSvc {
         )
         .await?;
 
-        Ok(DeploymentResponse::from(&deployment))
+        Ok(deployment_response_for_service(&deployment, &service))
     }
 
     pub async fn rollback_service_deployment(
@@ -1053,7 +1055,7 @@ impl ServiceSvc {
         )
         .await?;
 
-        Ok(DeploymentResponse::from(&deployment))
+        Ok(deployment_response_for_service(&deployment, &service))
     }
 
     pub fn get_service_deployment_logs(
@@ -2874,6 +2876,15 @@ fn deployment_is_for_service(
         .service_deployments
         .iter()
         .any(|sd| sd.service_id == service.id)
+}
+
+fn deployment_response_for_service(
+    deployment: &Deployment,
+    service: &ContainerService,
+) -> DeploymentResponse {
+    let mut response = DeploymentResponse::from(deployment);
+    response.image_id = resolve_service_image(deployment, service, 0);
+    response
 }
 
 fn resolve_app_service_deployment(
