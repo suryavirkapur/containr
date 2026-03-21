@@ -334,7 +334,6 @@ pub async fn github_install_callback(
             let pem = decrypt_value(
                 &config,
                 &app_config.private_key,
-                Some(&config.auth.jwt_secret),
             )
             .map_err(internal_error)?;
 
@@ -419,7 +418,6 @@ pub async fn get_app_repos(
     let pem = decrypt_value(
         &config,
         &app_config.private_key,
-        Some(&config.auth.jwt_secret),
     )
     .map_err(internal_error)?;
 
@@ -534,7 +532,6 @@ async fn sync_installations(
     let pem = match decrypt_value(
         config,
         &app_config.private_key,
-        Some(&config.auth.jwt_secret),
     ) {
         Ok(value) => value,
         Err(error) => {

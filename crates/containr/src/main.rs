@@ -225,15 +225,6 @@ async fn run_server_command(
 
         if let Some(manager) = acme_manager.as_ref() {
             if let Err(error) =
-                manager.migrate_legacy_certificate_files_to_db().await
-            {
-                warn!(
-                    error = %error,
-                    "failed to migrate legacy certificate files into sqlite"
-                );
-            }
-
-            if let Err(error) =
                 renew_managed_certificates(&acme_db, manager, &acme_config)
                     .await
             {
@@ -815,8 +806,6 @@ async fn refresh_routes_for_app(
             });
         let service_prefix =
             format!("containr-{}-{}-", app.id, runtime_service.name);
-        let legacy_prefix =
-            legacy_service_container_prefix(&runtime_app, &runtime_service);
 
         for container in &containers {
             if let Some(names) = &container.names {
@@ -830,17 +819,8 @@ async fn refresh_routes_for_app(
                         if !active_ids.contains(name) {
                             continue;
                         }
-                    } else {
-                        let matches_service_prefix =
-                            name.starts_with(&service_prefix);
-                        let matches_legacy_prefix = legacy_prefix
-                            .as_deref()
-                            .map(|prefix| name.starts_with(prefix))
-                            .unwrap_or(false);
-
-                        if !matches_service_prefix && !matches_legacy_prefix {
-                            continue;
-                        }
+                    } else if !name.starts_with(&service_prefix) {
+                        continue;
                     }
 
                     if let Some(ip) =
@@ -1055,21 +1035,6 @@ fn active_http_container_ids(
         return Some(container_ids);
     }
 
-    deployment.container_id.clone().map(|container_id| {
-        let mut ids = HashSet::new();
-        ids.insert(container_id);
-        ids
-    })
-}
-
-fn legacy_service_container_prefix(
-    app: &containr_common::models::App,
-    service: &containr_common::models::ContainerService,
-) -> Option<String> {
-    if app.services.len() == 1 && service.name == "web" {
-        return Some(format!("containr-{}-", app.id));
-    }
-
     None
 }
 
@@ -1130,8 +1095,7 @@ fn resolve_api_host(host: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        active_http_container_ids, domains_for_service,
-        legacy_service_container_prefix, select_exposed_service,
+        active_http_container_ids, domains_for_service, select_exposed_service,
     };
     use containr_common::models::{
         default_service_domain, App, ContainerService, Deployment,
@@ -1237,8 +1201,6 @@ mod tests {
         let service_id = Uuid::new_v4();
         let mut deployment =
             Deployment::new(Uuid::new_v4(), "abc123".to_string());
-        deployment.container_id = Some("containr-legacy".to_string());
-
         let mut first = ServiceDeployment::new(service_id, deployment.id, 0);
         first.container_id = Some("containr-service-0".to_string());
         let mut second = ServiceDeployment::new(service_id, deployment.id, 1);
@@ -1250,20 +1212,6 @@ mod tests {
         assert_eq!(container_ids.len(), 2);
         assert!(container_ids.contains("containr-service-0"));
         assert!(container_ids.contains("containr-service-1"));
-        assert!(!container_ids.contains("containr-legacy"));
-    }
-
-    #[test]
-    fn active_http_container_ids_falls_back_to_legacy_container() {
-        let service_id = Uuid::new_v4();
-        let mut deployment =
-            Deployment::new(Uuid::new_v4(), "abc123".to_string());
-        deployment.container_id = Some("containr-legacy".to_string());
-
-        let container_ids =
-            active_http_container_ids(&deployment, service_id).unwrap();
-        assert_eq!(container_ids.len(), 1);
-        assert!(container_ids.contains("containr-legacy"));
     }
 
     #[test]
@@ -1367,31 +1315,4 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn legacy_service_container_prefix_is_only_used_for_single_web_service() {
-        let owner_id = Uuid::new_v4();
-        let mut app = App::new(
-            "demo".to_string(),
-            "https://example.com/repo".to_string(),
-            owner_id,
-        );
-        app.ensure_service_model();
-
-        let prefix = legacy_service_container_prefix(&app, &app.services[0]);
-        assert_eq!(prefix, Some(format!("containr-{}-", app.id)));
-
-        let mut multi_service_app = app.clone();
-        multi_service_app.services.push(ContainerService::new(
-            multi_service_app.id,
-            "worker".to_string(),
-            "busybox:latest".to_string(),
-            9000,
-        ));
-
-        let prefix = legacy_service_container_prefix(
-            &multi_service_app,
-            &multi_service_app.services[0],
-        );
-        assert!(prefix.is_none());
-    }
 }

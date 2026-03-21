@@ -642,8 +642,6 @@ impl ServiceSvc {
             )?;
         }
 
-        app.ensure_service_model();
-
         if app.requires_source_checkout() && app.github_url.trim().is_empty() {
             return Err(bad_request(
                 "github_url is required when a service needs a source build",
@@ -1154,8 +1152,6 @@ impl ServiceSvc {
         }
 
         app.services = build_services(config, app.id, &[], vec![service])?;
-        app.ensure_service_model();
-
         if app.requires_source_checkout() && app.github_url.trim().is_empty() {
             return Err((
                 StatusCode::BAD_REQUEST,

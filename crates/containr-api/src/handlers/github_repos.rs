@@ -186,16 +186,14 @@ pub async fn github_repos(
     })?;
 
     // decrypt token
-    let decrypted_token =
-        decrypt_value(&config, &access_token, Some(&config.auth.jwt_secret))
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: format!("failed to decrypt token: {}", e),
-                    }),
-                )
-            })?;
+    let decrypted_token = decrypt_value(&config, &access_token).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("failed to decrypt token: {}", e),
+            }),
+        )
+    })?;
 
     let visibility = query.visibility.as_deref();
     let repos =

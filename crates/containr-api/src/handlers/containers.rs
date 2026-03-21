@@ -281,10 +281,6 @@ async fn ensure_container_owned(
             .get_latest_deployment(app.id)
             .map_err(internal_error)?
         {
-            if deployment.container_id.as_deref() == Some(container_id) {
-                return Ok(());
-            }
-
             if deployment.service_deployments.iter().any(|service| {
                 service.container_id.as_deref() == Some(container_id)
             }) {
@@ -414,15 +410,6 @@ pub async fn list_containers(
                 service_names.insert(service.id, service.name.clone());
             }
 
-            if let Some(container_id) = deployment.container_id.clone() {
-                known_container_ids.insert(container_id.clone());
-                containers.push(ContainerListItem {
-                    id: container_id.clone(),
-                    resource_type: "app".to_string(),
-                    resource_id: app.id.to_string(),
-                    name: format!("{} (legacy)", app.name),
-                });
-            }
             for sd in deployment.service_deployments {
                 if let Some(container_id) = sd.container_id.clone() {
                     known_container_ids.insert(container_id.clone());
