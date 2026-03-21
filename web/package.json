@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@solidjs/router": "^0.15.4",
+    "geist": "^1.7.0",
     "openapi-fetch": "^0.15.0",
     "solid-js": "^1.9.10"
   },
