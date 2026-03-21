@@ -1,11 +1,11 @@
 [package]
-name = "containrctl"
+name = "containr-cmd"
 version.workspace = true
 edition.workspace = true
-default-run = "containrctl"
+default-run = "containr-cmd"
 
 [[bin]]
-name = "containrctl"
+name = "containr-cmd"
 path = "src/main.rs"
 
 [dependencies]

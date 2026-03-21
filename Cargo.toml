@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "crates/containr",
-    "crates/containrctl",
+    "crates/containr-cmd",
     "crates/containr-common",
     "crates/containr-api",
     "crates/containr-runtime",
