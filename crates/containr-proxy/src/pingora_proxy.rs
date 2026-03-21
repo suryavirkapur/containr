@@ -214,7 +214,7 @@ impl ProxyHttp for ContainrProxy {
         let req_header = session.req_header();
         let path = req_header.uri.path();
         let config = self.config.read().await;
-        let base_domain = config.proxy.base_domain.trim().to_string();
+        let base_domain = normalize_hostname(&config.proxy.base_domain);
         let storage_public_hostname = config
             .storage
             .rustfs_public_hostname
@@ -235,7 +235,8 @@ impl ProxyHttp for ContainrProxy {
             .or_else(|| req_header.uri.host())
             .or_else(|| req_header.uri.authority().map(|a| a.as_str()))
             .map(|h| h.split(':').next().unwrap_or(h))
-            .unwrap_or("");
+            .map(normalize_hostname)
+            .unwrap_or_default();
 
         // Detect WebSocket upgrade
         if let Some(upgrade) = req_header.headers.get("upgrade") {
@@ -307,14 +308,14 @@ impl ProxyHttp for ContainrProxy {
                 .unwrap_or(false)
         {
             true
-        } else if let Some(route) = self.routes.get_route(host) {
+        } else if let Some(route) = self.routes.get_route(&host) {
             route.ssl_enabled
         } else {
             false
         };
 
         if !is_tls && https_required {
-            if self.has_certificate(host) {
+            if self.has_certificate(&host) {
                 let uri = req_header
                     .uri
                     .path_and_query()
@@ -377,29 +378,46 @@ impl ProxyHttp for ContainrProxy {
         }
 
         // Find route for this host
-        match self.routes.select_upstream(host) {
-            Some(selection) => {
-                ctx.upstream_addr = Some(selection.address());
-                ctx.upstream_tls = false;
-                ctx.upstream_selection = Some(selection);
-                Ok(false) // Continue to upstream
-            }
-            None => {
-                warn!(host = %host, "no route found");
+        if let Some(route) = self.routes.get_route(&host) {
+            match self.routes.select_upstream(&host) {
+                Some(selection) => {
+                    ctx.upstream_addr = Some(selection.address());
+                    ctx.upstream_tls = false;
+                    ctx.upstream_selection = Some(selection);
+                    Ok(false)
+                }
+                None => {
+                    warn!(host = %host, service_id = ?route.service_id, "route is mapped but has no live upstream");
 
-                // Send 404 response
-                let body = "no route found";
-                let mut header = ResponseHeader::build(404, None)?;
-                header.insert_header("Content-Type", "text/plain")?;
-                header
-                    .insert_header("Content-Length", body.len().to_string())?;
-                session
-                    .write_response_header(Box::new(header), false)
-                    .await?;
-                session.write_response_body(Some(body.into()), true).await?;
+                    let body = "service is mapped but has no live upstream";
+                    let mut header = ResponseHeader::build(503, None)?;
+                    header.insert_header("Content-Type", "text/plain")?;
+                    header.insert_header(
+                        "Content-Length",
+                        body.len().to_string(),
+                    )?;
+                    session
+                        .write_response_header(Box::new(header), false)
+                        .await?;
+                    session.write_response_body(Some(body.into()), true).await?;
 
-                Ok(true) // Request handled
+                    Ok(true)
+                }
             }
+        } else {
+            warn!(host = %host, "no route found");
+
+            // Send 404 response
+            let body = "no route found";
+            let mut header = ResponseHeader::build(404, None)?;
+            header.insert_header("Content-Type", "text/plain")?;
+            header.insert_header("Content-Length", body.len().to_string())?;
+            session
+                .write_response_header(Box::new(header), false)
+                .await?;
+            session.write_response_body(Some(body.into()), true).await?;
+
+            Ok(true)
         }
     }
 

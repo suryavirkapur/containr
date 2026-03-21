@@ -855,24 +855,19 @@ async fn refresh_routes_for_app(
             }
         }
 
-        if upstreams.is_empty() {
-            routes.remove_route(&service_subdomain(&service, base_domain));
-            continue;
-        }
-
-        for custom_domain in service.custom_domains() {
+        for domain in domains_for_service(&service, base_domain) {
             routes.add_route(containr_proxy::routes::Route {
-                domain: custom_domain.clone(),
+                domain: domain.clone(),
                 app_id: Some(app.id),
                 service_id: Some(service.id),
                 upstreams: upstreams.clone(),
-                ssl_enabled: service.domain_https_enabled(&custom_domain),
+                ssl_enabled: service.domain_https_enabled(&domain),
                 algorithm,
             });
             tracing::info!(
-                domain = %custom_domain,
+                domain = %domain,
                 service = %service.name,
-                "refreshed custom domain route for service"
+                "refreshed service route"
             );
         }
     }
@@ -1032,6 +1027,19 @@ fn service_subdomain(
         .unwrap_or_else(|| service.name.clone())
 }
 
+fn domains_for_service(
+    service: &containr_common::models::ContainerService,
+    base_domain: &str,
+) -> Vec<String> {
+    let mut domains = vec![service_subdomain(service, base_domain)];
+    for domain in service.custom_domains() {
+        if !domains.iter().any(|existing| existing == &domain) {
+            domains.push(domain);
+        }
+    }
+    domains
+}
+
 fn active_http_container_ids(
     deployment: &containr_common::models::Deployment,
     service_id: uuid::Uuid,
@@ -1122,12 +1130,12 @@ fn resolve_api_host(host: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        active_http_container_ids, legacy_service_container_prefix,
-        select_exposed_service,
+        active_http_container_ids, domains_for_service,
+        legacy_service_container_prefix, select_exposed_service,
     };
     use containr_common::models::{
-        App, ContainerService, Deployment, DeploymentStatus, ServiceDeployment,
-        ServiceType,
+        default_service_domain, App, ContainerService, Deployment,
+        DeploymentStatus, ServiceDeployment, ServiceType,
     };
     use uuid::Uuid;
 
@@ -1256,6 +1264,39 @@ mod tests {
             active_http_container_ids(&deployment, service_id).unwrap();
         assert_eq!(container_ids.len(), 1);
         assert!(container_ids.contains("containr-legacy"));
+    }
+
+    #[test]
+    fn domains_for_service_includes_default_and_custom_domains() {
+        let owner_id = Uuid::new_v4();
+        let app = App::new(
+            "demo".to_string(),
+            "https://example.com/repo".to_string(),
+            owner_id,
+        );
+        let mut service = ContainerService::new(
+            app.id,
+            "api".to_string(),
+            "nginx:latest".to_string(),
+            3000,
+        );
+        service.service_type = ServiceType::WebService;
+        service.expose_http = true;
+        service.domains = vec![
+            "api.example.com".to_string(),
+            "api.example.com".to_string(),
+        ];
+
+        let domains = domains_for_service(&service, "adm.svk77.com");
+        assert_eq!(
+            domains.first(),
+            Some(
+                &default_service_domain(service.id, "adm.svk77.com")
+                    .unwrap()
+            )
+        );
+        assert_eq!(domains.len(), 2);
+        assert!(domains.contains(&"api.example.com".to_string()));
     }
 
     #[test]

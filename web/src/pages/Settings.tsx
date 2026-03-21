@@ -268,20 +268,10 @@ const Settings = () => {
                     Issue Dashboard Certificate
                   </button>
                 </div>
-                <Notice tone={currentSettings().wildcard_dns.ready ? 'success' : 'info'} title='Default Service Domains'>
-                  Set <strong>{currentSettings().wildcard_dns.wildcard_domain ?? 'the wildcard DNS record'}</strong> so public services can open on <strong>{currentSettings().default_service_domain_pattern ?? 'service-{random 5 lowercase letters}.domain.com'}</strong>.
-                  {' '}
-                  {currentSettings().wildcard_dns.detail}
-                </Notice>
                 <div class='border-t border-border pt-6'>
                   <KeyValueTable rows={[
                     ['Dashboard URL', <span class="font-mono text-xs">{currentSettings().dashboard_url ?? 'n/a'}</span>],
                     ['Public IP', <span class="font-mono text-xs">{currentSettings().public_ip ?? 'n/a'}</span>],
-                    ['Wildcard Domain', <span class="font-mono text-xs">{currentSettings().service_wildcard_domain ?? 'n/a'}</span>],
-                    ['Default Service Domain', <span class="font-mono text-xs">{currentSettings().default_service_domain_pattern ?? 'n/a'}</span>],
-                    ['Wildcard DNS Sample', <span class="font-mono text-xs">{currentSettings().wildcard_dns.sample_domain ?? 'n/a'}</span>],
-                    ['Wildcard DNS Ready', <span class={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider ${currentSettings().wildcard_dns.ready ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800'}`}>{currentSettings().wildcard_dns.ready ? 'Yes' : 'No'}</span>],
-                    ['Wildcard DNS Detail', <span>{currentSettings().wildcard_dns.detail}</span>],
                     ['API Port', <span>{currentSettings().api_port}</span>],
                     ['HTTP/HTTPS', <span>{currentSettings().http_port} / {currentSettings().https_port}</span>],
                     ['Log Directory', <span class='font-mono text-xs text-muted-foreground'>{currentSettings().log_dir}</span>],
