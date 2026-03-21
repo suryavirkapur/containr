@@ -3,6 +3,21 @@
 changelog
 =========
 
+0.1.18-alpha - 2026-03-21
+- full ui overhaul: replaced all ad-hoc tailwind utility strings with a design system of cr-* classes (cr-btn, cr-input, cr-panel, cr-table, cr-badge, cr-chip, cr-nav-item, cr-tab, cr-project-card)
+- switched font to geist sans + geist mono from npm package (self-hosted woff2 files, no cdn dependency)
+- set border-radius to 0 everywhere (--radius: 0px), dark-first color tokens only
+- removed top header entirely; sidebar now owns all navigation (brand, nav links, new service button, logout)
+- simplified sidebar: no collapse, no theme toggle, fixed 220px width with left-border active indicator
+- remade services page as render-style projects + table: network group cards at top (click to filter), clean 5-column table below (name, status, project, endpoint, updated); removed status/kind filter dropdowns and createservicecard banner
+- remade service-detail page: removed stat cards and container ids; header shows name + status badge inline; tabs are networking / app configs / deployment / logs
+- networking tab: added "move to project" section (change group_id via updateservice api), per-domain https toggles, clickable default url
+- app configs tab: inline add-row for env vars (+ cancel), bulk-edit mode toggle, replicas field, auto-deploy/webhooks section
+- deployment tab: deploy form + port info + version history accordions with expand/collapse row, inline build log streaming per deployment
+- logs tab: full-height logviewer panel
+- rebuilt plain.tsx, statusbadge.tsx, tabs.tsx with new design system classes
+- rewrote login.tsx to use publicsell + cr-* form classes
+
 0.1.17-alpha - 2026-03-21
 - deployments tab: each row is now an accordion — click to expand inline metadata grid (status, created, started, finished, commit sha), action buttons (rollback, reconnect logs), and scrollable build log panel inside the row
 - service summary: endpoint for managed services (postgres, redis, rabbitmq, etc.) is now hidden behind a blur/reveal toggle instead of displayed in plaintext
