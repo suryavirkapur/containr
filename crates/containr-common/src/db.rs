@@ -43,7 +43,7 @@ const STORAGE_BUCKETS_TABLE: &str = "metadata_storage_buckets";
 const GITHUB_APPS_TABLE: &str = "metadata_github_apps";
 const MAX_HTTP_REQUEST_LOGS_PER_SERVICE: i64 = 2_000;
 
-const MIGRATOR: Migrator = sqlx::migrate!("./sqlx_migrations");
+const MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 
 fn safe_sql(statement: String) -> sqlx::AssertSqlSafe<String> {
     sqlx::AssertSqlSafe(statement)
