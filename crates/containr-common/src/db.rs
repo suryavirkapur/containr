@@ -1,4 +1,4 @@
-//! metadata database access for containr
+//! Database layer for containr using proper relational tables
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -6,58 +6,45 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use serde::{de::DeserializeOwned, Serialize};
+use chrono::{DateTime, Utc};
+use serde_json;
 use sqlx::migrate::Migrator;
 use sqlx::sqlite::{
-    SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions,
-    SqliteSynchronous,
+    Sqlite, SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions,
+    SqliteRow, SqliteSynchronous,
 };
-use sqlx::{Pool, Row, Sqlite};
+use sqlx::{Pool, Row};
 use uuid::Uuid;
 
 use crate::config::DatabaseConfig;
 use crate::error::{Error, Result};
 use crate::managed_services::{
-    ManagedDatabase, ManagedQueue, ServiceStatus, StorageBucket,
+    DatabaseCredentials, DatabaseType, ManagedDatabase, ManagedQueue,
+    QueueCredentials, QueueType, ServiceStatus, StorageBucket,
 };
 use crate::models::{
-    App, Certificate, ContainerService, Deployment, GithubAppConfig,
-    HttpRequestLog, Project, ServiceDeployment,
+    App, BuildArg, Certificate, ContainerService, Deployment, DeploymentStatus,
+    EnvVar, GithubAppConfig, GithubInstallation, HealthCheck, HttpRequestLog,
+    Project, RestartPolicy, RolloutStrategy, ServiceDeployment, ServiceHealth,
+    ServiceMount, ServiceRegistryAuth, ServiceType, User,
 };
 use crate::service_inventory::{
     summarize_app_service_runtime, ServiceInventoryItem, ServiceResourceKind,
     ServiceRuntimeStatus,
 };
 
-const USERS_TABLE: &str = "metadata_users";
-const APPS_TABLE: &str = "metadata_apps";
-const SERVICES_TABLE: &str = "metadata_services";
-const SERVICE_DEPLOYMENTS_TABLE: &str = "metadata_service_deployments";
-const DEPLOYMENTS_TABLE: &str = "metadata_deployments";
-const DEPLOYMENT_LOGS_TABLE: &str = "metadata_deployment_logs";
-const HTTP_REQUEST_LOGS_TABLE: &str = "metadata_http_request_logs";
-const CERTIFICATES_TABLE: &str = "metadata_certificates";
-const MANAGED_DATABASES_TABLE: &str = "metadata_managed_databases";
-const MANAGED_QUEUES_TABLE: &str = "metadata_managed_queues";
-const STORAGE_BUCKETS_TABLE: &str = "metadata_storage_buckets";
-const GITHUB_APPS_TABLE: &str = "metadata_github_apps";
-const MAX_HTTP_REQUEST_LOGS_PER_SERVICE: i64 = 2_000;
-
 const MIGRATOR: Migrator = sqlx::migrate!("./migrations");
+const MAX_HTTP_REQUEST_LOGS_PER_SERVICE: i64 = 2000;
 
-fn safe_sql(statement: String) -> sqlx::AssertSqlSafe<String> {
-    sqlx::AssertSqlSafe(statement)
-}
-
-/// database wrapper providing typed access through a sqlite/sqlx store
+/// Database wrapper providing typed access through sqlite/sqlx store
 #[derive(Clone)]
 pub struct Database {
-    store: Arc<SqliteJsonDatabase>,
+    store: Arc<SqliteDatabase>,
 }
 
 impl Database {
     pub fn open(config: &DatabaseConfig) -> Result<Self> {
-        let store = SqliteJsonDatabase::open(&config.sqlite_path())?;
+        let store = SqliteDatabase::open(&config.sqlite_path())?;
         Ok(Self {
             store: Arc::new(store),
         })
@@ -67,38 +54,35 @@ impl Database {
         self.store.flush()
     }
 
-    pub fn save_user(&self, user: &crate::models::User) -> Result<()> {
+    pub fn save_user(&self, user: &User) -> Result<()> {
         self.store.save_user(user)
     }
 
-    pub fn get_user(&self, id: Uuid) -> Result<Option<crate::models::User>> {
+    pub fn get_user(&self, id: Uuid) -> Result<Option<User>> {
         self.store.get_user(id)
     }
 
-    pub fn list_users(&self) -> Result<Vec<crate::models::User>> {
+    pub fn list_users(&self) -> Result<Vec<User>> {
         self.store.list_users()
     }
 
     pub fn has_admin_user(&self) -> Result<bool> {
-        Ok(self.list_users()?.into_iter().any(|user| user.is_admin))
+        Ok(self.list_users()?.into_iter().any(|u| u.is_admin))
     }
 
-    pub fn get_user_by_email(
-        &self,
-        email: &str,
-    ) -> Result<Option<crate::models::User>> {
+    pub fn get_user_by_email(&self, email: &str) -> Result<Option<User>> {
         self.store.get_user_by_email(email)
     }
 
     pub fn get_user_by_github_id(
         &self,
         github_id: i64,
-    ) -> Result<Option<crate::models::User>> {
+    ) -> Result<Option<User>> {
         self.store.get_user_by_github_id(github_id)
     }
 
     pub fn save_app(&self, app: &App) -> Result<()> {
-        self.store.save_app(&app.normalized_for_service_model())
+        self.store.save_app(app)
     }
 
     pub fn save_project(&self, project: &Project) -> Result<()> {
@@ -106,10 +90,7 @@ impl Database {
     }
 
     pub fn get_app(&self, id: Uuid) -> Result<Option<App>> {
-        Ok(self
-            .store
-            .get_app(id)?
-            .map(|app| app.normalized_for_service_model()))
+        self.store.get_app(id)
     }
 
     pub fn get_project(&self, id: Uuid) -> Result<Option<Project>> {
@@ -117,12 +98,7 @@ impl Database {
     }
 
     pub fn list_apps(&self) -> Result<Vec<App>> {
-        Ok(self
-            .store
-            .list_apps()?
-            .into_iter()
-            .map(|app| app.normalized_for_service_model())
-            .collect())
+        self.store.list_apps()
     }
 
     pub fn list_projects(&self) -> Result<Vec<Project>> {
@@ -130,12 +106,7 @@ impl Database {
     }
 
     pub fn list_apps_by_owner(&self, owner_id: Uuid) -> Result<Vec<App>> {
-        Ok(self
-            .store
-            .list_apps_by_owner(owner_id)?
-            .into_iter()
-            .map(|app| app.normalized_for_service_model())
-            .collect())
+        self.store.list_apps_by_owner(owner_id)
     }
 
     pub fn list_projects_by_owner(
@@ -146,10 +117,7 @@ impl Database {
     }
 
     pub fn get_app_by_domain(&self, domain: &str) -> Result<Option<App>> {
-        Ok(self
-            .store
-            .get_app_by_domain(domain)?
-            .map(|app| app.normalized_for_service_model()))
+        self.store.get_app_by_domain(domain)
     }
 
     pub fn get_project_by_domain(
@@ -172,10 +140,7 @@ impl Database {
         github_url: &str,
         branch: &str,
     ) -> Result<Option<App>> {
-        Ok(self
-            .store
-            .get_app_by_github_url(github_url, branch)?
-            .map(|app| app.normalized_for_service_model()))
+        self.store.get_app_by_github_url(github_url, branch)
     }
 
     pub fn get_project_by_github_url(
@@ -208,8 +173,8 @@ impl Database {
     pub fn delete_services_by_app(&self, app_id: Uuid) -> Result<usize> {
         let services = self.list_services_by_app(app_id)?;
         let count = services.len();
-        for service in services {
-            self.delete_service(service.id)?;
+        for s in services {
+            self.delete_service(s.id)?;
         }
         Ok(count)
     }
@@ -272,9 +237,9 @@ impl Database {
     pub fn append_deployment_log(
         &self,
         deployment_id: Uuid,
-        log_line: &str,
+        line: &str,
     ) -> Result<()> {
-        self.store.append_deployment_log(deployment_id, log_line)
+        self.store.append_deployment_log(deployment_id, line)
     }
 
     pub fn get_deployment_logs(
@@ -307,16 +272,16 @@ impl Database {
         self.store.save_certificate(cert)
     }
 
-    pub fn get_certificate(&self, domain: &str) -> Result<Option<Certificate>> {
-        self.store.get_certificate(domain)
+    pub fn get_certificate(&self, id: Uuid) -> Result<Option<Certificate>> {
+        self.store.get_certificate(id)
     }
 
     pub fn list_certificates(&self) -> Result<Vec<Certificate>> {
         self.store.list_certificates()
     }
 
-    pub fn delete_certificate(&self, domain: &str) -> Result<bool> {
-        self.store.delete_certificate(domain)
+    pub fn delete_certificate(&self, id: Uuid) -> Result<bool> {
+        self.store.delete_certificate(id)
     }
 
     pub fn save_managed_database(&self, db: &ManagedDatabase) -> Result<()> {
@@ -360,209 +325,6 @@ impl Database {
         self.store.delete_managed_queue(id)
     }
 
-    pub fn list_service_inventory_by_owner(
-        &self,
-        owner_id: Uuid,
-    ) -> Result<Vec<ServiceInventoryItem>> {
-        self.list_service_inventory_by_owner_and_group(owner_id, None)
-    }
-
-    pub fn list_service_inventory_by_owner_and_group(
-        &self,
-        owner_id: Uuid,
-        group_id: Option<Uuid>,
-    ) -> Result<Vec<ServiceInventoryItem>> {
-        let apps = self.list_apps_by_owner(owner_id)?;
-        let group_names = apps
-            .iter()
-            .map(|app| (app.id, app.name.clone()))
-            .collect::<HashMap<_, _>>();
-        let mut inventory = Vec::new();
-
-        for app in &apps {
-            if let Some(filter_group_id) = group_id {
-                if app.id != filter_group_id {
-                    continue;
-                }
-            }
-
-            let deployments = self.list_deployments_by_app(app.id)?;
-            for service in &app.services {
-                let runtime =
-                    summarize_app_service_runtime(service, &deployments);
-                let image = runtime.image.clone().or_else(|| {
-                    if service.image.trim().is_empty() {
-                        None
-                    } else {
-                        Some(service.image.clone())
-                    }
-                });
-
-                inventory.push(ServiceInventoryItem {
-                    id: service.id,
-                    owner_id: app.owner_id,
-                    group_id: Some(app.id),
-                    project_id: Some(app.id),
-                    project_name: Some(app.name.clone()),
-                    resource_kind: ServiceResourceKind::AppService,
-                    service_type: service.service_type,
-                    name: service.name.clone(),
-                    image,
-                    status: runtime.status,
-                    network_name: app.network_name(),
-                    internal_host: Some(service.name.clone()),
-                    port: if service.port == 0 {
-                        None
-                    } else {
-                        Some(service.port)
-                    },
-                    external_port: None,
-                    proxy_port: None,
-                    proxy_external_port: None,
-                    connection_string: None,
-                    proxy_connection_string: None,
-                    domains: service.custom_domains(),
-                    http_only_domains: service.http_only_domains(),
-                    schedule: service.schedule.clone(),
-                    public_http: service.is_public_http(),
-                    desired_instances: runtime.desired_instances,
-                    running_instances: runtime.running_instances,
-                    container_ids: runtime.container_ids,
-                    deployment_id: runtime.deployment_id,
-                    pitr_enabled: false,
-                    proxy_enabled: false,
-                    created_at: service.created_at,
-                    updated_at: service.updated_at,
-                });
-            }
-        }
-
-        for database in self.list_managed_databases_by_owner(owner_id)? {
-            if group_id.is_some() && database.group_id != group_id {
-                continue;
-            }
-
-            inventory.push(ServiceInventoryItem {
-                id: database.id,
-                owner_id: database.owner_id,
-                group_id: database.group_id,
-                project_id: database.group_id,
-                project_name: database
-                    .group_id
-                    .and_then(|value| group_names.get(&value).cloned()),
-                resource_kind: ServiceResourceKind::ManagedDatabase,
-                service_type: database.db_type.service_type(),
-                name: database.name.clone(),
-                image: Some(database.docker_image()),
-                status: ServiceRuntimeStatus::from_managed_status(
-                    database.status,
-                ),
-                network_name: database.network_name(),
-                internal_host: Some(database.normalized_internal_host()),
-                port: Some(database.port),
-                external_port: database.external_port,
-                proxy_port: database.proxy_port(),
-                proxy_external_port: database.proxy_external_port,
-                connection_string: Some(database.connection_string()),
-                proxy_connection_string: database.proxy_connection_string(),
-                domains: Vec::new(),
-                http_only_domains: Vec::new(),
-                schedule: None,
-                public_http: false,
-                desired_instances: 1,
-                running_instances: if matches!(
-                    database.status,
-                    ServiceStatus::Running
-                ) {
-                    1
-                } else {
-                    0
-                },
-                container_ids: database
-                    .container_id
-                    .clone()
-                    .into_iter()
-                    .collect(),
-                deployment_id: None,
-                pitr_enabled: database.pitr_enabled,
-                proxy_enabled: database.proxy_enabled,
-                created_at: database.created_at,
-                updated_at: database.updated_at,
-            });
-        }
-
-        for queue in self.list_managed_queues_by_owner(owner_id)? {
-            if group_id.is_some() && queue.group_id != group_id {
-                continue;
-            }
-
-            inventory.push(ServiceInventoryItem {
-                id: queue.id,
-                owner_id: queue.owner_id,
-                group_id: queue.group_id,
-                project_id: queue.group_id,
-                project_name: queue
-                    .group_id
-                    .and_then(|value| group_names.get(&value).cloned()),
-                resource_kind: ServiceResourceKind::ManagedQueue,
-                service_type: queue.queue_type.service_type(),
-                name: queue.name.clone(),
-                image: Some(queue.docker_image()),
-                status: ServiceRuntimeStatus::from_managed_status(queue.status),
-                network_name: queue.network_name(),
-                internal_host: Some(queue.normalized_internal_host()),
-                port: Some(queue.port),
-                external_port: queue.external_port,
-                proxy_port: None,
-                proxy_external_port: None,
-                connection_string: Some(queue.connection_string()),
-                proxy_connection_string: None,
-                domains: Vec::new(),
-                http_only_domains: Vec::new(),
-                schedule: None,
-                public_http: false,
-                desired_instances: 1,
-                running_instances: if matches!(
-                    queue.status,
-                    ServiceStatus::Running
-                ) {
-                    1
-                } else {
-                    0
-                },
-                container_ids: queue.container_id.clone().into_iter().collect(),
-                deployment_id: None,
-                pitr_enabled: false,
-                proxy_enabled: false,
-                created_at: queue.created_at,
-                updated_at: queue.updated_at,
-            });
-        }
-
-        inventory.sort_by(|left, right| {
-            let left_group = left.project_name.as_deref().unwrap_or("");
-            let right_group = right.project_name.as_deref().unwrap_or("");
-
-            left_group
-                .cmp(right_group)
-                .then_with(|| left.name.cmp(&right.name))
-                .then_with(|| left.created_at.cmp(&right.created_at))
-        });
-
-        Ok(inventory)
-    }
-
-    pub fn get_service_inventory_by_id(
-        &self,
-        owner_id: Uuid,
-        service_id: Uuid,
-    ) -> Result<Option<ServiceInventoryItem>> {
-        Ok(self
-            .list_service_inventory_by_owner(owner_id)?
-            .into_iter()
-            .find(|service| service.id == service_id))
-    }
-
     pub fn save_storage_bucket(&self, bucket: &StorageBucket) -> Result<()> {
         self.store.save_storage_bucket(bucket)
     }
@@ -599,14 +361,201 @@ impl Database {
     pub fn delete_github_app(&self, owner_id: Uuid) -> Result<bool> {
         self.store.delete_github_app(owner_id)
     }
+
+    pub fn list_service_inventory_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ServiceInventoryItem>> {
+        self.list_service_inventory_by_owner_and_group(owner_id, None)
+    }
+
+    pub fn list_service_inventory_by_owner_and_group(
+        &self,
+        owner_id: Uuid,
+        group_id: Option<Uuid>,
+    ) -> Result<Vec<ServiceInventoryItem>> {
+        let apps = self.list_apps_by_owner(owner_id)?;
+        let group_names: HashMap<Uuid, String> =
+            apps.iter().map(|a| (a.id, a.name.clone())).collect();
+        let mut inventory = Vec::new();
+
+        for app in &apps {
+            if let Some(gid) = group_id {
+                if app.id != gid {
+                    continue;
+                }
+            }
+
+            let deployments = self.list_deployments_by_app(app.id)?;
+            for svc in &app.services {
+                let runtime = summarize_app_service_runtime(svc, &deployments);
+                let image = runtime.image.clone().or_else(|| {
+                    if svc.image.trim().is_empty() {
+                        None
+                    } else {
+                        Some(svc.image.clone())
+                    }
+                });
+
+                inventory.push(ServiceInventoryItem {
+                    id: svc.id,
+                    owner_id: app.owner_id,
+                    group_id: Some(app.id),
+                    project_id: Some(app.id),
+                    project_name: Some(app.name.clone()),
+                    resource_kind: ServiceResourceKind::AppService,
+                    service_type: svc.service_type,
+                    name: svc.name.clone(),
+                    image,
+                    status: runtime.status,
+                    network_name: app.network_name(),
+                    internal_host: Some(svc.name.clone()),
+                    port: if svc.port == 0 { None } else { Some(svc.port) },
+                    external_port: None,
+                    proxy_port: None,
+                    proxy_external_port: None,
+                    connection_string: None,
+                    proxy_connection_string: None,
+                    domains: svc.custom_domains(),
+                    http_only_domains: svc.http_only_domains(),
+                    schedule: svc.schedule.clone(),
+                    public_http: svc.is_public_http(),
+                    desired_instances: runtime.desired_instances,
+                    running_instances: runtime.running_instances,
+                    container_ids: runtime.container_ids,
+                    deployment_id: runtime.deployment_id,
+                    pitr_enabled: false,
+                    proxy_enabled: false,
+                    created_at: svc.created_at,
+                    updated_at: svc.updated_at,
+                });
+            }
+        }
+
+        for db in self.list_managed_databases_by_owner(owner_id)? {
+            if group_id.is_some() && db.group_id != group_id {
+                continue;
+            }
+            inventory.push(ServiceInventoryItem {
+                id: db.id,
+                owner_id: db.owner_id,
+                group_id: db.group_id,
+                project_id: db.group_id,
+                project_name: db
+                    .group_id
+                    .and_then(|gid| group_names.get(&gid).cloned()),
+                resource_kind: ServiceResourceKind::ManagedDatabase,
+                service_type: db.db_type.service_type(),
+                name: db.name.clone(),
+                image: Some(db.docker_image()),
+                status: ServiceRuntimeStatus::from_managed_status(db.status),
+                network_name: db.network_name(),
+                internal_host: Some(db.normalized_internal_host()),
+                port: Some(db.port),
+                external_port: db.external_port,
+                proxy_port: db.proxy_port(),
+                proxy_external_port: db.proxy_external_port,
+                connection_string: Some(db.connection_string()),
+                proxy_connection_string: db.proxy_connection_string(),
+                domains: Vec::new(),
+                http_only_domains: Vec::new(),
+                schedule: None,
+                public_http: false,
+                desired_instances: 1,
+                running_instances: if matches!(
+                    db.status,
+                    ServiceStatus::Running
+                ) {
+                    1
+                } else {
+                    0
+                },
+                container_ids: db.container_id.clone().into_iter().collect(),
+                deployment_id: None,
+                pitr_enabled: db.pitr_enabled,
+                proxy_enabled: db.proxy_enabled,
+                created_at: db.created_at,
+                updated_at: db.updated_at,
+            });
+        }
+
+        for queue in self.list_managed_queues_by_owner(owner_id)? {
+            if group_id.is_some() && queue.group_id != group_id {
+                continue;
+            }
+            inventory.push(ServiceInventoryItem {
+                id: queue.id,
+                owner_id: queue.owner_id,
+                group_id: queue.group_id,
+                project_id: queue.group_id,
+                project_name: queue
+                    .group_id
+                    .and_then(|gid| group_names.get(&gid).cloned()),
+                resource_kind: ServiceResourceKind::ManagedQueue,
+                service_type: queue.queue_type.service_type(),
+                name: queue.name.clone(),
+                image: Some(queue.docker_image()),
+                status: ServiceRuntimeStatus::from_managed_status(queue.status),
+                network_name: queue.network_name(),
+                internal_host: Some(queue.normalized_internal_host()),
+                port: Some(queue.port),
+                external_port: queue.external_port,
+                proxy_port: None,
+                proxy_external_port: None,
+                connection_string: Some(queue.connection_string()),
+                proxy_connection_string: None,
+                domains: Vec::new(),
+                http_only_domains: Vec::new(),
+                schedule: None,
+                public_http: false,
+                desired_instances: 1,
+                running_instances: if matches!(
+                    queue.status,
+                    ServiceStatus::Running
+                ) {
+                    1
+                } else {
+                    0
+                },
+                container_ids: queue.container_id.clone().into_iter().collect(),
+                deployment_id: None,
+                pitr_enabled: false,
+                proxy_enabled: false,
+                created_at: queue.created_at,
+                updated_at: queue.updated_at,
+            });
+        }
+
+        inventory.sort_by(|l, r| {
+            let lg = l.project_name.as_deref().unwrap_or("");
+            let rg = r.project_name.as_deref().unwrap_or("");
+            lg.cmp(rg)
+                .then_with(|| l.name.cmp(&r.name))
+                .then_with(|| l.created_at.cmp(&r.created_at))
+        });
+
+        Ok(inventory)
+    }
+
+    pub fn get_service_inventory_by_id(
+        &self,
+        owner_id: Uuid,
+        service_id: Uuid,
+    ) -> Result<Option<ServiceInventoryItem>> {
+        Ok(self
+            .list_service_inventory_by_owner(owner_id)?
+            .into_iter()
+            .find(|s| s.id == service_id))
+    }
 }
 
-struct SqliteJsonDatabase {
+/// SQLite database implementation
+struct SqliteDatabase {
     runtime: std::sync::Mutex<Option<tokio::runtime::Runtime>>,
     pool: Pool<Sqlite>,
 }
 
-impl SqliteJsonDatabase {
+impl SqliteDatabase {
     fn open(path: &Path) -> Result<Self> {
         ensure_parent_dir(path)?;
         let runtime = std::sync::Mutex::new(Some(
@@ -614,11 +563,8 @@ impl SqliteJsonDatabase {
                 .worker_threads(1)
                 .enable_all()
                 .build()
-                .map_err(|error| {
-                    Error::Internal(format!(
-                        "failed to build sqlite runtime: {}",
-                        error
-                    ))
+                .map_err(|e| {
+                    Error::Internal(format!("failed to build runtime: {}", e))
                 })?,
         ));
 
@@ -630,7 +576,7 @@ impl SqliteJsonDatabase {
             .busy_timeout(StdDuration::from_secs(5))
             .foreign_keys(true);
 
-        let pool = run_with_runtime(&runtime, async {
+        let pool = Self::run_with_runtime(&runtime, async {
             SqlitePoolOptions::new()
                 .max_connections(1)
                 .connect_with(options)
@@ -654,7 +600,40 @@ impl SqliteJsonDatabase {
     where
         T: Send,
     {
-        run_with_runtime(&self.runtime, future)
+        Self::run_with_runtime(&self.runtime, future)
+    }
+
+    fn run_with_runtime<T>(
+        runtime: &std::sync::Mutex<Option<tokio::runtime::Runtime>>,
+        future: impl Future<Output = Result<T>> + Send,
+    ) -> Result<T>
+    where
+        T: Send,
+    {
+        if tokio::runtime::Handle::try_current().is_ok() {
+            std::thread::scope(|scope| {
+                let task = scope.spawn(|| {
+                    let runtime = runtime.lock().map_err(|_| {
+                        Error::Internal("runtime mutex poisoned".to_string())
+                    })?;
+                    let runtime = runtime.as_ref().ok_or_else(|| {
+                        Error::Internal("runtime not available".to_string())
+                    })?;
+                    runtime.block_on(future)
+                });
+                task.join().map_err(|_| {
+                    Error::Internal("runtime worker panicked".to_string())
+                })?
+            })
+        } else {
+            let runtime = runtime.lock().map_err(|_| {
+                Error::Internal("runtime mutex poisoned".to_string())
+            })?;
+            let runtime = runtime.as_ref().ok_or_else(|| {
+                Error::Internal("runtime not available".to_string())
+            })?;
+            runtime.block_on(future)
+        }
     }
 
     fn flush(&self) -> Result<()> {
@@ -667,78 +646,111 @@ impl SqliteJsonDatabase {
         })
     }
 
-    fn save_user(&self, user: &crate::models::User) -> Result<()> {
-        self.put_json(USERS_TABLE, &user.id.to_string(), user)
+    // ==================== USER ====================
+    fn save_user(&self, user: &User) -> Result<()> {
+        self.run(async {
+            sqlx::query(
+                r#"INSERT INTO users (id, email, password_hash, github_id, github_username, github_access_token, is_admin, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET email=excluded.email, password_hash=excluded.password_hash, github_id=excluded.github_id, github_username=excluded.github_username, github_access_token=excluded.github_access_token, is_admin=excluded.is_admin, updated_at=excluded.updated_at"#
+            )
+            .bind(user.id.to_string())
+            .bind(&user.email)
+            .bind(&user.password_hash)
+            .bind(user.github_id)
+            .bind(&user.github_username)
+            .bind(&user.github_access_token)
+            .bind(if user.is_admin { 1 } else { 0 })
+            .bind(user.created_at.to_rfc3339())
+            .bind(user.updated_at.to_rfc3339())
+            .execute(&self.pool).await.map_err(Error::from)?;
+            Ok(())
+        })
     }
 
-    fn get_user(&self, id: Uuid) -> Result<Option<crate::models::User>> {
-        self.get_json(USERS_TABLE, &id.to_string())
+    fn get_user(&self, id: Uuid) -> Result<Option<User>> {
+        self.run(async {
+            let row = sqlx::query("SELECT * FROM users WHERE id = ?")
+                .bind(id.to_string())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            row_to_user(row.as_ref())
+        })
     }
 
-    fn list_users(&self) -> Result<Vec<crate::models::User>> {
-        let mut users: Vec<crate::models::User> =
-            self.list_json(USERS_TABLE)?;
-        users.sort_by(|left, right| left.created_at.cmp(&right.created_at));
-        Ok(users)
+    fn list_users(&self) -> Result<Vec<User>> {
+        self.run(async {
+            let rows =
+                sqlx::query("SELECT * FROM users ORDER BY created_at ASC")
+                    .fetch_all(&self.pool)
+                    .await
+                    .map_err(Error::from)?;
+            let mut users = Vec::new();
+            for row in rows {
+                if let Some(u) = row_to_user(Some(&row))? {
+                    users.push(u);
+                }
+            }
+            Ok(users)
+        })
     }
 
-    fn get_user_by_email(
-        &self,
-        email: &str,
-    ) -> Result<Option<crate::models::User>> {
-        Ok(self
-            .list_users()?
-            .into_iter()
-            .find(|user| user.email == email))
+    fn get_user_by_email(&self, email: &str) -> Result<Option<User>> {
+        self.run(async {
+            let row = sqlx::query("SELECT * FROM users WHERE email = ?")
+                .bind(email)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            row_to_user(row.as_ref())
+        })
     }
 
-    fn get_user_by_github_id(
-        &self,
-        github_id: i64,
-    ) -> Result<Option<crate::models::User>> {
-        Ok(self
-            .list_users()?
-            .into_iter()
-            .find(|user| user.github_id == Some(github_id)))
+    fn get_user_by_github_id(&self, github_id: i64) -> Result<Option<User>> {
+        self.run(async {
+            let row = sqlx::query("SELECT * FROM users WHERE github_id = ?")
+                .bind(github_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            row_to_user(row.as_ref())
+        })
     }
 
+    // ==================== APP ====================
     fn save_app(&self, app: &App) -> Result<()> {
         self.run(async {
             let mut tx = self.pool.begin().await.map_err(Error::from)?;
-            let mut app_record = app.clone();
-            app_record.services.clear();
-            let value = serde_json::to_string(&app_record)?;
 
-            sqlx::query(safe_sql(format!(
-                "insert into {APPS_TABLE} (key, value) values (?1, ?2)
-                 on conflict(key) do update set value = excluded.value"
-            )))
+            sqlx::query(
+                r#"INSERT INTO apps (id, name, github_url, branch, domains, env_vars, auto_deploy_enabled, auto_deploy_watch_paths, auto_deploy_cleanup_stale_deployments, deploy_webhook_token, port, rollout_strategy, owner_id, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET name=excluded.name, github_url=excluded.github_url, branch=excluded.branch, domains=excluded.domains, env_vars=excluded.env_vars, auto_deploy_enabled=excluded.auto_deploy_enabled, auto_deploy_watch_paths=excluded.auto_deploy_watch_paths, auto_deploy_cleanup_stale_deployments=excluded.auto_deploy_cleanup_stale_deployments, deploy_webhook_token=excluded.deploy_webhook_token, port=excluded.port, rollout_strategy=excluded.rollout_strategy, owner_id=excluded.owner_id, updated_at=excluded.updated_at"#
+            )
             .bind(app.id.to_string())
-            .bind(value)
-            .execute(&mut *tx)
-            .await
-            .map_err(Error::from)?;
+            .bind(&app.name)
+            .bind(&app.github_url)
+            .bind(&app.branch)
+            .bind(serde_json::to_string(&app.domains)?)
+            .bind(serde_json::to_string(&app.env_vars)?)
+            .bind(if app.auto_deploy_enabled { 1 } else { 0 })
+            .bind(serde_json::to_string(&app.auto_deploy_watch_paths)?)
+            .bind(if app.auto_deploy_cleanup_stale_deployments { 1 } else { 0 })
+            .bind(&app.deploy_webhook_token)
+            .bind(app.port as i64)
+            .bind(serde_json::to_string(&app.rollout_strategy)?)
+            .bind(app.owner_id.to_string())
+            .bind(app.created_at.to_rfc3339())
+            .bind(app.updated_at.to_rfc3339())
+            .execute(&mut *tx).await.map_err(Error::from)?;
 
-            sqlx::query(safe_sql(format!(
-                "delete from {SERVICES_TABLE} where app_id = ?1"
-            )))
-            .bind(app.id.to_string())
-            .execute(&mut *tx)
-            .await
-            .map_err(Error::from)?;
-
-            for service in &app.services {
-                let service_value = serde_json::to_string(service)?;
-                sqlx::query(safe_sql(format!(
-                    "insert into {SERVICES_TABLE} (key, app_id, value)
-                     values (?1, ?2, ?3)"
-                )))
-                .bind(service.id.to_string())
+            sqlx::query("DELETE FROM services WHERE app_id = ?")
                 .bind(app.id.to_string())
-                .bind(service_value)
-                .execute(&mut *tx)
-                .await
-                .map_err(Error::from)?;
+                .execute(&mut *tx).await.map_err(Error::from)?;
+
+            for svc in &app.services {
+                insert_service(&mut tx, svc).await?;
             }
 
             tx.commit().await.map_err(Error::from)?;
@@ -747,68 +759,89 @@ impl SqliteJsonDatabase {
     }
 
     fn get_app(&self, id: Uuid) -> Result<Option<App>> {
-        let Some(mut app) =
-            self.get_json::<App>(APPS_TABLE, &id.to_string())?
-        else {
-            return Ok(None);
-        };
-        app.services = self.list_services_by_app(app.id)?;
-        Ok(Some(app))
+        let mut app = self.run(async {
+            let row = sqlx::query("SELECT * FROM apps WHERE id = ?")
+                .bind(id.to_string())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            row_to_app(row.as_ref())
+        })?;
+        if let Some(ref mut a) = app {
+            a.services = self.list_services_by_app(a.id)?;
+        }
+        Ok(app)
     }
 
     fn list_apps(&self) -> Result<Vec<App>> {
-        let apps = self.list_json::<App>(APPS_TABLE)?;
-        self.populate_app_services(apps)
+        let apps = self.run(async {
+            let rows =
+                sqlx::query("SELECT * FROM apps ORDER BY created_at DESC")
+                    .fetch_all(&self.pool)
+                    .await
+                    .map_err(Error::from)?;
+            let mut apps = Vec::new();
+            for row in rows {
+                if let Some(a) = row_to_app(Some(&row))? {
+                    apps.push(a);
+                }
+            }
+            Ok(apps)
+        })?;
+        let mut result = Vec::new();
+        for mut a in apps {
+            a.services = self.list_services_by_app(a.id)?;
+            result.push(a);
+        }
+        Ok(result)
     }
 
     fn list_apps_by_owner(&self, owner_id: Uuid) -> Result<Vec<App>> {
-        let apps = self
-            .list_apps()?
-            .into_iter()
-            .filter(|app| app.owner_id == owner_id)
-            .collect::<Vec<_>>();
-        Ok(apps)
+        let apps = self.run(async {
+            let rows = sqlx::query("SELECT * FROM apps WHERE owner_id = ? ORDER BY created_at DESC")
+                .bind(owner_id.to_string())
+                .fetch_all(&self.pool).await.map_err(Error::from)?;
+            let mut apps = Vec::new();
+            for row in rows {
+                if let Some(a) = row_to_app(Some(&row))? {
+                    apps.push(a);
+                }
+            }
+            Ok(apps)
+        })?;
+        let mut result = Vec::new();
+        for mut a in apps {
+            a.services = self.list_services_by_app(a.id)?;
+            result.push(a);
+        }
+        Ok(result)
     }
 
     fn get_app_by_domain(&self, domain: &str) -> Result<Option<App>> {
-        Ok(self
-            .list_apps()?
+        let apps = self.list_apps()?;
+        Ok(apps
             .into_iter()
-            .find(|app| app.custom_domains().iter().any(|item| item == domain)))
+            .find(|a| a.custom_domains().iter().any(|d| d == domain)))
     }
 
     fn delete_app(&self, id: Uuid) -> Result<bool> {
         let Some(app) = self.get_app(id)? else {
             return Ok(false);
         };
-
-        for deployment in self.list_deployments_by_app(app.id)? {
-            let _ = self.delete_deployment(deployment.id)?;
+        for dep in self.list_deployments_by_app(app.id)? {
+            let _ = self.delete_deployment(dep.id);
         }
-        for service in &app.services {
-            let _ = self.delete_http_request_logs(service.id)?;
+        for svc in &app.services {
+            let _ = self.delete_http_request_logs(svc.id);
         }
-
         self.run(async {
-            let mut tx = self.pool.begin().await.map_err(Error::from)?;
-            sqlx::query(safe_sql(format!(
-                "delete from {SERVICES_TABLE} where app_id = ?1"
-            )))
-            .bind(id.to_string())
-            .execute(&mut *tx)
-            .await
-            .map_err(Error::from)?;
-            sqlx::query(safe_sql(format!(
-                "delete from {APPS_TABLE} where key = ?1"
-            )))
-            .bind(id.to_string())
-            .execute(&mut *tx)
-            .await
-            .map_err(Error::from)?;
-            tx.commit().await.map_err(Error::from)?;
+            sqlx::query("DELETE FROM apps WHERE id = ?")
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
             Ok(())
         })?;
-
         Ok(true)
     }
 
@@ -817,132 +850,235 @@ impl SqliteJsonDatabase {
         github_url: &str,
         branch: &str,
     ) -> Result<Option<App>> {
-        let normalized_url = github_url.trim_end_matches(".git");
-        Ok(self.list_apps()?.into_iter().find(|app| {
-            app.github_url.trim_end_matches(".git") == normalized_url
-                && app.branch == branch
+        let normalized = github_url.trim_end_matches(".git");
+        let apps = self.list_apps()?;
+        Ok(apps.into_iter().find(|a| {
+            a.github_url.trim_end_matches(".git") == normalized
+                && a.branch == branch
         }))
     }
 
-    fn save_service(&self, service: &ContainerService) -> Result<()> {
-        self.put_service_json(service)
+    // ==================== SERVICE ====================
+    fn save_service(&self, svc: &ContainerService) -> Result<()> {
+        self.run(async {
+            let health_check = svc.health_check.as_ref().map(|h| serde_json::to_string(h).unwrap_or_default());
+            let registry_auth = svc.registry_auth.as_ref().map(|r| serde_json::to_string(r).unwrap_or_default());
+            let command = svc.command.as_ref().map(|c| serde_json::to_string(c).unwrap_or_default());
+            let entrypoint = svc.entrypoint.as_ref().map(|e| serde_json::to_string(e).unwrap_or_default());
+
+            sqlx::query(
+                r#"INSERT INTO services (id, app_id, name, image, service_type, port, expose_http, additional_ports, replicas, memory_limit, cpu_limit, depends_on, health_check, restart_policy, registry_auth, env_vars, domains, http_only_domains, build_context, dockerfile_path, build_target, build_args, command, entrypoint, working_dir, schedule, mounts, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, name=excluded.name, image=excluded.image, service_type=excluded.service_type, port=excluded.port, expose_http=excluded.expose_http, additional_ports=excluded.additional_ports, replicas=excluded.replicas, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, depends_on=excluded.depends_on, health_check=excluded.health_check, restart_policy=excluded.restart_policy, registry_auth=excluded.registry_auth, env_vars=excluded.env_vars, domains=excluded.domains, http_only_domains=excluded.http_only_domains, build_context=excluded.build_context, dockerfile_path=excluded.dockerfile_path, build_target=excluded.build_target, build_args=excluded.build_args, command=excluded.command, entrypoint=excluded.entrypoint, working_dir=excluded.working_dir, schedule=excluded.schedule, mounts=excluded.mounts, created_at=excluded.created_at, updated_at=excluded.updated_at"#
+            )
+            .bind(svc.id.to_string())
+            .bind(svc.app_id.to_string())
+            .bind(&svc.name)
+            .bind(&svc.image)
+            .bind(serde_json::to_string(&svc.service_type)?)
+            .bind(svc.port as i64)
+            .bind(if svc.expose_http { 1 } else { 0 })
+            .bind(serde_json::to_string(&svc.additional_ports)?)
+            .bind(svc.replicas as i64)
+            .bind(svc.memory_limit.map(|m| m.to_string()))
+            .bind(svc.cpu_limit.map(|c| c.to_string()))
+            .bind(serde_json::to_string(&svc.depends_on)?)
+            .bind(health_check)
+            .bind(serde_json::to_string(&svc.restart_policy)?)
+            .bind(registry_auth)
+            .bind(serde_json::to_string(&svc.env_vars)?)
+            .bind(serde_json::to_string(&svc.domains)?)
+            .bind(serde_json::to_string(&svc.http_only_domains)?)
+            .bind(&svc.build_context)
+            .bind(&svc.dockerfile_path)
+            .bind(&svc.build_target)
+            .bind(serde_json::to_string(&svc.build_args)?)
+            .bind(command)
+            .bind(entrypoint)
+            .bind(&svc.working_dir)
+            .bind(&svc.schedule)
+            .bind(serde_json::to_string(&svc.mounts)?)
+            .bind(svc.created_at.to_rfc3339())
+            .bind(svc.updated_at.to_rfc3339())
+            .execute(&self.pool).await.map_err(Error::from)?;
+            Ok(())
+        })
     }
 
     fn get_service(&self, id: Uuid) -> Result<Option<ContainerService>> {
-        self.get_json(SERVICES_TABLE, &id.to_string())
+        self.run(async {
+            let row = sqlx::query("SELECT * FROM services WHERE id = ?")
+                .bind(id.to_string())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            row_to_service(row.as_ref())
+        })
     }
 
     fn list_services_by_app(
         &self,
         app_id: Uuid,
     ) -> Result<Vec<ContainerService>> {
-        let mut services = self
-            .list_json::<ContainerService>(SERVICES_TABLE)?
-            .into_iter()
-            .filter(|service| service.app_id == app_id)
-            .collect::<Vec<_>>();
-        services.sort_by(|left, right| left.name.cmp(&right.name));
-        Ok(services)
+        self.run(async {
+            let rows = sqlx::query(
+                "SELECT * FROM services WHERE app_id = ? ORDER BY name ASC",
+            )
+            .bind(app_id.to_string())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Error::from)?;
+            let mut services = Vec::new();
+            for row in rows {
+                if let Some(s) = row_to_service(Some(&row))? {
+                    services.push(s);
+                }
+            }
+            Ok(services)
+        })
     }
 
     fn delete_service(&self, id: Uuid) -> Result<bool> {
-        let deleted = self.delete_key(SERVICES_TABLE, &id.to_string())?;
+        let deleted = self.run(async {
+            let r = sqlx::query("DELETE FROM services WHERE id = ?")
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            Ok(r.rows_affected() > 0)
+        })?;
         if deleted {
-            let _ = self.delete_http_request_logs(id)?;
+            let _ = self.delete_http_request_logs(id);
         }
         Ok(deleted)
     }
 
-    fn save_service_deployment(
-        &self,
-        deployment: &ServiceDeployment,
-    ) -> Result<()> {
-        self.put_service_deployment_json(deployment)
+    // ==================== SERVICE DEPLOYMENT ====================
+    fn save_service_deployment(&self, sd: &ServiceDeployment) -> Result<()> {
+        self.run(async {
+            sqlx::query(
+                r#"INSERT INTO service_deployments (id, service_id, deployment_id, replica_index, status, container_id, image_id, health, logs, started_at, finished_at, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET service_id=excluded.service_id, deployment_id=excluded.deployment_id, replica_index=excluded.replica_index, status=excluded.status, container_id=excluded.container_id, image_id=excluded.image_id, health=excluded.health, logs=excluded.logs, started_at=excluded.started_at, finished_at=excluded.finished_at, created_at=excluded.created_at"#
+            )
+            .bind(sd.id.to_string())
+            .bind(sd.service_id.to_string())
+            .bind(sd.deployment_id.to_string())
+            .bind(sd.replica_index as i64)
+            .bind(serde_json::to_string(&sd.status)?)
+            .bind(&sd.container_id)
+            .bind(&sd.image_id)
+            .bind(serde_json::to_string(&sd.health)?)
+            .bind(serde_json::to_string(&sd.logs)?)
+            .bind(sd.started_at.map(|t| t.to_rfc3339()))
+            .bind(sd.finished_at.map(|t| t.to_rfc3339()))
+            .bind(sd.created_at.to_rfc3339())
+            .execute(&self.pool).await.map_err(Error::from)?;
+            Ok(())
+        })
     }
 
     fn get_service_deployment(
         &self,
         id: Uuid,
     ) -> Result<Option<ServiceDeployment>> {
-        self.get_json(SERVICE_DEPLOYMENTS_TABLE, &id.to_string())
+        self.run(async {
+            let row =
+                sqlx::query("SELECT * FROM service_deployments WHERE id = ?")
+                    .bind(id.to_string())
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(Error::from)?;
+            row_to_service_deployment(row.as_ref())
+        })
     }
 
     fn list_service_deployments(
         &self,
         deployment_id: Uuid,
     ) -> Result<Vec<ServiceDeployment>> {
-        let mut deployments = self
-            .list_json::<ServiceDeployment>(SERVICE_DEPLOYMENTS_TABLE)?
-            .into_iter()
-            .filter(|deployment| deployment.deployment_id == deployment_id)
-            .collect::<Vec<_>>();
-        deployments.sort_by(|left, right| {
-            left.service_id
-                .cmp(&right.service_id)
-                .then(left.replica_index.cmp(&right.replica_index))
-        });
-        Ok(deployments)
+        self.run(async {
+            let rows = sqlx::query("SELECT * FROM service_deployments WHERE deployment_id = ? ORDER BY service_id, replica_index")
+                .bind(deployment_id.to_string())
+                .fetch_all(&self.pool).await.map_err(Error::from)?;
+            let mut sds = Vec::new();
+            for row in rows {
+                if let Some(s) = row_to_service_deployment(Some(&row))? {
+                    sds.push(s);
+                }
+            }
+            Ok(sds)
+        })
     }
 
     fn list_service_deployments_by_service(
         &self,
         service_id: Uuid,
     ) -> Result<Vec<ServiceDeployment>> {
-        let mut deployments = self
-            .list_json::<ServiceDeployment>(SERVICE_DEPLOYMENTS_TABLE)?
-            .into_iter()
-            .filter(|deployment| deployment.service_id == service_id)
-            .collect::<Vec<_>>();
-        deployments
-            .sort_by(|left, right| right.created_at.cmp(&left.created_at));
-        Ok(deployments)
+        self.run(async {
+            let rows = sqlx::query("SELECT * FROM service_deployments WHERE service_id = ? ORDER BY created_at DESC")
+                .bind(service_id.to_string())
+                .fetch_all(&self.pool).await.map_err(Error::from)?;
+            let mut sds = Vec::new();
+            for row in rows {
+                if let Some(s) = row_to_service_deployment(Some(&row))? {
+                    sds.push(s);
+                }
+            }
+            Ok(sds)
+        })
     }
 
-    fn save_deployment(&self, deployment: &Deployment) -> Result<()> {
+    // ==================== DEPLOYMENT ====================
+    fn save_deployment(&self, dep: &Deployment) -> Result<()> {
         self.run(async {
             let mut tx = self.pool.begin().await.map_err(Error::from)?;
-            let mut deployment_record = deployment.clone();
-            deployment_record.service_deployments.clear();
-            deployment_record.logs.clear();
-            let value = serde_json::to_string(&deployment_record)?;
 
-            sqlx::query(safe_sql(format!(
-                "insert into {DEPLOYMENTS_TABLE} (key, app_id, value)
-                 values (?1, ?2, ?3)
-                 on conflict(key) do update set
-                     app_id = excluded.app_id,
-                     value = excluded.value"
-            )))
-            .bind(deployment.id.to_string())
-            .bind(deployment.app_id.to_string())
-            .bind(value)
-            .execute(&mut *tx)
-            .await
-            .map_err(Error::from)?;
+            sqlx::query(
+                r#"INSERT INTO deployments (id, app_id, commit_sha, commit_message, branch, source_url, rollout_strategy, rollback_from_deployment_id, app_snapshot, status, container_id, image_id, started_at, finished_at, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, commit_sha=excluded.commit_sha, commit_message=excluded.commit_message, branch=excluded.branch, source_url=excluded.source_url, rollout_strategy=excluded.rollout_strategy, rollback_from_deployment_id=excluded.rollback_from_deployment_id, app_snapshot=excluded.app_snapshot, status=excluded.status, container_id=excluded.container_id, image_id=excluded.image_id, started_at=excluded.started_at, finished_at=excluded.finished_at, created_at=excluded.created_at"#
+            )
+            .bind(dep.id.to_string())
+            .bind(dep.app_id.to_string())
+            .bind(&dep.commit_sha)
+            .bind(&dep.commit_message)
+            .bind(&dep.branch)
+            .bind(&dep.source_url)
+            .bind(serde_json::to_string(&dep.rollout_strategy)?)
+            .bind(dep.rollback_from_deployment_id.map(|id| id.to_string()))
+            .bind(dep.app_snapshot.as_ref().map(|s| serde_json::to_string(s).unwrap_or_default()))
+            .bind(serde_json::to_string(&dep.status)?)
+            .bind(&dep.container_id)
+            .bind(&dep.image_id)
+            .bind(dep.started_at.map(|t| t.to_rfc3339()))
+            .bind(dep.finished_at.map(|t| t.to_rfc3339()))
+            .bind(dep.created_at.to_rfc3339())
+            .execute(&mut *tx).await.map_err(Error::from)?;
 
-            sqlx::query(safe_sql(format!(
-                "delete from {SERVICE_DEPLOYMENTS_TABLE}
-                 where deployment_id = ?1"
-            )))
-            .bind(deployment.id.to_string())
-            .execute(&mut *tx)
-            .await
-            .map_err(Error::from)?;
+            sqlx::query("DELETE FROM service_deployments WHERE deployment_id = ?")
+                .bind(dep.id.to_string())
+                .execute(&mut *tx).await.map_err(Error::from)?;
 
-            for service_deployment in &deployment.service_deployments {
-                let service_value = serde_json::to_string(service_deployment)?;
-                sqlx::query(safe_sql(format!(
-                    "insert into {SERVICE_DEPLOYMENTS_TABLE}
-                     (key, deployment_id, service_id, value)
-                     values (?1, ?2, ?3, ?4)"
-                )))
-                .bind(service_deployment.id.to_string())
-                .bind(deployment.id.to_string())
-                .bind(service_deployment.service_id.to_string())
-                .bind(service_value)
-                .execute(&mut *tx)
-                .await
-                .map_err(Error::from)?;
+            for sd in &dep.service_deployments {
+                sqlx::query(
+                    r#"INSERT INTO service_deployments (id, service_id, deployment_id, replica_index, status, container_id, image_id, health, logs, started_at, finished_at, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(id) DO UPDATE SET service_id=excluded.service_id, deployment_id=excluded.deployment_id, replica_index=excluded.replica_index, status=excluded.status, container_id=excluded.container_id, image_id=excluded.image_id, health=excluded.health, logs=excluded.logs, started_at=excluded.started_at, finished_at=excluded.finished_at, created_at=excluded.created_at"#
+                )
+                .bind(sd.id.to_string())
+                .bind(sd.service_id.to_string())
+                .bind(sd.deployment_id.to_string())
+                .bind(sd.replica_index as i64)
+                .bind(serde_json::to_string(&sd.status)?)
+                .bind(&sd.container_id)
+                .bind(&sd.image_id)
+                .bind(serde_json::to_string(&sd.health)?)
+                .bind(serde_json::to_string(&sd.logs)?)
+                .bind(sd.started_at.map(|t| t.to_rfc3339()))
+                .bind(sd.finished_at.map(|t| t.to_rfc3339()))
+                .bind(sd.created_at.to_rfc3339())
+                .execute(&mut *tx).await.map_err(Error::from)?;
             }
 
             tx.commit().await.map_err(Error::from)?;
@@ -951,96 +1087,88 @@ impl SqliteJsonDatabase {
     }
 
     fn get_deployment(&self, id: Uuid) -> Result<Option<Deployment>> {
-        let Some(mut deployment) =
-            self.get_json::<Deployment>(DEPLOYMENTS_TABLE, &id.to_string())?
-        else {
-            return Ok(None);
-        };
-
-        deployment.service_deployments =
-            self.list_service_deployments(deployment.id)?;
-        deployment.logs.clear();
-        Ok(Some(deployment))
+        let mut dep = self.run(async {
+            let row = sqlx::query("SELECT * FROM deployments WHERE id = ?")
+                .bind(id.to_string())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            row_to_deployment(row.as_ref())
+        })?;
+        if let Some(ref mut d) = dep {
+            d.service_deployments = self.list_service_deployments(d.id)?;
+            d.logs.clear();
+        }
+        Ok(dep)
     }
 
     fn list_deployments_by_app(&self, app_id: Uuid) -> Result<Vec<Deployment>> {
-        let mut deployments = self
-            .list_json::<Deployment>(DEPLOYMENTS_TABLE)?
-            .into_iter()
-            .filter(|deployment| deployment.app_id == app_id)
-            .collect::<Vec<_>>();
-
-        for deployment in &mut deployments {
-            deployment.service_deployments =
-                self.list_service_deployments(deployment.id)?;
-            deployment.logs.clear();
+        let deps = self.run(async {
+            let rows = sqlx::query("SELECT * FROM deployments WHERE app_id = ? ORDER BY created_at DESC")
+                .bind(app_id.to_string())
+                .fetch_all(&self.pool).await.map_err(Error::from)?;
+            let mut deps = Vec::new();
+            for row in rows {
+                if let Some(d) = row_to_deployment(Some(&row))? {
+                    deps.push(d);
+                }
+            }
+            Ok(deps)
+        })?;
+        let mut result = Vec::new();
+        for mut d in deps {
+            d.service_deployments = self.list_service_deployments(d.id)?;
+            d.logs.clear();
+            result.push(d);
         }
-
-        deployments
-            .sort_by(|left, right| right.created_at.cmp(&left.created_at));
-        Ok(deployments)
+        Ok(result)
     }
 
     fn delete_deployment(&self, id: Uuid) -> Result<bool> {
-        let deleted = self.delete_key(DEPLOYMENTS_TABLE, &id.to_string())?;
+        let deleted = self.run(async {
+            let r = sqlx::query("DELETE FROM deployments WHERE id = ?")
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            Ok(r.rows_affected() > 0)
+        })?;
         if !deleted {
             return Ok(false);
         }
-
         self.run(async {
-            let mut tx = self.pool.begin().await.map_err(Error::from)?;
-            sqlx::query(safe_sql(format!(
-                "delete from {SERVICE_DEPLOYMENTS_TABLE}
-                 where deployment_id = ?1"
-            )))
+            sqlx::query(
+                "DELETE FROM service_deployments WHERE deployment_id = ?",
+            )
             .bind(id.to_string())
-            .execute(&mut *tx)
+            .execute(&self.pool)
             .await
             .map_err(Error::from)?;
-            sqlx::query(safe_sql(format!(
-                "delete from {DEPLOYMENT_LOGS_TABLE}
-                 where deployment_id = ?1"
-            )))
-            .bind(id.to_string())
-            .execute(&mut *tx)
-            .await
-            .map_err(Error::from)?;
-            tx.commit().await.map_err(Error::from)?;
+            sqlx::query("DELETE FROM deployment_logs WHERE deployment_id = ?")
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
             Ok(())
         })?;
-
         Ok(true)
     }
 
     fn append_deployment_log(
         &self,
         deployment_id: Uuid,
-        log_line: &str,
+        line: &str,
     ) -> Result<()> {
         self.run(async {
             let mut tx = self.pool.begin().await.map_err(Error::from)?;
-            let next_index = sqlx::query_scalar::<_, i64>(safe_sql(format!(
-                "select coalesce(max(idx), -1) + 1
-                 from {DEPLOYMENT_LOGS_TABLE}
-                 where deployment_id = ?1"
-            )))
-            .bind(deployment_id.to_string())
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(Error::from)?;
-
-            sqlx::query(safe_sql(format!(
-                "insert into {DEPLOYMENT_LOGS_TABLE}
-                 (deployment_id, idx, line)
-                 values (?1, ?2, ?3)"
-            )))
-            .bind(deployment_id.to_string())
-            .bind(next_index)
-            .bind(log_line)
-            .execute(&mut *tx)
-            .await
-            .map_err(Error::from)?;
-
+            let next_idx: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(idx), -1) + 1 FROM deployment_logs WHERE deployment_id = ?")
+                .bind(deployment_id.to_string())
+                .fetch_one(&mut *tx).await.map_err(Error::from)?;
+            sqlx::query("INSERT INTO deployment_logs (deployment_id, idx, line) VALUES (?, ?, ?)")
+                .bind(deployment_id.to_string())
+                .bind(next_idx)
+                .bind(line)
+                .execute(&mut *tx).await.map_err(Error::from)?;
             tx.commit().await.map_err(Error::from)?;
             Ok(())
         })
@@ -1053,69 +1181,33 @@ impl SqliteJsonDatabase {
         offset: usize,
     ) -> Result<Vec<String>> {
         self.run(async {
-            let rows = sqlx::query(safe_sql(format!(
-                "select line from {DEPLOYMENT_LOGS_TABLE}
-                 where deployment_id = ?1
-                 order by idx asc
-                 limit ?2 offset ?3"
-            )))
-            .bind(deployment_id.to_string())
-            .bind(limit as i64)
-            .bind(offset as i64)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(Error::from)?;
-
-            rows.into_iter()
-                .map(|row| {
-                    row.try_get::<String, _>("line").map_err(Error::from)
-                })
-                .collect()
+            let rows = sqlx::query("SELECT line FROM deployment_logs WHERE deployment_id = ? ORDER BY idx ASC LIMIT ? OFFSET ?")
+                .bind(deployment_id.to_string())
+                .bind(limit as i64)
+                .bind(offset as i64)
+                .fetch_all(&self.pool).await.map_err(Error::from)?;
+            rows.into_iter().map(|r| r.try_get::<String, _>("line").map_err(Error::from)).collect()
         })
     }
 
+    // ==================== HTTP REQUEST LOG ====================
     fn append_http_request_log(&self, log: &HttpRequestLog) -> Result<()> {
         self.run(async {
             let mut tx = self.pool.begin().await.map_err(Error::from)?;
-            let next_index = sqlx::query_scalar::<_, i64>(safe_sql(format!(
-                "select coalesce(max(idx), -1) + 1
-                 from {HTTP_REQUEST_LOGS_TABLE}
-                 where service_id = ?1"
-            )))
-            .bind(log.service_id.to_string())
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(Error::from)?;
-
+            let next_idx: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(idx), -1) + 1 FROM http_request_logs WHERE service_id = ?")
+                .bind(log.service_id.to_string())
+                .fetch_one(&mut *tx).await.map_err(Error::from)?;
             let value = serde_json::to_string(log)?;
-
-            sqlx::query(safe_sql(format!(
-                "insert into {HTTP_REQUEST_LOGS_TABLE}
-                 (service_id, idx, value)
-                 values (?1, ?2, ?3)"
-            )))
-            .bind(log.service_id.to_string())
-            .bind(next_index)
-            .bind(value)
-            .execute(&mut *tx)
-            .await
-            .map_err(Error::from)?;
-
-            sqlx::query(safe_sql(format!(
-                "delete from {HTTP_REQUEST_LOGS_TABLE}
-                 where service_id = ?1
-                   and idx <= (
-                       select coalesce(max(idx), -1) - ?2
-                       from {HTTP_REQUEST_LOGS_TABLE}
-                       where service_id = ?1
-                   )"
-            )))
-            .bind(log.service_id.to_string())
-            .bind(MAX_HTTP_REQUEST_LOGS_PER_SERVICE)
-            .execute(&mut *tx)
-            .await
-            .map_err(Error::from)?;
-
+            sqlx::query("INSERT INTO http_request_logs (service_id, idx, value) VALUES (?, ?, ?)")
+                .bind(log.service_id.to_string())
+                .bind(next_idx)
+                .bind(value)
+                .execute(&mut *tx).await.map_err(Error::from)?;
+            sqlx::query("DELETE FROM http_request_logs WHERE service_id = ? AND idx <= (SELECT COALESCE(MAX(idx), -1) - ? FROM http_request_logs WHERE service_id = ?)")
+                .bind(log.service_id.to_string())
+                .bind(MAX_HTTP_REQUEST_LOGS_PER_SERVICE)
+                .bind(log.service_id.to_string())
+                .execute(&mut *tx).await.map_err(Error::from)?;
             tx.commit().await.map_err(Error::from)?;
             Ok(())
         })
@@ -1128,375 +1220,939 @@ impl SqliteJsonDatabase {
         offset: usize,
     ) -> Result<Vec<HttpRequestLog>> {
         self.run(async {
-            let rows = sqlx::query(safe_sql(format!(
-                "select value from {HTTP_REQUEST_LOGS_TABLE}
-                 where service_id = ?1
-                 order by idx desc
-                 limit ?2 offset ?3"
-            )))
-            .bind(service_id.to_string())
-            .bind(limit as i64)
-            .bind(offset as i64)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(Error::from)?;
-
-            rows.into_iter()
-                .map(|row| {
-                    let value = row.try_get::<String, _>("value")?;
-                    serde_json::from_str(&value).map_err(Error::from)
-                })
-                .collect()
+            let rows = sqlx::query("SELECT value FROM http_request_logs WHERE service_id = ? ORDER BY idx DESC LIMIT ? OFFSET ?")
+                .bind(service_id.to_string())
+                .bind(limit as i64)
+                .bind(offset as i64)
+                .fetch_all(&self.pool).await.map_err(Error::from)?;
+            rows.into_iter().map(|r| {
+                let v: String = r.try_get("value").map_err(Error::from)?;
+                Ok(serde_json::from_str(&v).map_err(Error::from)?)
+            }).collect()
         })
     }
 
     fn delete_http_request_logs(&self, service_id: Uuid) -> Result<usize> {
         self.run(async {
-            let result = sqlx::query(safe_sql(format!(
-                "delete from {HTTP_REQUEST_LOGS_TABLE} where service_id = ?1"
-            )))
+            let r = sqlx::query(
+                "DELETE FROM http_request_logs WHERE service_id = ?",
+            )
             .bind(service_id.to_string())
             .execute(&self.pool)
             .await
             .map_err(Error::from)?;
-            Ok(result.rows_affected() as usize)
+            Ok(r.rows_affected() as usize)
         })
     }
 
+    // ==================== CERTIFICATE ====================
     fn save_certificate(&self, cert: &Certificate) -> Result<()> {
-        self.put_json(CERTIFICATES_TABLE, &cert.domain, cert)
+        self.run(async {
+            sqlx::query(
+                r#"INSERT INTO certificates (id, domain, cert_pem, key_pem, expires_at, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET domain=excluded.domain, cert_pem=excluded.cert_pem, key_pem=excluded.key_pem, expires_at=excluded.expires_at, created_at=excluded.created_at"#
+            )
+            .bind(cert.id.to_string())
+            .bind(&cert.domain)
+            .bind(&cert.cert_pem)
+            .bind(&cert.key_pem)
+            .bind(cert.expires_at.to_rfc3339())
+            .bind(cert.created_at.to_rfc3339())
+            .execute(&self.pool).await.map_err(Error::from)?;
+            Ok(())
+        })
     }
 
-    fn get_certificate(&self, domain: &str) -> Result<Option<Certificate>> {
-        self.get_json(CERTIFICATES_TABLE, domain)
+    fn get_certificate(&self, id: Uuid) -> Result<Option<Certificate>> {
+        self.run(async {
+            let row = sqlx::query("SELECT * FROM certificates WHERE id = ?")
+                .bind(id.to_string())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            row_to_certificate(row.as_ref())
+        })
     }
 
     fn list_certificates(&self) -> Result<Vec<Certificate>> {
-        let mut certificates: Vec<Certificate> =
-            self.list_json(CERTIFICATES_TABLE)?;
-        certificates.sort_by(|left, right| left.domain.cmp(&right.domain));
-        Ok(certificates)
+        self.run(async {
+            let rows =
+                sqlx::query("SELECT * FROM certificates ORDER BY domain")
+                    .fetch_all(&self.pool)
+                    .await
+                    .map_err(Error::from)?;
+            let mut certs = Vec::new();
+            for row in rows {
+                if let Some(c) = row_to_certificate(Some(&row))? {
+                    certs.push(c);
+                }
+            }
+            Ok(certs)
+        })
     }
 
-    fn delete_certificate(&self, domain: &str) -> Result<bool> {
-        self.delete_key(CERTIFICATES_TABLE, domain)
+    fn delete_certificate(&self, id: Uuid) -> Result<bool> {
+        self.run(async {
+            let r = sqlx::query("DELETE FROM certificates WHERE id = ?")
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            Ok(r.rows_affected() > 0)
+        })
     }
 
+    // ==================== MANAGED DATABASE ====================
     fn save_managed_database(&self, db: &ManagedDatabase) -> Result<()> {
-        self.put_owned_json(
-            MANAGED_DATABASES_TABLE,
-            &db.id.to_string(),
-            &db.owner_id.to_string(),
-            db,
-        )
+        self.run(async {
+            sqlx::query(
+                r#"INSERT INTO managed_databases (id, owner_id, group_id, name, db_type, version, container_id, volume_name, host_data_path, internal_host, port, external_port, pitr_enabled, pitr_last_base_backup_at, pitr_last_base_backup_label, proxy_enabled, proxy_external_port, credentials, memory_limit, cpu_limit, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET owner_id=excluded.owner_id, group_id=excluded.group_id, name=excluded.name, db_type=excluded.db_type, version=excluded.version, container_id=excluded.container_id, volume_name=excluded.volume_name, host_data_path=excluded.host_data_path, internal_host=excluded.internal_host, port=excluded.port, external_port=excluded.external_port, pitr_enabled=excluded.pitr_enabled, pitr_last_base_backup_at=excluded.pitr_last_base_backup_at, pitr_last_base_backup_label=excluded.pitr_last_base_backup_label, proxy_enabled=excluded.proxy_enabled, proxy_external_port=excluded.proxy_external_port, credentials=excluded.credentials, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, status=excluded.status, created_at=excluded.created_at, updated_at=excluded.updated_at"#
+            )
+            .bind(db.id.to_string())
+            .bind(db.owner_id.to_string())
+            .bind(db.group_id.map(|id| id.to_string()))
+            .bind(&db.name)
+            .bind(serde_json::to_string(&db.db_type)?)
+            .bind(&db.version)
+            .bind(&db.container_id)
+            .bind(&db.volume_name)
+            .bind(&db.host_data_path)
+            .bind(&db.internal_host)
+            .bind(db.port as i64)
+            .bind(db.external_port.map(|p| p as i64))
+            .bind(if db.pitr_enabled { 1 } else { 0 })
+            .bind(db.pitr_last_base_backup_at.map(|t| t.to_rfc3339()))
+            .bind(&db.pitr_last_base_backup_label)
+            .bind(if db.proxy_enabled { 1 } else { 0 })
+            .bind(db.proxy_external_port.map(|p| p as i64))
+            .bind(serde_json::to_string(&db.credentials)?)
+            .bind(db.memory_limit.to_string())
+            .bind(db.cpu_limit.to_string())
+            .bind(serde_json::to_string(&db.status)?)
+            .bind(db.created_at.to_rfc3339())
+            .bind(db.updated_at.to_rfc3339())
+            .execute(&self.pool).await.map_err(Error::from)?;
+            Ok(())
+        })
     }
 
     fn get_managed_database(
         &self,
         id: Uuid,
     ) -> Result<Option<ManagedDatabase>> {
-        self.get_json(MANAGED_DATABASES_TABLE, &id.to_string())
+        self.run(async {
+            let row =
+                sqlx::query("SELECT * FROM managed_databases WHERE id = ?")
+                    .bind(id.to_string())
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(Error::from)?;
+            row_to_managed_database(row.as_ref())
+        })
     }
 
     fn list_managed_databases_by_owner(
         &self,
         owner_id: Uuid,
     ) -> Result<Vec<ManagedDatabase>> {
-        let mut databases = self
-            .list_json::<ManagedDatabase>(MANAGED_DATABASES_TABLE)?
-            .into_iter()
-            .filter(|database| database.owner_id == owner_id)
-            .collect::<Vec<_>>();
-        databases.sort_by(|left, right| right.created_at.cmp(&left.created_at));
-        Ok(databases)
+        self.run(async {
+            let rows = sqlx::query("SELECT * FROM managed_databases WHERE owner_id = ? ORDER BY created_at DESC")
+                .bind(owner_id.to_string())
+                .fetch_all(&self.pool).await.map_err(Error::from)?;
+            let mut dbs = Vec::new();
+            for row in rows {
+                if let Some(d) = row_to_managed_database(Some(&row))? {
+                    dbs.push(d);
+                }
+            }
+            Ok(dbs)
+        })
     }
 
     fn delete_managed_database(&self, id: Uuid) -> Result<bool> {
-        self.delete_key(MANAGED_DATABASES_TABLE, &id.to_string())
+        self.run(async {
+            let r = sqlx::query("DELETE FROM managed_databases WHERE id = ?")
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            Ok(r.rows_affected() > 0)
+        })
     }
 
-    fn save_managed_queue(&self, queue: &ManagedQueue) -> Result<()> {
-        self.put_owned_json(
-            MANAGED_QUEUES_TABLE,
-            &queue.id.to_string(),
-            &queue.owner_id.to_string(),
-            queue,
-        )
+    // ==================== MANAGED QUEUE ====================
+    fn save_managed_queue(&self, q: &ManagedQueue) -> Result<()> {
+        self.run(async {
+            sqlx::query(
+                r#"INSERT INTO managed_queues (id, owner_id, group_id, name, queue_type, version, container_id, volume_name, host_data_path, internal_host, port, external_port, credentials, memory_limit, cpu_limit, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET owner_id=excluded.owner_id, group_id=excluded.group_id, name=excluded.name, queue_type=excluded.queue_type, version=excluded.version, container_id=excluded.container_id, volume_name=excluded.volume_name, host_data_path=excluded.host_data_path, internal_host=excluded.internal_host, port=excluded.port, external_port=excluded.external_port, credentials=excluded.credentials, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, status=excluded.status, created_at=excluded.created_at, updated_at=excluded.updated_at"#
+            )
+            .bind(q.id.to_string())
+            .bind(q.owner_id.to_string())
+            .bind(q.group_id.map(|id| id.to_string()))
+            .bind(&q.name)
+            .bind(serde_json::to_string(&q.queue_type)?)
+            .bind(&q.version)
+            .bind(&q.container_id)
+            .bind(&q.volume_name)
+            .bind(&q.host_data_path)
+            .bind(&q.internal_host)
+            .bind(q.port as i64)
+            .bind(q.external_port.map(|p| p as i64))
+            .bind(serde_json::to_string(&q.credentials)?)
+            .bind(q.memory_limit.to_string())
+            .bind(q.cpu_limit.to_string())
+            .bind(serde_json::to_string(&q.status)?)
+            .bind(q.created_at.to_rfc3339())
+            .bind(q.updated_at.to_rfc3339())
+            .execute(&self.pool).await.map_err(Error::from)?;
+            Ok(())
+        })
     }
 
     fn get_managed_queue(&self, id: Uuid) -> Result<Option<ManagedQueue>> {
-        self.get_json(MANAGED_QUEUES_TABLE, &id.to_string())
+        self.run(async {
+            let row = sqlx::query("SELECT * FROM managed_queues WHERE id = ?")
+                .bind(id.to_string())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            row_to_managed_queue(row.as_ref())
+        })
     }
 
     fn list_managed_queues_by_owner(
         &self,
         owner_id: Uuid,
     ) -> Result<Vec<ManagedQueue>> {
-        let mut queues = self
-            .list_json::<ManagedQueue>(MANAGED_QUEUES_TABLE)?
-            .into_iter()
-            .filter(|queue| queue.owner_id == owner_id)
-            .collect::<Vec<_>>();
-        queues.sort_by(|left, right| right.created_at.cmp(&left.created_at));
-        Ok(queues)
+        self.run(async {
+            let rows = sqlx::query("SELECT * FROM managed_queues WHERE owner_id = ? ORDER BY created_at DESC")
+                .bind(owner_id.to_string())
+                .fetch_all(&self.pool).await.map_err(Error::from)?;
+            let mut qs = Vec::new();
+            for row in rows {
+                if let Some(q) = row_to_managed_queue(Some(&row))? {
+                    qs.push(q);
+                }
+            }
+            Ok(qs)
+        })
     }
 
     fn delete_managed_queue(&self, id: Uuid) -> Result<bool> {
-        self.delete_key(MANAGED_QUEUES_TABLE, &id.to_string())
+        self.run(async {
+            let r = sqlx::query("DELETE FROM managed_queues WHERE id = ?")
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            Ok(r.rows_affected() > 0)
+        })
     }
 
-    fn save_storage_bucket(&self, bucket: &StorageBucket) -> Result<()> {
-        self.put_owned_json(
-            STORAGE_BUCKETS_TABLE,
-            &bucket.id.to_string(),
-            &bucket.owner_id.to_string(),
-            bucket,
-        )
+    // ==================== STORAGE BUCKET ====================
+    fn save_storage_bucket(&self, b: &StorageBucket) -> Result<()> {
+        self.run(async {
+            sqlx::query(
+                r#"INSERT INTO storage_buckets (id, owner_id, name, access_key, secret_key, size_bytes, endpoint, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET owner_id=excluded.owner_id, name=excluded.name, access_key=excluded.access_key, secret_key=excluded.secret_key, size_bytes=excluded.size_bytes, endpoint=excluded.endpoint, created_at=excluded.created_at"#
+            )
+            .bind(b.id.to_string())
+            .bind(b.owner_id.to_string())
+            .bind(&b.name)
+            .bind(&b.access_key)
+            .bind(&b.secret_key)
+            .bind(b.size_bytes as i64)
+            .bind(&b.endpoint)
+            .bind(b.created_at.to_rfc3339())
+            .execute(&self.pool).await.map_err(Error::from)?;
+            Ok(())
+        })
     }
 
     fn get_storage_bucket(&self, id: Uuid) -> Result<Option<StorageBucket>> {
-        self.get_json(STORAGE_BUCKETS_TABLE, &id.to_string())
+        self.run(async {
+            let row = sqlx::query("SELECT * FROM storage_buckets WHERE id = ?")
+                .bind(id.to_string())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            row_to_storage_bucket(row.as_ref())
+        })
     }
 
     fn list_storage_buckets_by_owner(
         &self,
         owner_id: Uuid,
     ) -> Result<Vec<StorageBucket>> {
-        let mut buckets = self
-            .list_json::<StorageBucket>(STORAGE_BUCKETS_TABLE)?
-            .into_iter()
-            .filter(|bucket| bucket.owner_id == owner_id)
-            .collect::<Vec<_>>();
-        buckets.sort_by(|left, right| right.created_at.cmp(&left.created_at));
-        Ok(buckets)
+        self.run(async {
+            let rows = sqlx::query("SELECT * FROM storage_buckets WHERE owner_id = ? ORDER BY created_at DESC")
+                .bind(owner_id.to_string())
+                .fetch_all(&self.pool).await.map_err(Error::from)?;
+            let mut bs = Vec::new();
+            for row in rows {
+                if let Some(b) = row_to_storage_bucket(Some(&row))? {
+                    bs.push(b);
+                }
+            }
+            Ok(bs)
+        })
     }
 
     fn delete_storage_bucket(&self, id: Uuid) -> Result<bool> {
-        self.delete_key(STORAGE_BUCKETS_TABLE, &id.to_string())
+        self.run(async {
+            let r = sqlx::query("DELETE FROM storage_buckets WHERE id = ?")
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            Ok(r.rows_affected() > 0)
+        })
     }
 
+    // ==================== GITHUB APP ====================
     fn save_github_app(&self, app: &GithubAppConfig) -> Result<()> {
-        self.put_json(GITHUB_APPS_TABLE, &app.owner_id.to_string(), app)
+        self.run(async {
+            sqlx::query(
+                r#"INSERT INTO github_apps (id, app_id, app_name, client_id, client_secret, private_key, webhook_secret, html_url, owner_id, installations, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, app_name=excluded.app_name, client_id=excluded.client_id, client_secret=excluded.client_secret, private_key=excluded.private_key, webhook_secret=excluded.webhook_secret, html_url=excluded.html_url, owner_id=excluded.owner_id, installations=excluded.installations, created_at=excluded.created_at, updated_at=excluded.updated_at"#
+            )
+            .bind(app.id.to_string())
+            .bind(app.app_id)
+            .bind(&app.app_name)
+            .bind(&app.client_id)
+            .bind(&app.client_secret)
+            .bind(&app.private_key)
+            .bind(&app.webhook_secret)
+            .bind(&app.html_url)
+            .bind(app.owner_id.to_string())
+            .bind(serde_json::to_string(&app.installations)?)
+            .bind(app.created_at.to_rfc3339())
+            .bind(app.updated_at.to_rfc3339())
+            .execute(&self.pool).await.map_err(Error::from)?;
+            Ok(())
+        })
     }
 
     fn get_github_app(
         &self,
         owner_id: Uuid,
     ) -> Result<Option<GithubAppConfig>> {
-        self.get_json(GITHUB_APPS_TABLE, &owner_id.to_string())
+        self.run(async {
+            let row =
+                sqlx::query("SELECT * FROM github_apps WHERE owner_id = ?")
+                    .bind(owner_id.to_string())
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(Error::from)?;
+            row_to_github_app(row.as_ref())
+        })
     }
 
     fn delete_github_app(&self, owner_id: Uuid) -> Result<bool> {
-        self.delete_key(GITHUB_APPS_TABLE, &owner_id.to_string())
-    }
-
-    fn populate_app_services(&self, mut apps: Vec<App>) -> Result<Vec<App>> {
-        let services = self.list_json::<ContainerService>(SERVICES_TABLE)?;
-        let mut grouped = HashMap::<Uuid, Vec<ContainerService>>::new();
-        for service in services {
-            grouped.entry(service.app_id).or_default().push(service);
-        }
-
-        for app in &mut apps {
-            let mut app_services = grouped.remove(&app.id).unwrap_or_default();
-            app_services.sort_by(|left, right| left.name.cmp(&right.name));
-            app.services = app_services;
-        }
-
-        apps.sort_by(|left, right| right.created_at.cmp(&left.created_at));
-        Ok(apps)
-    }
-
-    fn put_service_json(&self, service: &ContainerService) -> Result<()> {
         self.run(async {
-            let value = serde_json::to_string(service)?;
-            sqlx::query(safe_sql(format!(
-                "insert into {SERVICES_TABLE} (key, app_id, value)
-                 values (?1, ?2, ?3)
-                 on conflict(key) do update set
-                     app_id = excluded.app_id,
-                     value = excluded.value"
-            )))
-            .bind(service.id.to_string())
-            .bind(service.app_id.to_string())
-            .bind(value)
-            .execute(&self.pool)
-            .await
-            .map_err(Error::from)?;
-            Ok(())
+            let r = sqlx::query("DELETE FROM github_apps WHERE owner_id = ?")
+                .bind(owner_id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            Ok(r.rows_affected() > 0)
         })
     }
+}
 
-    fn put_service_deployment_json(
-        &self,
-        deployment: &ServiceDeployment,
-    ) -> Result<()> {
-        self.run(async {
-            let value = serde_json::to_string(deployment)?;
-            sqlx::query(safe_sql(format!(
-                "insert into {SERVICE_DEPLOYMENTS_TABLE}
-                 (key, deployment_id, service_id, value)
-                 values (?1, ?2, ?3, ?4)
-                 on conflict(key) do update set
-                     deployment_id = excluded.deployment_id,
-                     service_id = excluded.service_id,
-                     value = excluded.value"
-            )))
-            .bind(deployment.id.to_string())
-            .bind(deployment.deployment_id.to_string())
-            .bind(deployment.service_id.to_string())
-            .bind(value)
-            .execute(&self.pool)
-            .await
-            .map_err(Error::from)?;
-            Ok(())
-        })
-    }
+// ==================== ROW HELPERS ====================
+fn row_to_user(row: Option<&SqliteRow>) -> Result<Option<User>> {
+    let row = match row {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let created_at: String = row.try_get("created_at").map_err(Error::from)?;
+    let updated_at: String = row.try_get("updated_at").map_err(Error::from)?;
+    Ok(Some(User {
+        id: Uuid::parse_str(
+            &row.try_get::<String, _>("id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        email: row.try_get("email").map_err(Error::from)?,
+        password_hash: row.try_get("password_hash").map_err(Error::from)?,
+        github_id: row.try_get("github_id").map_err(Error::from)?,
+        github_username: row.try_get("github_username").map_err(Error::from)?,
+        github_access_token: row
+            .try_get("github_access_token")
+            .map_err(Error::from)?,
+        is_admin: row.try_get::<i32, _>("is_admin").map_err(Error::from)? != 0,
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+        updated_at: DateTime::parse_from_rfc3339(&updated_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+    }))
+}
 
-    fn put_json<T: Serialize + Sync>(
-        &self,
-        table: &str,
-        key: &str,
-        value: &T,
-    ) -> Result<()> {
-        self.run(async {
-            let value = serde_json::to_string(value)?;
-            sqlx::query(safe_sql(format!(
-                "insert into {table} (key, value) values (?1, ?2)
-                 on conflict(key) do update set value = excluded.value"
-            )))
-            .bind(key)
-            .bind(value)
-            .execute(&self.pool)
-            .await
-            .map_err(Error::from)?;
-            Ok(())
-        })
-    }
+fn row_to_app(row: Option<&SqliteRow>) -> Result<Option<App>> {
+    let row = match row {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let created_at: String = row.try_get("created_at").map_err(Error::from)?;
+    let updated_at: String = row.try_get("updated_at").map_err(Error::from)?;
+    let domains: String = row.try_get("domains").map_err(Error::from)?;
+    let env_vars: String = row.try_get("env_vars").map_err(Error::from)?;
+    let auto_deploy_watch_paths: String = row
+        .try_get("auto_deploy_watch_paths")
+        .map_err(Error::from)?;
+    let deploy_webhook_token: Option<String> =
+        row.try_get("deploy_webhook_token").map_err(Error::from)?;
+    let port: i64 = row.try_get("port").map_err(Error::from)?;
+    let rollout_strategy: String =
+        row.try_get("rollout_strategy").map_err(Error::from)?;
+    Ok(Some(App {
+        id: Uuid::parse_str(
+            &row.try_get::<String, _>("id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        name: row.try_get("name").map_err(Error::from)?,
+        github_url: row.try_get("github_url").map_err(Error::from)?,
+        branch: row.try_get("branch").map_err(Error::from)?,
+        domains: serde_json::from_str(&domains).unwrap_or_default(),
+        domain: None,
+        env_vars: serde_json::from_str(&env_vars).unwrap_or_default(),
+        auto_deploy_enabled: row
+            .try_get::<i32, _>("auto_deploy_enabled")
+            .map_err(Error::from)?
+            != 0,
+        auto_deploy_watch_paths: serde_json::from_str(&auto_deploy_watch_paths)
+            .unwrap_or_default(),
+        auto_deploy_cleanup_stale_deployments: row
+            .try_get::<i32, _>("auto_deploy_cleanup_stale_deployments")
+            .map_err(Error::from)?
+            != 0,
+        deploy_webhook_token,
+        port: port as u16,
+        services: Vec::new(),
+        rollout_strategy: serde_json::from_str(&rollout_strategy)
+            .unwrap_or_default(),
+        owner_id: Uuid::parse_str(
+            &row.try_get::<String, _>("owner_id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+        updated_at: DateTime::parse_from_rfc3339(&updated_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+    }))
+}
 
-    fn put_owned_json<T: Serialize + Sync>(
-        &self,
-        table: &str,
-        key: &str,
-        owner_id: &str,
-        value: &T,
-    ) -> Result<()> {
-        self.run(async {
-            let value = serde_json::to_string(value)?;
-            sqlx::query(safe_sql(format!(
-                "insert into {table} (key, owner_id, value)
-                 values (?1, ?2, ?3)
-                 on conflict(key) do update set
-                     owner_id = excluded.owner_id,
-                     value = excluded.value"
-            )))
-            .bind(key)
-            .bind(owner_id)
-            .bind(value)
-            .execute(&self.pool)
-            .await
-            .map_err(Error::from)?;
-            Ok(())
-        })
-    }
+fn row_to_service(row: Option<&SqliteRow>) -> Result<Option<ContainerService>> {
+    let row = match row {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let created_at: String = row.try_get("created_at").map_err(Error::from)?;
+    let updated_at: String = row.try_get("updated_at").map_err(Error::from)?;
+    let additional_ports: String =
+        row.try_get("additional_ports").map_err(Error::from)?;
+    let memory_limit: Option<String> =
+        row.try_get("memory_limit").map_err(Error::from)?;
+    let cpu_limit: Option<String> =
+        row.try_get("cpu_limit").map_err(Error::from)?;
+    let depends_on: String = row.try_get("depends_on").map_err(Error::from)?;
+    let health_check: Option<String> =
+        row.try_get("health_check").map_err(Error::from)?;
+    let restart_policy: String =
+        row.try_get("restart_policy").map_err(Error::from)?;
+    let registry_auth: Option<String> =
+        row.try_get("registry_auth").map_err(Error::from)?;
+    let env_vars: String = row.try_get("env_vars").map_err(Error::from)?;
+    let domains: String = row.try_get("domains").map_err(Error::from)?;
+    let http_only_domains: String =
+        row.try_get("http_only_domains").map_err(Error::from)?;
+    let build_args: String = row.try_get("build_args").map_err(Error::from)?;
+    let command: Option<String> =
+        row.try_get("command").map_err(Error::from)?;
+    let entrypoint: Option<String> =
+        row.try_get("entrypoint").map_err(Error::from)?;
+    let mounts: String = row.try_get("mounts").map_err(Error::from)?;
+    let service_type: String =
+        row.try_get("service_type").map_err(Error::from)?;
+    Ok(Some(ContainerService {
+        id: Uuid::parse_str(
+            &row.try_get::<String, _>("id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        app_id: Uuid::parse_str(
+            &row.try_get::<String, _>("app_id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        name: row.try_get("name").map_err(Error::from)?,
+        image: row.try_get("image").map_err(Error::from)?,
+        service_type: serde_json::from_str(&service_type).unwrap_or_default(),
+        port: row.try_get::<i64, _>("port").map_err(Error::from)? as u16,
+        expose_http: row
+            .try_get::<i32, _>("expose_http")
+            .map_err(Error::from)?
+            != 0,
+        additional_ports: serde_json::from_str(&additional_ports)
+            .unwrap_or_default(),
+        replicas: row.try_get::<i64, _>("replicas").map_err(Error::from)?
+            as u32,
+        memory_limit: memory_limit.and_then(|s| s.parse::<u64>().ok()),
+        cpu_limit: cpu_limit.and_then(|s| s.parse::<f64>().ok()),
+        depends_on: serde_json::from_str(&depends_on).unwrap_or_default(),
+        health_check: health_check.and_then(|h| serde_json::from_str(&h).ok()),
+        restart_policy: serde_json::from_str(&restart_policy)
+            .unwrap_or_default(),
+        registry_auth: registry_auth
+            .and_then(|r| serde_json::from_str(&r).ok()),
+        env_vars: serde_json::from_str(&env_vars).unwrap_or_default(),
+        domains: serde_json::from_str(&domains).unwrap_or_default(),
+        http_only_domains: serde_json::from_str(&http_only_domains)
+            .unwrap_or_default(),
+        build_context: row.try_get("build_context").map_err(Error::from)?,
+        dockerfile_path: row.try_get("dockerfile_path").map_err(Error::from)?,
+        build_target: row.try_get("build_target").map_err(Error::from)?,
+        build_args: serde_json::from_str(&build_args).unwrap_or_default(),
+        command: command.and_then(|c| serde_json::from_str(&c).ok()),
+        entrypoint: entrypoint.and_then(|e| serde_json::from_str(&e).ok()),
+        working_dir: row.try_get("working_dir").map_err(Error::from)?,
+        schedule: row.try_get("schedule").map_err(Error::from)?,
+        mounts: serde_json::from_str(&mounts).unwrap_or_default(),
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+        updated_at: DateTime::parse_from_rfc3339(&updated_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+    }))
+}
 
-    fn get_json<T: DeserializeOwned + Send>(
-        &self,
-        table: &str,
-        key: &str,
-    ) -> Result<Option<T>> {
-        self.run(async {
-            let row = sqlx::query(safe_sql(format!(
-                "select value from {table} where key = ?1"
-            )))
-            .bind(key)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(Error::from)?;
+fn row_to_service_deployment(
+    row: Option<&SqliteRow>,
+) -> Result<Option<ServiceDeployment>> {
+    let row = match row {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let created_at: String = row.try_get("created_at").map_err(Error::from)?;
+    let started_at: Option<String> =
+        row.try_get("started_at").map_err(Error::from)?;
+    let finished_at: Option<String> =
+        row.try_get("finished_at").map_err(Error::from)?;
+    let logs: String = row.try_get("logs").map_err(Error::from)?;
+    let status: String = row.try_get("status").map_err(Error::from)?;
+    let health: String = row.try_get("health").map_err(Error::from)?;
+    Ok(Some(ServiceDeployment {
+        id: Uuid::parse_str(
+            &row.try_get::<String, _>("id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        service_id: Uuid::parse_str(
+            &row.try_get::<String, _>("service_id")
+                .map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        deployment_id: Uuid::parse_str(
+            &row.try_get::<String, _>("deployment_id")
+                .map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        replica_index: row
+            .try_get::<i64, _>("replica_index")
+            .map_err(Error::from)? as u32,
+        status: serde_json::from_str(&status)
+            .unwrap_or_else(|_| DeploymentStatus::Pending),
+        container_id: row.try_get("container_id").map_err(Error::from)?,
+        image_id: row.try_get("image_id").map_err(Error::from)?,
+        health: serde_json::from_str(&health).unwrap_or_default(),
+        logs: serde_json::from_str(&logs).unwrap_or_default(),
+        started_at: started_at.and_then(|t| {
+            DateTime::parse_from_rfc3339(&t)
+                .ok()
+                .map(|t| t.with_timezone(&Utc))
+        }),
+        finished_at: finished_at.and_then(|t| {
+            DateTime::parse_from_rfc3339(&t)
+                .ok()
+                .map(|t| t.with_timezone(&Utc))
+        }),
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+    }))
+}
 
-            match row {
-                Some(row) => {
-                    let value = row
-                        .try_get::<String, _>("value")
-                        .map_err(Error::from)?;
-                    serde_json::from_str(&value).map(Some).map_err(Error::from)
-                }
-                None => Ok(None),
+fn row_to_deployment(row: Option<&SqliteRow>) -> Result<Option<Deployment>> {
+    let row = match row {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let created_at: String = row.try_get("created_at").map_err(Error::from)?;
+    let started_at: Option<String> =
+        row.try_get("started_at").map_err(Error::from)?;
+    let finished_at: Option<String> =
+        row.try_get("finished_at").map_err(Error::from)?;
+    let rollback_from_deployment_id: Option<String> = row
+        .try_get("rollback_from_deployment_id")
+        .map_err(Error::from)?;
+    let app_snapshot: Option<String> =
+        row.try_get("app_snapshot").map_err(Error::from)?;
+    let commit_message: Option<String> =
+        row.try_get("commit_message").map_err(Error::from)?;
+    let source_url: Option<String> =
+        row.try_get("source_url").map_err(Error::from)?;
+    let rollout_strategy: String =
+        row.try_get("rollout_strategy").map_err(Error::from)?;
+    let status: String = row.try_get("status").map_err(Error::from)?;
+    let container_id: Option<String> =
+        row.try_get("container_id").map_err(Error::from)?;
+    let image_id: Option<String> =
+        row.try_get("image_id").map_err(Error::from)?;
+    Ok(Some(Deployment {
+        id: Uuid::parse_str(
+            &row.try_get::<String, _>("id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        app_id: Uuid::parse_str(
+            &row.try_get::<String, _>("app_id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        commit_sha: row.try_get("commit_sha").map_err(Error::from)?,
+        commit_message,
+        branch: row.try_get("branch").map_err(Error::from)?,
+        source_url,
+        rollout_strategy: serde_json::from_str(&rollout_strategy)
+            .unwrap_or_default(),
+        rollback_from_deployment_id: rollback_from_deployment_id
+            .and_then(|s| Uuid::parse_str(&s).ok()),
+        app_snapshot: app_snapshot.and_then(|s| serde_json::from_str(&s).ok()),
+        status: serde_json::from_str(&status)
+            .unwrap_or_else(|_| DeploymentStatus::Pending),
+        container_id,
+        image_id,
+        service_deployments: Vec::new(),
+        logs: Vec::new(),
+        started_at: started_at.and_then(|t| {
+            DateTime::parse_from_rfc3339(&t)
+                .ok()
+                .map(|t| t.with_timezone(&Utc))
+        }),
+        finished_at: finished_at.and_then(|t| {
+            DateTime::parse_from_rfc3339(&t)
+                .ok()
+                .map(|t| t.with_timezone(&Utc))
+        }),
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+    }))
+}
+
+fn row_to_certificate(row: Option<&SqliteRow>) -> Result<Option<Certificate>> {
+    let row = match row {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let expires_at: String = row.try_get("expires_at").map_err(Error::from)?;
+    let created_at: String = row.try_get("created_at").map_err(Error::from)?;
+    Ok(Some(Certificate {
+        id: Uuid::parse_str(
+            &row.try_get::<String, _>("id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        domain: row.try_get("domain").map_err(Error::from)?,
+        cert_pem: row.try_get("cert_pem").map_err(Error::from)?,
+        key_pem: row.try_get("key_pem").map_err(Error::from)?,
+        expires_at: DateTime::parse_from_rfc3339(&expires_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+    }))
+}
+
+fn row_to_managed_database(
+    row: Option<&SqliteRow>,
+) -> Result<Option<ManagedDatabase>> {
+    let row = match row {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let created_at: String = row.try_get("created_at").map_err(Error::from)?;
+    let updated_at: String = row.try_get("updated_at").map_err(Error::from)?;
+    let pitr_last_base_backup_at: Option<String> = row
+        .try_get("pitr_last_base_backup_at")
+        .map_err(Error::from)?;
+    let group_id: Option<String> =
+        row.try_get("group_id").map_err(Error::from)?;
+    let container_id: Option<String> =
+        row.try_get("container_id").map_err(Error::from)?;
+    let external_port: Option<i64> =
+        row.try_get("external_port").map_err(Error::from)?;
+    let pitr_last_base_backup_label: Option<String> = row
+        .try_get("pitr_last_base_backup_label")
+        .map_err(Error::from)?;
+    let proxy_external_port: Option<i64> =
+        row.try_get("proxy_external_port").map_err(Error::from)?;
+    let credentials: String =
+        row.try_get("credentials").map_err(Error::from)?;
+    let memory_limit: String =
+        row.try_get("memory_limit").map_err(Error::from)?;
+    let cpu_limit: String = row.try_get("cpu_limit").map_err(Error::from)?;
+    let db_type: String = row.try_get("db_type").map_err(Error::from)?;
+    let status: String = row.try_get("status").map_err(Error::from)?;
+    Ok(Some(ManagedDatabase {
+        id: Uuid::parse_str(
+            &row.try_get::<String, _>("id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        owner_id: Uuid::parse_str(
+            &row.try_get::<String, _>("owner_id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        group_id: group_id.and_then(|s| Uuid::parse_str(&s).ok()),
+        name: row.try_get("name").map_err(Error::from)?,
+        db_type: serde_json::from_str(&db_type)
+            .unwrap_or_else(|_| DatabaseType::Postgresql),
+        version: row.try_get("version").map_err(Error::from)?,
+        container_id,
+        volume_name: row.try_get("volume_name").map_err(Error::from)?,
+        host_data_path: row.try_get("host_data_path").map_err(Error::from)?,
+        internal_host: row.try_get("internal_host").map_err(Error::from)?,
+        port: row.try_get::<i64, _>("port").map_err(Error::from)? as u16,
+        external_port: external_port.map(|p| p as u16),
+        pitr_enabled: row
+            .try_get::<i32, _>("pitr_enabled")
+            .map_err(Error::from)?
+            != 0,
+        pitr_last_base_backup_at: pitr_last_base_backup_at.and_then(|t| {
+            DateTime::parse_from_rfc3339(&t)
+                .ok()
+                .map(|t| t.with_timezone(&Utc))
+        }),
+        pitr_last_base_backup_label,
+        proxy_enabled: row
+            .try_get::<i32, _>("proxy_enabled")
+            .map_err(Error::from)?
+            != 0,
+        proxy_external_port: proxy_external_port.map(|p| p as u16),
+        credentials: serde_json::from_str(&credentials).unwrap_or_else(|_| {
+            DatabaseCredentials {
+                username: "".to_string(),
+                password: "".to_string(),
+                database_name: "".to_string(),
             }
-        })
-    }
-
-    fn delete_key(&self, table: &str, key: &str) -> Result<bool> {
-        self.run(async {
-            let result = sqlx::query(safe_sql(format!(
-                "delete from {table} where key = ?1"
-            )))
-            .bind(key)
-            .execute(&self.pool)
-            .await
-            .map_err(Error::from)?;
-            Ok(result.rows_affected() > 0)
-        })
-    }
-
-    fn list_json<T: DeserializeOwned + Send>(
-        &self,
-        table: &str,
-    ) -> Result<Vec<T>> {
-        self.run(async {
-            let rows =
-                sqlx::query(safe_sql(format!("select value from {table}")))
-                    .fetch_all(&self.pool)
-                    .await
-                    .map_err(Error::from)?;
-
-            rows.into_iter()
-                .map(|row| {
-                    let value = row
-                        .try_get::<String, _>("value")
-                        .map_err(Error::from)?;
-                    serde_json::from_str(&value).map_err(Error::from)
-                })
-                .collect()
-        })
-    }
+        }),
+        memory_limit: memory_limit.parse().unwrap_or_default(),
+        cpu_limit: cpu_limit.parse().unwrap_or_default(),
+        status: serde_json::from_str(&status)
+            .unwrap_or_else(|_| ServiceStatus::Pending),
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+        updated_at: DateTime::parse_from_rfc3339(&updated_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+    }))
 }
 
-fn run_with_runtime<T>(
-    runtime: &std::sync::Mutex<Option<tokio::runtime::Runtime>>,
-    future: impl Future<Output = Result<T>> + Send,
-) -> Result<T>
-where
-    T: Send,
-{
-    if tokio::runtime::Handle::try_current().is_ok() {
-        std::thread::scope(|scope| {
-            let task = scope.spawn(|| {
-                let runtime = runtime.lock().map_err(|_| {
-                    Error::Internal("sqlite runtime mutex poisoned".to_string())
-                })?;
-                let runtime = runtime.as_ref().ok_or_else(|| {
-                    Error::Internal("sqlite runtime not available".to_string())
-                })?;
-                runtime.block_on(future)
-            });
-
-            task.join().map_err(|_| {
-                Error::Internal("sqlite runtime worker panicked".to_string())
-            })?
-        })
-    } else {
-        let runtime = runtime.lock().map_err(|_| {
-            Error::Internal("sqlite runtime mutex poisoned".to_string())
-        })?;
-        let runtime = runtime.as_ref().ok_or_else(|| {
-            Error::Internal("sqlite runtime not available".to_string())
-        })?;
-        runtime.block_on(future)
-    }
+fn row_to_managed_queue(
+    row: Option<&SqliteRow>,
+) -> Result<Option<ManagedQueue>> {
+    let row = match row {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let created_at: String = row.try_get("created_at").map_err(Error::from)?;
+    let updated_at: String = row.try_get("updated_at").map_err(Error::from)?;
+    let group_id: Option<String> =
+        row.try_get("group_id").map_err(Error::from)?;
+    let container_id: Option<String> =
+        row.try_get("container_id").map_err(Error::from)?;
+    let external_port: Option<i64> =
+        row.try_get("external_port").map_err(Error::from)?;
+    let credentials: String =
+        row.try_get("credentials").map_err(Error::from)?;
+    let memory_limit: String =
+        row.try_get("memory_limit").map_err(Error::from)?;
+    let cpu_limit: String = row.try_get("cpu_limit").map_err(Error::from)?;
+    let queue_type: String = row.try_get("queue_type").map_err(Error::from)?;
+    let status: String = row.try_get("status").map_err(Error::from)?;
+    Ok(Some(ManagedQueue {
+        id: Uuid::parse_str(
+            &row.try_get::<String, _>("id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        owner_id: Uuid::parse_str(
+            &row.try_get::<String, _>("owner_id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        group_id: group_id.and_then(|s| Uuid::parse_str(&s).ok()),
+        name: row.try_get("name").map_err(Error::from)?,
+        queue_type: serde_json::from_str(&queue_type)
+            .unwrap_or_else(|_| QueueType::Rabbitmq),
+        version: row.try_get("version").map_err(Error::from)?,
+        container_id,
+        volume_name: row.try_get("volume_name").map_err(Error::from)?,
+        host_data_path: row.try_get("host_data_path").map_err(Error::from)?,
+        internal_host: row.try_get("internal_host").map_err(Error::from)?,
+        port: row.try_get::<i64, _>("port").map_err(Error::from)? as u16,
+        external_port: external_port.map(|p| p as u16),
+        credentials: serde_json::from_str(&credentials).unwrap_or_else(|_| {
+            QueueCredentials {
+                username: "".to_string(),
+                password: "".to_string(),
+            }
+        }),
+        memory_limit: memory_limit.parse().unwrap_or_default(),
+        cpu_limit: cpu_limit.parse().unwrap_or_default(),
+        status: serde_json::from_str(&status)
+            .unwrap_or_else(|_| ServiceStatus::Pending),
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+        updated_at: DateTime::parse_from_rfc3339(&updated_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+    }))
 }
 
-impl Drop for SqliteJsonDatabase {
+fn row_to_storage_bucket(
+    row: Option<&SqliteRow>,
+) -> Result<Option<StorageBucket>> {
+    let row = match row {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let created_at: String = row.try_get("created_at").map_err(Error::from)?;
+    let size_bytes: i64 = row.try_get("size_bytes").map_err(Error::from)?;
+    Ok(Some(StorageBucket {
+        id: Uuid::parse_str(
+            &row.try_get::<String, _>("id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        owner_id: Uuid::parse_str(
+            &row.try_get::<String, _>("owner_id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        name: row.try_get("name").map_err(Error::from)?,
+        access_key: row.try_get("access_key").map_err(Error::from)?,
+        secret_key: row.try_get("secret_key").map_err(Error::from)?,
+        size_bytes: size_bytes as u64,
+        endpoint: row.try_get("endpoint").map_err(Error::from)?,
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+    }))
+}
+
+fn row_to_github_app(
+    row: Option<&SqliteRow>,
+) -> Result<Option<GithubAppConfig>> {
+    let row = match row {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let created_at: String = row.try_get("created_at").map_err(Error::from)?;
+    let updated_at: String = row.try_get("updated_at").map_err(Error::from)?;
+    let installations: String =
+        row.try_get("installations").map_err(Error::from)?;
+    Ok(Some(GithubAppConfig {
+        id: Uuid::parse_str(
+            &row.try_get::<String, _>("id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        app_id: row.try_get::<i64, _>("app_id").map_err(Error::from)?,
+        app_name: row.try_get("app_name").map_err(Error::from)?,
+        client_id: row.try_get("client_id").map_err(Error::from)?,
+        client_secret: row.try_get("client_secret").map_err(Error::from)?,
+        private_key: row.try_get("private_key").map_err(Error::from)?,
+        webhook_secret: row.try_get("webhook_secret").map_err(Error::from)?,
+        html_url: row.try_get("html_url").map_err(Error::from)?,
+        owner_id: Uuid::parse_str(
+            &row.try_get::<String, _>("owner_id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        installations: serde_json::from_str(&installations).unwrap_or_default(),
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+        updated_at: DateTime::parse_from_rfc3339(&updated_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+    }))
+}
+
+async fn insert_service(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    svc: &ContainerService,
+) -> Result<()> {
+    let health_check = svc
+        .health_check
+        .as_ref()
+        .map(|h| serde_json::to_string(h).unwrap_or_default());
+    let registry_auth = svc
+        .registry_auth
+        .as_ref()
+        .map(|r| serde_json::to_string(r).unwrap_or_default());
+    let command = svc
+        .command
+        .as_ref()
+        .map(|c| serde_json::to_string(c).unwrap_or_default());
+    let entrypoint = svc
+        .entrypoint
+        .as_ref()
+        .map(|e| serde_json::to_string(e).unwrap_or_default());
+
+    sqlx::query(
+        r#"INSERT INTO services (id, app_id, name, image, service_type, port, expose_http, additional_ports, replicas, memory_limit, cpu_limit, depends_on, health_check, restart_policy, registry_auth, env_vars, domains, http_only_domains, build_context, dockerfile_path, build_target, build_args, command, entrypoint, working_dir, schedule, mounts, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, name=excluded.name, image=excluded.image, service_type=excluded.service_type, port=excluded.port, expose_http=excluded.expose_http, additional_ports=excluded.additional_ports, replicas=excluded.replicas, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, depends_on=excluded.depends_on, health_check=excluded.health_check, restart_policy=excluded.restart_policy, registry_auth=excluded.registry_auth, env_vars=excluded.env_vars, domains=excluded.domains, http_only_domains=excluded.http_only_domains, build_context=excluded.build_context, dockerfile_path=excluded.dockerfile_path, build_target=excluded.build_target, build_args=excluded.build_args, command=excluded.command, entrypoint=excluded.entrypoint, working_dir=excluded.working_dir, schedule=excluded.schedule, mounts=excluded.mounts, created_at=excluded.created_at, updated_at=excluded.updated_at"#
+    )
+    .bind(svc.id.to_string())
+    .bind(svc.app_id.to_string())
+    .bind(&svc.name)
+    .bind(&svc.image)
+    .bind(serde_json::to_string(&svc.service_type)?)
+    .bind(svc.port as i64)
+    .bind(if svc.expose_http { 1 } else { 0 })
+    .bind(serde_json::to_string(&svc.additional_ports)?)
+    .bind(svc.replicas as i64)
+    .bind(svc.memory_limit.map(|m| m.to_string()))
+    .bind(svc.cpu_limit.map(|c| c.to_string()))
+    .bind(serde_json::to_string(&svc.depends_on)?)
+    .bind(health_check)
+    .bind(serde_json::to_string(&svc.restart_policy)?)
+    .bind(registry_auth)
+    .bind(serde_json::to_string(&svc.env_vars)?)
+    .bind(serde_json::to_string(&svc.domains)?)
+    .bind(serde_json::to_string(&svc.http_only_domains)?)
+    .bind(&svc.build_context)
+    .bind(&svc.dockerfile_path)
+    .bind(&svc.build_target)
+    .bind(serde_json::to_string(&svc.build_args)?)
+    .bind(command)
+    .bind(entrypoint)
+    .bind(&svc.working_dir)
+    .bind(&svc.schedule)
+    .bind(serde_json::to_string(&svc.mounts)?)
+    .bind(svc.created_at.to_rfc3339())
+    .bind(svc.updated_at.to_rfc3339())
+    .execute(&mut **tx).await.map_err(Error::from)?;
+    Ok(())
+}
+
+impl Drop for SqliteDatabase {
     fn drop(&mut self) {
         if let Ok(mut runtime) = self.runtime.lock() {
             if let Some(runtime) = runtime.take() {
@@ -1509,264 +2165,13 @@ impl Drop for SqliteJsonDatabase {
 fn ensure_parent_dir(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).map_err(|error| {
+            std::fs::create_dir_all(parent).map_err(|e| {
                 Error::Internal(format!(
                     "failed to create database directory: {}",
-                    error
+                    e
                 ))
             })?;
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::managed_services::{DatabaseType, QueueType};
-    use crate::models::{
-        BuildArg, DeploymentStatus, EnvVar, GithubInstallation, HealthCheck,
-        RestartPolicy, RolloutStrategy, ServiceHealth, ServiceMount,
-        ServiceRegistryAuth, ServiceType, User,
-    };
-
-    fn temp_config(name: &str) -> DatabaseConfig {
-        let root = std::env::temp_dir().join(format!(
-            "containr-db-test-{}-{}",
-            name,
-            Uuid::new_v4()
-        ));
-        DatabaseConfig {
-            path: root.join("state.sqlite3").to_string_lossy().to_string(),
-        }
-    }
-
-    #[test]
-    fn sqlite_store_roundtrips_core_entities() {
-        let db = Database::open(&temp_config("roundtrip"))
-            .expect("database should open");
-
-        let mut owner = User::new_with_password(
-            "owner@example.com".to_string(),
-            "argon2:test-hash".to_string(),
-        );
-        owner.is_admin = true;
-        db.save_user(&owner).expect("user save should work");
-        let loaded_owner = db
-            .get_user(owner.id)
-            .expect("user lookup should work")
-            .expect("user should exist");
-        assert!(loaded_owner.is_admin);
-        assert!(db.has_admin_user().expect("admin lookup should work"));
-
-        let mut app = App::new(
-            "demo".to_string(),
-            "https://example.com/repo".to_string(),
-            owner.id,
-        );
-        app.branch = "main".to_string();
-        app.env_vars = vec![
-            EnvVar {
-                key: "PORT".to_string(),
-                value: "8080".to_string(),
-                secret: false,
-            },
-            EnvVar {
-                key: "TOKEN".to_string(),
-                value: "secret".to_string(),
-                secret: true,
-            },
-        ];
-        let mut web = ContainerService::new(
-            app.id,
-            "web".to_string(),
-            "".to_string(),
-            8080,
-        );
-        web.service_type = ServiceType::WebService;
-        web.expose_http = true;
-        web.domains = vec!["demo.example.com".to_string()];
-        web.additional_ports = vec![9000];
-        web.registry_auth = Some(ServiceRegistryAuth {
-            server: Some("ghcr.io".to_string()),
-            username: "demo".to_string(),
-            password: "encrypted".to_string(),
-        });
-        web.build_args = vec![BuildArg {
-            key: "RUSTFLAGS".to_string(),
-            value: "-C target-cpu=native".to_string(),
-            secret: false,
-        }];
-        web.mounts = vec![ServiceMount {
-            name: "data".to_string(),
-            target: "/data".to_string(),
-            read_only: false,
-        }];
-        web.health_check = Some(HealthCheck {
-            path: "/health".to_string(),
-            interval_secs: 15,
-            timeout_secs: 3,
-            retries: 2,
-        });
-
-        let mut worker = ContainerService::new(
-            app.id,
-            "worker".to_string(),
-            "".to_string(),
-            0,
-        );
-        worker.service_type = ServiceType::BackgroundWorker;
-        worker.depends_on = vec!["web".to_string()];
-        worker.restart_policy = RestartPolicy::OnFailure;
-
-        app.services = vec![worker.clone(), web.clone()];
-        db.save_app(&app).expect("app save should work");
-
-        let loaded_app = db
-            .get_app(app.id)
-            .expect("app lookup should work")
-            .expect("app should exist");
-        assert_eq!(loaded_app.services.len(), 2);
-        assert_eq!(
-            db.get_service(web.id)
-                .expect("service lookup should work")
-                .expect("service should exist")
-                .domains,
-            vec!["demo.example.com".to_string()]
-        );
-
-        let mut deployment = Deployment::new(app.id, "abc123".to_string());
-        deployment.status = DeploymentStatus::Running;
-        deployment.rollout_strategy = RolloutStrategy::StartFirst;
-        let mut service_deployment =
-            ServiceDeployment::new(web.id, deployment.id, 0);
-        service_deployment.status = DeploymentStatus::Running;
-        service_deployment.health = ServiceHealth::Healthy;
-        service_deployment.logs = vec!["service ready".to_string()];
-        deployment.service_deployments = vec![service_deployment.clone()];
-
-        db.save_deployment(&deployment)
-            .expect("deployment save should work");
-        db.append_deployment_log(deployment.id, "first line")
-            .expect("first deployment log should append");
-        db.append_deployment_log(deployment.id, "second line")
-            .expect("second deployment log should append");
-        db.save_service_deployment(&service_deployment)
-            .expect("service deployment save should work");
-
-        let loaded_deployment = db
-            .get_deployment(deployment.id)
-            .expect("deployment lookup should work")
-            .expect("deployment should exist");
-        assert_eq!(loaded_deployment.service_deployments.len(), 1);
-        assert!(loaded_deployment.logs.is_empty());
-        assert_eq!(
-            db.get_deployment_logs(deployment.id, 10, 0)
-                .expect("deployment logs should load"),
-            vec!["first line".to_string(), "second line".to_string()]
-        );
-
-        let mut managed_db = ManagedDatabase::new(
-            owner.id,
-            "primary".to_string(),
-            DatabaseType::Postgresql,
-        );
-        managed_db.status = ServiceStatus::Running;
-        db.save_managed_database(&managed_db)
-            .expect("managed database save should work");
-        assert_eq!(
-            db.list_managed_databases_by_owner(owner.id)
-                .expect("managed databases should load")
-                .len(),
-            1
-        );
-
-        let managed_queue = ManagedQueue::new(
-            owner.id,
-            "events".to_string(),
-            QueueType::Rabbitmq,
-        );
-        db.save_managed_queue(&managed_queue)
-            .expect("managed queue save should work");
-
-        let bucket = StorageBucket::new(
-            owner.id,
-            "backups".to_string(),
-            "http://localhost:9000".to_string(),
-        );
-        db.save_storage_bucket(&bucket)
-            .expect("bucket save should work");
-
-        let mut github_app =
-            GithubAppConfig::builder(12345, "demo-app", owner.id)
-                .client_id("client-id")
-                .client_secret("client-secret")
-                .private_key("private-key")
-                .webhook_secret("webhook-secret")
-                .build();
-        github_app.installations.push(GithubInstallation::new(
-            67890,
-            "demo-org".to_string(),
-            "Organization".to_string(),
-        ));
-        db.save_github_app(&github_app)
-            .expect("github app save should work");
-
-        assert!(db
-            .get_github_app(owner.id)
-            .expect("github app lookup should work")
-            .is_some());
-    }
-
-    #[test]
-    fn sqlite_store_persists_entities_across_reopen() {
-        let config = temp_config("persist");
-        let db_path = config.sqlite_path();
-
-        let mut admin = User::new_with_password(
-            "persist-admin@example.com".to_string(),
-            "argon2:test-hash".to_string(),
-        );
-        admin.is_admin = true;
-
-        {
-            let db = Database::open(&config).expect("database should open");
-            db.save_user(&admin).expect("user save should work");
-            db.flush().expect("database flush should work");
-        }
-
-        assert!(db_path.exists(), "sqlite file should exist on disk");
-
-        let reopened = Database::open(&config).expect("database should reopen");
-        let users = reopened.list_users().expect("users should load");
-        assert_eq!(users.len(), 1);
-        assert_eq!(users[0].id, admin.id);
-        assert!(users[0].is_admin);
-    }
-
-    #[test]
-    fn legacy_apps_are_promoted_to_default_service_model() {
-        let db = Database::open(&temp_config("legacy-service"))
-            .expect("database should open");
-
-        let owner_id = Uuid::new_v4();
-        let mut app = App::new(
-            "legacy-app".to_string(),
-            "https://example.com/repo".to_string(),
-            owner_id,
-        );
-        app.port = 4567;
-
-        db.save_app(&app).expect("app save should work");
-
-        let loaded = db
-            .get_app(app.id)
-            .expect("app lookup should work")
-            .expect("app should exist");
-        assert_eq!(loaded.services.len(), 1);
-        assert_eq!(loaded.services[0].id, loaded.default_service_id());
-        assert_eq!(loaded.services[0].name, "web");
-        assert_eq!(loaded.services[0].port, 4567);
-        assert!(loaded.services[0].expose_http);
-    }
 }
