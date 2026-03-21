@@ -10,7 +10,6 @@ use instant_acme::{
 use parking_lot::RwLock;
 use pingora_core::tls::x509::X509;
 use std::collections::HashMap;
-use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::fs;
@@ -91,7 +90,7 @@ impl AcmeManager {
         domain: &str,
     ) -> anyhow::Result<Certificate> {
         // check if we have a valid certificate
-        if let Some(mut cert) = self.db.get_certificate(domain)? {
+        if let Some(mut cert) = self.db.get_certificate_by_domain(domain)? {
             if let Ok(expires_at) = parse_certificate_expiry(&cert.cert_pem) {
                 if cert.expires_at != expires_at {
                     cert.expires_at = expires_at;
@@ -246,74 +245,6 @@ impl AcmeManager {
         Ok(cert)
     }
 
-    // imports legacy filesystem certificates into sqlite and removes the files.
-    pub async fn migrate_legacy_certificate_files_to_db(
-        &self,
-    ) -> anyhow::Result<()> {
-        let mut entries = match fs::read_dir(&self.certs_dir).await {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(());
-            }
-            Err(error) => return Err(error.into()),
-        };
-
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            if path.extension().and_then(OsStr::to_str) != Some("pem") {
-                continue;
-            }
-
-            let Some(domain) = path
-                .file_stem()
-                .and_then(OsStr::to_str)
-                .filter(|name| *name != "account")
-            else {
-                continue;
-            };
-
-            let key_path = self.certs_dir.join(format!("{}.key", domain));
-            if !fs::try_exists(&key_path).await? {
-                warn!(
-                    domain = %domain,
-                    path = %key_path.display(),
-                    "skipping legacy certificate import because the private key file is missing"
-                );
-                continue;
-            }
-
-            if self.db.get_certificate(domain)?.is_none() {
-                let cert_pem = fs::read_to_string(&path).await?;
-                let key_pem = fs::read_to_string(&key_path).await?;
-                let expires_at = parse_certificate_expiry(&cert_pem)
-                    .unwrap_or_else(|error| {
-                        warn!(
-                            domain = %domain,
-                            error = %error,
-                            "failed to parse legacy certificate expiry; marking it for near-term renewal"
-                        );
-                        Utc::now() + Duration::days(1)
-                    });
-                let cert = Certificate::new(
-                    domain.to_string(),
-                    cert_pem,
-                    key_pem,
-                    expires_at,
-                );
-                self.db.save_certificate(&cert)?;
-                info!(
-                    domain = %domain,
-                    "migrated legacy filesystem certificate into sqlite"
-                );
-            }
-
-            remove_file_if_exists(&path).await?;
-            remove_file_if_exists(&key_path).await?;
-        }
-
-        Ok(())
-    }
-
     // gets or creates an acme account
     async fn get_or_create_account(&self) -> anyhow::Result<Account> {
         let server_url = if self.staging {
@@ -385,14 +316,6 @@ impl AcmeManager {
     // returns the challenge store for the proxy to serve challenges
     pub fn challenge_store(&self) -> ChallengeStore {
         self.challenge_store.clone()
-    }
-}
-
-async fn remove_file_if_exists(path: &PathBuf) -> anyhow::Result<()> {
-    match fs::remove_file(path).await {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.into()),
     }
 }
 

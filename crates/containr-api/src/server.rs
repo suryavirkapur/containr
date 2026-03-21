@@ -130,7 +130,6 @@ pub async fn run_server(
             "/api/settings/certificate",
             post(settings::issue_dashboard_certificate),
         )
-        // github oauth (legacy)
         .route("/api/github/status", get(github_repos::github_status))
         .route("/api/github/repos", get(github_repos::github_repos))
         .route(

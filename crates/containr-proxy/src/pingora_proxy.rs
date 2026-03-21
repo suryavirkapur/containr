@@ -73,7 +73,7 @@ impl ContainrProxy {
 
     fn has_certificate(&self, domain: &str) -> bool {
         self.db
-            .get_certificate(domain)
+            .get_certificate_by_domain(domain)
             .ok()
             .flatten()
             .map(|cert| cert.expires_at > Utc::now())
@@ -107,7 +107,12 @@ impl DynamicCertResolver {
         &self,
         domain: &str,
     ) -> Option<(X509, Vec<X509>, PKey<Private>)> {
-        let cert = match self.db.get_certificate(domain).ok().flatten() {
+        let cert = match self
+            .db
+            .get_certificate_by_domain(domain)
+            .ok()
+            .flatten()
+        {
             Some(cert) if cert.expires_at > Utc::now() => cert,
             _ => {
                 self.cache.remove(domain);

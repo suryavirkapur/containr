@@ -296,10 +296,6 @@ impl DeploymentWorker {
         let sorted_services = self.topological_sort_services(&app.services)?;
         let previous_running =
             self.get_previous_running_deployments(app.id, deployment.id)?;
-        let legacy_previous_containers = previous_running
-            .iter()
-            .filter_map(|previous| previous.container_id.clone())
-            .collect::<Vec<_>>();
         let mut old_containers: HashMap<(uuid::Uuid, u32), String> =
             HashMap::new();
         for previous in &previous_running {
@@ -314,13 +310,6 @@ impl DeploymentWorker {
                         ))
                         .or_insert(container_id);
                 }
-            }
-        }
-
-        if matches!(rollout_strategy, RolloutStrategy::StopFirst) {
-            for old in &legacy_previous_containers {
-                let _ = self.docker_manager.stop_container(old).await;
-                let _ = self.docker_manager.remove_container(old).await;
             }
         }
 
@@ -524,12 +513,6 @@ impl DeploymentWorker {
 
         if matches!(rollout_strategy, RolloutStrategy::StartFirst) {
             for old in old_containers.values() {
-                if !new_container_ids.contains(old) {
-                    let _ = self.docker_manager.stop_container(old).await;
-                    let _ = self.docker_manager.remove_container(old).await;
-                }
-            }
-            for old in &legacy_previous_containers {
                 if !new_container_ids.contains(old) {
                     let _ = self.docker_manager.stop_container(old).await;
                     let _ = self.docker_manager.remove_container(old).await;
@@ -772,7 +755,6 @@ impl DeploymentWorker {
             .and_then(|source| source.app_snapshot.clone())
             .or_else(|| deployment.app_snapshot.clone())
             .unwrap_or_else(|| current_app.clone())
-            .normalized_for_service_model()
     }
 
     fn primary_deployment_image_id(
@@ -1201,7 +1183,12 @@ mod tests {
             "".to_string(),
             owner_id,
         );
-        current_app.ensure_service_model();
+        current_app.services.push(containr_common::models::ContainerService::new(
+            current_app.id,
+            "web".to_string(),
+            "nginx:latest".to_string(),
+            8080,
+        ));
         current_app.services[0].command =
             Some(vec!["-text=current".to_string()]);
 
