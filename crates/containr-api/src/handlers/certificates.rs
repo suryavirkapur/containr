@@ -73,7 +73,11 @@ pub async fn get_certificate(
 
     let mut responses = Vec::new();
     for domain in domains {
-        match state.db.get_certificate(&domain).map_err(internal_error)? {
+        match state
+            .db
+            .get_certificate_by_domain(&domain)
+            .map_err(internal_error)?
+        {
             Some(cert) => {
                 let status = cert.status();
                 responses.push(CertificateResponse {
@@ -172,7 +176,7 @@ pub async fn reissue_certificate(
         }
 
         // delete existing certificate to force reissue
-        let _ = state.db.delete_certificate(domain);
+        let _ = state.db.delete_certificate_by_domain(domain);
     }
 
     // trigger certificate issuance

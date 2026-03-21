@@ -456,10 +456,10 @@ impl ManagedDatabase {
     /// returns the docker aliases used for the shared internal network
     pub fn network_aliases(&self) -> Vec<String> {
         let normalized = self.normalized_internal_host();
-        let legacy = self.internal_host.trim().to_string();
+        let original = self.internal_host.trim().to_string();
         let mut aliases = vec![normalized.clone()];
-        if !legacy.is_empty() && legacy != normalized {
-            aliases.push(legacy);
+        if !original.is_empty() && original != normalized {
+            aliases.push(original);
         }
         aliases
     }
@@ -580,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn postgres_16_uses_legacy_data_layout() {
+    fn postgres_16_uses_expected_data_layout() {
         let db = sample_postgres_database("16");
 
         assert_eq!(db.container_mount_target(), "/var/lib/postgresql/data");
@@ -703,10 +703,10 @@ impl ManagedQueue {
     /// returns the docker aliases used for the shared internal network
     pub fn network_aliases(&self) -> Vec<String> {
         let normalized = self.normalized_internal_host();
-        let legacy = self.internal_host.trim().to_string();
+        let original = self.internal_host.trim().to_string();
         let mut aliases = vec![normalized.clone()];
-        if !legacy.is_empty() && legacy != normalized {
-            aliases.push(legacy);
+        if !original.is_empty() && original != normalized {
+            aliases.push(original);
         }
         aliases
     }

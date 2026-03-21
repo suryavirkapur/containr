@@ -276,12 +276,26 @@ impl Database {
         self.store.get_certificate(id)
     }
 
+    pub fn get_certificate_by_domain(
+        &self,
+        domain: &str,
+    ) -> Result<Option<Certificate>> {
+        self.store.get_certificate_by_domain(domain)
+    }
+
     pub fn list_certificates(&self) -> Result<Vec<Certificate>> {
         self.store.list_certificates()
     }
 
     pub fn delete_certificate(&self, id: Uuid) -> Result<bool> {
         self.store.delete_certificate(id)
+    }
+
+    pub fn delete_certificate_by_domain(
+        &self,
+        domain: &str,
+    ) -> Result<bool> {
+        self.store.delete_certificate_by_domain(domain)
     }
 
     pub fn save_managed_database(&self, db: &ManagedDatabase) -> Result<()> {
@@ -1275,6 +1289,22 @@ impl SqliteDatabase {
         })
     }
 
+    fn get_certificate_by_domain(
+        &self,
+        domain: &str,
+    ) -> Result<Option<Certificate>> {
+        self.run(async {
+            let row = sqlx::query(
+                "SELECT * FROM certificates WHERE domain = ?",
+            )
+            .bind(domain)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(Error::from)?;
+            row_to_certificate(row.as_ref())
+        })
+    }
+
     fn list_certificates(&self) -> Result<Vec<Certificate>> {
         self.run(async {
             let rows =
@@ -1303,12 +1333,23 @@ impl SqliteDatabase {
         })
     }
 
+    fn delete_certificate_by_domain(&self, domain: &str) -> Result<bool> {
+        self.run(async {
+            let r = sqlx::query("DELETE FROM certificates WHERE domain = ?")
+                .bind(domain)
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            Ok(r.rows_affected() > 0)
+        })
+    }
+
     // ==================== MANAGED DATABASE ====================
     fn save_managed_database(&self, db: &ManagedDatabase) -> Result<()> {
         self.run(async {
             sqlx::query(
                 r#"INSERT INTO managed_databases (id, owner_id, group_id, name, db_type, version, container_id, volume_name, host_data_path, internal_host, port, external_port, pitr_enabled, pitr_last_base_backup_at, pitr_last_base_backup_label, proxy_enabled, proxy_external_port, credentials, memory_limit, cpu_limit, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET owner_id=excluded.owner_id, group_id=excluded.group_id, name=excluded.name, db_type=excluded.db_type, version=excluded.version, container_id=excluded.container_id, volume_name=excluded.volume_name, host_data_path=excluded.host_data_path, internal_host=excluded.internal_host, port=excluded.port, external_port=excluded.external_port, pitr_enabled=excluded.pitr_enabled, pitr_last_base_backup_at=excluded.pitr_last_base_backup_at, pitr_last_base_backup_label=excluded.pitr_last_base_backup_label, proxy_enabled=excluded.proxy_enabled, proxy_external_port=excluded.proxy_external_port, credentials=excluded.credentials, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, status=excluded.status, created_at=excluded.created_at, updated_at=excluded.updated_at"#
             )
             .bind(db.id.to_string())
@@ -1388,7 +1429,7 @@ impl SqliteDatabase {
         self.run(async {
             sqlx::query(
                 r#"INSERT INTO managed_queues (id, owner_id, group_id, name, queue_type, version, container_id, volume_name, host_data_path, internal_host, port, external_port, credentials, memory_limit, cpu_limit, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET owner_id=excluded.owner_id, group_id=excluded.group_id, name=excluded.name, queue_type=excluded.queue_type, version=excluded.version, container_id=excluded.container_id, volume_name=excluded.volume_name, host_data_path=excluded.host_data_path, internal_host=excluded.internal_host, port=excluded.port, external_port=excluded.external_port, credentials=excluded.credentials, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, status=excluded.status, created_at=excluded.created_at, updated_at=excluded.updated_at"#
             )
             .bind(q.id.to_string())
@@ -2116,7 +2157,7 @@ async fn insert_service(
 
     sqlx::query(
         r#"INSERT INTO services (id, app_id, name, image, service_type, port, expose_http, additional_ports, replicas, memory_limit, cpu_limit, depends_on, health_check, restart_policy, registry_auth, env_vars, domains, http_only_domains, build_context, dockerfile_path, build_target, build_args, command, entrypoint, working_dir, schedule, mounts, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, name=excluded.name, image=excluded.image, service_type=excluded.service_type, port=excluded.port, expose_http=excluded.expose_http, additional_ports=excluded.additional_ports, replicas=excluded.replicas, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, depends_on=excluded.depends_on, health_check=excluded.health_check, restart_policy=excluded.restart_policy, registry_auth=excluded.registry_auth, env_vars=excluded.env_vars, domains=excluded.domains, http_only_domains=excluded.http_only_domains, build_context=excluded.build_context, dockerfile_path=excluded.dockerfile_path, build_target=excluded.build_target, build_args=excluded.build_args, command=excluded.command, entrypoint=excluded.entrypoint, working_dir=excluded.working_dir, schedule=excluded.schedule, mounts=excluded.mounts, created_at=excluded.created_at, updated_at=excluded.updated_at"#
     )
     .bind(svc.id.to_string())

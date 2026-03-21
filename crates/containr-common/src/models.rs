@@ -14,7 +14,6 @@ pub struct Project {
     /// custom domains for the app
     #[serde(default)]
     pub domains: Vec<String>,
-    /// deprecated: use domains instead
     pub domain: Option<String>,
     /// shared environment variables for all services
     pub env_vars: Vec<EnvVar>,
@@ -30,7 +29,6 @@ pub struct Project {
     /// secret token used by the ci deploy webhook
     #[serde(default)]
     pub deploy_webhook_token: Option<String>,
-    /// deprecated: use services instead. kept for backward compat
     #[serde(default = "default_port")]
     pub port: u16,
     /// container services for multi-container apps
@@ -99,115 +97,9 @@ impl Project {
             .any(ContainerService::requires_source_checkout)
     }
 
-    /// returns the deterministic service id used when promoting a legacy app
-    pub fn default_service_id(&self) -> Uuid {
-        let seed = format!("containr-default-service:{}", self.id);
-        Uuid::new_v5(&Uuid::NAMESPACE_OID, seed.as_bytes())
-    }
-
-    /// ensures the project is represented with at least one service
-    pub fn ensure_service_model(&mut self) {
-        if !self.services.is_empty() {
-            return;
-        }
-
-        self.services.push(ContainerService {
-            id: self.default_service_id(),
-            app_id: self.id,
-            name: "web".to_string(),
-            image: String::new(),
-            service_type: ServiceType::WebService,
-            port: self.port,
-            expose_http: true,
-            additional_ports: Vec::new(),
-            replicas: 1,
-            memory_limit: None,
-            cpu_limit: None,
-            depends_on: Vec::new(),
-            health_check: None,
-            restart_policy: RestartPolicy::default(),
-            registry_auth: None,
-            env_vars: Vec::new(),
-            domains: Vec::new(),
-            http_only_domains: Vec::new(),
-            build_context: None,
-            dockerfile_path: None,
-            build_target: None,
-            build_args: Vec::new(),
-            command: None,
-            entrypoint: None,
-            working_dir: None,
-            schedule: None,
-            mounts: Vec::new(),
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-        });
-    }
-
-    /// returns a copy of the project using the service deployment model
-    pub fn normalized_for_service_model(&self) -> Self {
-        let mut project = self.clone();
-        project.normalize_legacy_domains_into_services();
-        project
-    }
-
-    /// returns the legacy project-level custom domains
-    pub fn legacy_custom_domains(&self) -> Vec<String> {
-        let mut domains = self.domains.clone();
-        if let Some(domain) = &self.domain {
-            if !domains.iter().any(|d| d == domain) {
-                domains.push(domain.clone());
-            }
-        }
-        domains
-    }
-
-    /// returns the primary public service index
-    pub fn primary_public_service_index(&self) -> Option<usize> {
-        self.services
-            .iter()
-            .position(|service| {
-                service.is_public_http() && service.name == "web"
-            })
-            .or_else(|| {
-                self.services
-                    .iter()
-                    .position(|service| service.is_public_http())
-            })
-    }
-
-    /// returns a mutable reference to the primary public service
-    pub fn primary_public_service_mut(
-        &mut self,
-    ) -> Option<&mut ContainerService> {
-        let index = self.primary_public_service_index()?;
-        self.services.get_mut(index)
-    }
-
-    /// migrates legacy project-level domains onto the primary public service
-    pub fn normalize_legacy_domains_into_services(&mut self) {
-        self.ensure_service_model();
-
-        let legacy_domains = self.legacy_custom_domains();
-        if legacy_domains.is_empty() {
-            return;
-        }
-
-        if let Some(service) = self.primary_public_service_mut() {
-            for domain in legacy_domains {
-                if !service.domains.iter().any(|existing| existing == &domain) {
-                    service.domains.push(domain);
-                }
-            }
-        }
-
-        self.domain = None;
-        self.domains.clear();
-    }
-
     /// returns all custom domains configured across the project's web services
     pub fn custom_domains(&self) -> Vec<String> {
-        let mut domains = self.legacy_custom_domains();
+        let mut domains = Vec::new();
         for service in &self.services {
             for domain in &service.domains {
                 if !domains.iter().any(|existing| existing == domain) {
@@ -229,13 +121,6 @@ impl Project {
             }
         }
         domains
-    }
-
-    /// sets the custom domains, updating legacy domain field
-    pub fn set_domains(&mut self, mut domains: Vec<String>) {
-        domains.retain(|d| !d.trim().is_empty());
-        self.domain = domains.first().cloned();
-        self.domains = domains;
     }
 
     /// returns the docker network name for this project group
@@ -560,7 +445,7 @@ impl ContainerService {
         self.https_domains().iter().any(|existing| existing == domain)
     }
 
-    /// infers a service type from legacy fields
+    /// infers a service type from port and exposure flags
     pub fn infer_service_type(expose_http: bool, port: u16) -> ServiceType {
         if expose_http {
             ServiceType::WebService
@@ -1148,53 +1033,34 @@ mod tests {
     }
 
     #[test]
-    fn test_app_ensure_service_model_promotes_legacy_app() {
+    fn test_app_custom_domains_deduplicates_service_domains() {
         let owner_id = Uuid::new_v4();
         let mut app = App::new(
             "test-app".to_string(),
             "https://github.com/user/repo".to_string(),
             owner_id,
         );
-        app.port = 9090;
-
-        app.ensure_service_model();
-
-        assert_eq!(app.services.len(), 1);
-        assert_eq!(app.services[0].id, app.default_service_id());
-        assert_eq!(app.services[0].name, "web");
-        assert_eq!(app.services[0].port, 9090);
-        assert!(app.services[0].expose_http);
-        assert_eq!(app.services[0].replicas, 1);
-        assert!(app.services[0].domains.is_empty());
-    }
-
-    #[test]
-    fn test_app_normalized_for_service_model_moves_legacy_domains_to_web_service(
-    ) {
-        let owner_id = Uuid::new_v4();
-        let mut app = App::new(
-            "test-app".to_string(),
-            "https://github.com/user/repo".to_string(),
-            owner_id,
+        let mut web = ContainerService::new(
+            app.id,
+            "web".to_string(),
+            "nginx:latest".to_string(),
+            8080,
         );
-        app.set_domains(vec![
+        web.domains = vec![
             "demo.example.com".to_string(),
             "api.example.com".to_string(),
-        ]);
-
-        let normalized = app.normalized_for_service_model();
-
-        assert!(normalized.domain.is_none());
-        assert!(normalized.domains.is_empty());
-        assert_eq!(
-            normalized.services[0].domains,
-            vec![
-                "demo.example.com".to_string(),
-                "api.example.com".to_string()
-            ]
+        ];
+        let mut api = ContainerService::new(
+            app.id,
+            "api".to_string(),
+            "nginx:latest".to_string(),
+            3000,
         );
+        api.domains = vec!["api.example.com".to_string()];
+        app.services = vec![web, api];
+
         assert_eq!(
-            normalized.custom_domains(),
+            app.custom_domains(),
             vec![
                 "demo.example.com".to_string(),
                 "api.example.com".to_string()

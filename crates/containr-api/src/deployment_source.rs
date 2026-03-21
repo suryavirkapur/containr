@@ -80,7 +80,6 @@ pub async fn resolve_remote_git_token(
         let private_key_pem = decrypt_value(
             &config,
             &app_config.private_key,
-            Some(&config.auth.jwt_secret),
         )
         .map_err(internal_error)?;
 
@@ -110,7 +109,6 @@ pub async fn resolve_remote_git_token(
             let decrypted_token = decrypt_value(
                 &config,
                 &access_token,
-                Some(&config.auth.jwt_secret),
             )
             .map_err(internal_error)?;
             return Ok(Some(decrypted_token));
