@@ -413,4 +413,13 @@
     color: var(--foreground);
     border-color: var(--foreground);
   }
+
+  /* ---- Deployment accordions ---- */
+  details.group > summary {
+    /* remove native disclosure triangle in all browsers */
+    list-style: none;
+  }
+  details.group > summary::-webkit-details-marker {
+    display: none;
+  }
 }
