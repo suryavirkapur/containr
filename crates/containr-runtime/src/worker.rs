@@ -268,6 +268,7 @@ impl DeploymentWorker {
             &service_images,
             &env_vars,
             job.rollout_strategy,
+            rollback_source.is_some(),
         )
         .await?;
 
@@ -281,6 +282,7 @@ impl DeploymentWorker {
     }
 
     /// deploys multi-container services with dependency ordering
+    #[allow(clippy::too_many_arguments)]
     async fn deploy_services(
         &self,
         app: &containr_common::models::App,
@@ -289,20 +291,21 @@ impl DeploymentWorker {
         service_images: &HashMap<Uuid, String>,
         shared_env_vars: &HashMap<String, String>,
         rollout_strategy: RolloutStrategy,
+        restore_app_config: bool,
     ) -> anyhow::Result<()> {
-        use containr_common::models::{RestartPolicy, ServiceDeployment};
-
         // topological sort services by dependencies
         let sorted_services = self.topological_sort_services(&app.services)?;
         let previous_running =
             self.get_previous_running_deployments(app.id, deployment.id)?;
         let mut old_containers: HashMap<(uuid::Uuid, u32), String> =
             HashMap::new();
+        let mut all_old_containers: HashSet<String> = HashSet::new();
         for previous in &previous_running {
             for service_deployment in &previous.service_deployments {
                 if let Some(container_id) =
                     service_deployment.container_id.clone()
                 {
+                    all_old_containers.insert(container_id.clone());
                     old_containers
                         .entry((
                             service_deployment.service_id,
@@ -315,13 +318,114 @@ impl DeploymentWorker {
 
         let mut service_deployments = Vec::new();
         let mut new_container_ids = HashSet::new();
-        let short_id = deployment
-            .id
-            .to_string()
-            .split('-')
-            .next()
-            .unwrap_or("0")
-            .to_string();
+        let rollout = self
+            .rollout_services(
+                app,
+                deployment,
+                network_name,
+                &sorted_services,
+                service_images,
+                shared_env_vars,
+                rollout_strategy,
+                &old_containers,
+                &mut service_deployments,
+                &mut new_container_ids,
+            )
+            .await;
+
+        if let Err(error) = rollout {
+            // don't leak containers created by this failed deployment
+            for container_id in &new_container_ids {
+                let _ =
+                    self.docker_manager.remove_container(container_id).await;
+            }
+            let finished_at = chrono::Utc::now();
+            for sd in &mut service_deployments {
+                sd.status = DeploymentStatus::Failed;
+                sd.finished_at = Some(finished_at);
+                let _ = self.db.save_service_deployment(sd);
+            }
+            return Err(error);
+        }
+
+        if restore_app_config {
+            // rollback restores the snapshot's service spec. recreate it
+            // before saving service deployments so deleted services exist.
+            self.restore_app_services(app)?;
+        }
+
+        // services may have been deleted while this deployment was running
+        let existing_services = self
+            .db
+            .list_services_by_app(app.id)?
+            .into_iter()
+            .map(|service| service.id)
+            .collect::<HashSet<_>>();
+        service_deployments.retain(|sd| {
+            let exists = existing_services.contains(&sd.service_id);
+            if !exists {
+                warn!(
+                    deployment_id = %deployment.id,
+                    service_id = %sd.service_id,
+                    "service no longer exists; skipping service deployment record"
+                );
+            }
+            exists
+        });
+
+        // update main deployment
+        let mut updated_deployment = deployment.clone();
+        updated_deployment.status =
+            containr_common::models::DeploymentStatus::Running;
+        updated_deployment.service_deployments = service_deployments;
+        updated_deployment.image_id =
+            self.primary_deployment_image_id(service_images);
+        // record the spec that actually ran so routing and later rollbacks
+        // see it (rollbacks deploy the source snapshot, not the queued one)
+        updated_deployment.app_snapshot = Some(app.clone());
+        updated_deployment.started_at = Some(chrono::Utc::now());
+        updated_deployment.finished_at = Some(chrono::Utc::now());
+        self.db.save_deployment(&updated_deployment)?;
+        self.send_proxy_refresh(app.id).await;
+
+        // remove every old container not part of the new rollout. this also
+        // covers scaled-down replicas and removed services for stop-first.
+        for old in &all_old_containers {
+            if !new_container_ids.contains(old) {
+                let _ = self.docker_manager.stop_container(old).await;
+                let _ = self.docker_manager.remove_container(old).await;
+            }
+        }
+
+        for previous in &previous_running {
+            self.mark_deployment_stopped(previous)?;
+        }
+
+        Ok(())
+    }
+
+    /// creates containers for every service replica. created container names
+    /// are pushed to `new_container_ids` before creation so callers can
+    /// clean them up on failure.
+    #[allow(clippy::too_many_arguments)]
+    async fn rollout_services(
+        &self,
+        app: &containr_common::models::App,
+        deployment: &Deployment,
+        network_name: &str,
+        sorted_services: &[ContainerService],
+        service_images: &HashMap<Uuid, String>,
+        shared_env_vars: &HashMap<String, String>,
+        rollout_strategy: RolloutStrategy,
+        old_containers: &HashMap<(Uuid, u32), String>,
+        service_deployments: &mut Vec<
+            containr_common::models::ServiceDeployment,
+        >,
+        new_container_ids: &mut HashSet<String>,
+    ) -> anyhow::Result<()> {
+        use containr_common::models::{RestartPolicy, ServiceDeployment};
+
+        let short_id = short_deployment_id(deployment.id);
 
         for service in sorted_services {
             info!(
@@ -352,7 +456,7 @@ impl DeploymentWorker {
                     ServiceDeployment::new(service.id, deployment.id, 0);
                 sd.image_id = Some(service_image);
                 sd.status = containr_common::models::DeploymentStatus::Stopped;
-                self.db.save_service_deployment(&sd)?;
+                self.save_service_deployment_best_effort(&sd);
                 service_deployments.push(sd);
                 continue;
             }
@@ -419,7 +523,7 @@ impl DeploymentWorker {
 
                 if !service.image.is_empty() {
                     let registry_credentials =
-                        self.resolve_service_registry_auth(&service)?;
+                        self.resolve_service_registry_auth(service)?;
                     let _ = self.db.append_deployment_log(
                         deployment.id,
                         &format!("pulling service image {}", service_image),
@@ -450,12 +554,14 @@ impl DeploymentWorker {
                             replica_idx,
                         ),
                     }),
-                    mounts: self.build_service_mounts(app.id, &service)?,
+                    mounts: self.build_service_mounts(app.id, service)?,
                     additional_networks: Vec::new(),
                     health_check,
                     restart_policy,
                 };
 
+                // track before create: a failed start leaves a container
+                new_container_ids.insert(container_id.clone());
                 let container_info =
                     self.docker_manager.create_container(config).await?;
 
@@ -466,14 +572,6 @@ impl DeploymentWorker {
                         .wait_for_healthy(&container_id, 60)
                         .await?
                 {
-                    let _ = self
-                        .docker_manager
-                        .stop_container(&container_id)
-                        .await;
-                    let _ = self
-                        .docker_manager
-                        .remove_container(&container_id)
-                        .await;
                     return Err(anyhow::anyhow!(
                         "service {} replica {} failed health check",
                         service.name,
@@ -492,38 +590,44 @@ impl DeploymentWorker {
                 sd.status = containr_common::models::DeploymentStatus::Running;
                 sd.started_at = Some(chrono::Utc::now());
 
-                self.db.save_service_deployment(&sd)?;
+                self.save_service_deployment_best_effort(&sd);
                 service_deployments.push(sd);
-                new_container_ids.insert(container_id);
             }
         }
 
-        // update main deployment
-        let mut updated_deployment = deployment.clone();
-        updated_deployment.status =
-            containr_common::models::DeploymentStatus::Running;
-        updated_deployment.service_deployments = service_deployments;
-        updated_deployment.image_id =
-            self.primary_deployment_image_id(service_images);
-        updated_deployment.started_at = Some(chrono::Utc::now());
-        updated_deployment.finished_at = Some(chrono::Utc::now());
-        self.db.save_deployment(&updated_deployment)?;
-        self.db.save_app(app)?;
-        self.send_proxy_refresh(app.id).await;
+        Ok(())
+    }
 
-        if matches!(rollout_strategy, RolloutStrategy::StartFirst) {
-            for old in old_containers.values() {
-                if !new_container_ids.contains(old) {
-                    let _ = self.docker_manager.stop_container(old).await;
-                    let _ = self.docker_manager.remove_container(old).await;
-                }
-            }
+    /// saves a service deployment record without failing the rollout. the
+    /// final save_deployment persists the full set again.
+    fn save_service_deployment_best_effort(
+        &self,
+        sd: &containr_common::models::ServiceDeployment,
+    ) {
+        if let Err(error) = self.db.save_service_deployment(sd) {
+            warn!(
+                deployment_id = %sd.deployment_id,
+                service_id = %sd.service_id,
+                error = %error,
+                "failed to save service deployment record"
+            );
         }
+    }
 
-        for previous in &previous_running {
-            self.mark_deployment_stopped(previous)?;
-        }
-
+    /// persists the rolled-back service spec onto the current app row. other
+    /// app-level settings (name, domains, webhook token, ...) are left as
+    /// currently configured.
+    fn restore_app_services(
+        &self,
+        snapshot: &containr_common::models::App,
+    ) -> anyhow::Result<()> {
+        let Some(mut current) = self.db.get_app(snapshot.id)? else {
+            return Err(anyhow::anyhow!("app not found"));
+        };
+        current.services = snapshot.services.clone();
+        current.env_vars = snapshot.env_vars.clone();
+        current.updated_at = chrono::Utc::now();
+        self.db.save_app(&current)?;
         Ok(())
     }
 
@@ -534,11 +638,8 @@ impl DeploymentWorker {
         repo_path: Option<&Path>,
         commit_sha: &str,
     ) -> anyhow::Result<HashMap<Uuid, String>> {
-        let commit_prefix = if commit_sha.len() >= 8 {
-            &commit_sha[..8]
-        } else {
-            commit_sha
-        };
+        let commit_prefix = commit_tag_prefix(commit_sha);
+        let short_id = short_deployment_id(deployment.id);
         let mut service_images = HashMap::new();
         let mut built_by_key: HashMap<String, String> = HashMap::new();
 
@@ -563,12 +664,16 @@ impl DeploymentWorker {
                 continue;
             }
 
-            let image_name = format!(
-                "containr/{}:{}-{}",
-                app.id,
+            // include the deployment id so repeated deploys of the same
+            // commit (or "manual") don't overwrite tags used by rollbacks
+            let mut tag = format!(
+                "{}-{}-{}",
                 commit_prefix,
+                short_id,
                 self.sanitize_image_suffix(&service.name)
             );
+            tag.truncate(128);
+            let image_name = format!("containr/{}:{}", app.id, tag);
             let _ = self.db.append_deployment_log(
                 deployment.id,
                 &format!("building image for service {}", service.name),
@@ -608,6 +713,16 @@ impl DeploymentWorker {
         if !context_path.is_dir() {
             return Err(anyhow::anyhow!(
                 "build context {} is not a directory for service {}",
+                context_rel,
+                service.name
+            ));
+        }
+        // resolve `..` and symlinks so the context can't escape the checkout
+        let repo_root = std::fs::canonicalize(repo_path)?;
+        let context_path = std::fs::canonicalize(&context_path)?;
+        if !context_path.starts_with(&repo_root) {
+            return Err(anyhow::anyhow!(
+                "build context {} escapes the repository for service {}",
                 context_rel,
                 service.name
             ));
@@ -795,7 +910,12 @@ impl DeploymentWorker {
         deployment: &Deployment,
     ) -> anyhow::Result<()> {
         let finished_at = chrono::Utc::now();
-        let mut stopped = deployment.clone();
+        // reload: a rollback may have removed services (and cascaded their
+        // service deployment rows) since this deployment was read
+        let mut stopped = self
+            .db
+            .get_deployment(deployment.id)?
+            .unwrap_or_else(|| deployment.clone());
         stopped.status = DeploymentStatus::Stopped;
         stopped.finished_at = Some(finished_at);
 
@@ -897,9 +1017,17 @@ impl DeploymentWorker {
         // build graph
         for service in services {
             for dep in &service.depends_on {
-                if let Some(edges) = adj_list.get_mut(dep) {
-                    edges.push(service.name.clone());
-                }
+                // non-sibling names (e.g. managed databases) don't order
+                // the rollout
+                let Some(edges) = adj_list.get_mut(dep) else {
+                    warn!(
+                        service = %service.name,
+                        dependency = %dep,
+                        "ignoring unknown service dependency"
+                    );
+                    continue;
+                };
+                edges.push(service.name.clone());
                 if let Some(degree) = in_degree.get_mut(&service.name) {
                     *degree += 1;
                 }
@@ -949,14 +1077,12 @@ impl DeploymentWorker {
 
     /// clones the git repository using git2
     async fn clone_repo(&self, job: &DeploymentJob) -> anyhow::Result<PathBuf> {
-        let commit_prefix = if job.commit_sha.len() >= 8 {
-            &job.commit_sha[..8]
-        } else {
-            &job.commit_sha
-        };
-        let repo_path = self
-            .work_dir
-            .join(format!("{}_{}", job.app_id, commit_prefix));
+        let repo_path = self.work_dir.join(format!(
+            "{}_{}_{}",
+            job.app_id,
+            commit_tag_prefix(&job.commit_sha),
+            short_deployment_id(job.deployment_id)
+        ));
 
         // remove if exists
         let _ = tokio::fs::remove_dir_all(&repo_path).await;
@@ -985,34 +1111,34 @@ impl DeploymentWorker {
         let branch = job.branch.clone();
         let path = repo_path.clone();
         let source = source.clone();
+        let commit_sha = job.commit_sha.trim().to_ascii_lowercase();
 
         tokio::task::spawn_blocking(move || {
             let mut builder = RepoBuilder::new();
             builder.branch(&branch);
 
-            if let DeploymentSource::RemoteGit {
-                token: Some(token), ..
-            } = &source
-            {
-                let mut fetch_opts = FetchOptions::new();
-                fetch_opts.depth(1);
-                let token = token.clone();
-                let mut callbacks = RemoteCallbacks::new();
-                callbacks.credentials(move |_url, _username, _allowed| {
-                    Cred::userpass_plaintext("x-access-token", &token)
-                });
-                fetch_opts.remote_callbacks(callbacks);
-                builder.fetch_options(fetch_opts);
-            } else if matches!(source, DeploymentSource::RemoteGit { .. }) {
-                let mut fetch_opts = FetchOptions::new();
-                fetch_opts.depth(1);
+            if let Some(fetch_opts) = remote_fetch_options(&source) {
                 builder.fetch_options(fetch_opts);
             }
 
-            builder.clone(&url, &path)
+            let repo = builder
+                .clone(&url, &path)
+                .map_err(|e| anyhow::anyhow!("git clone failed: {}", e))?;
+
+            if looks_like_commit_sha(&commit_sha) {
+                if let Err(error) = checkout_commit(&repo, &source, &commit_sha)
+                {
+                    warn!(
+                        commit = %commit_sha,
+                        error = %error,
+                        "could not check out requested commit; using branch tip"
+                    );
+                }
+            }
+
+            Ok::<(), anyhow::Error>(())
         })
-        .await?
-        .map_err(|e| anyhow::anyhow!("git clone failed: {}", e))?;
+        .await??;
 
         Ok(repo_path)
     }
@@ -1070,6 +1196,91 @@ impl DeploymentWorker {
     }
 }
 
+/// first segment of the deployment uuid (8 hex chars)
+fn short_deployment_id(deployment_id: Uuid) -> String {
+    deployment_id.simple().to_string().chars().take(8).collect()
+}
+
+/// char-safe 8 char prefix of a commit reference limited to the docker tag
+/// charset [A-Za-z0-9_.-] and not starting with '.' or '-'
+fn commit_tag_prefix(commit_sha: &str) -> String {
+    let prefix = commit_sha
+        .chars()
+        .filter(|ch| {
+            ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '-')
+        })
+        .skip_while(|ch| matches!(ch, '.' | '-'))
+        .take(8)
+        .collect::<String>();
+    if prefix.is_empty() {
+        "source".to_string()
+    } else {
+        prefix
+    }
+}
+
+fn looks_like_commit_sha(value: &str) -> bool {
+    (7..=40).contains(&value.len())
+        && value.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
+fn remote_fetch_options(
+    source: &DeploymentSource,
+) -> Option<FetchOptions<'static>> {
+    let DeploymentSource::RemoteGit { token, .. } = source else {
+        return None;
+    };
+    let mut fetch_opts = FetchOptions::new();
+    fetch_opts.depth(1);
+    if let Some(token) = token.clone() {
+        let mut callbacks = RemoteCallbacks::new();
+        callbacks.credentials(move |_url, _username, _allowed| {
+            Cred::userpass_plaintext("x-access-token", &token)
+        });
+        fetch_opts.remote_callbacks(callbacks);
+    }
+    Some(fetch_opts)
+}
+
+/// checks out `sha` if the cloned branch tip isn't already at it. full shas
+/// missing from the shallow clone are fetched directly from origin.
+fn checkout_commit(
+    repo: &git2::Repository,
+    source: &DeploymentSource,
+    sha: &str,
+) -> anyhow::Result<()> {
+    let head = repo.head()?.peel_to_commit()?;
+    if head.id().to_string().starts_with(sha) {
+        return Ok(());
+    }
+
+    let commit = match repo
+        .revparse_single(sha)
+        .and_then(|object| object.peel_to_commit())
+    {
+        Ok(commit) => commit,
+        Err(_) => {
+            if sha.len() != 40 {
+                return Err(anyhow::anyhow!(
+                    "short sha not present in shallow clone"
+                ));
+            }
+            let mut remote = repo.find_remote("origin")?;
+            let mut fetch_opts =
+                remote_fetch_options(source).unwrap_or_default();
+            remote.fetch(&[sha], Some(&mut fetch_opts), None)?;
+            repo.find_commit(git2::Oid::from_str(sha)?)?
+        }
+    };
+
+    let mut checkout = git2::build::CheckoutBuilder::new();
+    checkout.force();
+    repo.checkout_tree(commit.as_object(), Some(&mut checkout))?;
+    repo.set_head_detached(commit.id())?;
+    info!(commit = %commit.id(), "checked out requested commit");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1119,6 +1330,34 @@ mod tests {
         let names: Vec<String> = sorted.into_iter().map(|s| s.name).collect();
 
         assert_eq!(names, vec!["web".to_string(), "api".to_string()]);
+    }
+
+    #[test]
+    fn topological_sort_ignores_unknown_dependencies() {
+        let worker = make_worker();
+        let app_id = Uuid::new_v4();
+
+        let mut web = ContainerService::new(
+            app_id,
+            "web".to_string(),
+            "".to_string(),
+            8080,
+        );
+        web.depends_on = vec!["postgres".to_string()];
+
+        let sorted = worker.topological_sort_services(&[web]).unwrap();
+        assert_eq!(sorted.len(), 1);
+    }
+
+    #[test]
+    fn commit_tag_prefix_is_char_safe() {
+        assert_eq!(commit_tag_prefix("abcdef0123456789"), "abcdef01");
+        assert_eq!(commit_tag_prefix("abc"), "abc");
+        assert_eq!(commit_tag_prefix("héllo wörld!"), "hllowrld");
+        assert_eq!(commit_tag_prefix("../../etc"), "etc");
+        assert_eq!(commit_tag_prefix("ééé"), "source");
+        assert!(looks_like_commit_sha("abcdef0"));
+        assert!(!looks_like_commit_sha("manual"));
     }
 
     #[test]
@@ -1183,12 +1422,14 @@ mod tests {
             "".to_string(),
             owner_id,
         );
-        current_app.services.push(containr_common::models::ContainerService::new(
-            current_app.id,
-            "web".to_string(),
-            "nginx:latest".to_string(),
-            8080,
-        ));
+        current_app.services.push(
+            containr_common::models::ContainerService::new(
+                current_app.id,
+                "web".to_string(),
+                "nginx:latest".to_string(),
+                8080,
+            ),
+        );
         current_app.services[0].command =
             Some(vec!["-text=current".to_string()]);
 

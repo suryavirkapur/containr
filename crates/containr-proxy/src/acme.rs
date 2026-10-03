@@ -121,12 +121,56 @@ impl AcmeManager {
         // create/load acme account
         let account = self.get_or_create_account().await?;
 
+        // challenge tokens are removed on every exit path
+        let mut challenge_tokens: Vec<String> = Vec::new();
+        let issued = self
+            .complete_order(&account, domain, &mut challenge_tokens)
+            .await;
+        for token in &challenge_tokens {
+            self.challenge_store.remove(token);
+        }
+        let (cert_chain, private_key_pem) = issued?;
+
+        let expires_at = match parse_certificate_expiry(&cert_chain) {
+            Ok(expires_at) => expires_at,
+            Err(error) => {
+                warn!(
+                    domain = %domain,
+                    error = %error,
+                    "failed to parse certificate expiry; using 90 day fallback"
+                );
+                Utc::now() + Duration::days(90)
+            }
+        };
+
+        // save certificate, keeping the existing row id on renewal
+        let mut cert = Certificate::new(
+            domain.to_string(),
+            cert_chain,
+            private_key_pem,
+            expires_at,
+        );
+        if let Some(existing) = self.db.get_certificate_by_domain(domain)? {
+            cert.id = existing.id;
+        }
+
+        self.db.save_certificate(&cert)?;
+
+        info!(domain = %domain, "certificate issued successfully");
+
+        Ok(cert)
+    }
+
+    // runs the acme order and returns (certificate chain, private key)
+    async fn complete_order(
+        &self,
+        account: &Account,
+        domain: &str,
+        challenge_tokens: &mut Vec<String>,
+    ) -> anyhow::Result<(String, String)> {
         // create order
         let identifiers = vec![Identifier::Dns(domain.to_string())];
         let mut order = account.new_order(&NewOrder::new(&identifiers)).await?;
-
-        // collect challenge tokens for cleanup
-        let mut challenge_tokens: Vec<String> = Vec::new();
 
         // get authorizations and process them
         let mut authorizations = order.authorizations();
@@ -170,7 +214,7 @@ impl AcmeManager {
                 OrderStatus::Invalid => {
                     return Err(anyhow::anyhow!("order became invalid"));
                 }
-                OrderStatus::Pending => {
+                _ => {
                     attempts += 1;
                     if attempts > 30 {
                         return Err(anyhow::anyhow!(
@@ -178,7 +222,6 @@ impl AcmeManager {
                         ));
                     }
                 }
-                _ => {}
             }
         }
 
@@ -213,36 +256,7 @@ impl AcmeManager {
             .await?
             .ok_or_else(|| anyhow::anyhow!("certificate not available"))?;
 
-        let expires_at = match parse_certificate_expiry(&cert_chain) {
-            Ok(expires_at) => expires_at,
-            Err(error) => {
-                warn!(
-                    domain = %domain,
-                    error = %error,
-                    "failed to parse certificate expiry; using 90 day fallback"
-                );
-                Utc::now() + Duration::days(90)
-            }
-        };
-
-        // save certificate
-        let cert = Certificate::new(
-            domain.to_string(),
-            cert_chain.clone(),
-            private_key_pem.clone(),
-            expires_at,
-        );
-
-        self.db.save_certificate(&cert)?;
-
-        // cleanup challenges
-        for token in challenge_tokens {
-            self.challenge_store.remove(&token);
-        }
-
-        info!(domain = %domain, "certificate issued successfully");
-
-        Ok(cert)
+        Ok((cert_chain, private_key_pem))
     }
 
     // gets or creates an acme account

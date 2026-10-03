@@ -743,13 +743,16 @@ async fn refresh_routes_for_app(
         Ok(Some(app)) => app,
         _ => return,
     };
+    // the newest deployment may still be building or may have failed; route
+    // to the newest one that actually runs
     let latest_running_deployment = db
-        .get_latest_deployment(app.id)
+        .list_deployments_by_app(app.id)
         .ok()
-        .flatten()
-        .filter(|deployment| {
-            deployment.status
-                == containr_common::models::DeploymentStatus::Running
+        .and_then(|deployments| {
+            deployments.into_iter().find(|deployment| {
+                deployment.status
+                    == containr_common::models::DeploymentStatus::Running
+            })
         });
     let runtime_app = latest_running_deployment
         .as_ref()
@@ -819,7 +822,8 @@ async fn refresh_routes_for_app(
                         if !active_ids.contains(name) {
                             continue;
                         }
-                    } else if !name.starts_with(&service_prefix) {
+                    } else if !is_service_container_name(name, &service_prefix)
+                    {
                         continue;
                     }
 
@@ -1038,6 +1042,21 @@ fn active_http_container_ids(
     None
 }
 
+/// matches worker container names `containr-{app}-{service}-{replica}-{id}`
+/// exactly, so service `web` doesn't match `web-admin` containers
+fn is_service_container_name(name: &str, service_prefix: &str) -> bool {
+    let Some(rest) = name.strip_prefix(service_prefix) else {
+        return false;
+    };
+    let Some((replica, deployment_id)) = rest.split_once('-') else {
+        return false;
+    };
+    !replica.is_empty()
+        && replica.chars().all(|ch| ch.is_ascii_digit())
+        && !deployment_id.is_empty()
+        && deployment_id.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
 fn parse_app_id_from_container_name(name: &str) -> Option<uuid::Uuid> {
     let suffix = name.strip_prefix("containr-")?;
     if suffix.len() < 36 {
@@ -1095,7 +1114,8 @@ fn resolve_api_host(host: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        active_http_container_ids, domains_for_service, select_exposed_service,
+        active_http_container_ids, domains_for_service,
+        is_service_container_name, select_exposed_service,
     };
     use containr_common::models::{
         default_service_domain, App, ContainerService, Deployment,
@@ -1197,6 +1217,28 @@ mod tests {
     }
 
     #[test]
+    fn is_service_container_name_matches_exact_service() {
+        let prefix = "containr-app-web-";
+        assert!(is_service_container_name(
+            "containr-app-web-0-abcd1234",
+            prefix
+        ));
+        assert!(is_service_container_name(
+            "containr-app-web-12-abcd1234",
+            prefix
+        ));
+        assert!(!is_service_container_name(
+            "containr-app-web-admin-0-abcd1234",
+            prefix
+        ));
+        assert!(!is_service_container_name(
+            "containr-app-web-0-0-abcd1234",
+            prefix
+        ));
+        assert!(!is_service_container_name("containr-app-web-0", prefix));
+    }
+
+    #[test]
     fn active_http_container_ids_prefers_service_deployments() {
         let service_id = Uuid::new_v4();
         let mut deployment =
@@ -1230,18 +1272,13 @@ mod tests {
         );
         service.service_type = ServiceType::WebService;
         service.expose_http = true;
-        service.domains = vec![
-            "api.example.com".to_string(),
-            "api.example.com".to_string(),
-        ];
+        service.domains =
+            vec!["api.example.com".to_string(), "api.example.com".to_string()];
 
         let domains = domains_for_service(&service, "adm.svk77.com");
         assert_eq!(
             domains.first(),
-            Some(
-                &default_service_domain(service.id, "adm.svk77.com")
-                    .unwrap()
-            )
+            Some(&default_service_domain(service.id, "adm.svk77.com").unwrap())
         );
         assert_eq!(domains.len(), 2);
         assert!(domains.contains(&"api.example.com".to_string()));
@@ -1314,5 +1351,4 @@ mod tests {
                 | DeploymentStatus::Starting
         ));
     }
-
 }
