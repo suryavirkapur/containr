@@ -15,11 +15,12 @@ use crate::docker::{
     DockerBindMount, DockerContainerConfig, DockerContainerManager,
 };
 use crate::image::{ImageManager, RegistryCredentials};
+use crate::service_support;
 use crate::DockerNetworkAttachment;
 use containr_common::models::{
     App, ContainerService, Deployment, DeploymentStatus,
 };
-use containr_common::{decrypt, derive_key, Database};
+use containr_common::Database;
 
 const CRON_POLL_INTERVAL_SECS: u64 = 10;
 
@@ -311,9 +312,9 @@ impl CronJobScheduler {
         image: &str,
         shared_env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<String> {
-        if !service.image.is_empty() {
+        if service_support::should_pull_service_image(service, image) {
             let registry_credentials =
-                self.resolve_service_registry_auth(service)?;
+                self.resolve_service_registry_auth(app.owner_id, service)?;
             self.image_manager
                 .pull_image_with_credentials(
                     image,
@@ -347,6 +348,7 @@ impl CronJobScheduler {
             env_vars,
             port: 0,
             additional_ports: Vec::new(),
+            port_mappings: Vec::new(),
             command: service.command.clone(),
             entrypoint: service.entrypoint.clone(),
             working_dir: service.working_dir.clone(),
@@ -454,24 +456,7 @@ impl CronJobScheduler {
         app_id: Uuid,
         service: &ContainerService,
     ) -> anyhow::Result<Vec<DockerBindMount>> {
-        let mut mounts = Vec::new();
-        let mounts_root = self
-            .work_dir
-            .join("app-mounts")
-            .join(app_id.to_string())
-            .join(service.id.to_string());
-
-        for mount in &service.mounts {
-            let source = mounts_root.join(&mount.name);
-            std::fs::create_dir_all(&source)?;
-            mounts.push(DockerBindMount {
-                source: source.to_string_lossy().to_string(),
-                target: mount.target.clone(),
-                read_only: mount.read_only,
-            });
-        }
-
-        Ok(mounts)
+        service_support::build_service_mounts(&self.work_dir, app_id, service)
     }
 
     fn sanitize_name(&self, value: &str) -> String {
@@ -505,41 +490,17 @@ impl CronJobScheduler {
         value.split('-').next().unwrap_or("job").to_string()
     }
 
-    fn decrypt_stored_secret(&self, value: &str) -> anyhow::Result<String> {
-        let trimmed = value.trim();
-        let payload = trimmed.strip_prefix("enc:").unwrap_or(trimmed);
-
-        if trimmed.starts_with("enc:") {
-            let secret =
-                self.encryption_secret.as_deref().ok_or_else(|| {
-                    anyhow::anyhow!("encryption key is not configured")
-                })?;
-            let key = derive_key(secret);
-            return decrypt(payload, &key).map_err(|error| {
-                anyhow::anyhow!(
-                    "failed to decrypt registry password: {}",
-                    error
-                )
-            });
-        }
-
-        Ok(payload.to_string())
-    }
-
     fn resolve_service_registry_auth(
         &self,
+        owner_id: Uuid,
         service: &ContainerService,
     ) -> anyhow::Result<Option<RegistryCredentials>> {
-        let Some(registry_auth) = service.registry_auth.as_ref() else {
-            return Ok(None);
-        };
-
-        let password = self.decrypt_stored_secret(&registry_auth.password)?;
-
-        Ok(Some(RegistryCredentials {
-            server: registry_auth.server.clone(),
-            username: registry_auth.username.clone(),
-            password,
-        }))
+        service_support::resolve_registry_credentials(
+            Some(&self.db),
+            owner_id,
+            service,
+            &service.image,
+            self.encryption_secret.as_deref(),
+        )
     }
 }

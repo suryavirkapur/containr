@@ -55,6 +55,7 @@ async fn test_container_manager_stub() {
         env_vars: HashMap::from([("TEST".to_string(), "value".to_string())]),
         port: 8080,
         additional_ports: Vec::new(),
+        port_mappings: Vec::new(),
         command: None,
         entrypoint: None,
         working_dir: None,
@@ -214,6 +215,7 @@ async fn test_real_container_start_sanitizes_hostname() {
         env_vars: HashMap::new(),
         port: 0,
         additional_ports: Vec::new(),
+        port_mappings: Vec::new(),
         command: Some(vec![
             "sh".to_string(),
             "-c".to_string(),

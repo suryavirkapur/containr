@@ -7,6 +7,8 @@ pub mod deployments;
 pub mod github_app;
 pub mod github_repos;
 pub mod health;
+pub mod projects;
+pub mod registries;
 pub mod services;
 pub mod settings;
 pub mod storage;

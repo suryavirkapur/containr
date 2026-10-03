@@ -1,5 +1,6 @@
 //! containr-api: rest api and github webhook handler
 
+pub mod archive;
 pub mod auth;
 pub mod deployment_source;
 pub mod domain;

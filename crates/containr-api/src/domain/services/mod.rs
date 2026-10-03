@@ -15,12 +15,14 @@ use trust_dns_resolver::TokioAsyncResolver;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use crate::auth::hash_password;
 use crate::deployment_source::resolve_app_deployment_source;
 use crate::github::DeploymentJob;
 use crate::handlers::auth::ErrorResponse;
 use crate::handlers::deployments::{
     can_rollback_to_deployment, create_and_queue_deployment,
-    DeploymentResponse, DeploymentTriggerRequest, LogsQuery, RollbackRequest,
+    create_and_queue_local_build_deployment, DeploymentResponse,
+    DeploymentTriggerRequest, LogsQuery, RollbackRequest,
 };
 use crate::security::{encrypt_value, resolve_encryption_secret};
 use crate::state::AppState;
@@ -28,10 +30,10 @@ use containr_common::managed_services::{
     DatabaseType, ManagedDatabase, ManagedQueue, QueueType, ServiceStatus,
 };
 use containr_common::models::{
-    App, BuildArg, ContainerService, Deployment, DeploymentSource,
-    DeploymentStatus, EnvVar, HealthCheck, HttpRequestLog, RestartPolicy,
-    RolloutStrategy, ServiceDeployment, ServiceMount, ServiceRegistryAuth,
-    ServiceType,
+    App, BasicAuth, BuildArg, ContainerService, Deployment, DeploymentSource,
+    DeploymentStatus, EnvVar, HealthCheck, HttpRequestLog, PortMapping,
+    PortProtocol, RestartPolicy, RolloutStrategy, ServiceDeployment,
+    ServiceMount, ServiceRegistryAuth, ServiceType,
 };
 use containr_common::service_inventory::ServiceInventoryItem;
 use containr_common::Config;
@@ -69,6 +71,10 @@ pub struct InventoryServiceResponse {
     pub image: Option<String>,
     pub status: String,
     pub network_name: String,
+    /// hostname other services on the same network use to reach this
+    /// service. for app services this is the service name (each replica is
+    /// also reachable as `{name}-{replica_index}`); for managed databases
+    /// and queues it is their generated internal host.
     pub internal_host: Option<String>,
     pub port: Option<u16>,
     pub external_port: Option<u16>,
@@ -81,6 +87,8 @@ pub struct InventoryServiceResponse {
     pub http_only_domains: Vec<String>,
     pub default_urls: Vec<String>,
     pub schedule: Option<String>,
+    pub notes: Option<String>,
+    pub port_mappings: Vec<PortMappingResponse>,
     pub public_http: bool,
     pub desired_instances: u32,
     pub running_instances: u32,
@@ -154,6 +162,92 @@ pub struct ServiceSettingsServiceResponse {
     pub working_dir: Option<String>,
     pub schedule: Option<String>,
     pub mounts: Vec<ServiceMountRequest>,
+    pub notes: Option<String>,
+    pub basic_auth: Option<BasicAuthResponse>,
+    pub port_mappings: Vec<PortMappingResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct BasicAuthResponse {
+    pub username: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct PortMappingResponse {
+    pub host_port: u16,
+    pub container_port: u16,
+    /// "tcp" or "udp"
+    pub protocol: String,
+}
+
+impl From<&PortMapping> for PortMappingResponse {
+    fn from(mapping: &PortMapping) -> Self {
+        Self {
+            host_port: mapping.host_port,
+            container_port: mapping.container_port,
+            protocol: mapping.protocol.as_str().to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct PortMappingRequest {
+    pub host_port: u16,
+    pub container_port: u16,
+    /// "tcp" (default) or "udp"
+    pub protocol: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct BasicAuthRequest {
+    /// null/absent/empty disables basic auth
+    pub username: Option<String>,
+    /// omitted on update keeps the existing password
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct MoveServiceRequest {
+    /// target project (app) id; null moves the service out of any project
+    pub group_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct DockerfileDeployRequest {
+    pub dockerfile: String,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ServiceContainerMetrics {
+    pub container_id: String,
+    pub name: String,
+    pub cpu_percent: f64,
+    pub memory_used_bytes: u64,
+    pub memory_limit_bytes: u64,
+    pub network_rx_bytes: u64,
+    pub network_tx_bytes: u64,
+    pub block_read_bytes: u64,
+    pub block_write_bytes: u64,
+    pub pids: u64,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ServiceMetricsResponse {
+    pub containers: Vec<ServiceContainerMetrics>,
+    /// rfc3339 timestamp
+    pub collected_at: String,
+}
+
+/// deserializes a present field (including null) as `Some(value)` so an
+/// absent field (`None`) can be told apart from an explicit null
+fn deserialize_present<'de, D, T>(
+    deserializer: D,
+) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -226,6 +320,9 @@ pub struct ServiceMountRequest {
     pub name: String,
     pub target: String,
     pub read_only: Option<bool>,
+    /// absolute host path to bind instead of a managed volume (admin only)
+    #[serde(default)]
+    pub host_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -263,6 +360,18 @@ pub struct ServiceRequest {
     pub working_dir: Option<String>,
     pub schedule: Option<String>,
     pub mounts: Option<Vec<ServiceMountRequest>>,
+    /// free-text description (max 4000 chars). absent keeps the current
+    /// value, null clears it
+    #[serde(default, deserialize_with = "deserialize_present")]
+    #[schema(value_type = Option<String>)]
+    pub notes: Option<Option<String>>,
+    /// http basic auth for the service's domains. absent keeps the current
+    /// value, null (or a null/empty username) disables it
+    #[serde(default, deserialize_with = "deserialize_present")]
+    #[schema(value_type = Option<BasicAuthRequest>)]
+    pub basic_auth: Option<Option<BasicAuthRequest>>,
+    /// published host ports. absent keeps the current mappings
+    pub port_mappings: Option<Vec<PortMappingRequest>>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -275,6 +384,13 @@ pub enum CreateServiceRequest {
         env_vars: Option<Vec<EnvVarRequest>>,
         service: Box<ServiceRequest>,
         rollout_strategy: Option<String>,
+        /// owned project (app) id; when set the service is appended to
+        /// that project and `name` is ignored
+        group_id: Option<String>,
+        /// queue the initial deployment (default true). when false an
+        /// empty github_url and image are allowed; deploy later via
+        /// /deploy/upload or /deploy/dockerfile
+        deploy: Option<bool>,
     },
     Template {
         name: String,
@@ -282,6 +398,15 @@ pub enum CreateServiceRequest {
         version: Option<String>,
         memory_limit_mb: Option<u64>,
         cpu_limit: Option<f64>,
+        group_id: Option<String>,
+    },
+    /// creates one project with several image-based services
+    Stack {
+        name: String,
+        env_vars: Option<Vec<EnvVarRequest>>,
+        services: Vec<ServiceRequest>,
+        /// owned project (app) id; when set the services are appended to
+        /// that project and `name` is ignored
         group_id: Option<String>,
     },
 }
@@ -391,6 +516,12 @@ impl InventoryServiceResponse {
             http_only_domains: service.http_only_domains.clone(),
             default_urls: build_default_urls(service, base_domain),
             schedule: service.schedule.clone(),
+            notes: service.notes.clone(),
+            port_mappings: service
+                .port_mappings
+                .iter()
+                .map(PortMappingResponse::from)
+                .collect(),
             public_http: service.public_http,
             desired_instances: service.desired_instances,
             running_instances: service.running_instances,
@@ -442,18 +573,46 @@ impl ServiceSvc {
                 env_vars,
                 service,
                 rollout_strategy,
+                group_id,
+                deploy,
             } => {
-                self.create_repository_service(
-                    &config,
-                    user_id,
-                    name,
-                    github_url,
-                    branch,
-                    env_vars,
-                    *service,
-                    rollout_strategy,
-                )
-                .await?
+                let deploy = deploy.unwrap_or(true);
+                match non_empty(group_id) {
+                    Some(group_id) => {
+                        let mut service = *service;
+                        if service.name.trim().is_empty() {
+                            service.name = name;
+                        }
+                        self.add_services_to_project(
+                            &config,
+                            user_id,
+                            &group_id,
+                            ProjectAddition {
+                                github_url: Some(github_url),
+                                branch,
+                                env_vars,
+                                services: vec![service],
+                                require_images: false,
+                                deploy,
+                            },
+                        )
+                        .await?
+                    }
+                    None => {
+                        self.create_repository_service(
+                            &config,
+                            user_id,
+                            name,
+                            github_url,
+                            branch,
+                            env_vars,
+                            *service,
+                            rollout_strategy,
+                            deploy,
+                        )
+                        .await?
+                    }
+                }
             }
             CreateServiceRequest::Template {
                 name,
@@ -475,6 +634,35 @@ impl ServiceSvc {
                 )
                 .await?
             }
+            CreateServiceRequest::Stack {
+                name,
+                env_vars,
+                services,
+                group_id,
+            } => match non_empty(group_id) {
+                Some(group_id) => {
+                    self.add_services_to_project(
+                        &config,
+                        user_id,
+                        &group_id,
+                        ProjectAddition {
+                            github_url: None,
+                            branch: None,
+                            env_vars,
+                            services,
+                            require_images: true,
+                            deploy: true,
+                        },
+                    )
+                    .await?
+                }
+                None => {
+                    self.create_stack_service(
+                        &config, user_id, name, env_vars, services,
+                    )
+                    .await?
+                }
+            },
         };
 
         self.service_response(
@@ -580,6 +768,7 @@ impl ServiceSvc {
         let (mut app, service) =
             resolve_owned_app_service_record(&self.state, user_id, service_id)?;
         let previous_service = service.clone();
+        let previous_github_url = app.github_url.trim().to_string();
 
         if let Some(github_url) = req.github_url {
             app.github_url = github_url.trim().to_string();
@@ -643,15 +832,22 @@ impl ServiceSvc {
             {
                 target.name = updated_service_request.name.trim().to_string();
             }
+            let is_admin = self.user_is_admin(user_id)?;
             app.services = build_services(
                 &config,
                 app.id,
                 &existing_services,
                 service_requests,
+                is_admin,
             )?;
         }
 
-        if app.requires_source_checkout() && app.github_url.trim().is_empty() {
+        // services without a repo are deployed by upload/dockerfile, so
+        // only reject clearing a repo that source builds still depend on
+        if app.requires_source_checkout()
+            && app.github_url.trim().is_empty()
+            && !previous_github_url.is_empty()
+        {
             return Err(bad_request(
                 "github_url is required when a service needs a source build",
             ));
@@ -663,6 +859,7 @@ impl ServiceSvc {
             .find(|candidate| candidate.id == service_id)
             .cloned()
             .ok_or_else(|| internal_error("updated service not found"))?;
+        validate_port_mappings(&self.state, &config, &app)?;
         validate_app_service_domains(&self.state, &config, &app).await?;
         app.updated_at = Utc::now();
         self.state.db.save_app(&app).map_err(internal_error)?;
@@ -963,6 +1160,12 @@ impl ServiceSvc {
     ) -> ApiResult<DeploymentResponse> {
         let (app, service) =
             resolve_owned_app_service_record(&self.state, user_id, service_id)?;
+        if app.requires_source_checkout() && app.github_url.trim().is_empty() {
+            return Err(bad_request(
+                "this service has no source; deploy it by uploading code or a \
+                 Dockerfile",
+            ));
+        }
         let trigger = body;
         let commit_sha = trigger
             .as_ref()
@@ -1133,6 +1336,7 @@ impl ServiceSvc {
         env_vars: Option<Vec<EnvVarRequest>>,
         mut service: ServiceRequest,
         rollout_strategy: Option<String>,
+        deploy: bool,
     ) -> ApiResult<Uuid> {
         if name.is_empty() || name.len() > 64 {
             return Err((
@@ -1175,8 +1379,13 @@ impl ServiceSvc {
                 })?;
         }
 
-        app.services = build_services(config, app.id, &[], vec![service])?;
-        if app.requires_source_checkout() && app.github_url.trim().is_empty() {
+        let is_admin = self.user_is_admin(user_id)?;
+        app.services =
+            build_services(config, app.id, &[], vec![service], is_admin)?;
+        if deploy
+            && app.requires_source_checkout()
+            && app.github_url.trim().is_empty()
+        {
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
@@ -1187,26 +1396,29 @@ impl ServiceSvc {
             ));
         }
 
+        validate_port_mappings(&self.state, config, &app)?;
         validate_app_service_domains(&self.state, config, &app).await?;
 
         self.state.db.save_app(&app).map_err(internal_error)?;
 
-        if let Err(error) = create_and_queue_deployment(
-            &self.state,
-            user_id,
-            &app,
-            "initial".to_string(),
-            Some("initial deployment".to_string()),
-            app.branch.clone(),
-            app.rollout_strategy,
-            None,
-            None,
-            false,
-        )
-        .await
-        {
-            let _ = self.state.db.delete_app(app.id);
-            return Err(error);
+        if deploy {
+            if let Err(error) = create_and_queue_deployment(
+                &self.state,
+                user_id,
+                &app,
+                "initial".to_string(),
+                Some("initial deployment".to_string()),
+                app.branch.clone(),
+                app.rollout_strategy,
+                None,
+                None,
+                false,
+            )
+            .await
+            {
+                let _ = self.state.db.delete_app(app.id);
+                return Err(error);
+            }
         }
 
         let managed_certificate_domains = app.managed_certificate_domains();
@@ -1344,6 +1556,481 @@ impl ServiceSvc {
         Ok(database.id)
     }
 
+    fn user_is_admin(&self, user_id: Uuid) -> ApiResult<bool> {
+        Ok(self
+            .state
+            .db
+            .get_user(user_id)
+            .map_err(internal_error)?
+            .map(|user| user.is_admin)
+            .unwrap_or(false))
+    }
+
+    /// appends new services to an existing owned project, reusing its
+    /// network, and optionally queues a deployment of the project. returns
+    /// the id of the first new service.
+    async fn add_services_to_project(
+        &self,
+        config: &Config,
+        user_id: Uuid,
+        group_id: &str,
+        addition: ProjectAddition,
+    ) -> ApiResult<Uuid> {
+        let app_id = resolve_group_id(&self.state, user_id, Some(group_id))?
+            .ok_or_else(|| bad_request("group_id is required"))?;
+        let previous = self
+            .state
+            .db
+            .get_app(app_id)
+            .map_err(internal_error)?
+            .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "group not found".to_string(),
+                }),
+            )
+        })?;
+        let mut app = previous.clone();
+
+        if addition.services.is_empty() {
+            return Err(bad_request("at least one service is required"));
+        }
+        let mut names = app
+            .services
+            .iter()
+            .map(|service| service.name.clone())
+            .collect::<HashSet<_>>();
+        for service in &addition.services {
+            let name = service.name.trim();
+            if name.is_empty() {
+                return Err(bad_request("service name cannot be empty"));
+            }
+            if !names.insert(name.to_string()) {
+                return Err(bad_request(format!(
+                    "service name {} already exists in this project",
+                    name
+                )));
+            }
+            if addition.require_images
+                && service
+                    .image
+                    .as_deref()
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .is_empty()
+            {
+                return Err(bad_request(format!(
+                    "stack service {} needs an image; source builds are not \
+                     supported in stacks",
+                    name
+                )));
+            }
+        }
+
+        if let Some(github_url) = non_empty(addition.github_url) {
+            let current = app.github_url.trim();
+            if current.is_empty() {
+                app.github_url = github_url;
+                if let Some(branch) = non_empty(addition.branch) {
+                    app.branch = branch;
+                }
+            } else if current.trim_end_matches(".git")
+                != github_url.trim_end_matches(".git")
+            {
+                return Err(bad_request(
+                    "a project builds from a single repository; use an image \
+                     or create a new project",
+                ));
+            }
+        }
+
+        if let Some(env_vars) = addition.env_vars {
+            // shared env vars only add missing keys; existing ones win
+            for env_var in build_app_env_vars(Some(env_vars), &[])? {
+                if !app
+                    .env_vars
+                    .iter()
+                    .any(|existing| existing.key == env_var.key)
+                {
+                    app.env_vars.push(env_var);
+                }
+            }
+        }
+
+        let is_admin = self.user_is_admin(user_id)?;
+        let new_services =
+            build_services(config, app.id, &[], addition.services, is_admin)?;
+        let first_id = new_services
+            .first()
+            .map(|service| service.id)
+            .ok_or_else(|| internal_error("no services were created"))?;
+        app.services.extend(new_services);
+
+        if addition.deploy
+            && app.requires_source_checkout()
+            && app.github_url.trim().is_empty()
+        {
+            return Err(bad_request(
+                "github_url is required when a service needs a source build",
+            ));
+        }
+
+        validate_port_mappings(&self.state, config, &app)?;
+        validate_app_service_domains(&self.state, config, &app).await?;
+        app.updated_at = Utc::now();
+        self.state.db.save_app(&app).map_err(internal_error)?;
+
+        if addition.deploy {
+            if let Err(error) = create_and_queue_deployment(
+                &self.state,
+                user_id,
+                &app,
+                "manual".to_string(),
+                Some("deployment after adding services".to_string()),
+                app.branch.clone(),
+                app.rollout_strategy,
+                None,
+                None,
+                false,
+            )
+            .await
+            {
+                let _ = self.state.db.save_app(&previous);
+                return Err(error);
+            }
+        }
+
+        if let Some(tx) = &self.state.cert_request_tx {
+            for domain in app.managed_certificate_domains() {
+                let _ = tx.try_send(domain);
+            }
+        }
+        refresh_proxy_routes(&self.state, app.id).await;
+
+        Ok(first_id)
+    }
+
+    /// creates one project holding several image-based services and queues
+    /// its initial deployment. returns the id of the first service.
+    async fn create_stack_service(
+        &self,
+        config: &Config,
+        user_id: Uuid,
+        name: String,
+        env_vars: Option<Vec<EnvVarRequest>>,
+        services: Vec<ServiceRequest>,
+    ) -> ApiResult<Uuid> {
+        let name = name.trim().to_string();
+        if name.is_empty() || name.len() > 64 {
+            return Err(bad_request("name must be 1-64 characters"));
+        }
+        if services.is_empty() {
+            return Err(bad_request("stack must define at least one service"));
+        }
+        if let Some(service) = services.iter().find(|service| {
+            service
+                .image
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default()
+                .is_empty()
+        }) {
+            return Err(bad_request(format!(
+                "stack service {} needs an image; source builds are not \
+                 supported in stacks",
+                service.name.trim()
+            )));
+        }
+
+        let mut app = App::new(name, String::new(), user_id);
+        app.env_vars = build_app_env_vars(env_vars, &[])?;
+        let is_admin = self.user_is_admin(user_id)?;
+        app.services = build_services(config, app.id, &[], services, is_admin)?;
+        if app.requires_source_checkout() {
+            return Err(bad_request("stack services must use prebuilt images"));
+        }
+
+        validate_port_mappings(&self.state, config, &app)?;
+        validate_app_service_domains(&self.state, config, &app).await?;
+        self.state.db.save_app(&app).map_err(internal_error)?;
+
+        if let Err(error) = create_and_queue_deployment(
+            &self.state,
+            user_id,
+            &app,
+            "initial".to_string(),
+            Some("initial deployment".to_string()),
+            app.branch.clone(),
+            app.rollout_strategy,
+            None,
+            None,
+            false,
+        )
+        .await
+        {
+            let _ = self.state.db.delete_app(app.id);
+            return Err(error);
+        }
+
+        let managed_certificate_domains = app.managed_certificate_domains();
+        if let Some(tx) = &self.state.cert_request_tx {
+            for domain in managed_certificate_domains {
+                let _ = tx.try_send(domain);
+            }
+        }
+
+        app.services
+            .first()
+            .map(|service| service.id)
+            .ok_or_else(|| internal_error("created stack has no services"))
+    }
+
+    /// moves a managed database or queue into or out of a project and
+    /// reconnects its container to the matching network
+    pub async fn move_service(
+        &self,
+        user_id: Uuid,
+        service_id: Uuid,
+        req: MoveServiceRequest,
+    ) -> ApiResult<InventoryServiceResponse> {
+        let config = self.state.config.read().await.clone();
+        let group_id =
+            resolve_group_id(&self.state, user_id, req.group_id.as_deref())?;
+
+        match resolve_owned_service_record(&self.state, user_id, service_id)? {
+            OwnedServiceRecord::App { .. } => {
+                return Err(bad_request("app services cannot be moved"));
+            }
+            OwnedServiceRecord::ManagedDatabase(mut database) => {
+                if database.group_id != group_id {
+                    ensure_database_not_starting(&database)?;
+                    let manager = DatabaseManager::new();
+                    let was_running = manager.is_running(&database).await;
+                    if was_running {
+                        manager.stop_database(&mut database).await.map_err(
+                            |error| {
+                                service_manager_error("move service", error)
+                            },
+                        )?;
+                    }
+                    database.group_id = group_id;
+                    database.updated_at = Utc::now();
+                    self.state
+                        .db
+                        .save_managed_database(&database)
+                        .map_err(internal_error)?;
+                    if was_running {
+                        mark_database_starting(&mut database);
+                        self.state
+                            .db
+                            .save_managed_database(&database)
+                            .map_err(internal_error)?;
+                        if let Err(error) =
+                            manager.start_database(&mut database).await
+                        {
+                            database.status = ServiceStatus::Failed;
+                            database.updated_at = Utc::now();
+                            let _ =
+                                self.state.db.save_managed_database(&database);
+                            return Err(service_manager_error(
+                                "move service",
+                                error,
+                            ));
+                        }
+                        self.state
+                            .db
+                            .save_managed_database(&database)
+                            .map_err(internal_error)?;
+                    }
+                }
+            }
+            OwnedServiceRecord::ManagedQueue(mut queue) => {
+                if queue.group_id != group_id {
+                    let manager = QueueManager::new();
+                    let was_running = queue.container_id.is_some()
+                        && queue.status == ServiceStatus::Running;
+                    if was_running {
+                        manager.stop_queue(&mut queue).await.map_err(
+                            |error| {
+                                service_manager_error("move service", error)
+                            },
+                        )?;
+                    }
+                    queue.group_id = group_id;
+                    queue.updated_at = Utc::now();
+                    self.state
+                        .db
+                        .save_managed_queue(&queue)
+                        .map_err(internal_error)?;
+                    if was_running {
+                        if let Err(error) =
+                            manager.start_queue(&mut queue).await
+                        {
+                            queue.status = ServiceStatus::Failed;
+                            queue.updated_at = Utc::now();
+                            let _ = self.state.db.save_managed_queue(&queue);
+                            return Err(service_manager_error(
+                                "move service",
+                                error,
+                            ));
+                        }
+                        self.state
+                            .db
+                            .save_managed_queue(&queue)
+                            .map_err(internal_error)?;
+                    }
+                }
+            }
+        }
+
+        self.service_response(
+            user_id,
+            service_id,
+            &config.proxy.base_domain,
+            config.proxy.public_ip.as_deref(),
+        )
+    }
+
+    /// queues a deployment that builds only this service from an extracted
+    /// local source directory. the directory is removed by the worker once
+    /// the job finishes.
+    pub async fn deploy_local_source(
+        &self,
+        user_id: Uuid,
+        service_id: Uuid,
+        source_dir: PathBuf,
+        label: &str,
+    ) -> ApiResult<DeploymentResponse> {
+        let (app, service) =
+            resolve_owned_app_service_record(&self.state, user_id, service_id)?;
+        let deployment = create_and_queue_local_build_deployment(
+            &self.state,
+            user_id,
+            &app,
+            service.id,
+            source_dir.to_string_lossy().to_string(),
+            label.to_string(),
+            format!("{} deployment of {}", label, service.name),
+        )
+        .await?;
+
+        Ok(deployment_response_for_service(&deployment, &service))
+    }
+
+    /// ensures the caller owns an app service that can take source deploys
+    pub fn require_app_service(
+        &self,
+        user_id: Uuid,
+        service_id: Uuid,
+    ) -> ApiResult<()> {
+        resolve_owned_app_service_record(&self.state, user_id, service_id)
+            .map(|_| ())
+    }
+
+    /// one-shot docker stats for the service's running containers
+    pub async fn service_metrics(
+        &self,
+        user_id: Uuid,
+        service_id: Uuid,
+    ) -> ApiResult<ServiceMetricsResponse> {
+        let container_ids = match resolve_owned_service_record(
+            &self.state,
+            user_id,
+            service_id,
+        )? {
+            OwnedServiceRecord::App { app, service } => {
+                if service.is_cron_job() {
+                    let config = self.state.config.read().await.clone();
+                    app_service_manager(
+                        &self.state,
+                        resolve_encryption_secret(&config),
+                    )
+                    .await?
+                    .list_cron_job_containers(&app, &service)
+                    .await
+                    .map_err(|error| {
+                        service_manager_error("list containers", error)
+                    })?
+                } else {
+                    resolve_app_service_deployment(&self.state, &app, &service)?
+                        .map(|deployment| {
+                            deployment
+                                .service_deployments
+                                .iter()
+                                .filter(|sd| {
+                                    sd.service_id == service.id
+                                        && sd.status
+                                            == DeploymentStatus::Running
+                                })
+                                .filter_map(|sd| sd.container_id.clone())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                }
+            }
+            OwnedServiceRecord::ManagedDatabase(database) => {
+                database.container_id.into_iter().collect()
+            }
+            OwnedServiceRecord::ManagedQueue(queue) => {
+                queue.container_id.into_iter().collect()
+            }
+        };
+
+        // stats take a second or two per container, so collect them
+        // concurrently and bound each one so a stuck daemon can't hang us
+        let docker = DockerContainerManager::new();
+        let collected =
+            futures::future::join_all(container_ids.iter().map(|id| {
+                let docker = &docker;
+                async move {
+                    let collect = async {
+                        match docker.is_running(id).await {
+                            Ok(true) => {}
+                            _ => return None,
+                        }
+                        match docker.get_container_metrics(id).await {
+                            Ok(metrics) => Some(metrics),
+                            Err(error) => {
+                                warn!(
+                                    container = %id,
+                                    error = %error,
+                                    "failed to read container stats"
+                                );
+                                None
+                            }
+                        }
+                    };
+                    tokio::time::timeout(METRICS_TIMEOUT, collect)
+                        .await
+                        .ok()
+                        .flatten()
+                }
+            }))
+            .await;
+        let containers = collected
+            .into_iter()
+            .flatten()
+            .map(|metrics| ServiceContainerMetrics {
+                container_id: metrics.container_id,
+                name: metrics.name,
+                cpu_percent: metrics.cpu_percent,
+                memory_used_bytes: metrics.memory_used_bytes,
+                memory_limit_bytes: metrics.memory_limit_bytes,
+                network_rx_bytes: metrics.network_rx_bytes,
+                network_tx_bytes: metrics.network_tx_bytes,
+                block_read_bytes: metrics.block_read_bytes,
+                block_write_bytes: metrics.block_write_bytes,
+                pids: metrics.pids,
+            })
+            .collect::<Vec<_>>();
+
+        Ok(ServiceMetricsResponse {
+            containers,
+            collected_at: Utc::now().to_rfc3339(),
+        })
+    }
+
     fn service_response(
         &self,
         user_id: Uuid,
@@ -1371,6 +2058,22 @@ impl ServiceSvc {
             public_ip,
         ))
     }
+}
+
+/// services to append to an existing project
+struct ProjectAddition {
+    github_url: Option<String>,
+    branch: Option<String>,
+    env_vars: Option<Vec<EnvVarRequest>>,
+    services: Vec<ServiceRequest>,
+    require_images: bool,
+    deploy: bool,
+}
+
+fn non_empty(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn normalize_public_ip(public_ip: Option<&str>) -> Option<String> {
@@ -1596,7 +2299,10 @@ fn resolve_owned_app_service_record(
 fn parse_restart_policy(value: Option<&str>) -> RestartPolicy {
     match value.unwrap_or("always").to_lowercase().as_str() {
         "never" | "no" => RestartPolicy::Never,
-        "onfailure" | "on-failure" => RestartPolicy::OnFailure,
+        "onfailure" | "on-failure" | "on_failure" => RestartPolicy::OnFailure,
+        "unless-stopped" | "unless_stopped" | "unlessstopped" => {
+            RestartPolicy::UnlessStopped
+        }
         _ => RestartPolicy::Always,
     }
 }
@@ -1606,6 +2312,7 @@ fn restart_policy_label(value: RestartPolicy) -> &'static str {
         RestartPolicy::Never => "never",
         RestartPolicy::Always => "always",
         RestartPolicy::OnFailure => "on-failure",
+        RestartPolicy::UnlessStopped => "unless-stopped",
     }
 }
 
@@ -1617,6 +2324,7 @@ fn rollout_strategy_label(value: RolloutStrategy) -> &'static str {
 }
 
 const SECRET_MASK: &str = "********";
+const METRICS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 fn mask_secret_value(secret: bool, value: &str) -> String {
     if secret && !value.is_empty() {
@@ -1696,12 +2404,26 @@ fn service_settings_service_response(
         mounts: service
             .mounts
             .iter()
-            .map(|mount| ServiceMountRequest {
-                name: mount.name.clone(),
-                target: mount.target.clone(),
-                read_only: Some(mount.read_only),
-            })
+            .map(mount_request_from_model)
             .collect(),
+        notes: service.notes.clone(),
+        basic_auth: service.basic_auth.as_ref().map(|auth| BasicAuthResponse {
+            username: auth.username.clone(),
+        }),
+        port_mappings: service
+            .port_mappings
+            .iter()
+            .map(PortMappingResponse::from)
+            .collect(),
+    }
+}
+
+fn mount_request_from_model(mount: &ServiceMount) -> ServiceMountRequest {
+    ServiceMountRequest {
+        name: mount.name.clone(),
+        target: mount.target.clone(),
+        read_only: Some(mount.read_only),
+        host_path: mount.host_path.clone(),
     }
 }
 
@@ -1807,14 +2529,29 @@ fn service_request_from_model(service: &ContainerService) -> ServiceRequest {
                 service
                     .mounts
                     .iter()
-                    .map(|mount| ServiceMountRequest {
-                        name: mount.name.clone(),
-                        target: mount.target.clone(),
-                        read_only: Some(mount.read_only),
-                    })
+                    .map(mount_request_from_model)
                     .collect(),
             )
         },
+        notes: Some(service.notes.clone()),
+        // a missing password keeps the stored hash
+        basic_auth: Some(service.basic_auth.as_ref().map(|auth| {
+            BasicAuthRequest {
+                username: Some(auth.username.clone()),
+                password: None,
+            }
+        })),
+        port_mappings: Some(
+            service
+                .port_mappings
+                .iter()
+                .map(|mapping| PortMappingRequest {
+                    host_port: mapping.host_port,
+                    container_port: mapping.container_port,
+                    protocol: Some(mapping.protocol.as_str().to_string()),
+                })
+                .collect(),
+        ),
     }
 }
 
@@ -1899,6 +2636,8 @@ fn validate_mount_name(name: &str) -> bool {
 
 fn build_service_mounts(
     mounts: Option<Vec<ServiceMountRequest>>,
+    existing: &[ServiceMount],
+    is_admin: bool,
 ) -> ApiResult<Vec<ServiceMount>> {
     let mut seen_names = HashSet::new();
     let mut seen_targets = HashSet::new();
@@ -1947,14 +2686,217 @@ fn build_service_mounts(
             ));
         }
 
+        let host_path = normalize_host_path(mount.host_path)?;
+        if host_path.is_some() && !is_admin {
+            // non-admins may resubmit a host path an admin already set
+            let unchanged = existing.iter().any(|existing| {
+                existing.name == name && existing.host_path == host_path
+            });
+            if !unchanged {
+                return Err(forbidden("only admins can mount host paths"));
+            }
+        }
+
         parsed.push(ServiceMount {
             name,
             target,
             read_only: mount.read_only.unwrap_or(false),
+            host_path,
         });
     }
 
     Ok(parsed)
+}
+
+fn forbidden(message: impl Into<String>) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ErrorResponse {
+            error: message.into(),
+        }),
+    )
+}
+
+/// validates an optional absolute host path for bind mounts
+fn normalize_host_path(value: Option<String>) -> ApiResult<Option<String>> {
+    let Some(value) = normalize_optional_string(value) else {
+        return Ok(None);
+    };
+    let path = FsPath::new(&value);
+    if !path.is_absolute() {
+        return Err(bad_request("mount host_path must be an absolute path"));
+    }
+    if path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(bad_request("mount host_path cannot contain '..'"));
+    }
+    Ok(Some(value))
+}
+
+const MAX_NOTES_CHARS: usize = 4000;
+
+/// resolves the notes field: absent keeps, null/empty clears
+fn resolve_service_notes(
+    value: Option<Option<String>>,
+    existing: Option<&str>,
+) -> ApiResult<Option<String>> {
+    match value {
+        None => Ok(existing.map(ToOwned::to_owned)),
+        Some(value) => {
+            let notes = normalize_optional_string(value);
+            if notes
+                .as_deref()
+                .is_some_and(|notes| notes.chars().count() > MAX_NOTES_CHARS)
+            {
+                return Err(bad_request(format!(
+                    "notes must be at most {} characters",
+                    MAX_NOTES_CHARS
+                )));
+            }
+            Ok(notes)
+        }
+    }
+}
+
+/// resolves basic auth: absent keeps, null or empty username disables and
+/// an omitted password keeps the stored hash
+fn resolve_service_basic_auth(
+    value: Option<Option<BasicAuthRequest>>,
+    existing: Option<&BasicAuth>,
+) -> ApiResult<Option<BasicAuth>> {
+    let request = match value {
+        None => return Ok(existing.cloned()),
+        Some(None) => return Ok(None),
+        Some(Some(request)) => request,
+    };
+    let Some(username) = normalize_optional_string(request.username) else {
+        return Ok(None);
+    };
+    if username.contains(':') {
+        return Err(bad_request("basic auth username cannot contain ':'"));
+    }
+
+    let password = request.password.filter(|password| !password.is_empty());
+    let password_hash = match password {
+        Some(password) => hash_password(&password).map_err(internal_error)?,
+        None => existing
+            .map(|existing| existing.password_hash.clone())
+            .ok_or_else(|| {
+                bad_request("basic auth password is required when enabling it")
+            })?,
+    };
+
+    Ok(Some(BasicAuth {
+        username,
+        password_hash,
+    }))
+}
+
+/// parses port mappings: absent keeps the current mappings
+fn resolve_port_mappings(
+    value: Option<Vec<PortMappingRequest>>,
+    existing: &[PortMapping],
+    service_type: ServiceType,
+) -> ApiResult<Vec<PortMapping>> {
+    let Some(requests) = value else {
+        return Ok(existing.to_vec());
+    };
+
+    let mut seen = HashSet::new();
+    let mut mappings = Vec::new();
+    for request in requests {
+        if request.host_port == 0 || request.container_port == 0 {
+            return Err(bad_request(
+                "port mapping ports must be between 1 and 65535",
+            ));
+        }
+        let protocol = match request.protocol.as_deref().map(str::trim) {
+            None | Some("") => PortProtocol::Tcp,
+            Some(value) => PortProtocol::parse(value).ok_or_else(|| {
+                bad_request("port mapping protocol must be tcp or udp")
+            })?,
+        };
+        if !seen.insert((request.host_port, protocol)) {
+            return Err(bad_request(format!(
+                "duplicate host port mapping: {}/{}",
+                request.host_port,
+                protocol.as_str()
+            )));
+        }
+        mappings.push(PortMapping {
+            host_port: request.host_port,
+            container_port: request.container_port,
+            protocol,
+        });
+    }
+
+    if !mappings.is_empty() && matches!(service_type, ServiceType::CronJob) {
+        return Err(bad_request("cron jobs cannot publish host ports"));
+    }
+
+    Ok(mappings)
+}
+
+/// rejects host ports reserved by containr or mapped by another service
+fn validate_port_mappings(
+    state: &AppState,
+    config: &Config,
+    app: &App,
+) -> ApiResult<()> {
+    let reserved = [
+        (config.proxy.http_port, "proxy http"),
+        (config.proxy.https_port, "proxy https"),
+        (config.server.port, "api"),
+    ];
+    let mut seen: HashMap<(u16, PortProtocol), &str> = HashMap::new();
+
+    for service in &app.services {
+        for mapping in &service.port_mappings {
+            if let Some((_, label)) =
+                reserved.iter().find(|(port, _)| *port == mapping.host_port)
+            {
+                return Err(bad_request(format!(
+                    "host port {} is reserved for the {} port",
+                    mapping.host_port, label
+                )));
+            }
+            let key = (mapping.host_port, mapping.protocol);
+            if let Some(other) = seen.insert(key, service.name.as_str()) {
+                return Err(bad_request(format!(
+                    "host port {}/{} is mapped by both {} and {}",
+                    mapping.host_port,
+                    mapping.protocol.as_str(),
+                    other,
+                    service.name
+                )));
+            }
+        }
+    }
+
+    if seen.is_empty() {
+        return Ok(());
+    }
+
+    for other_app in state.db.list_apps().map_err(internal_error)? {
+        if other_app.id == app.id {
+            continue;
+        }
+        for service in &other_app.services {
+            for mapping in &service.port_mappings {
+                if seen.contains_key(&(mapping.host_port, mapping.protocol)) {
+                    return Err(conflict(format!(
+                        "host port {}/{} is already mapped by another service",
+                        mapping.host_port,
+                        mapping.protocol.as_str()
+                    )));
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn normalize_optional_string(value: Option<String>) -> Option<String> {
@@ -2386,6 +3328,7 @@ fn build_services(
     app_id: Uuid,
     existing_services: &[ContainerService],
     requests: Vec<ServiceRequest>,
+    is_admin: bool,
 ) -> ApiResult<Vec<ContainerService>> {
     if requests.is_empty() {
         return Err((
@@ -2623,7 +3566,19 @@ fn build_services(
             service.working_dir.as_deref(),
         )?;
         service.schedule = schedule;
-        service.mounts = build_service_mounts(request.mounts)?;
+        service.mounts =
+            build_service_mounts(request.mounts, &service.mounts, is_admin)?;
+        service.notes =
+            resolve_service_notes(request.notes, service.notes.as_deref())?;
+        service.basic_auth = resolve_service_basic_auth(
+            request.basic_auth,
+            service.basic_auth.as_ref(),
+        )?;
+        service.port_mappings = resolve_port_mappings(
+            request.port_mappings,
+            &service.port_mappings,
+            service_type,
+        )?;
         service.health_check =
             request.health_check.map(|health_check| HealthCheck {
                 path: health_check.path,
@@ -3036,6 +3991,7 @@ async fn app_service_manager(
 ) -> ApiResult<AppServiceManager> {
     AppServiceManager::new(state.data_dir.join("builds"), encryption_secret)
         .await
+        .map(|manager| manager.with_database(state.db.clone()))
         .map_err(internal_error)
 }
 
@@ -3715,6 +4671,7 @@ pub(crate) async fn replay_deployment_job(
         source,
         rollout_strategy: deployment.rollout_strategy,
         rollback_from_deployment_id: deployment.rollback_from_deployment_id,
+        local_build_service_id: None,
     };
 
     state.deployment_tx.send(job).await.map_err(|error| {
@@ -3846,5 +4803,434 @@ mod services_test {
             supported_template_message(),
             "invalid template. supported: postgresql, redis, mariadb, qdrant, rabbitmq"
         );
+    }
+
+    mod parity {
+        use super::super::{
+            build_service_mounts, resolve_port_mappings,
+            resolve_service_basic_auth, resolve_service_notes,
+            validate_port_mappings, BasicAuthRequest, PortMappingRequest,
+            ServiceMountRequest, ServiceRequest,
+        };
+        use crate::state::AppState;
+        use axum::http::StatusCode;
+        use containr_common::models::{
+            App, BasicAuth, ContainerService, PortMapping, PortProtocol,
+            ServiceMount, ServiceType, User,
+        };
+        use containr_common::{Config, Database, DatabaseConfig};
+        use std::sync::Arc;
+        use tokio::sync::{mpsc, RwLock};
+        use uuid::Uuid;
+
+        fn mapping(
+            host: u16,
+            container: u16,
+            proto: Option<&str>,
+        ) -> PortMappingRequest {
+            PortMappingRequest {
+                host_port: host,
+                container_port: container,
+                protocol: proto.map(ToOwned::to_owned),
+            }
+        }
+
+        fn state() -> (AppState, tempfile::TempDir) {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let db = Database::open(&DatabaseConfig {
+                path: dir
+                    .path()
+                    .join("db.sqlite3")
+                    .to_string_lossy()
+                    .into_owned(),
+            })
+            .expect("db");
+            let (tx, _rx) = mpsc::channel(1);
+            let state = AppState::new(
+                Arc::new(RwLock::new(Config::default())),
+                dir.path().join("config.toml"),
+                dir.path().to_path_buf(),
+                db,
+                tx,
+                None,
+                None,
+            )
+            .expect("state");
+            (state, dir)
+        }
+
+        fn app_with_mappings(db: &Database, mappings: Vec<PortMapping>) -> App {
+            let user = User::new_with_password(
+                format!("{}@example.com", Uuid::new_v4()),
+                "hash".to_string(),
+            );
+            db.save_user(&user).expect("save user");
+            let mut app = App::new("a".to_string(), String::new(), user.id);
+            let mut service = ContainerService::new(
+                app.id,
+                "web".to_string(),
+                "nginx".to_string(),
+                80,
+            );
+            service.port_mappings = mappings;
+            app.services.push(service);
+            app
+        }
+
+        #[test]
+        fn port_mappings_are_parsed_and_validated() {
+            let parsed = resolve_port_mappings(
+                Some(vec![
+                    mapping(2222, 22, None),
+                    mapping(5353, 53, Some("UDP")),
+                    mapping(5353, 53, Some("tcp")),
+                ]),
+                &[],
+                ServiceType::WebService,
+            )
+            .expect("valid mappings");
+            assert_eq!(parsed.len(), 3);
+            assert_eq!(parsed[0].protocol, PortProtocol::Tcp);
+            assert_eq!(parsed[1].protocol, PortProtocol::Udp);
+
+            let existing = parsed.clone();
+            assert_eq!(
+                resolve_port_mappings(None, &existing, ServiceType::WebService)
+                    .expect("keep"),
+                existing
+            );
+
+            for invalid in [
+                vec![mapping(0, 22, None)],
+                vec![mapping(22, 0, None)],
+                vec![mapping(22, 22, Some("sctp"))],
+                vec![mapping(22, 22, None), mapping(22, 23, Some("tcp"))],
+            ] {
+                assert!(resolve_port_mappings(
+                    Some(invalid),
+                    &[],
+                    ServiceType::WebService
+                )
+                .is_err());
+            }
+            assert!(resolve_port_mappings(
+                Some(vec![mapping(2222, 22, None)]),
+                &[],
+                ServiceType::CronJob
+            )
+            .is_err());
+        }
+
+        #[test]
+        fn port_mappings_reject_reserved_and_taken_ports() {
+            let (state, _dir) = state();
+            let config = Config::default();
+            let tcp = |host| PortMapping {
+                host_port: host,
+                container_port: 80,
+                protocol: PortProtocol::Tcp,
+            };
+
+            for reserved in [
+                config.proxy.http_port,
+                config.proxy.https_port,
+                config.server.port,
+            ] {
+                let app = app_with_mappings(&state.db, vec![tcp(reserved)]);
+                assert!(validate_port_mappings(&state, &config, &app).is_err());
+            }
+
+            let first = app_with_mappings(&state.db, vec![tcp(8081)]);
+            state.db.save_app(&first).expect("save first");
+            let second = app_with_mappings(&state.db, vec![tcp(8081)]);
+            let error = validate_port_mappings(&state, &config, &second)
+                .expect_err("taken port");
+            assert_eq!(error.0, StatusCode::CONFLICT);
+
+            // the same app re-validating its own mapping is fine
+            assert!(validate_port_mappings(&state, &config, &first).is_ok());
+
+            let udp = PortMapping {
+                protocol: PortProtocol::Udp,
+                ..tcp(8081)
+            };
+            let third = app_with_mappings(&state.db, vec![udp]);
+            assert!(validate_port_mappings(&state, &config, &third).is_ok());
+
+            let mut duplicate = app_with_mappings(&state.db, vec![tcp(9000)]);
+            let mut sibling = duplicate.services[0].clone();
+            sibling.id = Uuid::new_v4();
+            sibling.name = "api".to_string();
+            duplicate.services.push(sibling);
+            assert!(
+                validate_port_mappings(&state, &config, &duplicate).is_err()
+            );
+        }
+
+        #[test]
+        fn basic_auth_resolution_keeps_and_disables() {
+            let existing = BasicAuth {
+                username: "admin".to_string(),
+                password_hash: "stored".to_string(),
+            };
+            let request = |username: Option<&str>, password: Option<&str>| {
+                Some(Some(BasicAuthRequest {
+                    username: username.map(ToOwned::to_owned),
+                    password: password.map(ToOwned::to_owned),
+                }))
+            };
+
+            assert_eq!(
+                resolve_service_basic_auth(None, Some(&existing))
+                    .expect("absent keeps"),
+                Some(existing.clone())
+            );
+            assert!(resolve_service_basic_auth(Some(None), Some(&existing))
+                .expect("null disables")
+                .is_none());
+            assert!(resolve_service_basic_auth(
+                request(None, Some("pw")),
+                Some(&existing)
+            )
+            .expect("missing username disables")
+            .is_none());
+            assert!(resolve_service_basic_auth(
+                request(Some("  "), None),
+                Some(&existing)
+            )
+            .expect("empty username disables")
+            .is_none());
+
+            let renamed = resolve_service_basic_auth(
+                request(Some("ops"), None),
+                Some(&existing),
+            )
+            .expect("keeps hash")
+            .expect("enabled");
+            assert_eq!(renamed.username, "ops");
+            assert_eq!(renamed.password_hash, "stored");
+
+            assert!(resolve_service_basic_auth(
+                request(Some("ops"), None),
+                None
+            )
+            .is_err());
+            assert!(resolve_service_basic_auth(
+                request(Some("a:b"), Some("pw")),
+                None
+            )
+            .is_err());
+
+            let created = resolve_service_basic_auth(
+                request(Some("ops"), Some("pw")),
+                None,
+            )
+            .expect("hashes")
+            .expect("enabled");
+            assert!(crate::auth::verify_password("pw", &created.password_hash)
+                .expect("verify"));
+        }
+
+        #[test]
+        fn restart_policy_accepts_aliases() {
+            use super::super::parse_restart_policy;
+            use containr_common::models::RestartPolicy;
+            for (raw, expected) in [
+                ("on-failure", RestartPolicy::OnFailure),
+                ("on_failure", RestartPolicy::OnFailure),
+                ("unless-stopped", RestartPolicy::UnlessStopped),
+                ("unless_stopped", RestartPolicy::UnlessStopped),
+                ("no", RestartPolicy::Never),
+                ("always", RestartPolicy::Always),
+            ] {
+                assert_eq!(parse_restart_policy(Some(raw)), expected);
+            }
+        }
+
+        #[tokio::test]
+        async fn services_can_be_added_to_existing_projects() {
+            use super::super::{CreateServiceRequest, ServiceSvc};
+
+            let (state, _dir) = state();
+            let mut app = app_with_mappings(&state.db, Vec::new());
+            app.github_url = "https://github.com/a/b".to_string();
+            state.db.save_app(&app).expect("save app");
+            let svc = ServiceSvc::new(state.clone());
+            let request = |name: &str, github_url: &str| {
+                serde_json::from_value::<CreateServiceRequest>(
+                    serde_json::json!({
+                        "source": "git_repository",
+                        "name": "ignored",
+                        "github_url": github_url,
+                        "group_id": app.id.to_string(),
+                        "deploy": false,
+                        "service": {"name": name, "port": 8080}
+                    }),
+                )
+                .expect("parse request")
+            };
+
+            let error = svc
+                .create_service(app.owner_id, request("web", ""))
+                .await
+                .expect_err("duplicate name");
+            assert_eq!(error.0, StatusCode::BAD_REQUEST);
+
+            let error = svc
+                .create_service(
+                    app.owner_id,
+                    request("api", "https://github.com/other/repo"),
+                )
+                .await
+                .expect_err("different repository");
+            assert!(error.1.error.contains("single repository"));
+
+            let created = svc
+                .create_service(app.owner_id, request("api", ""))
+                .await
+                .expect("service added");
+            assert_eq!(created.name, "api");
+            assert_eq!(created.project_id, Some(app.id.to_string()));
+            let stored = state.db.get_app(app.id).expect("get").expect("app");
+            assert_eq!(stored.services.len(), 2);
+            assert!(stored
+                .services
+                .iter()
+                .all(|service| service.app_id == app.id));
+        }
+
+        #[tokio::test]
+        async fn sourceless_services_skip_deploy_and_reject_redeploy() {
+            use super::super::{CreateServiceRequest, ServiceSvc};
+
+            let (state, _dir) = state();
+            let user = User::new_with_password(
+                "x@example.com".to_string(),
+                "hash".to_string(),
+            );
+            state.db.save_user(&user).expect("save user");
+            let svc = ServiceSvc::new(state.clone());
+            let request = serde_json::from_value::<CreateServiceRequest>(
+                serde_json::json!({
+                    "source": "git_repository",
+                    "name": "upload-app",
+                    "github_url": "",
+                    "deploy": false,
+                    "service": {"name": "web", "port": 8080}
+                }),
+            )
+            .expect("parse request");
+            let created = svc
+                .create_service(user.id, request)
+                .await
+                .expect("created without deploy");
+            let service_id = Uuid::parse_str(&created.id).expect("uuid");
+            let app_id = Uuid::parse_str(&created.project_id.expect("project"))
+                .expect("uuid");
+            assert!(state
+                .db
+                .list_deployments_by_app(app_id)
+                .expect("deployments")
+                .is_empty());
+
+            let error = svc
+                .trigger_service_deployment(user.id, service_id, None)
+                .await
+                .expect_err("no source");
+            assert_eq!(error.0, StatusCode::BAD_REQUEST);
+            assert!(error.1.error.contains("has no source"));
+        }
+
+        #[test]
+        fn notes_are_limited_and_clearable() {
+            assert_eq!(
+                resolve_service_notes(None, Some("keep")).expect("keep"),
+                Some("keep".to_string())
+            );
+            assert!(resolve_service_notes(Some(None), Some("keep"))
+                .expect("clear")
+                .is_none());
+            assert!(resolve_service_notes(Some(Some("x".repeat(4001))), None)
+                .is_err());
+            assert!(resolve_service_notes(Some(Some("x".repeat(4000))), None)
+                .is_ok());
+        }
+
+        #[test]
+        fn host_path_mounts_require_admin() {
+            let mount = |host_path: Option<&str>| ServiceMountRequest {
+                name: "data".to_string(),
+                target: "/data".to_string(),
+                read_only: None,
+                host_path: host_path.map(ToOwned::to_owned),
+            };
+
+            let error = build_service_mounts(
+                Some(vec![mount(Some("/srv"))]),
+                &[],
+                false,
+            )
+            .expect_err("non-admin host path");
+            assert_eq!(error.0, StatusCode::FORBIDDEN);
+
+            let mounts = build_service_mounts(
+                Some(vec![mount(Some("/srv"))]),
+                &[],
+                true,
+            )
+            .expect("admin host path");
+            assert_eq!(mounts[0].host_path.as_deref(), Some("/srv"));
+
+            let existing = vec![ServiceMount {
+                name: "data".to_string(),
+                target: "/data".to_string(),
+                read_only: false,
+                host_path: Some("/srv".to_string()),
+            }];
+            assert!(build_service_mounts(
+                Some(vec![mount(Some("/srv"))]),
+                &existing,
+                false
+            )
+            .is_ok());
+
+            for invalid in ["relative/path", "/srv/../etc"] {
+                let error = build_service_mounts(
+                    Some(vec![mount(Some(invalid))]),
+                    &[],
+                    true,
+                )
+                .expect_err("invalid host path");
+                assert_eq!(error.0, StatusCode::BAD_REQUEST);
+            }
+        }
+
+        #[test]
+        fn service_request_distinguishes_absent_and_null() {
+            let absent: ServiceRequest = serde_json::from_value(
+                serde_json::json!({"name": "web", "port": 80}),
+            )
+            .expect("parse");
+            assert!(absent.notes.is_none());
+            assert!(absent.basic_auth.is_none());
+            assert!(absent.port_mappings.is_none());
+
+            let null: ServiceRequest =
+                serde_json::from_value(serde_json::json!({
+                    "name": "web",
+                    "port": 80,
+                    "notes": null,
+                    "basic_auth": null,
+                    "port_mappings": [{"host_port": 1, "container_port": 2}],
+                    "mounts": [{"name": "m", "target": "/m", "host_path": "/h"}]
+                }))
+                .expect("parse");
+            assert_eq!(null.notes, Some(None));
+            assert!(matches!(null.basic_auth, Some(None)));
+            assert_eq!(
+                null.mounts.expect("mounts")[0].host_path.as_deref(),
+                Some("/h")
+            );
+        }
     }
 }

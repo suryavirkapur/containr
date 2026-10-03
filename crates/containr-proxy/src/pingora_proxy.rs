@@ -28,7 +28,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::acme::ChallengeStore;
-use crate::routes::{RouteManager, SelectedUpstream};
+use crate::routes::{BasicAuthCheck, RouteManager, SelectedUpstream};
 
 /// Context for each request
 pub struct ProxyCtx {
@@ -71,6 +71,25 @@ impl ContainrProxy {
         }
     }
 
+    /// enforces http basic auth for routes that require it
+    async fn basic_auth_allowed(&self, session: &Session, host: &str) -> bool {
+        let authorization = session
+            .req_header()
+            .headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok());
+        match self.routes.check_basic_auth(host, authorization) {
+            BasicAuthCheck::NotRequired | BasicAuthCheck::Allowed => true,
+            BasicAuthCheck::Denied => false,
+            BasicAuthCheck::Verify(pending) => {
+                // argon2 is cpu heavy; keep it off the proxy event loop
+                tokio::task::spawn_blocking(move || pending.verify())
+                    .await
+                    .unwrap_or(false)
+            }
+        }
+    }
+
     fn has_certificate(&self, domain: &str) -> bool {
         self.db
             .get_certificate_by_domain(domain)
@@ -107,18 +126,14 @@ impl DynamicCertResolver {
         &self,
         domain: &str,
     ) -> Option<(X509, Vec<X509>, PKey<Private>)> {
-        let cert = match self
-            .db
-            .get_certificate_by_domain(domain)
-            .ok()
-            .flatten()
-        {
-            Some(cert) if cert.expires_at > Utc::now() => cert,
-            _ => {
-                self.cache.remove(domain);
-                return None;
-            }
-        };
+        let cert =
+            match self.db.get_certificate_by_domain(domain).ok().flatten() {
+                Some(cert) if cert.expires_at > Utc::now() => cert,
+                _ => {
+                    self.cache.remove(domain);
+                    return None;
+                }
+            };
 
         if let Some(cached) = self.cache.get(domain) {
             if cached.id == cert.id && cached.expires_at == cert.expires_at {
@@ -384,6 +399,24 @@ impl ProxyHttp for ContainrProxy {
 
         // Find route for this host
         if let Some(route) = self.routes.get_route(&host) {
+            let is_acme = path.starts_with("/.well-known/acme-challenge/");
+            if !is_acme && !self.basic_auth_allowed(session, &host).await {
+                let body = "authentication required";
+                let mut header = ResponseHeader::build(401, None)?;
+                header.insert_header(
+                    "WWW-Authenticate",
+                    "Basic realm=\"containr\"",
+                )?;
+                header.insert_header("Content-Type", "text/plain")?;
+                header
+                    .insert_header("Content-Length", body.len().to_string())?;
+                session
+                    .write_response_header(Box::new(header), false)
+                    .await?;
+                session.write_response_body(Some(body.into()), true).await?;
+                return Ok(true);
+            }
+
             match self.routes.select_upstream(&host) {
                 Some(selection) => {
                     ctx.upstream_addr = Some(selection.address());
@@ -404,7 +437,9 @@ impl ProxyHttp for ContainrProxy {
                     session
                         .write_response_header(Box::new(header), false)
                         .await?;
-                    session.write_response_body(Some(body.into()), true).await?;
+                    session
+                        .write_response_body(Some(body.into()), true)
+                        .await?;
 
                     Ok(true)
                 }

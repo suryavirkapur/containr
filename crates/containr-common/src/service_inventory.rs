@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::managed_services::ServiceStatus as ManagedServiceStatus;
 use crate::models::{
-    ContainerService, Deployment, DeploymentStatus, ServiceType,
+    ContainerService, Deployment, DeploymentStatus, PortMapping, ServiceType,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,6 +85,10 @@ pub struct ServiceInventoryItem {
     pub domains: Vec<String>,
     pub http_only_domains: Vec<String>,
     pub schedule: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub port_mappings: Vec<PortMapping>,
     pub public_http: bool,
     pub desired_instances: u32,
     pub running_instances: u32,

@@ -5,7 +5,7 @@ use axum::http::{
     HeaderValue, Method,
 };
 use axum::{
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
     Router,
 };
 use std::net::SocketAddr;
@@ -21,8 +21,8 @@ use utoipa_scalar::{Scalar, Servable};
 use crate::deployment_source::resolve_source_deployment_source;
 use crate::github::DeploymentJob;
 use crate::handlers::{
-    auth, certificates, containers, github_app, github_repos, health, settings,
-    storage, system, webhooks, websocket,
+    auth, certificates, containers, github_app, github_repos, health, projects,
+    registries, settings, storage, system, webhooks, websocket,
 };
 use crate::openapi::ApiDoc;
 use crate::routes;
@@ -95,6 +95,10 @@ pub async fn run_server(
         // health
         .route("/health", get(health::health))
         .route("/api/system/stats", get(system::get_system_stats))
+        .route("/api/system/info", get(system::get_system_info))
+        .route("/api/system/disk-usage", get(system::get_disk_usage))
+        .route("/api/system/cleanup", post(system::run_cleanup))
+        .route("/api/system/backup", get(system::download_backup))
         // openapi docs
         .merge(Scalar::with_url("/api/docs", ApiDoc::openapi()))
         // services (canonical)
@@ -125,6 +129,15 @@ pub async fn run_server(
         .route("/api/auth/github/callback", get(auth::github_callback))
         .route("/api/admin/users", get(auth::list_users))
         .route("/api/admin/users", post(auth::create_user))
+        .route("/api/admin/users/{id}", delete(auth::delete_user))
+        .route("/api/auth/password", post(auth::change_password))
+        // projects
+        .route("/api/projects", get(projects::list_projects))
+        .route("/api/projects/{id}", patch(projects::update_project))
+        // container registries
+        .route("/api/registries", get(registries::list_registries))
+        .route("/api/registries", post(registries::create_registry))
+        .route("/api/registries/{id}", delete(registries::delete_registry))
         // settings
         .route("/api/settings", get(settings::get_settings))
         .route("/api/settings", put(settings::update_settings))
@@ -302,6 +315,19 @@ async fn replay_deployment_job(
     app: &App,
     deployment: &Deployment,
 ) -> anyhow::Result<()> {
+    // uploaded sources are removed once their job ends and the target
+    // service isn't persisted, so they can't be replayed
+    if let Some(source_url) = deployment.source_url.as_deref() {
+        if containr_runtime::worker::is_uploaded_source(
+            &state.data_dir.join("builds"),
+            std::path::Path::new(source_url),
+        ) {
+            anyhow::bail!(
+                "uploaded source deployments cannot be replayed after restart"
+            );
+        }
+    }
+
     // image-only apps have nothing to check out
     let source = if !app.requires_source_checkout() {
         DeploymentSource::None
@@ -339,6 +365,7 @@ async fn replay_deployment_job(
         source,
         rollout_strategy: deployment.rollout_strategy,
         rollback_from_deployment_id: deployment.rollback_from_deployment_id,
+        local_build_service_id: None,
     };
 
     state.deployment_tx.send(job).await.map_err(|error| {

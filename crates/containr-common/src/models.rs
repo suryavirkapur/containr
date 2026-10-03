@@ -174,7 +174,11 @@ pub enum RestartPolicy {
     #[default]
     Always,
     /// restart only on failure
+    #[serde(alias = "on-failure", alias = "on_failure")]
     OnFailure,
+    /// restart unless explicitly stopped
+    #[serde(alias = "unless-stopped", alias = "unless_stopped")]
+    UnlessStopped,
 }
 
 /// rollout strategy for replacing running containers
@@ -228,6 +232,135 @@ pub struct ServiceMount {
     /// whether the mount is read-only inside the container
     #[serde(default)]
     pub read_only: bool,
+    /// absolute host path bind-mounted instead of a managed volume dir
+    #[serde(default)]
+    pub host_path: Option<String>,
+}
+
+/// http basic auth enforced by the proxy for a service's domains
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BasicAuth {
+    pub username: String,
+    /// argon2 phc hash of the password
+    pub password_hash: String,
+}
+
+/// transport protocol of a published host port
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum PortProtocol {
+    #[default]
+    Tcp,
+    Udp,
+}
+
+impl PortProtocol {
+    /// returns the docker/api name of the protocol
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PortProtocol::Tcp => "tcp",
+            PortProtocol::Udp => "udp",
+        }
+    }
+
+    /// parses a protocol name, accepting any case
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "tcp" => Some(PortProtocol::Tcp),
+            "udp" => Some(PortProtocol::Udp),
+            _ => None,
+        }
+    }
+}
+
+/// host port published to a container port
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PortMapping {
+    pub host_port: u16,
+    pub container_port: u16,
+    #[serde(default)]
+    pub protocol: PortProtocol,
+}
+
+/// owner-scoped private container registry credentials
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContainerRegistry {
+    pub id: Uuid,
+    pub owner_id: Uuid,
+    /// registry host, e.g. ghcr.io or docker.io
+    pub server: String,
+    pub username: String,
+    /// password encrypted with the server encryption key
+    pub password_enc: String,
+    pub created_at: DateTime<Utc>,
+}
+
+impl ContainerRegistry {
+    /// creates a new registry record
+    pub fn new(
+        owner_id: Uuid,
+        server: String,
+        username: String,
+        password_enc: String,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            owner_id,
+            server,
+            username,
+            password_enc,
+            created_at: Utc::now(),
+        }
+    }
+
+    /// returns true when this registry serves the given image reference
+    pub fn matches_image(&self, image: &str) -> bool {
+        normalize_registry_host(&self.server) == image_registry_host(image)
+    }
+}
+
+const DOCKER_HUB_HOST: &str = "docker.io";
+
+/// normalizes a registry server into a comparable host name
+pub fn normalize_registry_host(server: &str) -> String {
+    let trimmed = server.trim();
+    let without_scheme = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+        .unwrap_or(trimmed);
+    let host = without_scheme
+        .split('/')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match host.as_str() {
+        ""
+        | "docker.io"
+        | "index.docker.io"
+        | "registry-1.docker.io"
+        | "registry.hub.docker.com" => DOCKER_HUB_HOST.to_string(),
+        _ => host,
+    }
+}
+
+/// returns the registry host serving an image reference
+pub fn image_registry_host(image: &str) -> String {
+    let image = image.trim();
+    let Some((first, _)) = image.split_once('/') else {
+        return DOCKER_HUB_HOST.to_string();
+    };
+    if first.contains('.') || first.contains(':') || first == "localhost" {
+        normalize_registry_host(first)
+    } else {
+        DOCKER_HUB_HOST.to_string()
+    }
+}
+
+/// returns true when the registry host is docker hub
+pub fn is_docker_hub_host(host: &str) -> bool {
+    normalize_registry_host(host) == DOCKER_HUB_HOST
 }
 
 /// container registry credentials for pulling a service image
@@ -319,6 +452,15 @@ pub struct ContainerService {
     pub schedule: Option<String>,
     #[serde(default)]
     pub mounts: Vec<ServiceMount>,
+    /// free-text description of the service
+    #[serde(default)]
+    pub notes: Option<String>,
+    /// http basic auth enforced by the proxy
+    #[serde(default)]
+    pub basic_auth: Option<BasicAuth>,
+    /// host ports published to the first replica
+    #[serde(default)]
+    pub port_mappings: Vec<PortMapping>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -359,6 +501,9 @@ impl ContainerService {
             working_dir: None,
             schedule: None,
             mounts: Vec::new(),
+            notes: None,
+            basic_auth: None,
+            port_mappings: Vec::new(),
             created_at: now,
             updated_at: now,
         }
@@ -801,6 +946,10 @@ pub struct DeploymentJob {
     pub source: DeploymentSource,
     pub rollout_strategy: RolloutStrategy,
     pub rollback_from_deployment_id: Option<Uuid>,
+    /// when set, only this service is built from the local source; its
+    /// build context is the source root and its dockerfile is `Dockerfile`
+    /// unless the service's dockerfile_path exists in the source
+    pub local_build_service_id: Option<Uuid>,
 }
 
 /// github app configuration for coolify-style integration
@@ -1182,6 +1331,66 @@ mod tests {
         assert!(service.is_cron_job());
         assert!(!service.expects_inbound_port());
         assert!(!service.requires_source_checkout());
+    }
+
+    #[test]
+    fn test_restart_policy_aliases() {
+        for (raw, expected) in [
+            ("\"onfailure\"", RestartPolicy::OnFailure),
+            ("\"on-failure\"", RestartPolicy::OnFailure),
+            ("\"on_failure\"", RestartPolicy::OnFailure),
+            ("\"unless-stopped\"", RestartPolicy::UnlessStopped),
+            ("\"unless_stopped\"", RestartPolicy::UnlessStopped),
+            ("\"unlessstopped\"", RestartPolicy::UnlessStopped),
+        ] {
+            let parsed: RestartPolicy =
+                serde_json::from_str(raw).expect("policy should parse");
+            assert_eq!(parsed, expected);
+        }
+    }
+
+    #[test]
+    fn test_registry_host_matching() {
+        assert_eq!(image_registry_host("redis:7"), "docker.io");
+        assert_eq!(image_registry_host("library/redis"), "docker.io");
+        assert_eq!(image_registry_host("ghcr.io/a/b:1"), "ghcr.io");
+        assert_eq!(image_registry_host("localhost:5000/img"), "localhost:5000");
+        assert_eq!(
+            normalize_registry_host("https://index.docker.io/v1/"),
+            "docker.io"
+        );
+        assert_eq!(normalize_registry_host("GHCR.io"), "ghcr.io");
+
+        let registry = ContainerRegistry::new(
+            Uuid::new_v4(),
+            "ghcr.io".to_string(),
+            "u".to_string(),
+            "p".to_string(),
+        );
+        assert!(registry.matches_image("ghcr.io/demo/app:1"));
+        assert!(!registry.matches_image("redis:7"));
+        assert!(is_docker_hub_host("registry-1.docker.io"));
+    }
+
+    #[test]
+    fn test_container_service_new_parity_defaults() {
+        let value = json!({
+            "id": Uuid::new_v4(),
+            "app_id": Uuid::new_v4(),
+            "name": "api",
+            "image": "node:18",
+            "port": 3000,
+            "port_mappings": [{"host_port": 2222, "container_port": 22}],
+            "mounts": [{"name": "data", "target": "/data"}],
+            "created_at": Utc::now(),
+            "updated_at": Utc::now()
+        });
+        let service: ContainerService =
+            serde_json::from_value(value).expect("service should parse");
+        assert!(service.notes.is_none());
+        assert!(service.basic_auth.is_none());
+        assert_eq!(service.port_mappings[0].protocol, PortProtocol::Tcp);
+        assert!(service.mounts[0].host_path.is_none());
     }
 
     #[test]

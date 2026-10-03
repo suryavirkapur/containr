@@ -94,6 +94,63 @@ pub(crate) async fn create_and_queue_deployment(
     source_override: Option<DeploymentSource>,
     cleanup_stale_deployments: bool,
 ) -> Result<Deployment, (StatusCode, Json<ErrorResponse>)> {
+    queue_deployment(
+        state,
+        owner_id,
+        app,
+        commit_sha,
+        commit_message,
+        branch,
+        rollout_strategy,
+        rollback_from_deployment_id,
+        source_override,
+        cleanup_stale_deployments,
+        None,
+    )
+    .await
+}
+
+/// queues a deployment that builds only `service_id` from a local source
+/// directory (uploaded archive or inline dockerfile)
+pub(crate) async fn create_and_queue_local_build_deployment(
+    state: &AppState,
+    owner_id: Uuid,
+    app: &App,
+    service_id: Uuid,
+    source_path: String,
+    commit_sha: String,
+    commit_message: String,
+) -> Result<Deployment, (StatusCode, Json<ErrorResponse>)> {
+    queue_deployment(
+        state,
+        owner_id,
+        app,
+        commit_sha,
+        Some(commit_message),
+        app.branch.clone(),
+        app.rollout_strategy,
+        None,
+        Some(DeploymentSource::LocalPath { path: source_path }),
+        false,
+        Some(service_id),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn queue_deployment(
+    state: &AppState,
+    owner_id: Uuid,
+    app: &App,
+    commit_sha: String,
+    commit_message: Option<String>,
+    branch: String,
+    rollout_strategy: RolloutStrategy,
+    rollback_from_deployment_id: Option<Uuid>,
+    source_override: Option<DeploymentSource>,
+    cleanup_stale_deployments: bool,
+    local_build_service_id: Option<Uuid>,
+) -> Result<Deployment, (StatusCode, Json<ErrorResponse>)> {
     let source = match source_override {
         Some(source) => source,
         None => resolve_app_deployment_source(state, owner_id, app).await?,
@@ -125,6 +182,7 @@ pub(crate) async fn create_and_queue_deployment(
         source,
         rollout_strategy,
         rollback_from_deployment_id,
+        local_build_service_id,
     };
 
     state.deployment_tx.send(job).await.map_err(|error| {
