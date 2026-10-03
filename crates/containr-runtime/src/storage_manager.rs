@@ -70,19 +70,25 @@ impl StorageManager {
     pub async fn delete_bucket(&self, bucket_name: &str) -> Result<()> {
         info!("deleting bucket: {}", bucket_name);
 
-        // first, list and delete all objects
-        let objects = self
-            .client
-            .list_objects_v2()
-            .bucket(bucket_name)
-            .send()
-            .await
-            .map_err(|e| {
-                ClientError::Operation(format!("failed to list objects: {}", e))
-            })?;
+        // first, list and delete all objects. list_objects_v2 returns at
+        // most 1000 keys per page, so follow continuation tokens.
+        let mut continuation_token: Option<String> = None;
+        loop {
+            let objects = self
+                .client
+                .list_objects_v2()
+                .bucket(bucket_name)
+                .set_continuation_token(continuation_token.take())
+                .send()
+                .await
+                .map_err(|e| {
+                    ClientError::Operation(format!(
+                        "failed to list objects: {}",
+                        e
+                    ))
+                })?;
 
-        if let Some(contents) = objects.contents {
-            for obj in contents {
+            for obj in objects.contents.unwrap_or_default() {
                 if let Some(key) = obj.key {
                     self.client
                         .delete_object()
@@ -97,6 +103,13 @@ impl StorageManager {
                             ))
                         })?;
                 }
+            }
+
+            match objects.next_continuation_token {
+                Some(token) if objects.is_truncated.unwrap_or(false) => {
+                    continuation_token = Some(token);
+                }
+                _ => break,
             }
         }
 

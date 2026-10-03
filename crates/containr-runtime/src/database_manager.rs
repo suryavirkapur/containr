@@ -10,6 +10,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use bollard::container::LogOutput;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use bollard::models::{
     ContainerCreateBody, EndpointSettings, HealthConfig, HealthStatusEnum,
@@ -722,12 +723,22 @@ impl DatabaseManager {
             ..Default::default()
         };
 
+        // keep stderr separate: tools like mariadb-dump print warnings
+        // there, which would otherwise corrupt the dump
         let mut output_data = Vec::new();
+        let mut error_data = Vec::new();
 
         match self.docker.start_exec(&exec.id, Some(start_options)).await {
             Ok(StartExecResults::Attached { mut output, .. }) => {
                 while let Some(Ok(msg)) = output.next().await {
-                    output_data.extend_from_slice(&msg.into_bytes());
+                    match msg {
+                        LogOutput::StdErr { message } => {
+                            error_data.extend_from_slice(&message);
+                        }
+                        other => {
+                            output_data.extend_from_slice(&other.into_bytes());
+                        }
+                    }
                 }
             }
             Ok(StartExecResults::Detached) => {}
@@ -749,7 +760,11 @@ impl DatabaseManager {
             Some(code) => Err(ClientError::Operation(format!(
                 "command failed with exit code {}: {}",
                 code,
-                Self::trim_exec_output(&output_data)
+                Self::trim_exec_output(if error_data.is_empty() {
+                    &output_data
+                } else {
+                    &error_data
+                })
             ))),
             None => Err(ClientError::Operation(
                 "command exit status was not available".to_string(),

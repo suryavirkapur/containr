@@ -122,8 +122,9 @@ impl ImageManager {
             });
         }
 
+        // without a tag docker pulls every tag of the repository
         let options = CreateImageOptions {
-            from_image: Some(name.to_string()),
+            from_image: Some(normalize_image_reference(name)),
             ..Default::default()
         };
 
@@ -417,6 +418,8 @@ impl ImageManager {
 /// creates a tar archive of the given directory
 fn create_tar_archive(path: &str) -> std::io::Result<Vec<u8>> {
     let mut archive = tar::Builder::new(Vec::new());
+    // keep symlinks as links so they can't pull host files into the context
+    archive.follow_symlinks(false);
     archive.append_dir_all(".", path)?;
     archive.into_inner()
 }
@@ -424,6 +427,21 @@ fn create_tar_archive(path: &str) -> std::io::Result<Vec<u8>> {
 impl Default for ImageManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// appends `:latest` when an image reference has neither a tag nor a digest.
+/// a `:` in the registry host (e.g. `localhost:5000/img`) is not a tag.
+pub fn normalize_image_reference(name: &str) -> String {
+    let name = name.trim();
+    if name.contains('@') {
+        return name.to_string();
+    }
+    let last_segment = name.rsplit('/').next().unwrap_or(name);
+    if last_segment.contains(':') {
+        name.to_string()
+    } else {
+        format!("{}:latest", name)
     }
 }
 
@@ -458,7 +476,33 @@ pub fn resolve_registry_server(
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_registry_server;
+    use super::{normalize_image_reference, resolve_registry_server};
+
+    #[test]
+    fn normalize_image_reference_defaults_to_latest() {
+        assert_eq!(normalize_image_reference("redis"), "redis:latest");
+        assert_eq!(normalize_image_reference("redis:7"), "redis:7");
+        assert_eq!(
+            normalize_image_reference("ghcr.io/demo/app"),
+            "ghcr.io/demo/app:latest"
+        );
+        assert_eq!(
+            normalize_image_reference("localhost:5000/img"),
+            "localhost:5000/img:latest"
+        );
+        assert_eq!(
+            normalize_image_reference("localhost:5000/img:v1"),
+            "localhost:5000/img:v1"
+        );
+        assert_eq!(
+            normalize_image_reference("redis@sha256:abc"),
+            "redis@sha256:abc"
+        );
+        assert_eq!(
+            normalize_image_reference("localhost:5000/img:v1@sha256:abc"),
+            "localhost:5000/img:v1@sha256:abc"
+        );
+    }
 
     #[test]
     fn resolve_registry_server_defaults_to_docker_hub() {

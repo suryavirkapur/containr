@@ -111,15 +111,30 @@ impl CronJobScheduler {
                 let key = (app.id, service.id);
                 active_keys.insert(key);
 
-                let state = schedules.entry(key).or_insert(
-                    self.build_schedule_state(schedule, deployment.id)?,
-                );
-                if state.schedule != schedule
-                    || state.deployment_id != deployment.id
-                {
-                    *state =
-                        self.build_schedule_state(schedule, deployment.id)?;
+                let needs_state = schedules.get(&key).is_none_or(|state| {
+                    state.schedule != schedule
+                        || state.deployment_id != deployment.id
+                });
+                if needs_state {
+                    match self.build_schedule_state(schedule, deployment.id) {
+                        Ok(state) => {
+                            schedules.insert(key, state);
+                        }
+                        Err(error) => {
+                            schedules.remove(&key);
+                            warn!(
+                                app_id = %app.id,
+                                service = %service.name,
+                                error = %error,
+                                "invalid cron schedule"
+                            );
+                            continue;
+                        }
+                    }
                 }
+                let Some(state) = schedules.get_mut(&key) else {
+                    continue;
+                };
 
                 if running_jobs.contains_key(&key) {
                     continue;
@@ -129,16 +144,59 @@ impl CronJobScheduler {
                     continue;
                 }
 
-                let image = self.resolve_service_image(service, &deployment)?;
-                let container_name = self
-                    .launch_cron_job(
-                        &app,
-                        &deployment,
-                        service,
-                        &image,
-                        &shared_env_vars,
-                    )
-                    .await?;
+                // advance first so a failing job waits for its next slot
+                // instead of being retried on every poll
+                match self.next_schedule_state(
+                    schedule,
+                    deployment.id,
+                    Utc::now(),
+                ) {
+                    Ok(next) => *state = next,
+                    Err(error) => {
+                        warn!(
+                            app_id = %app.id,
+                            service = %service.name,
+                            error = %error,
+                            "failed to compute next cron run"
+                        );
+                        schedules.remove(&key);
+                        continue;
+                    }
+                }
+
+                let launched =
+                    match self.resolve_service_image(service, &deployment) {
+                        Ok(image) => {
+                            self.launch_cron_job(
+                                &app,
+                                &deployment,
+                                service,
+                                &image,
+                                &shared_env_vars,
+                            )
+                            .await
+                        }
+                        Err(error) => Err(error),
+                    };
+                let container_name = match launched {
+                    Ok(container_name) => container_name,
+                    Err(error) => {
+                        warn!(
+                            app_id = %app.id,
+                            service = %service.name,
+                            error = %error,
+                            "failed to launch cron job"
+                        );
+                        let _ = self.db.append_deployment_log(
+                            deployment.id,
+                            &format!(
+                                "cron job {} failed to start: {}",
+                                service.name, error
+                            ),
+                        );
+                        continue;
+                    }
+                };
 
                 running_jobs.insert(
                     key,
@@ -148,16 +206,23 @@ impl CronJobScheduler {
                         service_name: service.name.clone(),
                     },
                 );
-                *state = self.next_schedule_state(
-                    schedule,
-                    deployment.id,
-                    Utc::now(),
-                )?;
             }
         }
 
         schedules.retain(|key, _| active_keys.contains(key));
-        running_jobs.retain(|key, _| active_keys.contains(key));
+        let orphaned = running_jobs
+            .keys()
+            .filter(|key| !active_keys.contains(key))
+            .cloned()
+            .collect::<Vec<_>>();
+        for key in orphaned {
+            if let Some(job) = running_jobs.remove(&key) {
+                let _ = self
+                    .docker_manager
+                    .remove_container(&job.container_name)
+                    .await;
+            }
+        }
 
         Ok(())
     }
@@ -301,7 +366,11 @@ impl CronJobScheduler {
             deployment.id,
             &format!("starting cron job {}", service.name),
         );
-        self.docker_manager.create_container(config).await?;
+        if let Err(error) = self.docker_manager.create_container(config).await {
+            // a failed start can leave a created container behind
+            let _ = self.docker_manager.remove_container(&container_name).await;
+            return Err(error.into());
+        }
         let _ = self.db.append_deployment_log(
             deployment.id,
             &format!(
@@ -331,8 +400,17 @@ impl CronJobScheduler {
                 continue;
             };
 
-            if self.docker_manager.is_running(&job.container_name).await? {
-                continue;
+            match self.docker_manager.is_running(&job.container_name).await {
+                Ok(true) => continue,
+                Ok(false) => {}
+                Err(error) => {
+                    warn!(
+                        container = %job.container_name,
+                        error = %error,
+                        "failed to inspect cron job container"
+                    );
+                    continue;
+                }
             }
 
             let state = self
@@ -355,6 +433,12 @@ impl CronJobScheduler {
                     job.service_name, status, finished_at
                 ),
             );
+            // one-shot containers are timestamped; remove them so they
+            // don't accumulate
+            let _ = self
+                .docker_manager
+                .remove_container(&job.container_name)
+                .await;
             finished.push(key);
         }
 
