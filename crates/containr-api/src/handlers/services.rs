@@ -33,7 +33,7 @@ async fn get_user_id(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<Uuid, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let auth_header = headers
         .get("authorization")
         .and_then(|value| value.to_str().ok())

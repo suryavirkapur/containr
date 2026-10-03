@@ -72,16 +72,13 @@ pub async fn resolve_remote_git_token(
     owner_id: Uuid,
     repo_url: &str,
 ) -> Result<Option<String>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
 
     if let Some(app_config) =
         state.db.get_github_app(owner_id).map_err(internal_error)?
     {
-        let private_key_pem = decrypt_value(
-            &config,
-            &app_config.private_key,
-        )
-        .map_err(internal_error)?;
+        let private_key_pem = decrypt_value(&config, &app_config.private_key)
+            .map_err(internal_error)?;
 
         let token = get_repo_installation_token(
             &app_config,
@@ -106,11 +103,8 @@ pub async fn resolve_remote_git_token(
     let user = state.db.get_user(owner_id).map_err(internal_error)?;
     if let Some(user) = user {
         if let Some(access_token) = user.github_access_token {
-            let decrypted_token = decrypt_value(
-                &config,
-                &access_token,
-            )
-            .map_err(internal_error)?;
+            let decrypted_token = decrypt_value(&config, &access_token)
+                .map_err(internal_error)?;
             return Ok(Some(decrypted_token));
         }
     }

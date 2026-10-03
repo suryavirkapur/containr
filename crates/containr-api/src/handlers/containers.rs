@@ -350,7 +350,7 @@ pub async fn list_containers(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<ContainerListItem>>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let mut containers = Vec::new();
@@ -473,7 +473,7 @@ pub async fn issue_exec_token(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<ExecTokenResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     ensure_container_owned(&state, user_id, &id).await?;
@@ -499,7 +499,7 @@ pub async fn container_exec_ws(
     Path(id): Path<String>,
     Query(query): Query<ExecSocketQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let claims =
         validate_exec_token(&query.token, &id, &config.auth.jwt_secret)
             .map_err(|e| {
@@ -619,7 +619,7 @@ pub async fn get_container_status(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<ContainerStatusResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     ensure_container_owned(&state, user_id, &id).await?;
 
@@ -662,7 +662,7 @@ pub async fn get_container_logs(
     Path(id): Path<String>,
     Query(params): Query<LogsQuery>,
 ) -> Result<Json<ContainerLogsResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     ensure_container_owned(&state, user_id, &id).await?;
 
@@ -692,7 +692,7 @@ pub async fn list_container_mounts(
     Path(id): Path<String>,
 ) -> Result<Json<Vec<ContainerMountResponse>>, (StatusCode, Json<ErrorResponse>)>
 {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     ensure_container_owned(&state, user_id, &id).await?;
 
@@ -748,6 +748,93 @@ fn validate_rel_path(
     Ok(path.to_path_buf())
 }
 
+fn path_escapes_mount() -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ErrorResponse {
+            error: "path escapes mount".to_string(),
+        }),
+    )
+}
+
+/// resolves `rel` under `base`, following symlinks only while they stay
+/// inside the canonical mount root. the target itself may not exist yet.
+fn resolve_within_mount(
+    base: &FsPath,
+    rel: &FsPath,
+) -> Result<PathBuf, (StatusCode, Json<ErrorResponse>)> {
+    let base = std::fs::canonicalize(base).map_err(internal_error)?;
+    let mut target = base.clone();
+    for component in rel.components() {
+        match component {
+            std::path::Component::Normal(name) => target.push(name),
+            std::path::Component::CurDir => {}
+            _ => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "invalid path".to_string(),
+                    }),
+                ));
+            }
+        }
+    }
+
+    // walk up to the deepest ancestor that exists on disk
+    let mut existing = target.as_path();
+    let mut missing = Vec::new();
+    loop {
+        match std::fs::symlink_metadata(existing) {
+            Ok(_) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let name =
+                    existing.file_name().ok_or_else(path_escapes_mount)?;
+                missing.push(name.to_os_string());
+                existing = existing.parent().ok_or_else(path_escapes_mount)?;
+            }
+            Err(error) => return Err(internal_error(error)),
+        }
+    }
+
+    // dangling symlinks fail to canonicalize and are rejected here
+    let mut resolved =
+        std::fs::canonicalize(existing).map_err(|_| path_escapes_mount())?;
+    if !resolved.starts_with(&base) {
+        return Err(path_escapes_mount());
+    }
+    for name in missing.iter().rev() {
+        resolved.push(name);
+    }
+
+    Ok(resolved)
+}
+
+/// resolves the parent of `rel` safely and appends the final component
+/// without following it, so a final symlink is acted on as the link itself
+fn resolve_entry_within_mount(
+    base: &FsPath,
+    rel: &FsPath,
+) -> Result<PathBuf, (StatusCode, Json<ErrorResponse>)> {
+    let name = rel
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(name) => Some(name),
+            _ => None,
+        })
+        .next_back()
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "path is required".to_string(),
+                }),
+            )
+        })?;
+    let parent = rel.parent().unwrap_or_else(|| FsPath::new(""));
+    let parent = resolve_within_mount(base, parent)?;
+    Ok(parent.join(name))
+}
+
 async fn resolve_mount_path(
     docker: &DockerContainerManager,
     container_id: &str,
@@ -800,14 +887,14 @@ pub async fn list_volume_entries(
     Path(id): Path<String>,
     Query(query): Query<VolumeQuery>,
 ) -> Result<Json<Vec<VolumeEntry>>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     ensure_container_owned(&state, user_id, &id).await?;
 
     let docker = DockerContainerManager::new();
     let (base, rel, _read_only) =
         resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
-    let target = base.join(&rel);
+    let target = resolve_within_mount(&base, &rel)?;
 
     let metadata = std::fs::metadata(&target).map_err(internal_error)?;
     if !metadata.is_dir() {
@@ -870,7 +957,7 @@ pub async fn delete_volume_entry(
     Path(id): Path<String>,
     Query(query): Query<VolumeQuery>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     ensure_container_owned(&state, user_id, &id).await?;
 
@@ -885,9 +972,12 @@ pub async fn delete_volume_entry(
             }),
         ));
     }
-    let target = base.join(&rel);
+    // never delete the mount root itself; the final component is not
+    // followed, so a symlink entry removes only the link
+    let target = resolve_entry_within_mount(&base, &rel)?;
 
-    let metadata = std::fs::metadata(&target).map_err(internal_error)?;
+    let metadata =
+        std::fs::symlink_metadata(&target).map_err(internal_error)?;
     if metadata.is_dir() {
         std::fs::remove_dir_all(&target).map_err(internal_error)?;
     } else {
@@ -919,14 +1009,14 @@ pub async fn download_volume_entry(
     Path(id): Path<String>,
     Query(query): Query<VolumeQuery>,
 ) -> Result<Response, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     ensure_container_owned(&state, user_id, &id).await?;
 
     let docker = DockerContainerManager::new();
     let (base, rel, _read_only) =
         resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
-    let target = base.join(&rel);
+    let target = resolve_within_mount(&base, &rel)?;
 
     let metadata = std::fs::metadata(&target).map_err(internal_error)?;
     if metadata.is_dir() {
@@ -984,7 +1074,7 @@ pub async fn upload_volume_entry(
     Query(query): Query<VolumeQuery>,
     mut multipart: Multipart,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     ensure_container_owned(&state, user_id, &id).await?;
 
@@ -999,7 +1089,7 @@ pub async fn upload_volume_entry(
             }),
         ));
     }
-    let target_dir = base.join(&rel);
+    let target_dir = resolve_within_mount(&base, &rel)?;
     tokio::fs::create_dir_all(&target_dir)
         .await
         .map_err(internal_error)?;
@@ -1020,7 +1110,7 @@ pub async fn upload_volume_entry(
             })?;
 
         let file_name_path = validate_rel_path(&file_name)?;
-        let file_path = target_dir.join(file_name_path);
+        let file_path = resolve_within_mount(&base, &rel.join(file_name_path))?;
 
         let mut file = tokio::fs::File::create(&file_path)
             .await
@@ -1054,7 +1144,7 @@ pub async fn create_volume_directory(
     Path(id): Path<String>,
     Query(query): Query<VolumeQuery>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     ensure_container_owned(&state, user_id, &id).await?;
 
@@ -1070,7 +1160,7 @@ pub async fn create_volume_directory(
         ));
     }
 
-    let target_dir = base.join(&rel);
+    let target_dir = resolve_within_mount(&base, &rel)?;
     tokio::fs::create_dir_all(&target_dir)
         .await
         .map_err(internal_error)?;
@@ -1080,8 +1170,79 @@ pub async fn create_volume_directory(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_app_container_label, resolve_exec_command};
+    use super::{
+        format_app_container_label, resolve_entry_within_mount,
+        resolve_exec_command, resolve_within_mount,
+    };
     use axum::http::StatusCode;
+    use std::path::{Path, PathBuf};
+
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new() -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("containr-mount-test-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&path).expect("create temp dir");
+            Self(path)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_within_mount_rejects_symlink_escape() {
+        let root = TempDir::new();
+        let base = root.0.join("mount");
+        let outside = root.0.join("outside");
+        std::fs::create_dir_all(base.join("sub")).expect("create base");
+        std::fs::create_dir_all(&outside).expect("create outside");
+        std::fs::write(outside.join("secret"), "x").expect("write secret");
+        std::os::unix::fs::symlink(&outside, base.join("escape"))
+            .expect("create escape link");
+        std::os::unix::fs::symlink(base.join("sub"), base.join("inner"))
+            .expect("create inner link");
+
+        let status = |result: Result<PathBuf, _>| match result {
+            Ok(path) => panic!("expected rejection, got {:?}", path),
+            Err((status, _)) => status,
+        };
+
+        assert_eq!(
+            status(resolve_within_mount(&base, Path::new("escape/secret"))),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            status(resolve_within_mount(&base, Path::new("escape/new/file"))),
+            StatusCode::FORBIDDEN
+        );
+        assert!(resolve_within_mount(&base, Path::new("inner/new")).is_ok());
+        assert!(resolve_within_mount(&base, Path::new("missing/a")).is_ok());
+
+        // deleting a symlink acts on the link itself, never its target
+        let entry = resolve_entry_within_mount(&base, Path::new("escape"))
+            .expect("link entry resolves");
+        let canonical_base = std::fs::canonicalize(&base).expect("canon");
+        assert_eq!(entry, canonical_base.join("escape"));
+    }
+
+    #[test]
+    fn resolve_entry_within_mount_rejects_mount_root() {
+        let root = TempDir::new();
+        for rel in ["", ".", "./"] {
+            match resolve_entry_within_mount(&root.0, Path::new(rel)) {
+                Ok(path) => panic!("expected rejection, got {:?}", path),
+                Err((status, _)) => {
+                    assert_eq!(status, StatusCode::BAD_REQUEST)
+                }
+            }
+        }
+    }
 
     #[test]
     fn resolve_exec_command_accepts_known_shells() {

@@ -126,7 +126,7 @@ pub async fn github_start(State(state): State<AppState>) -> Redirect {
     state.cleanup_expired_oauth_states(now);
     state.insert_oauth_state(&state_value, expires_at);
 
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let mut auth_url =
         url::Url::parse("https://github.com/login/oauth/authorize")
             .expect("valid github oauth url");
@@ -201,7 +201,7 @@ pub async fn register(
     state.db.save_user(&user).map_err(internal_error)?;
 
     // create token
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let token = create_token(
         user.id,
         &user.email,
@@ -371,7 +371,7 @@ pub async fn login(
     }
 
     // create token
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let token = create_token(
         user.id,
         &user.email,
@@ -421,7 +421,7 @@ pub async fn github_callback(
     }
 
     // exchange code for token
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let token_response = exchange_code_for_token(
         &config.github.client_id,
         &config.github.client_secret,
@@ -502,7 +502,7 @@ pub async fn github_callback(
     };
 
     // create jwt token
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let token = create_token(
         user.id,
         &user.email,
@@ -535,7 +535,7 @@ async fn require_authenticated_user(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<User, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(headers, &config.auth.jwt_secret)?;
     drop(config);
 
