@@ -15,6 +15,7 @@ use crate::handlers::auth::ErrorResponse;
 use crate::handlers::deployments::{
     create_and_queue_deployment, DeploymentTriggerRequest,
 };
+use crate::security::decrypt_value;
 use crate::state::AppState;
 use containr_common::models::RolloutStrategy;
 
@@ -49,21 +50,33 @@ pub async fn github_webhook(
             )
         })?;
 
-    // verify signature
-    let config = state.config.read().await;
-    let valid = verify_webhook_signature(
-        &body,
-        signature,
-        &config.github.webhook_secret,
-    )
-    .map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
+    // verify signature against the global secret or any github app secret
+    let secrets = collect_webhook_secrets(&state).await?;
+    if secrets.is_empty() {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
             Json(ErrorResponse {
-                error: e.to_string(),
+                error: "github webhook secret is not configured".to_string(),
             }),
-        )
-    })?;
+        ));
+    }
+
+    let mut valid = false;
+    for secret in &secrets {
+        let matched = verify_webhook_signature(&body, signature, secret)
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: e.to_string(),
+                    }),
+                )
+            })?;
+        if matched {
+            valid = true;
+            break;
+        }
+    }
 
     if !valid {
         return Err((
@@ -214,7 +227,7 @@ pub async fn deploy_webhook(
         state.db.save_app(&app).map_err(internal_error)?;
     }
 
-    if query.token != expected_token {
+    if !constant_time_eq(query.token.as_bytes(), expected_token.as_bytes()) {
         return Err((
             StatusCode::UNAUTHORIZED,
             Json(ErrorResponse {
@@ -256,6 +269,46 @@ pub async fn deploy_webhook(
         message: "deployment triggered".to_string(),
         deployment_id: Some(deployment.id.to_string()),
     }))
+}
+
+/// collects every non-empty secret a github delivery may be signed with
+async fn collect_webhook_secrets(
+    state: &AppState,
+) -> Result<Vec<String>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await.clone();
+    let mut secrets = Vec::new();
+    if !config.github.webhook_secret.trim().is_empty() {
+        secrets.push(config.github.webhook_secret.clone());
+    }
+
+    for user in state.db.list_users().map_err(internal_error)? {
+        let Some(app_config) =
+            state.db.get_github_app(user.id).map_err(internal_error)?
+        else {
+            continue;
+        };
+        match decrypt_value(&config, &app_config.webhook_secret) {
+            Ok(secret) if !secret.trim().is_empty() => secrets.push(secret),
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(
+                    owner_id = %user.id,
+                    error = %error,
+                    "failed to decrypt github app webhook secret"
+                );
+            }
+        }
+    }
+
+    Ok(secrets)
+}
+
+/// compares two byte strings without short-circuiting on content
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 /// finds an app by repository url and branch
@@ -353,10 +406,10 @@ mod tests {
     use tokio::sync::{mpsc, RwLock};
     use uuid::Uuid;
 
-    use super::github_webhook;
+    use super::{constant_time_eq, github_webhook};
     use crate::security::encrypt_value;
     use crate::state::AppState;
-    use containr_common::models::{App, User};
+    use containr_common::models::{App, GithubAppConfigBuilder, User};
     use containr_common::{Config, Database, DatabaseConfig};
 
     #[tokio::test]
@@ -402,6 +455,62 @@ mod tests {
             .is_empty());
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn empty_webhook_secret_is_rejected() -> Result<()> {
+        let fixture = test_fixture(TestTokenMode::ValidEncrypted, false)?;
+        fixture.state.config.write().await.github.webhook_secret =
+            String::new();
+        let body =
+            push_event_body(&fixture.app.github_url, &fixture.app.branch)?;
+        let headers = signed_headers(&body, "")?;
+
+        let result =
+            github_webhook(State(fixture.state.clone()), headers, body).await;
+        let (status, _) = result.err().context("expected webhook failure")?;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn github_app_webhook_secret_is_accepted() -> Result<()> {
+        let fixture = test_fixture(TestTokenMode::ValidEncrypted, false)?;
+        fixture.state.config.write().await.github.webhook_secret =
+            String::new();
+        let encrypted = encrypt_value(&fixture.config, "app-hook-secret")
+            .map_err(anyhow::Error::msg)?;
+        fixture.state.db.save_github_app(
+            &GithubAppConfigBuilder::new(1, "app", fixture.app.owner_id)
+                .webhook_secret(encrypted)
+                .build(),
+        )?;
+        let body = Bytes::from_static(b"{}");
+
+        let mut headers = signed_headers(&body, "app-hook-secret")?;
+        headers.insert("x-github-event", HeaderValue::from_static("ping"));
+        let response =
+            github_webhook(State(fixture.state.clone()), headers, body.clone())
+                .await
+                .map_err(|(status, _)| anyhow::anyhow!("status {}", status))?;
+        assert_eq!(response.0.message, "ignored event: ping");
+
+        let mut headers = signed_headers(&body, "wrong-secret")?;
+        headers.insert("x-github-event", HeaderValue::from_static("ping"));
+        let result =
+            github_webhook(State(fixture.state.clone()), headers, body).await;
+        let (status, _) = result.err().context("expected webhook failure")?;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        Ok(())
+    }
+
+    #[test]
+    fn constant_time_eq_matches_only_equal_input() {
+        assert!(constant_time_eq(b"token", b"token"));
+        assert!(!constant_time_eq(b"token", b"tokem"));
+        assert!(!constant_time_eq(b"token", b"token2"));
     }
 
     struct TestFixture {

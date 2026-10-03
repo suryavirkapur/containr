@@ -116,10 +116,6 @@ pub(crate) async fn create_and_queue_deployment(
         .save_deployment(&deployment)
         .map_err(internal_error)?;
 
-    if cleanup_stale_deployments {
-        supersede_stale_deployments(state, app.id, deployment.id)?;
-    }
-
     let job = DeploymentJob {
         deployment_id: deployment.id,
         app_id: app.id,
@@ -135,6 +131,20 @@ pub(crate) async fn create_and_queue_deployment(
         let _ = state.db.delete_deployment(deployment.id);
         internal_error(format!("failed to queue deployment: {}", error))
     })?;
+
+    // only supersede once the replacement is actually queued
+    if cleanup_stale_deployments {
+        if let Err((_, error)) =
+            supersede_stale_deployments(state, app.id, deployment.id)
+        {
+            tracing::warn!(
+                app_id = %app.id,
+                deployment_id = %deployment.id,
+                error = %error.error,
+                "failed to supersede stale deployments"
+            );
+        }
+    }
 
     Ok(deployment)
 }

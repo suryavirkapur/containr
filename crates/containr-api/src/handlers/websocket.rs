@@ -203,9 +203,11 @@ pub async fn deployment_logs_ws(
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     let user_id =
         get_ws_user_id(&state, &headers, query.token.as_deref()).await?;
-    ServiceSvc::new(state.clone())
-        .get_service(user_id, service_id)
-        .await?;
+    ServiceSvc::new(state.clone()).require_service_deployment(
+        user_id,
+        service_id,
+        deployment_id,
+    )?;
 
     Ok(ws.on_upgrade(move |socket| {
         handle_deployment_logs(
@@ -324,7 +326,7 @@ async fn get_ws_user_id(
     headers: &HeaderMap,
     query_token: Option<&str>,
 ) -> Result<Uuid, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let header_token = headers
         .get("authorization")
         .and_then(|value| value.to_str().ok())

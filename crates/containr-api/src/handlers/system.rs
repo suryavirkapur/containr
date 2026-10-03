@@ -199,7 +199,7 @@ pub async fn get_system_stats(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<SystemStats>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     drop(config);
 

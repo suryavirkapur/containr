@@ -1,7 +1,5 @@
 //! Certificate management handlers
 
-use std::net::ToSocketAddrs;
-
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
@@ -59,7 +57,7 @@ pub async fn get_certificate(
     headers: HeaderMap,
     Path(service_id): Path<Uuid>,
 ) -> Result<Json<Vec<CertificateResponse>>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let svc = crate::domain::services::ServiceSvc::new(state.clone());
@@ -123,7 +121,7 @@ pub async fn reissue_certificate(
     Path(service_id): Path<Uuid>,
     body: Option<Json<ReissueRequest>>,
 ) -> Result<Json<ReissueResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     let svc = crate::domain::services::ServiceSvc::new(state.clone());
     let (_app, container_service) =
@@ -156,10 +154,10 @@ pub async fn reissue_certificate(
         }
     }
 
+    // validate every domain before touching any stored certificate
     for domain in &domains {
-        // perform dns a record check
-        let dns_ok = format!("{}:443", domain)
-            .to_socket_addrs()
+        let dns_ok = tokio::net::lookup_host(format!("{}:443", domain))
+            .await
             .map(|mut addrs| addrs.next().is_some())
             .unwrap_or(false);
 
@@ -174,30 +172,43 @@ pub async fn reissue_certificate(
                 }),
             ));
         }
-
-        // delete existing certificate to force reissue
-        let _ = state.db.delete_certificate_by_domain(domain);
     }
 
-    // trigger certificate issuance
-    if let Some(ref tx) = state.cert_request_tx {
-        for domain in &domains {
-            tx.try_send(domain.clone()).map_err(|_| {
-                (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(ErrorResponse {
-                        error: "certificate service unavailable".to_string(),
-                    }),
-                )
-            })?;
-        }
-    } else {
+    let Some(ref tx) = state.cert_request_tx else {
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
             Json(ErrorResponse {
                 error: "certificate issuance not available".to_string(),
             }),
         ));
+    };
+
+    // reserve queue slots up front so nothing is deleted unless every
+    // request can be queued
+    let mut permits = Vec::with_capacity(domains.len());
+    for _ in &domains {
+        let permit = tx.try_reserve().map_err(|_| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ErrorResponse {
+                    error: "certificate service unavailable".to_string(),
+                }),
+            )
+        })?;
+        permits.push(permit);
+    }
+
+    // delete existing certificates to force reissue, then queue. deleting
+    // first keeps the worker from reusing the old certificate.
+    for (domain, permit) in domains.iter().zip(permits) {
+        if let Err(error) = state.db.delete_certificate_by_domain(domain) {
+            tracing::warn!(
+                domain = %domain,
+                error = %error,
+                "failed to delete certificate before reissue"
+            );
+        }
+        permit.send(domain.clone());
     }
 
     for domain in &domains {

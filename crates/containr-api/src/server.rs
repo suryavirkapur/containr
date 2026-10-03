@@ -27,7 +27,9 @@ use crate::handlers::{
 use crate::openapi::ApiDoc;
 use crate::routes;
 use crate::state::AppState;
-use containr_common::models::{App, Deployment, DeploymentStatus};
+use containr_common::models::{
+    App, Deployment, DeploymentSource, DeploymentStatus,
+};
 use containr_common::{Config, Database, Result};
 
 /// runs the api server
@@ -300,11 +302,18 @@ async fn replay_deployment_job(
     app: &App,
     deployment: &Deployment,
 ) -> anyhow::Result<()> {
-    let source_url = deployment
-        .source_url
-        .clone()
-        .unwrap_or_else(|| app.github_url.clone());
-    let source =
+    // image-only apps have nothing to check out
+    let source = if !app.requires_source_checkout() {
+        DeploymentSource::None
+    } else {
+        let source_url = deployment
+            .source_url
+            .clone()
+            .filter(|url| !url.trim().is_empty())
+            .unwrap_or_else(|| app.github_url.clone());
+        if source_url.trim().is_empty() {
+            anyhow::bail!("deployment has no source url to recover");
+        }
         resolve_source_deployment_source(state, app.owner_id, &source_url)
             .await
             .map_err(|(status, error)| {
@@ -313,7 +322,8 @@ async fn replay_deployment_job(
                     status,
                     error.error
                 )
-            })?;
+            })?
+    };
 
     state.db.append_deployment_log(
         deployment.id,

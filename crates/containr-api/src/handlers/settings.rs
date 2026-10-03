@@ -96,7 +96,7 @@ pub async fn get_settings(
     headers: HeaderMap,
 ) -> Result<Json<SettingsResponse>, (StatusCode, Json<ErrorResponse>)> {
     let _ = require_admin_user(&state, &headers).await?;
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     Ok(Json(build_settings_response(&config).await))
 }
 
@@ -197,7 +197,7 @@ pub async fn update_settings(
     // save config to file
     save_config(&state).await.map_err(internal_error)?;
 
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
 
     if let Some(tx) = &state.cert_request_tx {
         for domain in requested_certificate_domains {
@@ -264,7 +264,7 @@ pub async fn issue_dashboard_certificate(
 ) -> Result<Json<DashboardCertResponse>, (StatusCode, Json<ErrorResponse>)> {
     let _ = require_admin_user(&state, &headers).await?;
 
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let mut domains = Vec::new();
     if !config.proxy.base_domain.is_empty() {
         domains.push(config.proxy.base_domain.clone());
@@ -310,6 +310,7 @@ async fn save_config(state: &AppState) -> Result<(), String> {
     let config = state.config.read().await;
     let content = toml::to_string_pretty(&*config)
         .map_err(|e| format!("failed to serialize config: {}", e))?;
+    drop(config);
 
     tokio::fs::write(&state.config_path, &content)
         .await
@@ -322,7 +323,7 @@ async fn require_admin_user(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<User, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(headers, &config.auth.jwt_secret)?;
     drop(config);
 

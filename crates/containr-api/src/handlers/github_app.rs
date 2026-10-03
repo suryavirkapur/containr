@@ -150,7 +150,7 @@ pub async fn get_github_app(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<GithubAppStatusResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let app_config =
@@ -202,7 +202,7 @@ pub async fn get_app_manifest(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let _user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let base_domain = config.proxy.base_domain.trim_end_matches('/');
@@ -256,7 +256,7 @@ pub async fn github_app_callback(
     headers: HeaderMap,
     Query(query): Query<ManifestCallbackQuery>,
 ) -> Result<Redirect, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
 
     // try to get user from cookie/session or use a default flow
     // for now we'll require auth header
@@ -322,7 +322,7 @@ pub async fn github_install_callback(
     headers: HeaderMap,
     Query(query): Query<InstallationCallbackQuery>,
 ) -> Result<Redirect, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     if let Some(installation_id) = query.installation_id {
@@ -331,11 +331,8 @@ pub async fn github_install_callback(
             state.db.get_github_app(user_id).map_err(internal_error)?
         {
             // decrypt private key
-            let pem = decrypt_value(
-                &config,
-                &app_config.private_key,
-            )
-            .map_err(internal_error)?;
+            let pem = decrypt_value(&config, &app_config.private_key)
+                .map_err(internal_error)?;
 
             // generate jwt and get installation info
             let jwt =
@@ -397,7 +394,7 @@ pub async fn get_app_repos(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<AppReposResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let app_config = state
@@ -415,11 +412,8 @@ pub async fn get_app_repos(
     let app_config = sync_installations(&state, &config, app_config).await;
 
     // decrypt private key
-    let pem = decrypt_value(
-        &config,
-        &app_config.private_key,
-    )
-    .map_err(internal_error)?;
+    let pem = decrypt_value(&config, &app_config.private_key)
+        .map_err(internal_error)?;
 
     // generate jwt
     let jwt = generate_app_jwt(app_config.app_id, &pem).map_err(|e| {
@@ -513,7 +507,7 @@ pub async fn delete_github_app(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     state
@@ -529,10 +523,7 @@ async fn sync_installations(
     config: &containr_common::Config,
     mut app_config: GithubAppConfig,
 ) -> GithubAppConfig {
-    let pem = match decrypt_value(
-        config,
-        &app_config.private_key,
-    ) {
+    let pem = match decrypt_value(config, &app_config.private_key) {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(error = %error, "failed to decrypt github app private key");

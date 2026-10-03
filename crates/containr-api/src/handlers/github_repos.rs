@@ -118,7 +118,7 @@ pub async fn github_status(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<GithubStatusResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let user = state
@@ -160,7 +160,7 @@ pub async fn github_repos(
     headers: HeaderMap,
     axum::extract::Query(query): axum::extract::Query<ReposQuery>,
 ) -> Result<Json<GithubReposResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let user = state
@@ -186,14 +186,15 @@ pub async fn github_repos(
     })?;
 
     // decrypt token
-    let decrypted_token = decrypt_value(&config, &access_token).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("failed to decrypt token: {}", e),
-            }),
-        )
-    })?;
+    let decrypted_token =
+        decrypt_value(&config, &access_token).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("failed to decrypt token: {}", e),
+                }),
+            )
+        })?;
 
     let visibility = query.visibility.as_deref();
     let repos =
@@ -228,7 +229,7 @@ pub async fn github_disconnect(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let mut user = state
