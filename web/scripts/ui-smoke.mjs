@@ -7,7 +7,6 @@ const stamp = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 const generatedEmail = `ui-smoke-${stamp}@example.com`;
 const generatedPassword = `Sm0ke-${stamp}`;
 const secondUserEmail = `ui-user-${stamp}@example.com`;
-const secondUserPassword = `User-${stamp}`;
 const serviceName = `ui-smoke-${stamp}`;
 
 const expect = async (condition, message) => {
@@ -42,22 +41,25 @@ const fillAndSubmitLogin = async (page, email, password, buttonName) => {
   await page.getByRole('button', { name: buttonName }).click();
 };
 
-const waitForServicesPage = async (page) => {
-  await page.waitForURL(/\/services(?:\?.*)?$/);
-  await waitForVisible(page.getByRole('heading', { name: 'services' }), 'services page did not load');
+const waitForOverview = async (page) => {
+  await page.waitForURL(new RegExp(`^${baseUrl}/?$`));
+  await waitForVisible(page.getByRole('heading', { name: 'Overview' }), 'overview page did not load');
 };
 
 const createManagedService = async (page) => {
-  await page.goto(`${baseUrl}/services/new/template?type=redis`, { waitUntil: 'networkidle' });
-  await page.getByLabel('service name').fill(serviceName);
-  await page.getByRole('button', { name: 'create service' }).click();
+  await page.goto(`${baseUrl}/new/database?engine=redis`, { waitUntil: 'networkidle' });
+  await page.locator('main input:not([type])').first().fill(serviceName);
+  await page.getByRole('button', { name: /^Create Redis/ }).click();
   await page.waitForURL(/\/services\/.+/);
   await waitForVisible(page.getByRole('heading', { name: serviceName }), 'service detail did not load');
 };
 
 const deleteManagedService = async (page) => {
-  page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'delete' }).click();
+  await page.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Delete service' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('input').fill(serviceName);
+  await dialog.getByRole('button', { name: 'Delete service' }).click();
   await page.waitForURL(/\/services(?:\?.*)?$/);
   await expect(
     !(await page.locator('table').filter({ hasText: serviceName }).isVisible().catch(() => false)),
@@ -65,17 +67,14 @@ const deleteManagedService = async (page) => {
   );
 };
 
-const verifyAdminCanCreateUser = async (page, email, password) => {
-  await page.goto(`${baseUrl}/settings`, { waitUntil: 'networkidle' });
-  await waitForVisible(
-    page.getByText('Server configuration and bootstrap-admin user management.'),
-    'settings page did not load',
-  );
-  await waitForVisible(page.getByRole('button', { name: 'add user' }), 'admin user creation form is missing');
-  await page.getByLabel('new user email').fill(email);
-  await page.getByLabel('temporary password').fill(password);
-  await page.getByRole('button', { name: 'add user' }).click();
-  await waitForVisible(page.getByText(email), 'new user did not appear in users table');
+const verifyAdminCanCreateUser = async (page, email) => {
+  await page.goto(`${baseUrl}/settings/users`, { waitUntil: 'networkidle' });
+  await waitForVisible(page.getByRole('button', { name: 'Add user' }), 'users page did not load');
+  await page.getByRole('button', { name: 'Add user' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('input[type="email"]').fill(email);
+  await dialog.getByRole('button', { name: 'Add user' }).click();
+  await waitForVisible(page.getByText(email), 'new user did not appear in the users list');
 };
 
 const run = async () => {
@@ -89,14 +88,14 @@ const run = async () => {
       await page.locator('input[type="email"]').fill(generatedEmail);
       await page.locator('input[type="password"]').nth(0).fill(generatedPassword);
       await page.locator('input[type="password"]').nth(1).fill(generatedPassword);
-      await page.getByRole('button', { name: 'create first user' }).click();
-      await waitForServicesPage(page);
-      await verifyAdminCanCreateUser(page, secondUserEmail, secondUserPassword);
+      await page.getByRole('button', { name: 'Create account' }).click();
+      await waitForOverview(page);
+      await verifyAdminCanCreateUser(page, secondUserEmail);
     } else {
       await expect(Boolean(suppliedEmail && suppliedPassword), 'registration is closed; set CONTAINR_SMOKE_EMAIL and CONTAINR_SMOKE_PASSWORD');
       await page.goto(`${baseUrl}/login`, { waitUntil: 'networkidle' });
-      await fillAndSubmitLogin(page, suppliedEmail, suppliedPassword, 'sign in');
-      await waitForServicesPage(page);
+      await fillAndSubmitLogin(page, suppliedEmail, suppliedPassword, 'Sign in');
+      await waitForOverview(page);
     }
 
     await createManagedService(page);

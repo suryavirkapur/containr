@@ -132,6 +132,77 @@
         ]
       }
     },
+    "/api/admin/users/{id}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "delete a user and tear down their services (admin)",
+        "operationId": "delete_user",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "user id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "user deleted"
+          },
+          "400": {
+            "description": "cannot delete yourself",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "user not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/auth/github": {
       "get": {
         "tags": [
@@ -243,6 +314,55 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/auth/password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "change the current user's password",
+        "operationId": "change_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "password changed"
+          },
+          "400": {
+            "description": "invalid request or wrong current password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1456,6 +1576,277 @@
         ]
       }
     },
+    "/api/projects": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "list the caller's projects",
+        "operationId": "list_projects",
+        "responses": {
+          "200": {
+            "description": "projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/projects/{id}": {
+      "patch": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "rename a project",
+        "operationId": "update_project",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "project id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "project updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/registries": {
+      "get": {
+        "tags": [
+          "registries"
+        ],
+        "summary": "list the caller's registries",
+        "operationId": "list_registries",
+        "responses": {
+          "200": {
+            "description": "saved registries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RegistryResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "registries"
+        ],
+        "summary": "save registry credentials",
+        "operationId": "create_registry",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRegistryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "registry saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "registry already saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/registries/{id}": {
+      "delete": {
+        "tags": [
+          "registries"
+        ],
+        "summary": "delete saved registry credentials",
+        "operationId": "delete_registry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "registry id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "registry deleted"
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "registry not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/services": {
       "get": {
         "tags": [
@@ -1989,6 +2380,170 @@
           },
           "503": {
             "description": "service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/services/{id}/deploy/dockerfile": {
+      "post": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "deploy_dockerfile",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DockerfileDeployRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "deployment queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid dockerfile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/services/{id}/deploy/upload": {
+      "post": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "deploy_upload",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceUploadForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "deployment queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "archive too large",
             "content": {
               "application/json": {
                 "schema": {
@@ -2568,6 +3123,160 @@
         ]
       }
     },
+    "/api/services/{id}/metrics": {
+      "get": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "get_service_metrics",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "container resource usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceMetricsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/services/{id}/move": {
+      "post": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "move_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveServiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "service moved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryServiceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "app services cannot be moved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "service or group not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/services/{id}/settings": {
       "get": {
         "tags": [
@@ -2619,6 +3328,101 @@
           },
           "404": {
             "description": "service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "update_service_settings",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateServiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "service updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryServiceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -2775,6 +3579,215 @@
           },
           "403": {
             "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/system/backup": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "download a consistent sqlite snapshot (admin)",
+        "operationId": "download_backup",
+        "responses": {
+          "200": {
+            "description": "sqlite database snapshot",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/system/cleanup": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "prune unused docker resources (admin)",
+        "operationId": "run_cleanup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CleanupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "cleanup result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CleanupResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "docker error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/system/disk-usage": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "get docker disk usage (admin)",
+        "operationId": "get_disk_usage",
+        "responses": {
+          "200": {
+            "description": "docker disk usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiskUsageResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "docker error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/system/info": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "get host and docker information",
+        "operationId": "get_system_info",
+        "responses": {
+          "200": {
+            "description": "system information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemInfoResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -2977,6 +3990,36 @@
           }
         }
       },
+      "BasicAuthRequest": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "omitted on update keeps the existing password"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "null/absent/empty disables basic auth"
+          }
+        }
+      },
+      "BasicAuthResponse": {
+        "type": "object",
+        "required": [
+          "username"
+        ],
+        "properties": {
+          "username": {
+            "type": "string"
+          }
+        }
+      },
       "BucketConnectionResponse": {
         "type": "object",
         "description": "per-bucket s3 connection details",
@@ -3115,6 +4158,63 @@
           }
         }
       },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "description": "password change request",
+        "required": [
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "current password; not required for accounts without one"
+          },
+          "new_password": {
+            "type": "string",
+            "description": "new password (min 8 characters)"
+          }
+        }
+      },
+      "CleanupRequest": {
+        "type": "object",
+        "description": "what to prune. volumes are never pruned.",
+        "properties": {
+          "build_cache": {
+            "type": "boolean",
+            "description": "prune the build cache"
+          },
+          "containers": {
+            "type": "boolean",
+            "description": "remove stopped containers created by containr"
+          },
+          "images": {
+            "type": "boolean",
+            "description": "prune images not used by any container"
+          }
+        }
+      },
+      "CleanupResponse": {
+        "type": "object",
+        "required": [
+          "reclaimed_bytes",
+          "images_deleted"
+        ],
+        "properties": {
+          "images_deleted": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "reclaimed_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "ContainerListItem": {
         "type": "object",
         "required": [
@@ -3239,6 +4339,27 @@
           }
         }
       },
+      "CreateRegistryRequest": {
+        "type": "object",
+        "description": "registry credentials to save",
+        "required": [
+          "server",
+          "username",
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "server": {
+            "type": "string",
+            "description": "registry host, e.g. ghcr.io or docker.io"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
       "CreateServiceRequest": {
         "oneOf": [
           {
@@ -3256,6 +4377,13 @@
                   "null"
                 ]
               },
+              "deploy": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "queue the initial deployment (default true). when false an\nempty github_url and image are allowed; deploy later via\n/deploy/upload or /deploy/dockerfile"
+              },
               "env_vars": {
                 "type": [
                   "array",
@@ -3267,6 +4395,13 @@
               },
               "github_url": {
                 "type": "string"
+              },
+              "group_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "owned project (app) id; when set the service is appended to\nthat project and `name` is ignored"
               },
               "name": {
                 "type": "string"
@@ -3333,6 +4468,48 @@
                 "type": [
                   "string",
                   "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "creates one project with several image-based services",
+            "required": [
+              "name",
+              "services",
+              "source"
+            ],
+            "properties": {
+              "env_vars": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/components/schemas/EnvVarRequest"
+                }
+              },
+              "group_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "owned project (app) id; when set the services are appended to\nthat project and `name` is ignored"
+              },
+              "name": {
+                "type": "string"
+              },
+              "services": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ServiceRequest"
+                }
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "stack"
                 ]
               }
             }
@@ -3408,12 +4585,6 @@
               "null"
             ]
           },
-          "image_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "created_at": {
             "type": "string"
           },
@@ -3426,6 +4597,12 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "image_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "started_at": {
             "type": [
@@ -3469,6 +4646,67 @@
               "null"
             ],
             "description": "rollout strategy override (stop_first or start_first)"
+          }
+        }
+      },
+      "DiskUsageEntryResponse": {
+        "type": "object",
+        "description": "usage of one docker resource category",
+        "required": [
+          "count",
+          "size_bytes",
+          "reclaimable_bytes"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "reclaimable_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "DiskUsageResponse": {
+        "type": "object",
+        "description": "docker `system df` summary",
+        "required": [
+          "images",
+          "containers",
+          "volumes",
+          "build_cache"
+        ],
+        "properties": {
+          "build_cache": {
+            "$ref": "#/components/schemas/DiskUsageEntryResponse"
+          },
+          "containers": {
+            "$ref": "#/components/schemas/DiskUsageEntryResponse"
+          },
+          "images": {
+            "$ref": "#/components/schemas/DiskUsageEntryResponse"
+          },
+          "volumes": {
+            "$ref": "#/components/schemas/DiskUsageEntryResponse"
+          }
+        }
+      },
+      "DockerfileDeployRequest": {
+        "type": "object",
+        "required": [
+          "dockerfile"
+        ],
+        "properties": {
+          "dockerfile": {
+            "type": "string"
           }
         }
       },
@@ -3729,7 +4967,9 @@
           "status",
           "network_name",
           "domains",
+          "http_only_domains",
           "default_urls",
+          "port_mappings",
           "public_http",
           "desired_instances",
           "running_instances",
@@ -3792,6 +5032,12 @@
               "null"
             ]
           },
+          "http_only_domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "id": {
             "type": "string"
           },
@@ -3805,13 +5051,20 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "hostname other services on the same network use to reach this\nservice. for app services this is the service name (each replica is\nalso reachable as `{name}-{replica_index}`); for managed databases\nand queues it is their generated internal host."
           },
           "name": {
             "type": "string"
           },
           "network_name": {
             "type": "string"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "pitr_enabled": {
             "type": "boolean"
@@ -3823,6 +5076,12 @@
             ],
             "format": "int32",
             "minimum": 0
+          },
+          "port_mappings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortMappingResponse"
+            }
           },
           "project_id": {
             "type": [
@@ -3913,6 +5172,109 @@
           }
         }
       },
+      "MoveServiceRequest": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "target project (app) id; null moves the service out of any project"
+          }
+        }
+      },
+      "PortMappingRequest": {
+        "type": "object",
+        "required": [
+          "host_port",
+          "container_port"
+        ],
+        "properties": {
+          "container_port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "host_port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "protocol": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "\"tcp\" (default) or \"udp\""
+          }
+        }
+      },
+      "PortMappingResponse": {
+        "type": "object",
+        "required": [
+          "host_port",
+          "container_port",
+          "protocol"
+        ],
+        "properties": {
+          "container_port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "host_port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "protocol": {
+            "type": "string",
+            "description": "\"tcp\" or \"udp\""
+          }
+        }
+      },
+      "ProjectResponse": {
+        "type": "object",
+        "description": "project summary",
+        "required": [
+          "id",
+          "name",
+          "network_name",
+          "service_count",
+          "managed_count",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "managed_count": {
+            "type": "integer",
+            "description": "managed databases and queues attached to the project",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "network_name": {
+            "type": "string"
+          },
+          "service_count": {
+            "type": "integer",
+            "description": "number of app services in the project",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
       "RegisterRequest": {
         "type": "object",
         "description": "register request body",
@@ -3947,6 +5309,31 @@
             "type": "integer",
             "description": "total number of known users",
             "minimum": 0
+          }
+        }
+      },
+      "RegistryResponse": {
+        "type": "object",
+        "description": "saved registry (the password is never returned)",
+        "required": [
+          "id",
+          "server",
+          "username",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "server": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
           }
         }
       },
@@ -4038,6 +5425,68 @@
           }
         }
       },
+      "ServiceContainerMetrics": {
+        "type": "object",
+        "required": [
+          "container_id",
+          "name",
+          "cpu_percent",
+          "memory_used_bytes",
+          "memory_limit_bytes",
+          "network_rx_bytes",
+          "network_tx_bytes",
+          "block_read_bytes",
+          "block_write_bytes",
+          "pids"
+        ],
+        "properties": {
+          "block_read_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "block_write_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "container_id": {
+            "type": "string"
+          },
+          "cpu_percent": {
+            "type": "number",
+            "format": "double"
+          },
+          "memory_limit_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "memory_used_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "network_rx_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "network_tx_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "pids": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "ServiceLogsResponse": {
         "type": "object",
         "required": [
@@ -4049,6 +5498,25 @@
           }
         }
       },
+      "ServiceMetricsResponse": {
+        "type": "object",
+        "required": [
+          "containers",
+          "collected_at"
+        ],
+        "properties": {
+          "collected_at": {
+            "type": "string",
+            "description": "rfc3339 timestamp"
+          },
+          "containers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceContainerMetrics"
+            }
+          }
+        }
+      },
       "ServiceMountRequest": {
         "type": "object",
         "required": [
@@ -4056,6 +5524,13 @@
           "target"
         ],
         "properties": {
+          "host_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "absolute host path to bind instead of a managed volume (admin only)"
+          },
           "name": {
             "type": "string"
           },
@@ -4131,6 +5606,17 @@
               "format": "int32",
               "minimum": 0
             }
+          },
+          "basic_auth": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BasicAuthRequest",
+                "description": "http basic auth for the service's domains. absent keeps the current\nvalue, null (or a null/empty username) disables it"
+              }
+            ]
           },
           "build_args": {
             "type": [
@@ -4233,6 +5719,15 @@
               }
             ]
           },
+          "http_only_domains": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
           "image": {
             "type": [
               "string",
@@ -4259,10 +5754,27 @@
           "name": {
             "type": "string"
           },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "free-text description (max 4000 chars). absent keeps the current\nvalue, null clears it"
+          },
           "port": {
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          },
+          "port_mappings": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PortMappingRequest"
+            },
+            "description": "published host ports. absent keeps the current mappings"
           },
           "registry_auth": {
             "oneOf": [
@@ -4358,13 +5870,15 @@
           "port",
           "expose_http",
           "domains",
+          "http_only_domains",
           "additional_ports",
           "replicas",
           "depends_on",
           "restart_policy",
           "env_vars",
           "build_args",
-          "mounts"
+          "mounts",
+          "port_mappings"
         ],
         "properties": {
           "additional_ports": {
@@ -4374,6 +5888,16 @@
               "format": "int32",
               "minimum": 0
             }
+          },
+          "basic_auth": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BasicAuthResponse"
+              }
+            ]
           },
           "build_args": {
             "type": "array",
@@ -4455,6 +5979,12 @@
               }
             ]
           },
+          "http_only_domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "image": {
             "type": [
               "string",
@@ -4478,10 +6008,22 @@
           "name": {
             "type": "string"
           },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "port": {
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          },
+          "port_mappings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortMappingResponse"
+            }
           },
           "registry_auth": {
             "oneOf": [
@@ -4612,6 +6154,84 @@
           }
         }
       },
+      "SourceUploadForm": {
+        "type": "object",
+        "description": "multipart upload body for source deploys",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": ".tar, .tar.gz or .tgz archive (max 512 MiB)"
+          }
+        }
+      },
+      "SystemInfoResponse": {
+        "type": "object",
+        "description": "host and docker daemon information",
+        "required": [
+          "version",
+          "containers_running",
+          "containers_total",
+          "images",
+          "base_domain"
+        ],
+        "properties": {
+          "base_domain": {
+            "type": "string"
+          },
+          "containers_running": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "containers_total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "docker_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hostname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "images": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "kernel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "os": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "public_ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
       "SystemStats": {
         "type": "object",
         "description": "system statistics response",
@@ -4622,12 +6242,32 @@
           "network_rx_bytes",
           "network_tx_bytes",
           "load_avg",
-          "uptime_seconds"
+          "uptime_seconds",
+          "disk_used_bytes",
+          "disk_total_bytes",
+          "cpu_count"
         ],
         "properties": {
+          "cpu_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
           "cpu_percent": {
             "type": "number",
             "format": "double"
+          },
+          "disk_total_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "size of the filesystem holding the data dir",
+            "minimum": 0
+          },
+          "disk_used_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "bytes used on the filesystem holding the data dir",
+            "minimum": 0
           },
           "load_avg": {
             "type": "array",
@@ -4660,6 +6300,19 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "UpdateProjectRequest": {
+        "type": "object",
+        "description": "project rename request",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "new name (1-64 characters)"
           }
         }
       },
@@ -4898,6 +6551,14 @@
     {
       "name": "certificates",
       "description": "service certificate management"
+    },
+    {
+      "name": "registries",
+      "description": "private container registries"
+    },
+    {
+      "name": "projects",
+      "description": "projects grouping services on one network"
     }
   ]
 }

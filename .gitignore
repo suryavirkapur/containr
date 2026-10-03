@@ -36,3 +36,5 @@ web/node_modules/
 # local config
 containr.local.toml
 /data-local/
+.claude/dev-user.json
+.claude/dev-session.json

@@ -3,6 +3,19 @@
 changelog
 =========
 
+unreleased
+- rebuilt the web ui as a modern control panel: light and dark themes, overview dashboard, command palette (cmd+k), breadcrumbs, mobile navigation drawer, toasts and confirm dialogs
+- one-click apps: catalog of 51 preconfigured apps (wordpress, ghost, n8n, uptime kuma, nextcloud, vaultwarden, metabase, open webui, ...) deployed as projects with databases, volumes and generated secrets
+- new deploy methods: tarball upload, pasted dockerfile, image redeploy, plus `containr-cmd services deploy` with `--upload` and `--dockerfile`
+- per-service http basic auth enforced by the proxy, host port mappings, notes, and admin-only host path volumes
+- per-service metrics (cpu, memory, network, disk io) and a monitoring page with live host charts
+- server page: system info, docker disk usage, cleanup of unused images, build cache and stopped containers, database backup download
+- container registries per user, used automatically when pulling private images
+- web console (shell into containers) and a volume file browser with upload, download and delete
+- projects api: list and rename projects; add services to an existing project; multi-service stacks
+- accounts: change password, remove users
+- docker calls behind system info, disk usage and metrics now time out instead of hanging the api
+
 0.1.18-alpha - 2026-03-21
 - full ui overhaul: replaced all ad-hoc tailwind utility strings with a design system of cr-* classes (cr-btn, cr-input, cr-panel, cr-table, cr-badge, cr-chip, cr-nav-item, cr-tab, cr-project-card)
 - switched font to geist sans + geist mono from npm package (self-hosted woff2 files, no cdn dependency)
