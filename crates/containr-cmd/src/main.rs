@@ -174,10 +174,30 @@ enum ServiceCommand {
     Update(ServiceUpdateArgs),
     Logs(ServiceLogsArgs),
     HttpLogs(ServiceHttpLogsArgs),
+    Deploy(ServiceDeployArgs),
     Start { id: String },
     Stop { id: String },
     Restart { id: String },
     Delete { id: String },
+}
+
+/// deploys a service from git (default), a local directory or archive, or a
+/// dockerfile
+#[derive(Args, Debug)]
+struct ServiceDeployArgs {
+    id: String,
+    /// branch to deploy for git services
+    #[arg(long, conflicts_with_all = ["upload", "dockerfile"])]
+    branch: Option<String>,
+    /// directory to pack and upload, or an existing .tar/.tar.gz archive
+    #[arg(long, conflicts_with = "dockerfile")]
+    upload: Option<PathBuf>,
+    /// dockerfile to build with an empty context
+    #[arg(long)]
+    dockerfile: Option<PathBuf>,
+    /// extra file or directory names to leave out of an upload
+    #[arg(long = "exclude")]
+    exclude: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -807,6 +827,9 @@ async fn run_service_command(
             )
             .await
         }
+        ServiceCommand::Deploy(args) => {
+            run_service_deploy(config_path, selected_instance, args).await
+        }
         ServiceCommand::Start { id } => {
             run_post_empty(
                 config_path,
@@ -1222,6 +1245,114 @@ async fn run_project_deploy(
     .await
 }
 
+/// names never included in an upload
+const UPLOAD_ALWAYS_EXCLUDED: &[&str] = &[".git", "node_modules", "target"];
+
+async fn run_service_deploy(
+    config_path: Option<&Path>,
+    selected_instance: Option<&str>,
+    args: ServiceDeployArgs,
+) -> Result<()> {
+    let client = load_client(config_path, selected_instance, true)?;
+    let base = service_item_path(&args.id);
+
+    let response = if let Some(dockerfile) = args.dockerfile.as_deref() {
+        let content = fs::read_to_string(dockerfile).with_context(|| {
+            format!("failed to read {}", dockerfile.display())
+        })?;
+        client
+            .post_json(
+                &format!("{}/deploy/dockerfile", base),
+                &json!({ "dockerfile": content }),
+            )
+            .await?
+    } else if let Some(source) = args.upload.as_deref() {
+        let (file_name, bytes) = upload_archive(source, &args.exclude)?;
+        eprintln!(
+            "uploading {} ({:.1} MB)",
+            file_name,
+            bytes.len() as f64 / 1_048_576.0
+        );
+        client
+            .post_file(&format!("{}/deploy/upload", base), &file_name, bytes)
+            .await?
+    } else {
+        client
+            .post_json(
+                &service_deployments_path(&args.id),
+                &json!({ "branch": args.branch }),
+            )
+            .await?
+    };
+
+    print_json(&response)
+}
+
+/// returns an archive to upload: existing archives are sent as-is,
+/// directories are packed into a gzipped tarball
+fn upload_archive(
+    source: &Path,
+    extra_excludes: &[String],
+) -> Result<(String, Vec<u8>)> {
+    let metadata = fs::metadata(source)
+        .with_context(|| format!("failed to read {}", source.display()))?;
+    if metadata.is_file() {
+        let name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("upload.tar.gz")
+            .to_string();
+        let bytes = fs::read(source)
+            .with_context(|| format!("failed to read {}", source.display()))?;
+        return Ok((name, bytes));
+    }
+
+    let excludes = UPLOAD_ALWAYS_EXCLUDED
+        .iter()
+        .map(|name| name.to_string())
+        .chain(extra_excludes.iter().cloned())
+        .collect::<Vec<_>>();
+    let encoder = flate2::write::GzEncoder::new(
+        Vec::new(),
+        flate2::Compression::default(),
+    );
+    let mut builder = tar::Builder::new(encoder);
+    builder.follow_symlinks(false);
+    append_directory(&mut builder, source, Path::new(""), &excludes)?;
+    let encoder = builder.into_inner().context("failed to finish archive")?;
+    let bytes = encoder.finish().context("failed to compress archive")?;
+    Ok(("upload.tar.gz".to_string(), bytes))
+}
+
+fn append_directory<W: std::io::Write>(
+    builder: &mut tar::Builder<W>,
+    root: &Path,
+    relative: &Path,
+    excludes: &[String],
+) -> Result<()> {
+    let directory = root.join(relative);
+    let mut entries = fs::read_dir(&directory)
+        .with_context(|| format!("failed to read {}", directory.display()))?
+        .collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+
+    for entry in entries {
+        let name = entry.file_name();
+        if excludes.iter().any(|exclude| name == exclude.as_str()) {
+            continue;
+        }
+        let path = relative.join(&name);
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            builder.append_dir(&path, entry.path())?;
+            append_directory(builder, root, &path, excludes)?;
+        } else if file_type.is_file() || file_type.is_symlink() {
+            builder.append_path_with_name(entry.path(), &path)?;
+        }
+    }
+    Ok(())
+}
+
 async fn run_project_deployment_logs(
     config_path: Option<&Path>,
     selected_instance: Option<&str>,
@@ -1490,4 +1621,50 @@ fn extract_string(value: &Value, path: &[&str]) -> Result<String> {
 fn print_json<T: Serialize>(value: &T) -> Result<()> {
     println!("{}", serde_json::to_string_pretty(value)?);
     Ok(())
+}
+
+#[cfg(test)]
+mod upload_tests {
+    use super::upload_archive;
+    use std::io::Read;
+
+    #[test]
+    fn upload_archive_skips_git_and_excluded_names() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::write(root.join("Dockerfile"), "FROM scratch\n")
+            .expect("write dockerfile");
+        std::fs::create_dir_all(root.join(".git")).expect("git dir");
+        std::fs::write(root.join(".git/HEAD"), "ref").expect("write head");
+        std::fs::create_dir_all(root.join("src")).expect("src dir");
+        std::fs::write(root.join("src/main.rs"), "fn main() {}")
+            .expect("write main");
+        std::fs::write(root.join("secret.env"), "X=1").expect("write env");
+
+        let (name, bytes) =
+            upload_archive(root, &["secret.env".to_string()]).expect("pack");
+        assert_eq!(name, "upload.tar.gz");
+
+        let mut decoder = flate2::read::GzDecoder::new(bytes.as_slice());
+        let mut raw = Vec::new();
+        decoder.read_to_end(&mut raw).expect("gunzip");
+        let mut archive = tar::Archive::new(raw.as_slice());
+        let paths = archive
+            .entries()
+            .expect("entries")
+            .map(|entry| {
+                entry
+                    .expect("entry")
+                    .path()
+                    .expect("path")
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect::<Vec<_>>();
+
+        assert!(paths.iter().any(|path| path == "Dockerfile"));
+        assert!(paths.iter().any(|path| path == "src/main.rs"));
+        assert!(!paths.iter().any(|path| path.starts_with(".git")));
+        assert!(!paths.iter().any(|path| path == "secret.env"));
+    }
 }
