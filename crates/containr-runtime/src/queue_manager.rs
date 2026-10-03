@@ -80,6 +80,8 @@ impl QueueManager {
         // container name
         let container_name = format!("containr-queue-{}", queue.id);
         queue.internal_host = queue.normalized_internal_host();
+        // a stale container with the same name would block create
+        self.remove_container_if_exists(&container_name).await?;
 
         // ensure network exists
         let network_name = queue.network_name();
@@ -214,14 +216,27 @@ impl QueueManager {
         let container_id = response.id.clone();
 
         // start container
-        self.docker
+        if let Err(e) = self
+            .docker
             .start_container(&container_id, None::<StartContainerOptions>)
             .await
-            .map_err(|e| {
-                ClientError::Operation(format!("docker start failed: {}", e))
-            })?;
+        {
+            let _ = self.remove_container_if_exists(&container_name).await;
+            return Err(ClientError::Operation(format!(
+                "docker start failed: {}",
+                e
+            )));
+        }
 
-        if !self.wait_for_ready(&container_id, 90).await? {
+        let ready = match self.wait_for_ready(&container_id, 90).await {
+            Ok(ready) => ready,
+            Err(e) => {
+                let _ = self.remove_container_if_exists(&container_name).await;
+                return Err(e);
+            }
+        };
+        if !ready {
+            let _ = self.remove_container_if_exists(&container_name).await;
             return Err(ClientError::Operation(
                 "queue container did not become ready".to_string(),
             ));
@@ -280,6 +295,36 @@ impl QueueManager {
         }
 
         Ok(false)
+    }
+
+    async fn remove_container_if_exists(
+        &self,
+        container_name: &str,
+    ) -> Result<()> {
+        let rm_options = RemoveContainerOptions {
+            force: true,
+            ..Default::default()
+        };
+
+        match self
+            .docker
+            .remove_container(container_name, Some(rm_options))
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let error = e.to_string();
+                if error.contains("No such container") || error.contains("404")
+                {
+                    Ok(())
+                } else {
+                    Err(ClientError::Operation(format!(
+                        "failed to remove container {}: {}",
+                        container_name, error
+                    )))
+                }
+            }
+        }
     }
 
     async fn ensure_image(&self, image: &str) -> Result<()> {
