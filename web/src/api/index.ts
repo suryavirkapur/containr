@@ -2,6 +2,7 @@ import createClient from 'openapi-fetch';
 import type { paths } from './schema';
 
 const TOKEN_KEY = 'containr_token';
+const USER_KEY = 'containr_user';
 
 const readToken = () => localStorage.getItem(TOKEN_KEY);
 
@@ -23,6 +24,7 @@ api.use({
   onResponse({ response }) {
     if (response.status === 401) {
       localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
       if (window.location.pathname !== '/login') {
         window.location.assign('/login');
       }

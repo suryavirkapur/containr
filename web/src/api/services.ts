@@ -116,8 +116,9 @@ export const deleteService = async (id: string): Promise<void> => {
 
 export const listServiceDeployments = async (id: string): Promise<ServiceDeployment[]> => {
   const { data, error, response } = await api.GET('/api/services/{id}/deployments', { params: { path: { id } } });
-  if (error || (!response.ok && response.status !== 400)) throw error;
-  if (!response.ok) return [];
+  // 400 means the service has no deployments (e.g. a managed database)
+  if (response.status === 400) return [];
+  if (error) throw error;
   return data ?? [];
 };
 

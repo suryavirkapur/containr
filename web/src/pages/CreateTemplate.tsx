@@ -37,7 +37,9 @@ const CreateTemplate = () => {
         version: version().trim() || null,
         memory_limit_mb: Number.parseInt(memory(), 10) || 512,
         cpu_limit: Number.parseFloat(cpu()) || 1,
-        group_id: groupId().trim() || null,
+        // a stale preselected group falls back to an isolated network, as
+        // the notice below promises, instead of failing with 404
+        group_id: services.loading ? groupId().trim() || null : (selectedGroup()?.id ?? null),
       });
       navigate(`/services/${created.id}`);
     } catch (requestError) {
@@ -89,7 +91,7 @@ const CreateTemplate = () => {
               <option value=''>Isolated Network</option>
               <For each={availableGroups()}>
                 {(group) => (
-                  <option value={group.id}>
+                  <option value={group.id} selected={group.id === groupId()}>
                     {group.label} ({group.networkName})
                   </option>
                 )}
