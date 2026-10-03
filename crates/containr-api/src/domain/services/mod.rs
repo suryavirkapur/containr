@@ -634,10 +634,19 @@ impl ServiceSvc {
                     }
                 })
                 .collect::<Vec<_>>();
+            // build_services matches by name, so carry the rename onto the
+            // existing record to keep the service id stable
+            let mut existing_services = app.services.clone();
+            if let Some(target) = existing_services
+                .iter_mut()
+                .find(|candidate| candidate.id == service_id)
+            {
+                target.name = updated_service_request.name.trim().to_string();
+            }
             app.services = build_services(
                 &config,
                 app.id,
-                &app.services,
+                &existing_services,
                 service_requests,
             )?;
         }
@@ -668,7 +677,8 @@ impl ServiceSvc {
             .await?;
         }
 
-        if previous_service.is_public_http() || updated_service.is_public_http() {
+        if previous_service.is_public_http() || updated_service.is_public_http()
+        {
             refresh_proxy_routes(&self.state, app.id).await;
         }
 
@@ -679,7 +689,9 @@ impl ServiceSvc {
                     let _ = tx.try_send(domain);
                 }
             } else {
-                warn!("certificate issuance not available for updated app domain");
+                warn!(
+                    "certificate issuance not available for updated app domain"
+                );
             }
         }
 
@@ -1063,6 +1075,23 @@ impl ServiceSvc {
         deployment_id: Uuid,
         query: LogsQuery,
     ) -> ApiResult<Vec<String>> {
+        self.require_service_deployment(user_id, service_id, deployment_id)?;
+
+        let limit = query.limit.unwrap_or(100);
+        let offset = query.offset.unwrap_or(0);
+        self.state
+            .db
+            .get_deployment_logs(deployment_id, limit, offset)
+            .map_err(internal_error)
+    }
+
+    /// loads a deployment only if it belongs to the user's service
+    pub fn require_service_deployment(
+        &self,
+        user_id: Uuid,
+        service_id: Uuid,
+        deployment_id: Uuid,
+    ) -> ApiResult<Deployment> {
         let (app, service) =
             resolve_owned_app_service_record(&self.state, user_id, service_id)?;
         let deployment = self
@@ -1090,12 +1119,7 @@ impl ServiceSvc {
             ));
         }
 
-        let limit = query.limit.unwrap_or(100);
-        let offset = query.offset.unwrap_or(0);
-        self.state
-            .db
-            .get_deployment_logs(deployment_id, limit, offset)
-            .map_err(internal_error)
+        Ok(deployment)
     }
 
     #[allow(clippy::too_many_arguments, dead_code)]
@@ -1592,9 +1616,11 @@ fn rollout_strategy_label(value: RolloutStrategy) -> &'static str {
     }
 }
 
+const SECRET_MASK: &str = "********";
+
 fn mask_secret_value(secret: bool, value: &str) -> String {
     if secret && !value.is_empty() {
-        "********".to_string()
+        SECRET_MASK.to_string()
     } else {
         value.to_string()
     }
@@ -2106,6 +2132,43 @@ fn normalize_repo_relative_path(
     }
 }
 
+/// resolves a submitted value, restoring masked secrets from the stored copy
+fn resolve_masked_value(
+    value: String,
+    secret: Option<bool>,
+    existing: Option<(&str, bool)>,
+    label: &str,
+    key: &str,
+) -> ApiResult<(String, bool)> {
+    // a masked value for a stored secret always keeps the real value, even
+    // if the client sent secret: false alongside the mask
+    if value == SECRET_MASK {
+        if let Some((existing_value, true)) = existing {
+            return Ok((existing_value.to_string(), true));
+        }
+    }
+
+    let secret = secret
+        .unwrap_or_else(|| existing.map(|(_, secret)| secret).unwrap_or(false));
+    if secret && value == SECRET_MASK {
+        let existing_value =
+            existing.map(|(value, _)| value).ok_or_else(|| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!(
+                            "missing original value for masked {} {}",
+                            label, key
+                        ),
+                    }),
+                )
+            })?;
+        return Ok((existing_value.to_string(), secret));
+    }
+
+    Ok((value, secret))
+}
+
 fn build_service_env_vars(
     requests: Option<Vec<EnvVarRequest>>,
     existing: &[EnvVar],
@@ -2141,27 +2204,16 @@ fn build_service_env_vars(
             ));
         }
 
-        let existing_value = existing_by_key.get(&key);
-        let secret = request.secret.unwrap_or_else(|| {
-            existing_value.map(|item| item.secret).unwrap_or(false)
-        });
-        let value = if secret && request.value == "********" {
-            existing_value
-                .map(|item| item.value.clone())
-                .ok_or_else(|| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(ErrorResponse {
-                            error: format!(
-                                "missing original value for masked service env var {}",
-                                key
-                            ),
-                        }),
-                    )
-                })?
-        } else {
-            request.value
-        };
+        let existing_value = existing_by_key
+            .get(&key)
+            .map(|item| (item.value.as_str(), item.secret));
+        let (value, secret) = resolve_masked_value(
+            request.value,
+            request.secret,
+            existing_value,
+            "service env var",
+            &key,
+        )?;
 
         env_vars.push(EnvVar { key, value, secret });
     }
@@ -2204,27 +2256,16 @@ fn build_app_env_vars(
             ));
         }
 
-        let existing_value = existing_by_key.get(&key);
-        let secret = request.secret.unwrap_or_else(|| {
-            existing_value.map(|item| item.secret).unwrap_or(false)
-        });
-        let value = if secret && request.value == "********" {
-            existing_value
-                .map(|item| item.value.clone())
-                .ok_or_else(|| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(ErrorResponse {
-                            error: format!(
-                                "missing original value for masked shared env var {}",
-                                key
-                            ),
-                        }),
-                    )
-                })?
-        } else {
-            request.value
-        };
+        let existing_value = existing_by_key
+            .get(&key)
+            .map(|item| (item.value.as_str(), item.secret));
+        let (value, secret) = resolve_masked_value(
+            request.value,
+            request.secret,
+            existing_value,
+            "shared env var",
+            &key,
+        )?;
 
         env_vars.push(EnvVar { key, value, secret });
     }
@@ -2267,27 +2308,16 @@ fn build_service_build_args(
             ));
         }
 
-        let existing_value = existing_by_key.get(&key);
-        let secret = request.secret.unwrap_or_else(|| {
-            existing_value.map(|item| item.secret).unwrap_or(false)
-        });
-        let value = if secret && request.value == "********" {
-            existing_value
-                .map(|item| item.value.clone())
-                .ok_or_else(|| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        Json(ErrorResponse {
-                            error: format!(
-                                "missing original value for masked service build arg {}",
-                                key
-                            ),
-                        }),
-                    )
-                })?
-        } else {
-            request.value
-        };
+        let existing_value = existing_by_key
+            .get(&key)
+            .map(|item| (item.value.as_str(), item.secret));
+        let (value, secret) = resolve_masked_value(
+            request.value,
+            request.secret,
+            existing_value,
+            "service build arg",
+            &key,
+        )?;
 
         build_args.push(BuildArg { key, value, secret });
     }
@@ -2405,8 +2435,7 @@ fn build_services(
             });
         let service_type = resolve_service_type(&request, Some(&service))?;
         let requested_domains = requested_service_domains(&request);
-        let requested_http_only_domains =
-            requested_http_only_domains(&request);
+        let requested_http_only_domains = requested_http_only_domains(&request);
         let port = request.port;
         let schedule = normalize_cron_schedule(
             request.schedule,
@@ -2555,18 +2584,16 @@ fn build_services(
         } else {
             Vec::new()
         };
-        service.http_only_domains = if matches!(
-            service_type,
-            ServiceType::WebService
-        ) {
-            normalize_http_only_domains(
-                requested_http_only_domains
-                    .unwrap_or_else(|| service.http_only_domains()),
-                &service.domains,
-            )
-        } else {
-            Vec::new()
-        };
+        service.http_only_domains =
+            if matches!(service_type, ServiceType::WebService) {
+                normalize_http_only_domains(
+                    requested_http_only_domains
+                        .unwrap_or_else(|| service.http_only_domains()),
+                    &service.domains,
+                )
+            } else {
+                Vec::new()
+            };
         service.build_context = normalize_repo_relative_path(
             "service build context",
             request.build_context,
@@ -2839,7 +2866,7 @@ fn sort_deployments_desc(mut deployments: Vec<Deployment>) -> Vec<Deployment> {
     deployments
 }
 
- fn deployment_has_service_image(
+fn deployment_has_service_image(
     deployment: &Deployment,
     service: &ContainerService,
 ) -> bool {
@@ -3261,13 +3288,14 @@ async fn reconcile_app_service_replicas(
         changed = true;
     }
 
-    for service_deployment in deployment
-        .service_deployments
-        .iter_mut()
-        .filter(|service_deployment| {
-            service_deployment.service_id == service.id
-                && service_deployment.replica_index >= desired_replicas
-        })
+    for service_deployment in
+        deployment
+            .service_deployments
+            .iter_mut()
+            .filter(|service_deployment| {
+                service_deployment.service_id == service.id
+                    && service_deployment.replica_index >= desired_replicas
+            })
     {
         if let Some(container_id) = service_deployment.container_id.clone() {
             let _ = manager.stop_service_replica(&container_id).await;
@@ -3283,10 +3311,14 @@ async fn reconcile_app_service_replicas(
             deployment.started_at = Some(Utc::now());
         }
         deployment.finished_at = Some(Utc::now());
-        if deployment.service_deployments.iter().any(|service_deployment| {
-            service_deployment.service_id == service.id
-                && service_deployment.status == DeploymentStatus::Running
-        }) {
+        if deployment
+            .service_deployments
+            .iter()
+            .any(|service_deployment| {
+                service_deployment.service_id == service.id
+                    && service_deployment.status == DeploymentStatus::Running
+            })
+        {
             deployment.status = DeploymentStatus::Running;
         }
         persist_deployment(state, &deployment)?;
@@ -3398,6 +3430,44 @@ async fn delete_app_runtime(state: &AppState, app: &App) -> ApiResult<()> {
     Ok(())
 }
 
+/// clears group links on managed databases/queues of a deleted app
+fn detach_managed_services_from_app(
+    state: &AppState,
+    app: &App,
+) -> ApiResult<()> {
+    for mut database in state
+        .db
+        .list_managed_databases_by_owner(app.owner_id)
+        .map_err(internal_error)?
+        .into_iter()
+        .filter(|database| database.group_id == Some(app.id))
+    {
+        database.group_id = None;
+        database.updated_at = Utc::now();
+        state
+            .db
+            .save_managed_database(&database)
+            .map_err(internal_error)?;
+    }
+
+    for mut queue in state
+        .db
+        .list_managed_queues_by_owner(app.owner_id)
+        .map_err(internal_error)?
+        .into_iter()
+        .filter(|queue| queue.group_id == Some(app.id))
+    {
+        queue.group_id = None;
+        queue.updated_at = Utc::now();
+        state
+            .db
+            .save_managed_queue(&queue)
+            .map_err(internal_error)?;
+    }
+
+    Ok(())
+}
+
 async fn delete_app_service(
     state: &AppState,
     config: &Config,
@@ -3409,6 +3479,7 @@ async fn delete_app_service(
         let _ = stop_app_service(state, app, service, encryption_secret).await;
         delete_app_runtime(state, app).await?;
         state.db.delete_app(app.id).map_err(internal_error)?;
+        detach_managed_services_from_app(state, app)?;
         return Ok(());
     }
 
@@ -3609,8 +3680,8 @@ fn parse_rollout_strategy(value: &str) -> Option<RolloutStrategy> {
     }
 }
 
-    #[allow(dead_code)]
-    pub(crate) async fn replay_deployment_job(
+#[allow(dead_code)]
+pub(crate) async fn replay_deployment_job(
     state: &AppState,
     app: &App,
     deployment: &Deployment,
@@ -3653,8 +3724,8 @@ fn parse_rollout_strategy(value: &str) -> Option<RolloutStrategy> {
     Ok(())
 }
 
-    #[allow(dead_code)]
-    fn deployment_source_url(source: &DeploymentSource) -> String {
+#[allow(dead_code)]
+fn deployment_source_url(source: &DeploymentSource) -> String {
     match source {
         DeploymentSource::RemoteGit { url, .. } => url.clone(),
         DeploymentSource::LocalPath { path } => path.clone(),
@@ -3662,8 +3733,8 @@ fn parse_rollout_strategy(value: &str) -> Option<RolloutStrategy> {
     }
 }
 
-    #[allow(dead_code)]
-    pub(crate) async fn resolve_source_deployment_source(
+#[allow(dead_code)]
+pub(crate) async fn resolve_source_deployment_source(
     state: &AppState,
     owner_id: Uuid,
     source_url: &str,
@@ -3693,7 +3764,48 @@ fn parse_rollout_strategy(value: &str) -> Option<RolloutStrategy> {
 
 #[cfg(test)]
 mod services_test {
-    use super::{supported_template_message, ServiceAction, TemplateKind};
+    use super::{
+        build_app_env_vars, build_service_env_vars, supported_template_message,
+        EnvVar, EnvVarRequest, ServiceAction, TemplateKind,
+    };
+
+    #[test]
+    fn masked_env_var_keeps_existing_secret_even_if_marked_plain() {
+        let existing = vec![EnvVar {
+            key: "TOKEN".to_string(),
+            value: "real-value".to_string(),
+            secret: true,
+        }];
+        let request = || {
+            Some(vec![EnvVarRequest {
+                key: "TOKEN".to_string(),
+                value: "********".to_string(),
+                secret: Some(false),
+            }])
+        };
+
+        for result in [
+            build_service_env_vars(request(), &existing),
+            build_app_env_vars(request(), &existing),
+        ] {
+            let env_vars = result.expect("masked value should resolve");
+            assert_eq!(env_vars[0].value, "real-value");
+            assert!(env_vars[0].secret);
+        }
+    }
+
+    #[test]
+    fn masked_env_var_without_original_is_rejected() {
+        let result = build_app_env_vars(
+            Some(vec![EnvVarRequest {
+                key: "NEW".to_string(),
+                value: "********".to_string(),
+                secret: Some(true),
+            }]),
+            &[],
+        );
+        assert!(result.is_err());
+    }
 
     #[test]
     fn service_action_parser_accepts_canonical_actions() {

@@ -246,7 +246,7 @@ pub async fn list_buckets(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<BucketResponse>>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let mut buckets = state
@@ -284,7 +284,7 @@ pub async fn create_bucket(
     Json(req): Json<CreateBucketRequest>,
 ) -> Result<(StatusCode, Json<BucketResponse>), (StatusCode, Json<ErrorResponse>)>
 {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     // validate name (s3 bucket naming rules)
@@ -356,7 +356,7 @@ pub async fn get_bucket(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Json<BucketResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     let mut bucket = state
         .db
@@ -411,7 +411,7 @@ pub async fn get_bucket_connection(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Json<BucketConnectionResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let bucket = state
@@ -470,7 +470,7 @@ pub async fn delete_bucket(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    let config = state.config.read().await;
+    let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
 
     let bucket = state

@@ -39,8 +39,13 @@ pub fn decrypt_value(config: &Config, value: &str) -> Result<String, String> {
 
     if let Some(secret) = resolve_encryption_secret(config) {
         let key = derive_key(&secret);
-        if let Ok(plaintext) = decrypt(payload, &key) {
-            return Ok(plaintext);
+        match decrypt(payload, &key) {
+            Ok(plaintext) => return Ok(plaintext),
+            // never hand back ciphertext as if it were plaintext
+            Err(e) if has_prefix => {
+                return Err(format!("failed to decrypt value: {}", e));
+            }
+            Err(_) => {}
         }
     } else if has_prefix {
         return Err("encryption key is not configured".to_string());
@@ -70,6 +75,23 @@ mod tests {
         let decrypted = decrypt_value(&config, &encrypted)
             .expect("decryption should succeed with configured key");
         assert_eq!(decrypted, "payload");
+    }
+
+    #[test]
+    fn decrypt_rejects_undecryptable_prefixed_value() {
+        let _lock = ENV_LOCK.lock().expect("env lock should not be poisoned");
+        clear_env_override();
+        let mut config = Config::default();
+        config.security.encryption_key = "test-secret".to_string();
+
+        let encrypted = encrypt_value(&config, "payload")
+            .expect("encryption should succeed with configured key");
+        config.security.encryption_key = "other-secret".to_string();
+        assert!(decrypt_value(&config, &encrypted).is_err());
+        assert_eq!(
+            decrypt_value(&config, "plain").expect("plaintext passthrough"),
+            "plain"
+        );
     }
 
     #[test]
