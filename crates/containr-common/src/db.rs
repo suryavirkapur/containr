@@ -23,8 +23,9 @@ use crate::managed_services::{
     QueueCredentials, QueueType, ServiceStatus, StorageBucket,
 };
 use crate::models::{
-    App, Certificate, ContainerService, Deployment, DeploymentStatus,
-    GithubAppConfig, HttpRequestLog, Project, ServiceDeployment, User,
+    App, Certificate, ContainerRegistry, ContainerService, Deployment,
+    DeploymentStatus, GithubAppConfig, HttpRequestLog, Project,
+    ServiceDeployment, User,
 };
 use crate::service_inventory::{
     summarize_app_service_runtime, ServiceInventoryItem, ServiceResourceKind,
@@ -70,6 +71,34 @@ impl Database {
 
     pub fn get_user_by_email(&self, email: &str) -> Result<Option<User>> {
         self.store.get_user_by_email(email)
+    }
+
+    pub fn delete_user(&self, id: Uuid) -> Result<bool> {
+        self.store.delete_user(id)
+    }
+
+    pub fn save_registry(&self, registry: &ContainerRegistry) -> Result<()> {
+        self.store.save_registry(registry)
+    }
+
+    pub fn get_registry(&self, id: Uuid) -> Result<Option<ContainerRegistry>> {
+        self.store.get_registry(id)
+    }
+
+    pub fn list_registries_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ContainerRegistry>> {
+        self.store.list_registries_by_owner(owner_id)
+    }
+
+    pub fn delete_registry(&self, id: Uuid) -> Result<bool> {
+        self.store.delete_registry(id)
+    }
+
+    /// writes a consistent snapshot of the database to `path`
+    pub fn backup_to(&self, path: &Path) -> Result<()> {
+        self.store.backup_to(path)
     }
 
     pub fn get_user_by_github_id(
@@ -428,6 +457,8 @@ impl Database {
                     domains: svc.custom_domains(),
                     http_only_domains: svc.http_only_domains(),
                     schedule: svc.schedule.clone(),
+                    notes: svc.notes.clone(),
+                    port_mappings: svc.port_mappings.clone(),
                     public_http: svc.is_public_http(),
                     desired_instances: runtime.desired_instances,
                     running_instances: runtime.running_instances,
@@ -469,6 +500,8 @@ impl Database {
                 domains: Vec::new(),
                 http_only_domains: Vec::new(),
                 schedule: None,
+                notes: None,
+                port_mappings: Vec::new(),
                 public_http: false,
                 desired_instances: 1,
                 running_instances: if matches!(
@@ -516,6 +549,8 @@ impl Database {
                 domains: Vec::new(),
                 http_only_domains: Vec::new(),
                 schedule: None,
+                notes: None,
+                port_mappings: Vec::new(),
                 public_http: false,
                 desired_instances: 1,
                 running_instances: if matches!(
@@ -724,6 +759,94 @@ impl SqliteDatabase {
                 .await
                 .map_err(Error::from)?;
             row_to_user(row.as_ref())
+        })
+    }
+
+    fn delete_user(&self, id: Uuid) -> Result<bool> {
+        self.run(async {
+            let r = sqlx::query("DELETE FROM users WHERE id = ?")
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            Ok(r.rows_affected() > 0)
+        })
+    }
+
+    fn backup_to(&self, path: &Path) -> Result<()> {
+        let target = path.to_string_lossy().to_string();
+        self.run(async {
+            sqlx::query("VACUUM INTO ?")
+                .bind(target)
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            Ok(())
+        })
+    }
+
+    // ==================== REGISTRY ====================
+    fn save_registry(&self, registry: &ContainerRegistry) -> Result<()> {
+        self.run(async {
+            sqlx::query(
+                r#"INSERT INTO registries (id, owner_id, server, username, password_enc, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET owner_id=excluded.owner_id, server=excluded.server, username=excluded.username, password_enc=excluded.password_enc"#,
+            )
+            .bind(registry.id.to_string())
+            .bind(registry.owner_id.to_string())
+            .bind(&registry.server)
+            .bind(&registry.username)
+            .bind(&registry.password_enc)
+            .bind(registry.created_at.to_rfc3339())
+            .execute(&self.pool)
+            .await
+            .map_err(Error::from)?;
+            Ok(())
+        })
+    }
+
+    fn get_registry(&self, id: Uuid) -> Result<Option<ContainerRegistry>> {
+        self.run(async {
+            let row = sqlx::query("SELECT * FROM registries WHERE id = ?")
+                .bind(id.to_string())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            row_to_registry(row.as_ref())
+        })
+    }
+
+    fn list_registries_by_owner(
+        &self,
+        owner_id: Uuid,
+    ) -> Result<Vec<ContainerRegistry>> {
+        self.run(async {
+            let rows = sqlx::query(
+                "SELECT * FROM registries WHERE owner_id = ? ORDER BY created_at ASC",
+            )
+            .bind(owner_id.to_string())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Error::from)?;
+            let mut registries = Vec::new();
+            for row in rows {
+                if let Some(registry) = row_to_registry(Some(&row))? {
+                    registries.push(registry);
+                }
+            }
+            Ok(registries)
+        })
+    }
+
+    fn delete_registry(&self, id: Uuid) -> Result<bool> {
+        self.run(async {
+            let r = sqlx::query("DELETE FROM registries WHERE id = ?")
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            Ok(r.rows_affected() > 0)
         })
     }
 
@@ -1600,6 +1723,32 @@ impl SqliteDatabase {
 }
 
 // ==================== ROW HELPERS ====================
+fn row_to_registry(
+    row: Option<&SqliteRow>,
+) -> Result<Option<ContainerRegistry>> {
+    let row = match row {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let created_at: String = row.try_get("created_at").map_err(Error::from)?;
+    Ok(Some(ContainerRegistry {
+        id: Uuid::parse_str(
+            &row.try_get::<String, _>("id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        owner_id: Uuid::parse_str(
+            &row.try_get::<String, _>("owner_id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        server: row.try_get("server").map_err(Error::from)?,
+        username: row.try_get("username").map_err(Error::from)?,
+        password_enc: row.try_get("password_enc").map_err(Error::from)?,
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+    }))
+}
+
 fn row_to_user(row: Option<&SqliteRow>) -> Result<Option<User>> {
     let row = match row {
         Some(r) => r,
@@ -1717,6 +1866,10 @@ fn row_to_service(row: Option<&SqliteRow>) -> Result<Option<ContainerService>> {
     let mounts: String = row.try_get("mounts").map_err(Error::from)?;
     let service_type: String =
         row.try_get("service_type").map_err(Error::from)?;
+    let basic_auth: Option<String> =
+        row.try_get("basic_auth").map_err(Error::from)?;
+    let port_mappings: String =
+        row.try_get("port_mappings").map_err(Error::from)?;
     Ok(Some(ContainerService {
         id: Uuid::parse_str(
             &row.try_get::<String, _>("id").map_err(Error::from)?,
@@ -1759,6 +1912,9 @@ fn row_to_service(row: Option<&SqliteRow>) -> Result<Option<ContainerService>> {
         working_dir: row.try_get("working_dir").map_err(Error::from)?,
         schedule: row.try_get("schedule").map_err(Error::from)?,
         mounts: serde_json::from_str(&mounts).unwrap_or_default(),
+        notes: row.try_get("notes").map_err(Error::from)?,
+        basic_auth: basic_auth.and_then(|b| serde_json::from_str(&b).ok()),
+        port_mappings: serde_json::from_str(&port_mappings).unwrap_or_default(),
         created_at: DateTime::parse_from_rfc3339(&created_at)
             .map_err(|e| Error::Internal(e.to_string()))?
             .with_timezone(&Utc),
@@ -2145,11 +2301,15 @@ async fn insert_service(
         .entrypoint
         .as_ref()
         .map(|e| serde_json::to_string(e).unwrap_or_default());
+    let basic_auth = match svc.basic_auth.as_ref() {
+        Some(auth) => Some(serde_json::to_string(auth)?),
+        None => None,
+    };
 
     sqlx::query(
-        r#"INSERT INTO services (id, app_id, name, image, service_type, port, expose_http, additional_ports, replicas, memory_limit, cpu_limit, depends_on, health_check, restart_policy, registry_auth, env_vars, domains, http_only_domains, build_context, dockerfile_path, build_target, build_args, command, entrypoint, working_dir, schedule, mounts, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, name=excluded.name, image=excluded.image, service_type=excluded.service_type, port=excluded.port, expose_http=excluded.expose_http, additional_ports=excluded.additional_ports, replicas=excluded.replicas, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, depends_on=excluded.depends_on, health_check=excluded.health_check, restart_policy=excluded.restart_policy, registry_auth=excluded.registry_auth, env_vars=excluded.env_vars, domains=excluded.domains, http_only_domains=excluded.http_only_domains, build_context=excluded.build_context, dockerfile_path=excluded.dockerfile_path, build_target=excluded.build_target, build_args=excluded.build_args, command=excluded.command, entrypoint=excluded.entrypoint, working_dir=excluded.working_dir, schedule=excluded.schedule, mounts=excluded.mounts, created_at=excluded.created_at, updated_at=excluded.updated_at"#
+        r#"INSERT INTO services (id, app_id, name, image, service_type, port, expose_http, additional_ports, replicas, memory_limit, cpu_limit, depends_on, health_check, restart_policy, registry_auth, env_vars, domains, http_only_domains, build_context, dockerfile_path, build_target, build_args, command, entrypoint, working_dir, schedule, mounts, notes, basic_auth, port_mappings, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, name=excluded.name, image=excluded.image, service_type=excluded.service_type, port=excluded.port, expose_http=excluded.expose_http, additional_ports=excluded.additional_ports, replicas=excluded.replicas, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, depends_on=excluded.depends_on, health_check=excluded.health_check, restart_policy=excluded.restart_policy, registry_auth=excluded.registry_auth, env_vars=excluded.env_vars, domains=excluded.domains, http_only_domains=excluded.http_only_domains, build_context=excluded.build_context, dockerfile_path=excluded.dockerfile_path, build_target=excluded.build_target, build_args=excluded.build_args, command=excluded.command, entrypoint=excluded.entrypoint, working_dir=excluded.working_dir, schedule=excluded.schedule, mounts=excluded.mounts, notes=excluded.notes, basic_auth=excluded.basic_auth, port_mappings=excluded.port_mappings, created_at=excluded.created_at, updated_at=excluded.updated_at"#
     )
     .bind(svc.id.to_string())
     .bind(svc.app_id.to_string())
@@ -2178,6 +2338,9 @@ async fn insert_service(
     .bind(&svc.working_dir)
     .bind(&svc.schedule)
     .bind(serde_json::to_string(&svc.mounts)?)
+    .bind(&svc.notes)
+    .bind(basic_auth)
+    .bind(serde_json::to_string(&svc.port_mappings)?)
     .bind(svc.created_at.to_rfc3339())
     .bind(svc.updated_at.to_rfc3339())
     .execute(&mut **tx).await.map_err(Error::from)?;
@@ -2318,6 +2481,96 @@ mod tests {
             .expect("get github app")
             .expect("exists");
         assert_eq!(stored.app_id, 2);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn service_parity_fields_round_trip() {
+        use crate::models::{BasicAuth, PortMapping, PortProtocol};
+
+        let (db, dir) = open_temp_db();
+        let mut app = seed_app(&db);
+        let service = &mut app.services[0];
+        service.notes = Some("hello".to_string());
+        service.basic_auth = Some(BasicAuth {
+            username: "admin".to_string(),
+            password_hash: "$argon2id$hash".to_string(),
+        });
+        service.port_mappings = vec![PortMapping {
+            host_port: 5353,
+            container_port: 53,
+            protocol: PortProtocol::Udp,
+        }];
+        service.mounts = vec![crate::models::ServiceMount {
+            name: "sock".to_string(),
+            target: "/var/run/x.sock".to_string(),
+            read_only: true,
+            host_path: Some("/var/run/x.sock".to_string()),
+        }];
+        db.save_app(&app).expect("save app");
+
+        let stored = db
+            .get_service(app.services[0].id)
+            .expect("get service")
+            .expect("service exists");
+        assert_eq!(stored.notes.as_deref(), Some("hello"));
+        assert_eq!(stored.basic_auth, app.services[0].basic_auth);
+        assert_eq!(stored.port_mappings, app.services[0].port_mappings);
+        assert_eq!(
+            stored.mounts[0].host_path.as_deref(),
+            Some("/var/run/x.sock")
+        );
+
+        let inventory = db
+            .get_service_inventory_by_id(app.owner_id, stored.id)
+            .expect("inventory")
+            .expect("inventory item");
+        assert_eq!(inventory.notes.as_deref(), Some("hello"));
+        assert_eq!(inventory.port_mappings.len(), 1);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn registry_round_trip_and_delete_user_cascades() {
+        let (db, dir) = open_temp_db();
+        let app = seed_app(&db);
+        let registry = ContainerRegistry::new(
+            app.owner_id,
+            "ghcr.io".to_string(),
+            "user".to_string(),
+            "enc:secret".to_string(),
+        );
+        db.save_registry(&registry).expect("save registry");
+        let listed = db
+            .list_registries_by_owner(app.owner_id)
+            .expect("list registries");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].server, "ghcr.io");
+        assert_eq!(listed[0].password_enc, "enc:secret");
+        assert!(db.get_registry(registry.id).expect("get").is_some());
+
+        assert!(db.delete_user(app.owner_id).expect("delete user"));
+        assert!(db.get_registry(registry.id).expect("get").is_none());
+        assert!(db.get_app(app.id).expect("get app").is_none());
+        assert!(!db.delete_registry(registry.id).expect("delete registry"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn backup_to_writes_readable_snapshot() {
+        let (db, dir) = open_temp_db();
+        let app = seed_app(&db);
+        let backup_path = dir.join("backup.sqlite3");
+        db.backup_to(&backup_path).expect("backup");
+
+        let restored = Database::open(&DatabaseConfig {
+            path: backup_path.to_string_lossy().into_owned(),
+        })
+        .expect("open backup");
+        assert!(restored.get_app(app.id).expect("get app").is_some());
 
         let _ = std::fs::remove_dir_all(dir);
     }

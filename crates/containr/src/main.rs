@@ -847,6 +847,7 @@ async fn refresh_routes_for_app(
                 upstreams: upstreams.clone(),
                 ssl_enabled: service.domain_https_enabled(&domain),
                 algorithm,
+                basic_auth: service.basic_auth.clone(),
             });
             tracing::info!(
                 domain = %domain,

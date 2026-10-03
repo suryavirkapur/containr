@@ -1,7 +1,7 @@
 //! authentication handlers
 
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::Redirect,
     Json,
@@ -77,6 +77,15 @@ pub struct CreateUserRequest {
     pub email: String,
     /// password (min 8 characters)
     pub password: String,
+}
+
+/// password change request
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ChangePasswordRequest {
+    /// current password; not required for accounts without one
+    pub current_password: Option<String>,
+    /// new password (min 8 characters)
+    pub new_password: String,
 }
 
 /// error response
@@ -320,6 +329,113 @@ pub async fn create_user(
     Ok(Json(user_response(&user)))
 }
 
+/// change the current user's password
+#[utoipa::path(
+    post,
+    path = "/api/auth/password",
+    tag = "auth",
+    security(("bearer" = [])),
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 204, description = "password changed"),
+        (status = 400, description = "invalid request or wrong current password", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse)
+    )
+)]
+pub async fn change_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<ChangePasswordRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let mut user = require_authenticated_user(&state, &headers).await?;
+
+    if req.new_password.len() < 8 {
+        return Err(bad_request("password must be at least 8 characters"));
+    }
+
+    // github-only accounts have no password yet and may set one directly
+    if let Some(password_hash) = user.password_hash.as_deref() {
+        let current = req.current_password.as_deref().unwrap_or_default();
+        let valid =
+            verify_password(current, password_hash).map_err(internal_error)?;
+        if !valid {
+            return Err(bad_request("current password is incorrect"));
+        }
+    }
+
+    user.password_hash =
+        Some(hash_password(&req.new_password).map_err(internal_error)?);
+    user.updated_at = chrono::Utc::now();
+    state.db.save_user(&user).map_err(internal_error)?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// delete a user and tear down their services (admin)
+#[utoipa::path(
+    delete,
+    path = "/api/admin/users/{id}",
+    tag = "auth",
+    security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "user id")),
+    responses(
+        (status = 204, description = "user deleted"),
+        (status = 400, description = "cannot delete yourself", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "admin access required", body = ErrorResponse),
+        (status = 404, description = "user not found", body = ErrorResponse)
+    )
+)]
+pub async fn delete_user(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let admin = require_admin_user(&state, &headers).await?;
+    if admin.id == id {
+        return Err(bad_request("you cannot delete your own account"));
+    }
+    if state.db.get_user(id).map_err(internal_error)?.is_none() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "user not found".to_string(),
+            }),
+        ));
+    }
+
+    // stop the user's containers before the rows cascade away
+    let inventory = state
+        .db
+        .list_service_inventory_by_owner(id)
+        .map_err(internal_error)?;
+    let svc = crate::domain::services::ServiceSvc::new(state.clone());
+    for item in inventory {
+        if let Err((_, error)) = svc.delete_service(id, item.id).await {
+            tracing::warn!(
+                user_id = %id,
+                service_id = %item.id,
+                error = %error.error,
+                "failed to delete service while deleting user"
+            );
+        }
+    }
+
+    state.db.delete_user(id).map_err(internal_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn bad_request(
+    message: impl Into<String>,
+) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: message.into(),
+        }),
+    )
+}
+
 /// login with email/password
 #[utoipa::path(
     post,
@@ -531,7 +647,7 @@ fn user_response(user: &User) -> UserResponse {
     }
 }
 
-async fn require_authenticated_user(
+pub(crate) async fn require_authenticated_user(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<User, (StatusCode, Json<ErrorResponse>)> {
@@ -553,7 +669,7 @@ async fn require_authenticated_user(
         })
 }
 
-async fn require_admin_user(
+pub(crate) async fn require_admin_user(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<User, (StatusCode, Json<ErrorResponse>)> {

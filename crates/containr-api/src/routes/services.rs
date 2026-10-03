@@ -1,9 +1,14 @@
 //! /api/services routes
 
-use axum::routing::{delete, get, patch, post};
+use axum::extract::DefaultBodyLimit;
+use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
 
+use crate::archive::MAX_UPLOAD_BYTES;
 use crate::handlers::services;
+
+/// multipart framing overhead allowed on top of the archive size
+const UPLOAD_BODY_SLACK_BYTES: u64 = 1024 * 1024;
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
@@ -45,5 +50,24 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/services/{id}/actions/{action}",
             post(services::run_service_action),
+        )
+        .route(
+            "/api/services/{id}/settings",
+            put(services::update_service_settings),
+        )
+        .route("/api/services/{id}/move", post(services::move_service))
+        .route(
+            "/api/services/{id}/metrics",
+            get(services::get_service_metrics),
+        )
+        .route(
+            "/api/services/{id}/deploy/upload",
+            post(services::deploy_upload).layer(DefaultBodyLimit::max(
+                (MAX_UPLOAD_BYTES + UPLOAD_BODY_SLACK_BYTES) as usize,
+            )),
+        )
+        .route(
+            "/api/services/{id}/deploy/dockerfile",
+            post(services::deploy_dockerfile),
         )
 }

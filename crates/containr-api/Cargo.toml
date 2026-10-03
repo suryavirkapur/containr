@@ -63,3 +63,9 @@ utoipa-scalar = { version = "0.3", features = ["axum"] }
 # docker api
 bollard = { workspace = true }
 tar = "0.4"
+flate2 = "1"
+libc = "0.2"
+tokio-util = { version = "0.7", features = ["io"] }
+
+[dev-dependencies]
+tempfile = "3"

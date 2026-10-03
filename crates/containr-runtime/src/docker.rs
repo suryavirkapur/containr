@@ -13,7 +13,7 @@ use bollard::models::{
     ContainerCreateBody, ContainerStateStatusEnum, ContainerSummaryStateEnum,
     EndpointSettings, HealthStatusEnum, HostConfig, Ipam, IpamConfig, Mount,
     MountTypeEnum, NetworkConnectRequest, NetworkCreateRequest,
-    NetworkingConfig, RestartPolicy, RestartPolicyNameEnum,
+    NetworkingConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum,
 };
 use bollard::query_parameters::{
     CreateContainerOptions, InspectContainerOptions, ListContainersOptions,
@@ -141,6 +141,15 @@ pub struct DockerBindMount {
     pub read_only: bool,
 }
 
+/// host port published to a container port
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DockerPortMapping {
+    pub host_port: u16,
+    pub container_port: u16,
+    /// "tcp" or "udp"
+    pub protocol: String,
+}
+
 /// health check command configuration for docker
 #[derive(Debug, Clone)]
 pub struct HealthCheckCommand {
@@ -162,6 +171,8 @@ pub struct DockerContainerConfig {
     pub env_vars: HashMap<String, String>,
     pub port: u16,
     pub additional_ports: Vec<u16>,
+    /// host ports published for this container
+    pub port_mappings: Vec<DockerPortMapping>,
     pub command: Option<Vec<String>>,
     pub entrypoint: Option<Vec<String>>,
     pub working_dir: Option<String>,
@@ -274,7 +285,7 @@ impl DockerContainerManager {
     }
 
     /// gets the docker client (panics if in stub mode)
-    fn client(&self) -> &Docker {
+    pub(crate) fn client(&self) -> &Docker {
         self.docker
             .as_ref()
             .expect("docker client not available in stub mode")
@@ -448,6 +459,7 @@ impl DockerContainerManager {
                     })
                     .collect(),
             ),
+            port_bindings: build_port_bindings(&config.port_mappings),
             ..Default::default()
         };
 
@@ -466,8 +478,11 @@ impl DockerContainerManager {
             }
         });
 
-        let exposed_ports =
-            build_exposed_ports(config.port, &config.additional_ports);
+        let exposed_ports = build_exposed_ports(
+            config.port,
+            &config.additional_ports,
+            &config.port_mappings,
+        );
 
         let container_config = ContainerCreateBody {
             image: Some(config.image.clone()),
@@ -1022,6 +1037,7 @@ fn build_networking_config(
 fn build_exposed_ports(
     primary_port: u16,
     additional_ports: &[u16],
+    port_mappings: &[DockerPortMapping],
 ) -> Vec<String> {
     let mut ports = Vec::with_capacity(
         additional_ports.len() + usize::from(primary_port > 0),
@@ -1030,7 +1046,38 @@ fn build_exposed_ports(
         ports.push(format!("{}/tcp", primary_port));
     }
     ports.extend(additional_ports.iter().map(|port| format!("{}/tcp", port)));
+    for mapping in port_mappings {
+        let key = format!("{}/{}", mapping.container_port, mapping.protocol);
+        if !ports.contains(&key) {
+            ports.push(key);
+        }
+    }
     ports
+}
+
+fn build_port_bindings(
+    port_mappings: &[DockerPortMapping],
+) -> Option<HashMap<String, Option<Vec<PortBinding>>>> {
+    if port_mappings.is_empty() {
+        return None;
+    }
+
+    let mut bindings: HashMap<String, Option<Vec<PortBinding>>> =
+        HashMap::new();
+    for mapping in port_mappings {
+        let key = format!("{}/{}", mapping.container_port, mapping.protocol);
+        let binding = PortBinding {
+            host_ip: None,
+            host_port: Some(mapping.host_port.to_string()),
+        };
+        match bindings.get_mut(&key) {
+            Some(Some(existing)) => existing.push(binding),
+            _ => {
+                bindings.insert(key, Some(vec![binding]));
+            }
+        }
+    }
+    Some(bindings)
 }
 
 fn build_endpoint_settings(aliases: &[String]) -> EndpointSettings {
@@ -1112,6 +1159,32 @@ mod tests {
         let state = manager.get_state("stub").await.unwrap();
         assert_eq!(state.status, "running");
         assert_eq!(state.health_status, Some("healthy".to_string()));
+    }
+
+    #[test]
+    fn port_bindings_publish_host_ports() {
+        let mappings = vec![
+            DockerPortMapping {
+                host_port: 2222,
+                container_port: 22,
+                protocol: "tcp".to_string(),
+            },
+            DockerPortMapping {
+                host_port: 5353,
+                container_port: 53,
+                protocol: "udp".to_string(),
+            },
+        ];
+        let exposed = build_exposed_ports(80, &[], &mappings);
+        assert_eq!(exposed, vec!["80/tcp", "22/tcp", "53/udp"]);
+
+        let bindings = build_port_bindings(&mappings).expect("bindings");
+        let udp = bindings
+            .get("53/udp")
+            .and_then(|value| value.as_ref())
+            .expect("udp binding");
+        assert_eq!(udp[0].host_port.as_deref(), Some("5353"));
+        assert!(build_port_bindings(&[]).is_none());
     }
 
     #[test]

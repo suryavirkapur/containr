@@ -16,13 +16,17 @@ use crate::docker::{
     DockerBindMount, DockerContainerConfig, DockerContainerManager,
     DockerNetworkAttachment,
 };
-use crate::image::{ImageBuildConfig, ImageManager, RegistryCredentials};
+use crate::image::{ImageBuildConfig, ImageManager};
 use crate::route_updates::ProxyRouteUpdate;
+use crate::service_support;
 use containr_common::models::{
     ContainerService, Deployment, DeploymentSource, DeploymentStatus,
     RolloutStrategy,
 };
-use containr_common::{decrypt, derive_key, Database};
+use containr_common::Database;
+
+/// directory under the work dir holding uploaded/dockerfile sources
+pub const UPLOADS_DIR_NAME: &str = "uploads";
 
 // use shared type from common
 use containr_common::models::DeploymentJob;
@@ -112,7 +116,10 @@ impl DeploymentWorker {
                 "processing deployment job"
             );
 
-            if let Err(e) = self.process_job(&job).await {
+            let result = self.process_job(&job).await;
+            self.cleanup_uploaded_source(&job).await;
+
+            if let Err(e) = result {
                 error!(
                     app_id = %job.app_id,
                     error = %e,
@@ -227,6 +234,7 @@ impl DeploymentWorker {
                     &deployment,
                     repo_path.as_deref(),
                     &job.commit_sha,
+                    job.local_build_service_id,
                 )
                 .await?;
 
@@ -469,7 +477,16 @@ impl DeploymentWorker {
                 );
                 let old_container =
                     old_containers.get(&(service.id, replica_idx)).cloned();
-                if matches!(rollout_strategy, RolloutStrategy::StopFirst) {
+                // published host ports can't be bound twice, so replicas
+                // owning host ports are always replaced stop-first
+                let binds_host_ports = !service_support::service_port_mappings(
+                    service,
+                    replica_idx,
+                )
+                .is_empty();
+                if matches!(rollout_strategy, RolloutStrategy::StopFirst)
+                    || binds_host_ports
+                {
                     if let Some(old) = old_container.as_deref() {
                         let _ = self.docker_manager.stop_container(old).await;
                         let _ = self.docker_manager.remove_container(old).await;
@@ -519,11 +536,23 @@ impl DeploymentWorker {
                     RestartPolicy::Never => "no".to_string(),
                     RestartPolicy::Always => "always".to_string(),
                     RestartPolicy::OnFailure => "on-failure".to_string(),
+                    RestartPolicy::UnlessStopped => {
+                        "unless-stopped".to_string()
+                    }
                 };
 
-                if !service.image.is_empty() {
+                if service_support::should_pull_service_image(
+                    service,
+                    &service_image,
+                ) {
                     let registry_credentials =
-                        self.resolve_service_registry_auth(service)?;
+                        service_support::resolve_registry_credentials(
+                            Some(&self.db),
+                            app.owner_id,
+                            service,
+                            &service_image,
+                            self.encryption_secret.as_deref(),
+                        )?;
                     let _ = self.db.append_deployment_log(
                         deployment.id,
                         &format!("pulling service image {}", service_image),
@@ -542,6 +571,10 @@ impl DeploymentWorker {
                     env_vars,
                     port: service.port,
                     additional_ports: service.additional_ports.clone(),
+                    port_mappings: service_support::service_port_mappings(
+                        service,
+                        replica_idx,
+                    ),
                     command: service.command.clone(),
                     entrypoint: service.entrypoint.clone(),
                     working_dir: service.working_dir.clone(),
@@ -637,14 +670,36 @@ impl DeploymentWorker {
         deployment: &Deployment,
         repo_path: Option<&Path>,
         commit_sha: &str,
+        local_build_service_id: Option<Uuid>,
     ) -> anyhow::Result<HashMap<Uuid, String>> {
         let commit_prefix = commit_tag_prefix(commit_sha);
         let short_id = short_deployment_id(deployment.id);
         let mut service_images = HashMap::new();
         let mut built_by_key: HashMap<String, String> = HashMap::new();
 
+        if let Some(target_id) = local_build_service_id {
+            if !app.services.iter().any(|service| service.id == target_id) {
+                return Err(anyhow::anyhow!(
+                    "target service {} is not part of the app",
+                    target_id
+                ));
+            }
+        }
+
         for service in &app.services {
-            if !service.image.is_empty() {
+            let is_local_target = local_build_service_id == Some(service.id);
+            if local_build_service_id.is_some() && !is_local_target {
+                // only the target service is built; siblings keep their
+                // configured or previously built image
+                let image = if service.image.is_empty() {
+                    self.previous_service_image(app.id, deployment.id, service)?
+                } else {
+                    service.image.clone()
+                };
+                service_images.insert(service.id, image);
+                continue;
+            }
+            if !is_local_target && !service.image.is_empty() {
                 service_images.insert(service.id, service.image.clone());
                 continue;
             }
@@ -655,8 +710,11 @@ impl DeploymentWorker {
                     service.name
                 )
             })?;
-            let build_config =
-                self.resolve_service_build_config(repo_path, service)?;
+            let build_config = if is_local_target {
+                self.resolve_local_build_config(repo_path, service)?
+            } else {
+                self.resolve_service_build_config(repo_path, service)?
+            };
             let build_key =
                 self.service_build_cache_key(service, &build_config);
             if let Some(existing_image) = built_by_key.get(&build_key) {
@@ -757,6 +815,111 @@ impl DeploymentWorker {
             target: service.build_target.clone(),
             build_args,
         })
+    }
+
+    /// build config for uploaded sources: the source root is the context
+    /// and the dockerfile is `Dockerfile` unless the service's
+    /// dockerfile_path exists in the source
+    fn resolve_local_build_config(
+        &self,
+        source_root: &Path,
+        service: &ContainerService,
+    ) -> anyhow::Result<ImageBuildConfig> {
+        let context_path = std::fs::canonicalize(source_root)?;
+        let configured = service
+            .dockerfile_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .filter(|path| {
+                let candidate = Path::new(path);
+                !candidate.is_absolute()
+                    && candidate.components().all(|component| {
+                        matches!(
+                            component,
+                            std::path::Component::Normal(_)
+                                | std::path::Component::CurDir
+                        )
+                    })
+                    && context_path.join(candidate).is_file()
+            })
+            .map(ToOwned::to_owned);
+        let dockerfile = match configured {
+            Some(path) => path,
+            None => {
+                if !context_path.join("Dockerfile").is_file() {
+                    return Err(anyhow::anyhow!(
+                        "uploaded source for service {} has no Dockerfile",
+                        service.name
+                    ));
+                }
+                "Dockerfile".to_string()
+            }
+        };
+
+        Ok(ImageBuildConfig {
+            context_path: context_path.to_string_lossy().to_string(),
+            dockerfile: Some(dockerfile),
+            target: service.build_target.clone(),
+            build_args: service
+                .build_args
+                .iter()
+                .map(|arg| (arg.key.clone(), arg.value.clone()))
+                .collect(),
+        })
+    }
+
+    /// latest image previously deployed for a source-built service
+    fn previous_service_image(
+        &self,
+        app_id: Uuid,
+        current_deployment_id: Uuid,
+        service: &ContainerService,
+    ) -> anyhow::Result<String> {
+        let mut deployments = self
+            .db
+            .list_deployments_by_app(app_id)?
+            .into_iter()
+            .filter(|deployment| deployment.id != current_deployment_id)
+            .collect::<Vec<_>>();
+        deployments.sort_by(|left, right| {
+            let left_running = left.status == DeploymentStatus::Running;
+            let right_running = right.status == DeploymentStatus::Running;
+            right_running
+                .cmp(&left_running)
+                .then_with(|| right.created_at.cmp(&left.created_at))
+        });
+
+        deployments
+            .iter()
+            .flat_map(|deployment| deployment.service_deployments.iter())
+            .find(|sd| sd.service_id == service.id && sd.image_id.is_some())
+            .and_then(|sd| sd.image_id.clone())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "service {} has no previously built image; deploy it \
+                     from source first",
+                    service.name
+                )
+            })
+    }
+
+    /// removes an uploaded source directory once its job is done
+    async fn cleanup_uploaded_source(&self, job: &DeploymentJob) {
+        let DeploymentSource::LocalPath { path } = &job.source else {
+            return;
+        };
+        if is_uploaded_source(&self.work_dir, Path::new(path)) {
+            if let Err(error) = tokio::fs::remove_dir_all(path).await {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    warn!(
+                        path = %path,
+                        error = %error,
+                        "failed to remove uploaded source"
+                    );
+                }
+            }
+        }
     }
 
     fn resolve_context_dockerfile_path(
@@ -935,62 +1098,21 @@ impl DeploymentWorker {
         app_id: Uuid,
         service: &containr_common::models::ContainerService,
     ) -> anyhow::Result<Vec<DockerBindMount>> {
-        let mut mounts = Vec::new();
-        let mounts_root = self
-            .work_dir
-            .join("app-mounts")
-            .join(app_id.to_string())
-            .join(service.id.to_string());
-
-        for mount in &service.mounts {
-            let source = mounts_root.join(&mount.name);
-            std::fs::create_dir_all(&source)?;
-            mounts.push(DockerBindMount {
-                source: source.to_string_lossy().to_string(),
-                target: mount.target.clone(),
-                read_only: mount.read_only,
-            });
-        }
-
-        Ok(mounts)
+        service_support::build_service_mounts(&self.work_dir, app_id, service)
     }
 
-    fn decrypt_stored_secret(&self, value: &str) -> anyhow::Result<String> {
-        let trimmed = value.trim();
-        let payload = trimmed.strip_prefix("enc:").unwrap_or(trimmed);
-
-        if trimmed.starts_with("enc:") {
-            let secret =
-                self.encryption_secret.as_deref().ok_or_else(|| {
-                    anyhow::anyhow!("encryption key is not configured")
-                })?;
-            let key = derive_key(secret);
-            return decrypt(payload, &key).map_err(|error| {
-                anyhow::anyhow!(
-                    "failed to decrypt registry password: {}",
-                    error
-                )
-            });
-        }
-
-        Ok(payload.to_string())
-    }
-
+    #[cfg(test)]
     fn resolve_service_registry_auth(
         &self,
         service: &ContainerService,
-    ) -> anyhow::Result<Option<RegistryCredentials>> {
-        let Some(registry_auth) = service.registry_auth.as_ref() else {
-            return Ok(None);
-        };
-
-        let password = self.decrypt_stored_secret(&registry_auth.password)?;
-
-        Ok(Some(RegistryCredentials {
-            server: registry_auth.server.clone(),
-            username: registry_auth.username.clone(),
-            password,
-        }))
+    ) -> anyhow::Result<Option<crate::image::RegistryCredentials>> {
+        service_support::resolve_registry_credentials(
+            None,
+            Uuid::nil(),
+            service,
+            &service.image,
+            self.encryption_secret.as_deref(),
+        )
     }
 
     /// topological sort services by dependencies
@@ -1088,6 +1210,13 @@ impl DeploymentWorker {
         let _ = tokio::fs::remove_dir_all(&repo_path).await;
 
         let source = job.source.clone();
+        // uploaded sources are already extracted plain directories
+        if let DeploymentSource::LocalPath { path } = &source {
+            let path = PathBuf::from(path);
+            if is_uploaded_source(&self.work_dir, &path) {
+                return Ok(path);
+            }
+        }
         let source_url = match &source {
             DeploymentSource::LocalPath { path } => path.clone(),
             DeploymentSource::RemoteGit { url, .. } => url.clone(),
@@ -1196,6 +1325,16 @@ impl DeploymentWorker {
     }
 }
 
+/// returns true when `path` is an uploaded source dir under the work dir
+pub fn is_uploaded_source(work_dir: &Path, path: &Path) -> bool {
+    let uploads = work_dir.join(UPLOADS_DIR_NAME);
+    path.starts_with(&uploads)
+        && path != uploads
+        && path.components().all(|component| {
+            !matches!(component, std::path::Component::ParentDir)
+        })
+}
+
 /// first segment of the deployment uuid (8 hex chars)
 fn short_deployment_id(deployment_id: Uuid) -> String {
     deployment_id.simple().to_string().chars().take(8).collect()
@@ -1285,7 +1424,7 @@ fn checkout_commit(
 mod tests {
     use super::*;
     use containr_common::models::ContainerService;
-    use containr_common::{encrypt, DatabaseConfig};
+    use containr_common::{derive_key, encrypt, DatabaseConfig};
 
     fn make_worker() -> DeploymentWorker {
         let root = std::env::temp_dir()
@@ -1347,6 +1486,68 @@ mod tests {
 
         let sorted = worker.topological_sort_services(&[web]).unwrap();
         assert_eq!(sorted.len(), 1);
+    }
+
+    #[test]
+    fn uploaded_source_detection_is_scoped_to_uploads_dir() {
+        let work_dir = Path::new("/data/builds");
+        assert!(is_uploaded_source(
+            work_dir,
+            Path::new("/data/builds/uploads/abc")
+        ));
+        assert!(!is_uploaded_source(
+            work_dir,
+            Path::new("/data/builds/uploads")
+        ));
+        assert!(!is_uploaded_source(work_dir, Path::new("/srv/repo")));
+        assert!(!is_uploaded_source(
+            work_dir,
+            Path::new("/data/builds/uploads/../../etc")
+        ));
+    }
+
+    #[test]
+    fn local_build_config_prefers_existing_dockerfile_path() {
+        let worker = make_worker();
+        let source = tempfile::tempdir().expect("tempdir");
+        let mut service = ContainerService::new(
+            Uuid::new_v4(),
+            "web".to_string(),
+            String::new(),
+            80,
+        );
+        service.build_context = Some("ignored".to_string());
+
+        assert!(worker
+            .resolve_local_build_config(source.path(), &service)
+            .is_err());
+
+        std::fs::write(source.path().join("Dockerfile"), "FROM scratch")
+            .expect("write dockerfile");
+        let config = worker
+            .resolve_local_build_config(source.path(), &service)
+            .expect("config");
+        assert_eq!(config.dockerfile.as_deref(), Some("Dockerfile"));
+
+        service.dockerfile_path = Some("docker/Prod.Dockerfile".to_string());
+        let config = worker
+            .resolve_local_build_config(source.path(), &service)
+            .expect("config");
+        assert_eq!(config.dockerfile.as_deref(), Some("Dockerfile"));
+
+        std::fs::create_dir_all(source.path().join("docker")).expect("mkdir");
+        std::fs::write(
+            source.path().join("docker/Prod.Dockerfile"),
+            "FROM scratch",
+        )
+        .expect("write dockerfile");
+        let config = worker
+            .resolve_local_build_config(source.path(), &service)
+            .expect("config");
+        assert_eq!(
+            config.dockerfile.as_deref(),
+            Some("docker/Prod.Dockerfile")
+        );
     }
 
     #[test]

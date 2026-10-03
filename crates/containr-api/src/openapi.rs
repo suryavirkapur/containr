@@ -4,8 +4,8 @@ use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
 use crate::handlers::{
-    auth, certificates, containers, deployments, github_app, health, services,
-    settings, storage, system,
+    auth, certificates, containers, deployments, github_app, health, projects,
+    registries, services, settings, storage, system,
 };
 
 /// api documentation
@@ -26,13 +26,26 @@ use crate::handlers::{
         (name = "containers", description = "container monitoring and volumes"),
         (name = "github-app", description = "github app integration"),
         (name = "system", description = "system monitoring"),
-        (name = "certificates", description = "service certificate management")
+        (name = "certificates", description = "service certificate management"),
+        (name = "registries", description = "private container registries"),
+        (name = "projects", description = "projects grouping services on one network")
     ),
     paths(
         // health
         health::health,
         // system
         system::get_system_stats,
+        system::get_system_info,
+        system::get_disk_usage,
+        system::run_cleanup,
+        system::download_backup,
+        // projects
+        projects::list_projects,
+        projects::update_project,
+        // registries
+        registries::list_registries,
+        registries::create_registry,
+        registries::delete_registry,
         // auth
         auth::status,
         auth::register,
@@ -40,6 +53,8 @@ use crate::handlers::{
         auth::me,
         auth::list_users,
         auth::create_user,
+        auth::delete_user,
+        auth::change_password,
         auth::github_start,
         auth::github_callback,
         // settings
@@ -71,6 +86,11 @@ use crate::handlers::{
         services::rollback_service_deployment,
         services::get_service_deployment_logs,
         services::delete_service,
+        services::update_service_settings,
+        services::move_service,
+        services::get_service_metrics,
+        services::deploy_upload,
+        services::deploy_dockerfile,
         // storage
         storage::list_buckets,
         storage::create_bucket,
@@ -95,11 +115,23 @@ use crate::handlers::{
             health::HealthResponse,
             // system
             system::SystemStats,
+            system::SystemInfoResponse,
+            system::DiskUsageEntryResponse,
+            system::DiskUsageResponse,
+            system::CleanupRequest,
+            system::CleanupResponse,
+            // projects
+            projects::ProjectResponse,
+            projects::UpdateProjectRequest,
+            // registries
+            registries::RegistryResponse,
+            registries::CreateRegistryRequest,
             // auth
             auth::RegistrationStatusResponse,
             auth::LoginRequest,
             auth::RegisterRequest,
             auth::CreateUserRequest,
+            auth::ChangePasswordRequest,
             auth::AuthResponse,
             auth::UserResponse,
             auth::ErrorResponse,
@@ -139,6 +171,15 @@ use crate::handlers::{
             crate::domain::services::ServiceRegistryAuthRequest,
             crate::domain::services::ServiceRequest,
             crate::domain::services::UpdateServiceRequest,
+            crate::domain::services::BasicAuthRequest,
+            crate::domain::services::BasicAuthResponse,
+            crate::domain::services::PortMappingRequest,
+            crate::domain::services::PortMappingResponse,
+            crate::domain::services::MoveServiceRequest,
+            crate::domain::services::DockerfileDeployRequest,
+            crate::domain::services::ServiceContainerMetrics,
+            crate::domain::services::ServiceMetricsResponse,
+            services::SourceUploadForm,
             // storage
             storage::CreateBucketRequest,
             storage::BucketResponse,

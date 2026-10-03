@@ -6,10 +6,12 @@ pub mod app_service_manager;
 pub mod cron_scheduler;
 pub mod database_manager;
 pub mod docker;
+pub mod docker_system;
 pub mod error;
 pub mod image;
 pub mod queue_manager;
 pub mod route_updates;
+pub mod service_support;
 pub mod storage_manager;
 pub mod worker;
 
@@ -20,7 +22,11 @@ pub use docker::{
     DockerBindMount, DockerContainerConfig, DockerContainerInfo,
     DockerContainerManager, DockerContainerState, DockerContainerStats,
     DockerContainerStatus, DockerExecSession, DockerMountInfo,
-    DockerNetworkAttachment,
+    DockerNetworkAttachment, DockerPortMapping,
+};
+pub use docker_system::{
+    DockerCleanupResult, DockerContainerMetrics, DockerDiskUsage,
+    DockerDiskUsageEntry, DockerSystemInfo,
 };
 pub use error::{ClientError, Result};
 pub use image::{ImageInfo, ImageManager, RegistryCredentials};
