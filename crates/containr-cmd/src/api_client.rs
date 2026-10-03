@@ -78,6 +78,20 @@ impl ApiClient {
         self.send_json(request).await
     }
 
+    /// uploads one file as multipart field `file`
+    pub async fn post_file(
+        &self,
+        path: &str,
+        file_name: &str,
+        bytes: Vec<u8>,
+    ) -> Result<Value> {
+        let part = reqwest::multipart::Part::bytes(bytes)
+            .file_name(file_name.to_string());
+        let form = reqwest::multipart::Form::new().part("file", part);
+        let request = self.request(Method::POST, path).multipart(form);
+        self.send_json(request).await
+    }
+
     pub async fn get_text(&self, path: &str) -> Result<String> {
         let request = self.request(Method::GET, path);
         self.send_text(request).await
