@@ -20,6 +20,11 @@ const appendGithubPath = (baseUrl: string | null | undefined, suffix: string) =>
   return `${baseUrl.replace(/\/+$/, '')}${suffix}`;
 };
 
+const parseOptionalInt = (value: string): number | null => {
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
 const Settings = () => {
   const auth = useAuth();
   const [searchParams] = useSearchParams();
@@ -87,10 +92,11 @@ const Settings = () => {
         storage_public_hostname: storagePublicHostname().trim() || null,
         storage_management_endpoint: storageManagementEndpoint().trim() || null,
         storage_internal_host: storageInternalHost().trim() || null,
-        storage_port: Number.parseInt(storagePort(), 10) || null,
+        storage_port: parseOptionalInt(storagePort()),
         acme_email: acmeEmail().trim() || null,
         acme_staging: acmeStaging() === 'yes',
-        log_retention_days: Number.parseInt(logRetentionDays(), 10) || null,
+        // 0 is meaningful (disables cleanup), so only blank/invalid is null
+        log_retention_days: parseOptionalInt(logRetentionDays()),
       });
       await refetchSettings();
       setFeedback({ tone: 'success', text: 'settings updated' });

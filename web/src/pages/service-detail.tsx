@@ -5,7 +5,9 @@ import {
 	createResource,
 	createSignal,
 	For,
+	Index,
 	Match,
+	on,
 	onCleanup,
 	Show,
 	Switch,
@@ -58,15 +60,24 @@ const useDeploymentLogStream = (serviceId: () => string, deploymentId: () => str
 		const token = localStorage.getItem("containr_token");
 		const url = `${protocol}//${host}/api/services/${svcId}/deployments/${depId}/logs/ws${token ? `?token=${encodeURIComponent(token)}` : ""}`;
 		try {
-			ws = new WebSocket(url);
-			ws.onopen = () => setIsStreaming(true);
-			ws.onmessage = (event: MessageEvent<string>) => {
+			// handlers ignore events from a socket that has been replaced, so
+			// a late onclose can't orphan the live connection.
+			const socket = new WebSocket(url);
+			ws = socket;
+			socket.onopen = () => {
+				if (ws === socket) setIsStreaming(true);
+			};
+			socket.onmessage = (event: MessageEvent<string>) => {
+				if (ws !== socket) return;
 				const line = stripAnsi(event.data);
 				if (!line) return;
 				setLogs((prev) => [...prev, line]);
 			};
-			ws.onerror = () => setIsStreaming(false);
-			ws.onclose = () => {
+			socket.onerror = () => {
+				if (ws === socket) setIsStreaming(false);
+			};
+			socket.onclose = () => {
+				if (ws !== socket) return;
 				setIsStreaming(false);
 				ws = null;
 			};
@@ -183,13 +194,17 @@ const ServiceDetail = () => {
 	const [service, { refetch: refetchService }] = createResource(serviceId, getService);
 	const [containerStatuses, { refetch: refetchContainerStatuses }] = createResource(
 		() => service()?.container_ids ?? [],
-		async (containerIds) =>
-			Promise.all(
+		async (containerIds) => {
+			const results = await Promise.allSettled(
 				containerIds.map(async (id) => ({
 					id,
 					...(await getContainerStatus(id)),
 				})),
-			),
+			);
+			return results.flatMap((result) =>
+				result.status === "fulfilled" ? [result.value] : [],
+			);
+		},
 	);
 	const [settings, { refetch: refetchSettings }] = createResource(
 		() => (serviceId() && isAppService() ? serviceId() : null),
@@ -212,7 +227,7 @@ const ServiceDetail = () => {
 	);
 	const deploymentLogStream = useDeploymentLogStream(serviceId, selectedDeploymentId);
 	const liveServiceStatus = createMemo(() => {
-		const statuses = containerStatuses() ?? [];
+		const statuses = (!containerStatuses.error && containerStatuses()) || [];
 		if (statuses.some((status) => status.status === "restarting")) {
 			return "unstable";
 		}
@@ -242,9 +257,18 @@ const ServiceDetail = () => {
 		{ id: "logs", label: "Logs" },
 	];
 
+	// forms are seeded from settings on load and after a save, but not when
+	// unrelated actions (deploy, restart) refetch settings, which would wipe
+	// unsaved edits.
+	let seededFor: string | null = null;
+	let reseedRequested = false;
 	createEffect(() => {
-		const s = settings();
+		const s = !settings.error ? settings() : null;
 		if (!s) return;
+		const id = serviceId();
+		if (seededFor === id && !reseedRequested) return;
+		seededFor = id;
+		reseedRequested = false;
 		setDeployBranch(s.branch);
 		setDeployRolloutStrategy(s.rollout_strategy);
 		setAutoDeployEnabled(s.auto_deploy.enabled);
@@ -252,14 +276,24 @@ const ServiceDetail = () => {
 		setServiceJson(JSON.stringify(s.service, null, 2));
 		setReplicas(String(s.service.replicas ?? 1));
 		setEnvVars(s.env_vars.map((e) => ({ ...e, isNew: false, isEdited: false })));
-		setBulkEditText(s.env_vars.map((e) => `${e.key}=${e.value}`).join("\n"));
 		setHttpEnabled(s.service.expose_http);
 		setCustomDomains(s.service.domains ?? []);
 		setHttpOnlyDomains((s.service as { http_only_domains?: string[] }).http_only_domains ?? []);
 	});
 
+	createEffect(
+		on(
+			serviceId,
+			() => {
+				setSelectedDeploymentId(null);
+				setTargetGroupId(null);
+			},
+			{ defer: true },
+		),
+	);
+
 	createEffect(() => {
-		const rows = deployments();
+		const rows = !deployments.error ? deployments() : undefined;
 		if (!rows || rows.length === 0) return;
 		if (!selectedDeploymentId()) setSelectedDeploymentId(rows[0].id);
 	});
@@ -341,19 +375,34 @@ const ServiceDetail = () => {
 		}
 	};
 
+	const enterBulkEditMode = (enabled: boolean) => {
+		if (enabled) {
+			setBulkEditText(envVars().map((e) => `${e.key}=${e.value}`).join("\n"));
+		}
+		setBulkEditMode(enabled);
+	};
+
 	const saveAppConfigs = async () => {
 		setPendingAction("save-appconfigs");
 		setFeedback(null);
 		try {
 			let finalEnvVars: Array<{ key: string; value: string; secret: boolean }> = [];
 			if (bulkEditMode()) {
+				// keep each key's existing secret flag: masked "********"
+				// values are only restored by the backend for secrets.
+				const secretByKey = new Map(envVars().map((e) => [e.key.trim(), e.secret]));
 				finalEnvVars = bulkEditText()
 					.split(/\r?\n/)
 					.map((l) => l.trim())
 					.filter(Boolean)
 					.map((l) => {
 						const [key, ...rest] = l.split("=");
-						return { key: key.trim(), value: rest.join("=").trim(), secret: false };
+						const trimmedKey = key.trim();
+						return {
+							key: trimmedKey,
+							value: rest.join("=").trim(),
+							secret: secretByKey.get(trimmedKey) ?? false,
+						};
 					});
 			} else {
 				finalEnvVars = envVars()
@@ -377,6 +426,8 @@ const ServiceDetail = () => {
 			});
 			setFeedback({ tone: "success", text: "saved" });
 			setPendingAction(null);
+			setBulkEditMode(false);
+			reseedRequested = true;
 			void refreshAll();
 		} catch (error) {
 			setFeedback({ tone: "error", text: describeError(error) });
@@ -395,19 +446,15 @@ const ServiceDetail = () => {
 				customDomains().includes(d),
 			);
 
-			const body: Parameters<typeof store.updateService>[1] = {
-				service: parsedService,
-			};
-
-			// Move to different project if selected
-			const gid = targetGroupId();
-			if (gid !== null) {
-				(body as Record<string, unknown>).group_id = gid;
+			// the backend has no way to move a service between projects yet;
+			// fail loudly instead of silently dropping the selection.
+			if (targetGroupId() !== null) {
+				throw new Error("moving a service to another project is not supported yet");
 			}
 
-			await store.updateService(serviceId(), body);
+			await store.updateService(serviceId(), { service: parsedService });
 			setFeedback({ tone: "success", text: "networking settings saved" });
-			setTargetGroupId(null);
+			reseedRequested = true;
 			setPendingAction(null);
 			void refreshAll();
 		} catch (error) {
@@ -497,7 +544,7 @@ const ServiceDetail = () => {
 				{(error) => <Notice tone="error">Failed to load: {describeError(error())}</Notice>}
 			</Show>
 
-			<Show when={service()}>
+			<Show when={!service.error && service()}>
 				{(currentService) => (
 					<>
 						{/* Header */}
@@ -596,7 +643,7 @@ const ServiceDetail = () => {
 											</div>
 										</Panel>
 
-										<Show when={settings()}>
+										<Show when={!settings.error && settings()}>
 											{(currentSettings) => (
 												<Panel
 													title="HTTP & Domains"
@@ -742,7 +789,7 @@ const ServiceDetail = () => {
 
 								{/* ——— APP CONFIGS TAB ——— */}
 								<Match when={activeTab() === "appconfigs"}>
-									<Show when={settings()} fallback={<LoadingBlock message="Loading configs..." />}>
+									<Show when={!settings.error && settings()} fallback={<LoadingBlock message="Loading configs..." />}>
 										{(currentSettings) => (
 											<div class="flex flex-col gap-4">
 												<Panel title="Scaling">
@@ -783,7 +830,7 @@ const ServiceDetail = () => {
 															<input
 																type="checkbox"
 																checked={bulkEditMode()}
-																onChange={(e) => setBulkEditMode(e.currentTarget.checked)}
+																onChange={(e) => enterBulkEditMode(e.currentTarget.checked)}
 																class="h-3.5 w-3.5"
 															/>
 															Bulk edit (KEY=VALUE)
@@ -848,16 +895,16 @@ const ServiceDetail = () => {
 																				</tr>
 																			</thead>
 																			<tbody>
-																				<For each={envVars()}>
+																				<Index each={envVars()}>
 																					{(env, index) => (
 																						<tr>
 																							<td>
 																								<input
 																									type="checkbox"
-																									checked={env.secret}
+																									checked={env().secret}
 																									onChange={(e) =>
 																										updateEnvVar(
-																											index(),
+																											index,
 																											"secret",
 																											e.currentTarget.checked,
 																										)
@@ -868,10 +915,10 @@ const ServiceDetail = () => {
 																							<td>
 																								<input
 																									class="cr-input font-mono"
-																									value={env.key}
+																									value={env().key}
 																									onInput={(e) =>
 																										updateEnvVar(
-																											index(),
+																											index,
 																											"key",
 																											e.currentTarget.value,
 																										)
@@ -880,14 +927,14 @@ const ServiceDetail = () => {
 																							</td>
 																							<td>
 																								<Show
-																									when={env.secret}
+																									when={env().secret}
 																									fallback={
 																										<input
 																											class="cr-input font-mono"
-																											value={env.value}
+																											value={env().value}
 																											onInput={(e) =>
 																												updateEnvVar(
-																													index(),
+																													index,
 																													"value",
 																													e.currentTarget.value,
 																												)
@@ -898,10 +945,10 @@ const ServiceDetail = () => {
 																									<input
 																										type="password"
 																										class="cr-input font-mono"
-																										value={env.value}
+																										value={env().value}
 																										onInput={(e) =>
 																											updateEnvVar(
-																												index(),
+																												index,
 																												"value",
 																												e.currentTarget.value,
 																											)
@@ -912,7 +959,7 @@ const ServiceDetail = () => {
 																							<td class="text-right">
 																								<button
 																									type="button"
-																									onClick={() => removeEnvVar(index())}
+																									onClick={() => removeEnvVar(index)}
 																									class="text-xs text-muted-foreground hover:text-foreground"
 																								>
 																									Remove
@@ -920,7 +967,7 @@ const ServiceDetail = () => {
 																							</td>
 																						</tr>
 																					)}
-																				</For>
+																				</Index>
 																			</tbody>
 																		</table>
 																	</Show>
@@ -1014,7 +1061,7 @@ const ServiceDetail = () => {
 								{/* ——— DEPLOYMENT TAB ——— */}
 								<Match when={activeTab() === "deployment"}>
 									<Show
-										when={settings()}
+										when={!settings.error && settings()}
 										fallback={<LoadingBlock message="Loading deployment..." />}
 									>
 										{(currentSettings) => (
@@ -1106,20 +1153,19 @@ const ServiceDetail = () => {
 													</div>
 
 													<Show
-														when={(deployments() ?? []).length > 0}
+														when={!deployments.error && (deployments() ?? []).length > 0}
 														fallback={<EmptyBlock title="No deployments yet" />}
 													>
 														<div class="border border-border divide-y divide-border">
-															<For each={deployments() ?? []}>
-																{(deployment, index) => (
+															<For each={(!deployments.error && deployments()) || []}>
+																{(deployment) => (
 																	<details
 																		class="group"
-																		open={index() === 0}
+																		open={selectedDeploymentId() === deployment.id}
 																		onToggle={(e) => {
-																			if ((e.currentTarget as HTMLDetailsElement).open) {
-																				setSelectedDeploymentId(deployment.id);
-																				deploymentLogStream.connect();
-																			}
+																			if (!(e.currentTarget as HTMLDetailsElement).open) return;
+																			// the log stream effect reconnects when the selection changes
+																			setSelectedDeploymentId(deployment.id);
 																		}}
 																	>
 																		<summary class="flex items-center gap-3 px-4 py-3 cursor-pointer list-none select-none hover:bg-secondary transition-colors">

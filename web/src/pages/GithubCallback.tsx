@@ -7,6 +7,7 @@ import { PublicShell } from '../components/Shell';
 import { describeError } from '../utils/format';
 
 const TOKEN_KEY = 'containr_token';
+const USER_KEY = 'containr_user';
 
 const GithubCallback = () => {
   const navigate = useNavigate();
@@ -28,6 +29,8 @@ const GithubCallback = () => {
         setMessage('finishing github sign-in...');
         const response = await finishGithubLogin(code, state);
         localStorage.setItem(TOKEN_KEY, response.token);
+        // replace any cached user from a previous session
+        localStorage.setItem(USER_KEY, JSON.stringify(response.user));
         window.location.replace('/services');
         return;
       }
