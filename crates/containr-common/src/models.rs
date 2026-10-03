@@ -442,7 +442,9 @@ impl ContainerService {
 
     /// returns true when the given custom domain should enforce https
     pub fn domain_https_enabled(&self, domain: &str) -> bool {
-        self.https_domains().iter().any(|existing| existing == domain)
+        self.https_domains()
+            .iter()
+            .any(|existing| existing == domain)
     }
 
     /// infers a service type from port and exposure flags

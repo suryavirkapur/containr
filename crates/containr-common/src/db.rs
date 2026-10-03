@@ -23,10 +23,8 @@ use crate::managed_services::{
     QueueCredentials, QueueType, ServiceStatus, StorageBucket,
 };
 use crate::models::{
-    App, BuildArg, Certificate, ContainerService, Deployment, DeploymentStatus,
-    EnvVar, GithubAppConfig, GithubInstallation, HealthCheck, HttpRequestLog,
-    Project, RestartPolicy, RolloutStrategy, ServiceDeployment, ServiceHealth,
-    ServiceMount, ServiceRegistryAuth, ServiceType, User,
+    App, Certificate, ContainerService, Deployment, DeploymentStatus,
+    GithubAppConfig, HttpRequestLog, Project, ServiceDeployment, User,
 };
 use crate::service_inventory::{
     summarize_app_service_runtime, ServiceInventoryItem, ServiceResourceKind,
@@ -291,10 +289,7 @@ impl Database {
         self.store.delete_certificate(id)
     }
 
-    pub fn delete_certificate_by_domain(
-        &self,
-        domain: &str,
-    ) -> Result<bool> {
+    pub fn delete_certificate_by_domain(&self, domain: &str) -> Result<bool> {
         self.store.delete_certificate_by_domain(domain)
     }
 
@@ -759,12 +754,33 @@ impl SqliteDatabase {
             .bind(app.updated_at.to_rfc3339())
             .execute(&mut *tx).await.map_err(Error::from)?;
 
-            sqlx::query("DELETE FROM services WHERE app_id = ?")
-                .bind(app.id.to_string())
-                .execute(&mut *tx).await.map_err(Error::from)?;
-
+            // upsert instead of delete + reinsert: deleting a service row
+            // cascades to its service_deployments history.
             for svc in &app.services {
                 insert_service(&mut tx, svc).await?;
+            }
+
+            let existing: Vec<String> =
+                sqlx::query_scalar("SELECT id FROM services WHERE app_id = ?")
+                    .bind(app.id.to_string())
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(Error::from)?;
+            let keep: std::collections::HashSet<String> =
+                app.services.iter().map(|s| s.id.to_string()).collect();
+            for id in existing.into_iter().filter(|id| !keep.contains(id)) {
+                sqlx::query("DELETE FROM services WHERE id = ?")
+                    .bind(&id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(Error::from)?;
+                sqlx::query(
+                    "DELETE FROM http_request_logs WHERE service_id = ?",
+                )
+                .bind(&id)
+                .execute(&mut *tx)
+                .await
+                .map_err(Error::from)?;
             }
 
             tx.commit().await.map_err(Error::from)?;
@@ -875,46 +891,9 @@ impl SqliteDatabase {
     // ==================== SERVICE ====================
     fn save_service(&self, svc: &ContainerService) -> Result<()> {
         self.run(async {
-            let health_check = svc.health_check.as_ref().map(|h| serde_json::to_string(h).unwrap_or_default());
-            let registry_auth = svc.registry_auth.as_ref().map(|r| serde_json::to_string(r).unwrap_or_default());
-            let command = svc.command.as_ref().map(|c| serde_json::to_string(c).unwrap_or_default());
-            let entrypoint = svc.entrypoint.as_ref().map(|e| serde_json::to_string(e).unwrap_or_default());
-
-            sqlx::query(
-                r#"INSERT INTO services (id, app_id, name, image, service_type, port, expose_http, additional_ports, replicas, memory_limit, cpu_limit, depends_on, health_check, restart_policy, registry_auth, env_vars, domains, http_only_domains, build_context, dockerfile_path, build_target, build_args, command, entrypoint, working_dir, schedule, mounts, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, name=excluded.name, image=excluded.image, service_type=excluded.service_type, port=excluded.port, expose_http=excluded.expose_http, additional_ports=excluded.additional_ports, replicas=excluded.replicas, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, depends_on=excluded.depends_on, health_check=excluded.health_check, restart_policy=excluded.restart_policy, registry_auth=excluded.registry_auth, env_vars=excluded.env_vars, domains=excluded.domains, http_only_domains=excluded.http_only_domains, build_context=excluded.build_context, dockerfile_path=excluded.dockerfile_path, build_target=excluded.build_target, build_args=excluded.build_args, command=excluded.command, entrypoint=excluded.entrypoint, working_dir=excluded.working_dir, schedule=excluded.schedule, mounts=excluded.mounts, created_at=excluded.created_at, updated_at=excluded.updated_at"#
-            )
-            .bind(svc.id.to_string())
-            .bind(svc.app_id.to_string())
-            .bind(&svc.name)
-            .bind(&svc.image)
-            .bind(serde_json::to_string(&svc.service_type)?)
-            .bind(svc.port as i64)
-            .bind(if svc.expose_http { 1 } else { 0 })
-            .bind(serde_json::to_string(&svc.additional_ports)?)
-            .bind(svc.replicas as i64)
-            .bind(svc.memory_limit.map(|m| m.to_string()))
-            .bind(svc.cpu_limit.map(|c| c.to_string()))
-            .bind(serde_json::to_string(&svc.depends_on)?)
-            .bind(health_check)
-            .bind(serde_json::to_string(&svc.restart_policy)?)
-            .bind(registry_auth)
-            .bind(serde_json::to_string(&svc.env_vars)?)
-            .bind(serde_json::to_string(&svc.domains)?)
-            .bind(serde_json::to_string(&svc.http_only_domains)?)
-            .bind(&svc.build_context)
-            .bind(&svc.dockerfile_path)
-            .bind(&svc.build_target)
-            .bind(serde_json::to_string(&svc.build_args)?)
-            .bind(command)
-            .bind(entrypoint)
-            .bind(&svc.working_dir)
-            .bind(&svc.schedule)
-            .bind(serde_json::to_string(&svc.mounts)?)
-            .bind(svc.created_at.to_rfc3339())
-            .bind(svc.updated_at.to_rfc3339())
-            .execute(&self.pool).await.map_err(Error::from)?;
+            let mut tx = self.pool.begin().await.map_err(Error::from)?;
+            insert_service(&mut tx, svc).await?;
+            tx.commit().await.map_err(Error::from)?;
             Ok(())
         })
     }
@@ -1056,7 +1035,7 @@ impl SqliteDatabase {
             .bind(dep.id.to_string())
             .bind(dep.app_id.to_string())
             .bind(&dep.commit_sha)
-            .bind(&dep.commit_message)
+            .bind(dep.commit_message.as_deref().unwrap_or(""))
             .bind(&dep.branch)
             .bind(&dep.source_url)
             .bind(serde_json::to_string(&dep.rollout_strategy)?)
@@ -1082,7 +1061,7 @@ impl SqliteDatabase {
                 )
                 .bind(sd.id.to_string())
                 .bind(sd.service_id.to_string())
-                .bind(sd.deployment_id.to_string())
+                .bind(dep.id.to_string())
                 .bind(sd.replica_index as i64)
                 .bind(serde_json::to_string(&sd.status)?)
                 .bind(&sd.container_id)
@@ -1241,7 +1220,7 @@ impl SqliteDatabase {
                 .fetch_all(&self.pool).await.map_err(Error::from)?;
             rows.into_iter().map(|r| {
                 let v: String = r.try_get("value").map_err(Error::from)?;
-                Ok(serde_json::from_str(&v).map_err(Error::from)?)
+                serde_json::from_str(&v).map_err(Error::from)
             }).collect()
         })
     }
@@ -1265,7 +1244,7 @@ impl SqliteDatabase {
             sqlx::query(
                 r#"INSERT INTO certificates (id, domain, cert_pem, key_pem, expires_at, created_at)
                    VALUES (?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(id) DO UPDATE SET domain=excluded.domain, cert_pem=excluded.cert_pem, key_pem=excluded.key_pem, expires_at=excluded.expires_at, created_at=excluded.created_at"#
+                   ON CONFLICT(domain) DO UPDATE SET cert_pem=excluded.cert_pem, key_pem=excluded.key_pem, expires_at=excluded.expires_at, created_at=excluded.created_at"#
             )
             .bind(cert.id.to_string())
             .bind(&cert.domain)
@@ -1294,13 +1273,12 @@ impl SqliteDatabase {
         domain: &str,
     ) -> Result<Option<Certificate>> {
         self.run(async {
-            let row = sqlx::query(
-                "SELECT * FROM certificates WHERE domain = ?",
-            )
-            .bind(domain)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(Error::from)?;
+            let row =
+                sqlx::query("SELECT * FROM certificates WHERE domain = ?")
+                    .bind(domain)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(Error::from)?;
             row_to_certificate(row.as_ref())
         })
     }
@@ -1559,6 +1537,17 @@ impl SqliteDatabase {
     // ==================== GITHUB APP ====================
     fn save_github_app(&self, app: &GithubAppConfig) -> Result<()> {
         self.run(async {
+            let mut tx = self.pool.begin().await.map_err(Error::from)?;
+
+            // one github app per owner: drop stale configs so a re-created
+            // app isn't shadowed by the old credentials.
+            sqlx::query("DELETE FROM github_apps WHERE owner_id = ? AND id != ?")
+                .bind(app.owner_id.to_string())
+                .bind(app.id.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(Error::from)?;
+
             sqlx::query(
                 r#"INSERT INTO github_apps (id, app_id, app_name, client_id, client_secret, private_key, webhook_secret, html_url, owner_id, installations, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1576,7 +1565,9 @@ impl SqliteDatabase {
             .bind(serde_json::to_string(&app.installations)?)
             .bind(app.created_at.to_rfc3339())
             .bind(app.updated_at.to_rfc3339())
-            .execute(&self.pool).await.map_err(Error::from)?;
+            .execute(&mut *tx).await.map_err(Error::from)?;
+
+            tx.commit().await.map_err(Error::from)?;
             Ok(())
         })
     }
@@ -1811,7 +1802,7 @@ fn row_to_service_deployment(
             .try_get::<i64, _>("replica_index")
             .map_err(Error::from)? as u32,
         status: serde_json::from_str(&status)
-            .unwrap_or_else(|_| DeploymentStatus::Pending),
+            .unwrap_or(DeploymentStatus::Pending),
         container_id: row.try_get("container_id").map_err(Error::from)?,
         image_id: row.try_get("image_id").map_err(Error::from)?,
         health: serde_json::from_str(&health).unwrap_or_default(),
@@ -1847,8 +1838,10 @@ fn row_to_deployment(row: Option<&SqliteRow>) -> Result<Option<Deployment>> {
         .map_err(Error::from)?;
     let app_snapshot: Option<String> =
         row.try_get("app_snapshot").map_err(Error::from)?;
-    let commit_message: Option<String> =
-        row.try_get("commit_message").map_err(Error::from)?;
+    let commit_message: Option<String> = row
+        .try_get::<Option<String>, _>("commit_message")
+        .map_err(Error::from)?
+        .filter(|message| !message.is_empty());
     let source_url: Option<String> =
         row.try_get("source_url").map_err(Error::from)?;
     let rollout_strategy: String =
@@ -1877,7 +1870,7 @@ fn row_to_deployment(row: Option<&SqliteRow>) -> Result<Option<Deployment>> {
             .and_then(|s| Uuid::parse_str(&s).ok()),
         app_snapshot: app_snapshot.and_then(|s| serde_json::from_str(&s).ok()),
         status: serde_json::from_str(&status)
-            .unwrap_or_else(|_| DeploymentStatus::Pending),
+            .unwrap_or(DeploymentStatus::Pending),
         container_id,
         image_id,
         service_deployments: Vec::new(),
@@ -1964,7 +1957,7 @@ fn row_to_managed_database(
         group_id: group_id.and_then(|s| Uuid::parse_str(&s).ok()),
         name: row.try_get("name").map_err(Error::from)?,
         db_type: serde_json::from_str(&db_type)
-            .unwrap_or_else(|_| DatabaseType::Postgresql),
+            .unwrap_or(DatabaseType::Postgresql),
         version: row.try_get("version").map_err(Error::from)?,
         container_id,
         volume_name: row.try_get("volume_name").map_err(Error::from)?,
@@ -1996,8 +1989,7 @@ fn row_to_managed_database(
         }),
         memory_limit: memory_limit.parse().unwrap_or_default(),
         cpu_limit: cpu_limit.parse().unwrap_or_default(),
-        status: serde_json::from_str(&status)
-            .unwrap_or_else(|_| ServiceStatus::Pending),
+        status: serde_json::from_str(&status).unwrap_or(ServiceStatus::Pending),
         created_at: DateTime::parse_from_rfc3339(&created_at)
             .map_err(|e| Error::Internal(e.to_string()))?
             .with_timezone(&Utc),
@@ -2041,7 +2033,7 @@ fn row_to_managed_queue(
         group_id: group_id.and_then(|s| Uuid::parse_str(&s).ok()),
         name: row.try_get("name").map_err(Error::from)?,
         queue_type: serde_json::from_str(&queue_type)
-            .unwrap_or_else(|_| QueueType::Rabbitmq),
+            .unwrap_or(QueueType::Rabbitmq),
         version: row.try_get("version").map_err(Error::from)?,
         container_id,
         volume_name: row.try_get("volume_name").map_err(Error::from)?,
@@ -2057,8 +2049,7 @@ fn row_to_managed_queue(
         }),
         memory_limit: memory_limit.parse().unwrap_or_default(),
         cpu_limit: cpu_limit.parse().unwrap_or_default(),
-        status: serde_json::from_str(&status)
-            .unwrap_or_else(|_| ServiceStatus::Pending),
+        status: serde_json::from_str(&status).unwrap_or(ServiceStatus::Pending),
         created_at: DateTime::parse_from_rfc3339(&created_at)
             .map_err(|e| Error::Internal(e.to_string()))?
             .with_timezone(&Utc),
@@ -2215,4 +2206,119 @@ fn ensure_parent_dir(path: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{GithubAppConfigBuilder, User};
+
+    fn open_temp_db() -> (Database, std::path::PathBuf) {
+        let dir = std::env::temp_dir()
+            .join(format!("containr-db-test-{}", Uuid::new_v4()));
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            panic!("failed to create temp dir: {e}");
+        }
+        let config = DatabaseConfig {
+            path: dir.join("test.sqlite3").to_string_lossy().into_owned(),
+        };
+        match Database::open(&config) {
+            Ok(db) => (db, dir),
+            Err(e) => panic!("failed to open db: {e}"),
+        }
+    }
+
+    fn seed_app(db: &Database) -> App {
+        let user = User::new_with_password(
+            format!("{}@example.com", Uuid::new_v4()),
+            "hash".to_string(),
+        );
+        db.save_user(&user).expect("save user");
+        let mut app = App::new(
+            "app".to_string(),
+            "https://github.com/a/b".to_string(),
+            user.id,
+        );
+        app.services.push(ContainerService::new(
+            app.id,
+            "web".to_string(),
+            "nginx".to_string(),
+            80,
+        ));
+        db.save_app(&app).expect("save app");
+        app
+    }
+
+    #[test]
+    fn save_app_keeps_service_deployment_history() {
+        let (db, dir) = open_temp_db();
+        let mut app = seed_app(&db);
+        let svc_id = app.services[0].id;
+
+        let mut dep = Deployment::new(app.id, "abc".to_string());
+        assert!(dep.commit_message.is_none());
+        dep.service_deployments
+            .push(ServiceDeployment::new(svc_id, dep.id, 0));
+        db.save_deployment(&dep)
+            .expect("save deployment w/o message");
+
+        app.name = "renamed".to_string();
+        db.save_app(&app).expect("resave app");
+        let history = db
+            .list_service_deployments_by_service(svc_id)
+            .expect("list service deployments");
+        assert_eq!(history.len(), 1);
+
+        app.services.clear();
+        db.save_app(&app).expect("save app without services");
+        assert!(db.get_service(svc_id).expect("get service").is_none());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn save_certificate_replaces_existing_domain() {
+        let (db, dir) = open_temp_db();
+        let first = Certificate::new(
+            "example.com".to_string(),
+            "old".to_string(),
+            "old".to_string(),
+            Utc::now(),
+        );
+        db.save_certificate(&first).expect("save first cert");
+        let renewed = Certificate::new(
+            "example.com".to_string(),
+            "new".to_string(),
+            "new".to_string(),
+            Utc::now(),
+        );
+        db.save_certificate(&renewed).expect("save renewed cert");
+        let stored = db
+            .get_certificate_by_domain("example.com")
+            .expect("get cert")
+            .expect("cert exists");
+        assert_eq!(stored.cert_pem, "new");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn save_github_app_replaces_previous_config() {
+        let (db, dir) = open_temp_db();
+        let app = seed_app(&db);
+        let build = |app_id: i64| {
+            GithubAppConfigBuilder::new(app_id, "a", app.owner_id)
+                .webhook_secret("w")
+                .build()
+        };
+        db.save_github_app(&build(1)).expect("save first");
+        db.save_github_app(&build(2)).expect("save second");
+        let stored = db
+            .get_github_app(app.owner_id)
+            .expect("get github app")
+            .expect("exists");
+        assert_eq!(stored.app_id, 2);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
