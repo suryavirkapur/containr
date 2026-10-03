@@ -2,6 +2,7 @@ import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 
 import { getServiceLogs } from "../api/services";
 
+const MAX_RECONNECT_ATTEMPTS = 5;
 const ESC_CODE = 27;
 const ESC = String.fromCharCode(ESC_CODE);
 const ANSI_PATTERN = new RegExp(`${ESC}\\[[0-9;]*[a-zA-Z]`, "g");
@@ -30,6 +31,7 @@ export const useLogStream = (
 	let ws: WebSocket | null = null;
 	let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 	let manuallyDisconnected = false;
+	let reconnectAttempts = 0;
 
 	const buildWsUrl = () => {
 		const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -73,15 +75,21 @@ export const useLogStream = (
 		setError(null);
 
 		try {
+			// handlers ignore events from a replaced socket so a late onclose
+			// can't orphan the live connection or schedule a second reconnect.
 			ws?.close();
-			ws = new WebSocket(buildWsUrl());
+			const socket = new WebSocket(buildWsUrl());
+			ws = socket;
 
-			ws.onopen = () => {
+			socket.onopen = () => {
+				if (ws !== socket) return;
+				reconnectAttempts = 0;
 				setIsStreaming(true);
 				setError(null);
 			};
 
-			ws.onmessage = (event: MessageEvent<string>) => {
+			socket.onmessage = (event: MessageEvent<string>) => {
+				if (ws !== socket) return;
 				const lines: string[] = event.data
 					.split("\n")
 					.filter(Boolean)
@@ -93,20 +101,27 @@ export const useLogStream = (
 				});
 			};
 
-			ws.onerror = () => {
+			socket.onerror = () => {
+				if (ws !== socket) return;
 				setError("WebSocket connection failed");
 				setIsStreaming(false);
 			};
 
-			ws.onclose = () => {
+			socket.onclose = () => {
+				if (ws !== socket) return;
 				setIsStreaming(false);
 				ws = null;
 				if (!manuallyDisconnected && autoConnect && serviceId()) {
-					setError("Disconnected from log stream");
+					if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+						setError("Disconnected from log stream");
+						return;
+					}
+					reconnectAttempts += 1;
+					setError("Disconnected from log stream, reconnecting...");
 					reconnectTimeout = setTimeout(() => {
 						reconnectTimeout = null;
 						connect();
-					}, 2000);
+					}, 2000 * reconnectAttempts);
 				}
 			};
 		} catch {
@@ -117,6 +132,7 @@ export const useLogStream = (
 
 	const disconnect = (manual = true) => {
 		manuallyDisconnected = manual;
+		if (manual) reconnectAttempts = 0;
 		ws?.close();
 		ws = null;
 		if (reconnectTimeout) {
