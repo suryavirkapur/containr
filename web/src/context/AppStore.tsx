@@ -1,5 +1,6 @@
-import { createContext, type JSX, useContext } from "solid-js";
-import { createStore, type SetStoreFunction } from "solid-js/store";
+import { createContext, createSignal, type JSX, useContext } from "solid-js";
+import { createStore, reconcile, type SetStoreFunction } from "solid-js/store";
+import { errorMessage } from "../api/http";
 import {
 	createService as apiCreateService,
 	deleteService as apiDeleteService,
@@ -24,8 +25,10 @@ interface AppState {
 
 interface AppStoreValue {
 	state: AppState;
+	/** true once the first service list request succeeded */
+	loaded: () => boolean;
 	set: SetStoreFunction<AppState>;
-	loadServices: () => Promise<void>;
+	loadServices: (silent?: boolean) => Promise<void>;
 	refreshAll: () => Promise<void>;
 	runAction: (id: string, action: ServiceAction) => Promise<Service>;
 	removeService: (id: string) => Promise<void>;
@@ -51,16 +54,19 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 export const AppStoreProvider = (props: { children: JSX.Element }) => {
 	const [state, set] = createStore<AppState>({ ...initialState });
 
-	const loadServices = async () => {
-		set("servicesLoading", true);
-		set("servicesError", null);
+	const [loaded, setLoaded] = createSignal(false);
+
+	const loadServices = async (silent = false) => {
+		if (!silent) set("servicesLoading", true);
 		try {
 			const data = await listServices();
-			set("services", data);
+			set("services", reconcile(data, { key: "id" }));
+			set("servicesError", null);
+			setLoaded(true);
 		} catch (error) {
-			set("servicesError", error instanceof Error ? error.message : "Failed to load services");
+			if (!silent) set("servicesError", errorMessage(error, "Failed to load services"));
 		} finally {
-			set("servicesLoading", false);
+			if (!silent) set("servicesLoading", false);
 		}
 	};
 
@@ -159,6 +165,7 @@ export const AppStoreProvider = (props: { children: JSX.Element }) => {
 		<AppStoreContext.Provider
 			value={{
 				state,
+				loaded,
 				set,
 				loadServices,
 				refreshAll,

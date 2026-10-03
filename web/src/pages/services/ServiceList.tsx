@@ -1,278 +1,354 @@
-import { A, useNavigate, useSearchParams } from '@solidjs/router';
+import { A, useNavigate, useSearchParams } from "@solidjs/router";
+import Boxes from "lucide-solid/icons/boxes";
+import MoreHorizontal from "lucide-solid/icons/ellipsis";
+import ExternalLink from "lucide-solid/icons/external-link";
+import LayoutGrid from "lucide-solid/icons/layout-grid";
+import List from "lucide-solid/icons/list";
+import Play from "lucide-solid/icons/play";
+import Plus from "lucide-solid/icons/plus";
+import RotateCw from "lucide-solid/icons/rotate-cw";
+import Search from "lucide-solid/icons/search";
+import Square from "lucide-solid/icons/square";
+import Trash from "lucide-solid/icons/trash";
+import { type Component, createMemo, For, Match, Show, Switch } from "solid-js";
+import type { Service } from "../../api/services";
+import { useBreadcrumbs } from "../../components/layout/breadcrumbs";
 import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-} from 'solid-js';
-import type { Service } from '../api/services';
-import { EmptyBlock, LoadingBlock, Notice, PageTitle, Panel } from '../components/Plain';
-import { StatusBadge } from '../components/StatusBadge';
-import { useAppStore } from '../context/AppStore';
-import { describeError, formatDateTime } from '../utils/format';
+	Badge,
+	cx,
+	EmptyState,
+	Input,
+	LinkButton,
+	PageHeader,
+	Segmented,
+	Select,
+	Skeleton,
+	StatusBadge,
+} from "../../components/ui";
+import { confirm, DropdownMenu, toast } from "../../components/ui/overlay";
+import { useAppStore } from "../../context/AppStore";
+import { timeAgo } from "../../lib/format";
 import {
-  groupServices,
-  humanize,
-  type ServiceGroup,
-} from '../utils/service-groups';
+	displayHost,
+	instancesLabel,
+	isManaged,
+	primaryUrl,
+	ServiceIcon,
+	typeLabel,
+} from "../../lib/services";
 
-const endpointFor = (service: Service): string =>
-  service.default_urls[0] ??
-  service.proxy_connection_string ??
-  service.connection_string ??
-  (service.internal_host && service.port
-    ? `${service.internal_host}:${service.port}`
-    : 'internal only');
+type Kind = "all" | "apps" | "data";
+type View = "list" | "grid";
 
-const ProjectCard = (props: {
-  group: ServiceGroup;
-  isActive: boolean;
-  onClick: () => void;
-}) => (
-  <div
-    class={`cr-project-card ${props.isActive ? 'bg-secondary' : ''}`}
-    onClick={props.onClick}
-  >
-    <div class="flex items-start justify-between mb-2">
-      <span class="text-sm font-medium">{props.group.label}</span>
-      <span class="text-xs text-muted-foreground">
-        {props.group.services.length} service{props.group.services.length !== 1 ? 's' : ''}
-      </span>
-    </div>
-    <div class="flex flex-wrap gap-1">
-      <For each={props.group.services.slice(0, 3)}>
-        {(svc) => (
-          <span class="cr-chip">{svc.name}</span>
-        )}
-      </For>
-      <Show when={props.group.services.length > 3}>
-        <span class="cr-chip text-muted-foreground">
-          +{props.group.services.length - 3} more
-        </span>
-      </Show>
-      <Show when={props.group.services.length === 0}>
-        <span class="text-xs text-muted-foreground">No services</span>
-      </Show>
-    </div>
-  </div>
-);
+const readParam = (value: string | string[] | undefined) =>
+	(Array.isArray(value) ? value[0] : value) ?? "";
+
+export const ServiceActions: Component<{ service: Service }> = (props) => {
+	const store = useAppStore();
+	const navigate = useNavigate();
+
+	const act = async (action: "start" | "stop" | "restart") => {
+		try {
+			await store.runAction(props.service.id, action);
+			toast.success(
+				`${action === "stop" ? "Stopping" : action === "start" ? "Starting" : "Restarting"} ${props.service.name}`,
+			);
+		} catch (error) {
+			toast.error(`Could not ${action} ${props.service.name}`, error);
+		}
+	};
+
+	const remove = async () => {
+		const ok = await confirm({
+			title: `Delete ${props.service.name}?`,
+			description: isManaged(props.service)
+				? "The container and its data volume are removed. This cannot be undone."
+				: "All containers, deployments and logs for this service are removed. This cannot be undone.",
+			confirmLabel: "Delete service",
+			danger: true,
+			typeToConfirm: props.service.name,
+		});
+		if (!ok) return;
+		try {
+			await store.removeService(props.service.id);
+			toast.success(`Deleted ${props.service.name}`);
+		} catch (error) {
+			toast.error("Delete failed", error);
+		}
+	};
+
+	return (
+		<DropdownMenu
+			trigger={(trigger) => (
+				<button
+					type="button"
+					class="btn btn-ghost btn-icon btn-sm"
+					aria-label="Service actions"
+					{...trigger}
+				>
+					<MoreHorizontal />
+				</button>
+			)}
+			items={[
+				{
+					label: "Open",
+					icon: <Boxes />,
+					onSelect: () => navigate(`/services/${props.service.id}`),
+				},
+				...(primaryUrl(props.service)
+					? [
+							{
+								label: "Visit site",
+								icon: <ExternalLink />,
+								onSelect: () => window.open(primaryUrl(props.service) ?? "", "_blank", "noopener"),
+							},
+						]
+					: []),
+				{ separator: true as const },
+				props.service.status === "stopped"
+					? { label: "Start", icon: <Play />, onSelect: () => void act("start") }
+					: { label: "Stop", icon: <Square />, onSelect: () => void act("stop") },
+				{ label: "Restart", icon: <RotateCw />, onSelect: () => void act("restart") },
+				{ separator: true as const },
+				{ label: "Delete", icon: <Trash />, danger: true, onSelect: () => void remove() },
+			]}
+		/>
+	);
+};
 
 const Services = () => {
-  const store = useAppStore();
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [query, setQuery] = createSignal('');
-  const [actionError, setActionError] = createSignal<string | null>(null);
+	useBreadcrumbs(() => [{ label: "Services" }]);
+	const store = useAppStore();
+	const navigate = useNavigate();
+	const [params, setParams] = useSearchParams();
 
-  createEffect(() => {
-    void store.loadServices();
-  });
+	const query = () => readParam(params.q);
+	const kind = () => (readParam(params.kind) || "all") as Kind;
+	const project = () => readParam(params.project);
+	const view = () => (readParam(params.view) || "list") as View;
 
-  const pollInterval = setInterval(() => void store.loadServices(), 30000);
-  onCleanup(() => clearInterval(pollInterval));
+	const projects = createMemo(() => {
+		const seen = new Map<string, string>();
+		for (const service of store.state.services) {
+			if (service.group_id) seen.set(service.group_id, service.project_name ?? "Untitled project");
+		}
+		return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+	});
 
-  const allServices = createMemo(() => store.state.services);
-  const groups = createMemo(() => {
-    // Only named groups (project_name set) = real "projects"
-    const all = groupServices(allServices());
-    return all.filter((g) => g.id !== null);
-  });
+	const filtered = createMemo(() => {
+		const needle = query().trim().toLowerCase();
+		return store.state.services
+			.filter((service) => {
+				if (kind() === "apps" && isManaged(service)) return false;
+				if (kind() === "data" && !isManaged(service)) return false;
+				if (project() && service.group_id !== project()) return false;
+				if (!needle) return true;
+				return [service.name, service.project_name ?? "", service.image ?? "", ...service.domains]
+					.join(" ")
+					.toLowerCase()
+					.includes(needle);
+			})
+			.sort((a, b) => a.name.localeCompare(b.name));
+	});
 
-  const filteredServices = createMemo(() => {
-    const needle = query().trim().toLowerCase();
-    const activeGroup = searchParams.group ?? null;
+	return (
+		<div class="animate-fade-in">
+			<PageHeader
+				title="Services"
+				description="Apps, workers, cron jobs and databases running on this server."
+				actions={
+					<LinkButton href="/new" variant="primary">
+						<Plus />
+						New service
+					</LinkButton>
+				}
+			/>
 
-    return allServices().filter((svc) => {
-      if (
-        needle &&
-        ![
-          svc.name,
-          svc.service_type,
-          svc.resource_kind,
-          svc.network_name,
-          svc.project_name ?? '',
-          endpointFor(svc),
-        ]
-          .join(' ')
-          .toLowerCase()
-          .includes(needle)
-      ) {
-        return false;
-      }
+			<div class="mb-4 flex flex-wrap items-center gap-2">
+				<div class="relative min-w-[220px] flex-1">
+					<Search
+						width={15}
+						height={15}
+						class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-fg-faint"
+					/>
+					<Input
+						class="pl-8"
+						placeholder="Filter by name, image or domain"
+						value={query()}
+						onInput={(event) =>
+							setParams({ q: event.currentTarget.value || undefined }, { replace: true })
+						}
+					/>
+				</div>
+				<Select
+					class="w-auto min-w-[160px]"
+					value={project()}
+					onChange={(event) => setParams({ project: event.currentTarget.value || undefined })}
+				>
+					<option value="">All projects</option>
+					<For each={projects()}>{([id, name]) => <option value={id}>{name}</option>}</For>
+				</Select>
+				<Segmented<Kind>
+					value={kind()}
+					onChange={(value) => setParams({ kind: value === "all" ? undefined : value })}
+					options={[
+						{ value: "all", label: "All" },
+						{ value: "apps", label: "Apps" },
+						{ value: "data", label: "Databases" },
+					]}
+				/>
+				<Segmented<View>
+					value={view()}
+					onChange={(value) => setParams({ view: value === "list" ? undefined : value })}
+					options={[
+						{ value: "list", label: <List width={14} height={14} /> },
+						{ value: "grid", label: <LayoutGrid width={14} height={14} /> },
+					]}
+				/>
+			</div>
 
-      if (activeGroup) {
-        const key = svc.group_id ?? null;
-        if (key !== activeGroup) return false;
-      }
-
-      return true;
-    });
-  });
-
-  const setGroupFilter = (groupId: string | null) => {
-    setSearchParams({ group: groupId ?? undefined });
-  };
-
-  const activeGroupMeta = createMemo(() => {
-    const g = searchParams.group;
-    if (!g) return null;
-    return groups().find((gr) => gr.id === g) ?? null;
-  });
-
-  return (
-    <div class="flex flex-col gap-6">
-      <PageTitle
-        title="Services"
-        actions={
-          <A href="/services/new" class="cr-btn cr-btn-primary">
-            + New Service
-          </A>
-        }
-      />
-
-      <Show when={actionError()}>
-        {(msg) => <Notice tone="error">{msg()}</Notice>}
-      </Show>
-
-      {/* Projects section */}
-      <Show when={groups().length > 0 || true}>
-        <div>
-          <div class="flex items-center justify-between mb-3">
-            <h2 class="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Projects
-            </h2>
-            <Show when={searchParams.group}>
-              <button
-                type="button"
-                onClick={() => setGroupFilter(null)}
-                class="text-xs text-muted-foreground hover:text-foreground"
-              >
-                Show all
-              </button>
-            </Show>
-          </div>
-          <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            <For each={groups()}>
-              {(group) => (
-                <ProjectCard
-                  group={group}
-                  isActive={searchParams.group === group.id}
-                  onClick={() =>
-                    setGroupFilter(
-                      searchParams.group === group.id ? null : group.id,
-                    )
-                  }
-                />
-              )}
-            </For>
-            <button
-              type="button"
-              class="cr-project-card-new"
-              onClick={() => navigate('/services/new')}
-            >
-              <span>+</span>
-              <span>New project</span>
-            </button>
-          </div>
-        </div>
-      </Show>
-
-      {/* Services table */}
-      <div>
-        <div class="flex items-center justify-between mb-3 gap-4">
-          <h2 class="text-xs font-medium uppercase tracking-widest text-muted-foreground shrink-0">
-            {activeGroupMeta()
-              ? `${activeGroupMeta()!.label} — Services`
-              : 'All Services'}
-          </h2>
-          <input
-            class="cr-input max-w-xs"
-            value={query()}
-            onInput={(e) => setQuery(e.currentTarget.value)}
-            placeholder="Search..."
-          />
-        </div>
-
-        <Show when={store.state.servicesError}>
-          <Notice tone="error">
-            Failed to load:{' '}{store.state.servicesError}
-          </Notice>
-        </Show>
-
-        <Show when={store.state.servicesLoading}>
-          <LoadingBlock message="Loading services..." />
-        </Show>
-
-        <Show
-          when={!store.state.servicesLoading && filteredServices().length === 0}
-        >
-          <EmptyBlock title="No services found" />
-        </Show>
-
-        <Show
-          when={!store.state.servicesLoading && filteredServices().length > 0}
-        >
-          <div class="cr-panel overflow-x-auto">
-            <table class="cr-table min-w-[680px]">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th>Project</th>
-                  <th>Endpoint</th>
-                  <th>Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={filteredServices()}>
-                  {(svc) => (
-                    <tr
-                      class="cursor-pointer"
-                      onClick={() => navigate(`/services/${svc.id}`)}
-                    >
-                      <td>
-                        <div class="flex flex-col gap-0.5">
-                          <A
-                            class="text-sm font-medium hover:underline"
-                            href={`/services/${svc.id}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {svc.name}
-                          </A>
-                          <div class="flex flex-wrap gap-1">
-                            <span class="cr-chip">
-                              {humanize(svc.service_type)}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <StatusBadge status={svc.status} />
-                      </td>
-                      <td class="text-muted-foreground text-xs">
-                        {svc.project_name ?? '—'}
-                      </td>
-                      <td>
-                        <span class="font-mono text-xs text-muted-foreground">
-                          {endpointFor(svc).slice(0, 32)}
-                          {endpointFor(svc).length > 32 ? '…' : ''}
-                        </span>
-                      </td>
-                      <td class="text-xs text-muted-foreground">
-                        {formatDateTime(svc.updated_at)}
-                      </td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
-          </div>
-        </Show>
-      </div>
-    </div>
-  );
+			<Switch>
+				<Match when={!store.loaded() && store.state.servicesLoading}>
+					<div class="card space-y-3 p-4">
+						<Skeleton class="h-10" />
+						<Skeleton class="h-10" />
+						<Skeleton class="h-10" />
+					</div>
+				</Match>
+				<Match when={store.state.services.length === 0}>
+					<EmptyState
+						icon={<Boxes />}
+						title="Deploy your first service"
+						description="Build from a Git repository, run any Docker image, or start from a one-click app."
+					>
+						<LinkButton href="/new" variant="primary">
+							<Plus />
+							New service
+						</LinkButton>
+						<LinkButton href="/apps">Browse one-click apps</LinkButton>
+					</EmptyState>
+				</Match>
+				<Match when={filtered().length === 0}>
+					<EmptyState
+						icon={<Search />}
+						title="No matching services"
+						description="Try a different filter."
+					/>
+				</Match>
+				<Match when={view() === "grid"}>
+					<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+						<For each={filtered()}>
+							{(service) => (
+								<A href={`/services/${service.id}`} class="card card-interactive flex flex-col p-4">
+									<div class="flex items-start gap-3">
+										<ServiceIcon type={service.service_type} size="lg" />
+										<div class="min-w-0 flex-1">
+											<div class="truncate text-[14px] font-semibold">{service.name}</div>
+											<div class="truncate text-[12.5px] text-fg-subtle">
+												{typeLabel(service.service_type)}
+												{service.project_name ? ` · ${service.project_name}` : ""}
+											</div>
+										</div>
+										<ServiceActions service={service} />
+									</div>
+									<div class="mt-4 min-h-[20px] truncate text-[12.5px] text-fg-muted">
+										<Show
+											when={primaryUrl(service)}
+											fallback={
+												<span class="text-fg-faint">
+													{service.internal_host ?? "No public URL"}
+												</span>
+											}
+										>
+											{(url) => displayHost(url())}
+										</Show>
+									</div>
+									<div class="mt-4 flex items-center justify-between border-t border-border pt-3">
+										<StatusBadge status={service.status} />
+										<span class="text-[12px] text-fg-faint">{timeAgo(service.updated_at)}</span>
+									</div>
+								</A>
+							)}
+						</For>
+					</div>
+				</Match>
+				<Match when={true}>
+					<div class="card overflow-x-auto">
+						<table class="table min-w-[760px]">
+							<thead>
+								<tr>
+									<th>Name</th>
+									<th>Project</th>
+									<th>Status</th>
+									<th>Instances</th>
+									<th>Updated</th>
+									<th class="w-10" />
+								</tr>
+							</thead>
+							<tbody>
+								<For each={filtered()}>
+									{(service) => (
+										<tr class="row-link" onClick={() => navigate(`/services/${service.id}`)}>
+											<td>
+												<div class="flex items-center gap-3">
+													<ServiceIcon type={service.service_type} />
+													<div class="min-w-0">
+														<div class="flex items-center gap-2">
+															<A
+																href={`/services/${service.id}`}
+																class="truncate font-medium hover:underline"
+																onClick={(event) => event.stopPropagation()}
+															>
+																{service.name}
+															</A>
+															<Show when={isManaged(service)}>
+																<Badge>{typeLabel(service.service_type)}</Badge>
+															</Show>
+														</div>
+														<div class="truncate text-[12px] text-fg-subtle">
+															<Show
+																when={primaryUrl(service)}
+																fallback={typeLabel(service.service_type)}
+															>
+																{(url) => (
+																	<a
+																		href={url()}
+																		target="_blank"
+																		rel="noreferrer"
+																		class="hover:text-fg hover:underline"
+																		onClick={(event) => event.stopPropagation()}
+																	>
+																		{displayHost(url())}
+																	</a>
+																)}
+															</Show>
+														</div>
+													</div>
+												</div>
+											</td>
+											<td class={cx(!service.project_name && "text-fg-faint")}>
+												{service.project_name ?? "—"}
+											</td>
+											<td>
+												<StatusBadge status={service.status} />
+											</td>
+											<td class="tabular-nums text-fg-muted">{instancesLabel(service)}</td>
+											<td class="whitespace-nowrap text-fg-subtle">
+												{timeAgo(service.updated_at)}
+											</td>
+											<td onClick={(event) => event.stopPropagation()}>
+												<ServiceActions service={service} />
+											</td>
+										</tr>
+									)}
+								</For>
+							</tbody>
+						</table>
+					</div>
+				</Match>
+			</Switch>
+		</div>
+	);
 };
 
 export default Services;

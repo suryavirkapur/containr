@@ -1,20 +1,22 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="containr - deploy containers with ease" />
+    <meta name="description" content="containr: deploy and run containers on your own server" />
+    <meta name="theme-color" content="#09090b" />
     <title>containr</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <script>
+      try {
+        var t = localStorage.getItem("containr-theme") || "dark";
+        var dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", dark);
+      } catch (e) {}
+    </script>
   </head>
   <body>
-    <noscript>you need to enable javascript to run this app.</noscript>
+    <noscript>containr needs JavaScript enabled.</noscript>
     <div id="root"></div>
     <script type="module" src="/src/index.tsx"></script>
   </body>

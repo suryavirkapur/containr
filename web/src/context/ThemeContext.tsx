@@ -1,67 +1,47 @@
-import { createEffect, createSignal, onCleanup } from 'solid-js';
+import { createSignal } from "solid-js";
 
-type Theme = 'light' | 'dark' | 'system';
+export type ThemePreference = "light" | "dark" | "system";
 
-// Dark is the default — toggle adds `.light` class for light mode.
-export function createTheme() {
-  const [theme, setTheme] = createSignal<Theme>('system');
-  const [resolvedTheme, setResolvedTheme] = createSignal<'light' | 'dark'>(
-    'dark',
-  );
+const STORAGE_KEY = "containr-theme";
 
-  const applyTheme = (t: 'light' | 'dark') => {
-    setResolvedTheme(t);
-    if (t === 'light') {
-      document.documentElement.classList.add('light');
-    } else {
-      document.documentElement.classList.remove('light');
-    }
-  };
+const readPreference = (): ThemePreference => {
+	try {
+		const stored = localStorage.getItem(STORAGE_KEY);
+		if (stored === "light" || stored === "dark" || stored === "system") return stored;
+	} catch {
+		// storage can be unavailable (private mode); fall back to the default
+	}
+	return "dark";
+};
 
-  const updateResolvedTheme = () => {
-    const t = theme();
-    if (t === 'system') {
-      const prefersDark = window.matchMedia(
-        '(prefers-color-scheme: dark)',
-      ).matches;
-      applyTheme(prefersDark ? 'dark' : 'light');
-    } else {
-      applyTheme(t);
-    }
-  };
+const media = window.matchMedia("(prefers-color-scheme: dark)");
 
-  createEffect(() => {
-    const stored = localStorage.getItem('containr-theme') as Theme | null;
-    if (stored && ['light', 'dark', 'system'].includes(stored)) {
-      setTheme(stored);
-    }
-    updateResolvedTheme();
-  });
+const [preference, setPreferenceSignal] = createSignal<ThemePreference>(readPreference());
+const [resolved, setResolved] = createSignal<"light" | "dark">("dark");
 
-  createEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = () => updateResolvedTheme();
-    mediaQuery.addEventListener('change', handler);
-    onCleanup(() => mediaQuery.removeEventListener('change', handler));
-  });
+const apply = () => {
+	const pref = preference();
+	const next = pref === "system" ? (media.matches ? "dark" : "light") : pref;
+	setResolved(next);
+	document.documentElement.classList.toggle("dark", next === "dark");
+};
 
-  const setThemeWithPersistence = (t: Theme) => {
-    setTheme(t);
-    localStorage.setItem('containr-theme', t);
-    updateResolvedTheme();
-  };
+media.addEventListener("change", apply);
+apply();
 
-  const toggleTheme = () => {
-    const current = resolvedTheme();
-    setThemeWithPersistence(current === 'dark' ? 'light' : 'dark');
-  };
-
-  return {
-    theme,
-    resolvedTheme,
-    setTheme: setThemeWithPersistence,
-    toggleTheme,
-  };
-}
-
-export const ThemeContext = createTheme();
+export const theme = {
+	preference,
+	resolved,
+	set(next: ThemePreference) {
+		setPreferenceSignal(next);
+		try {
+			localStorage.setItem(STORAGE_KEY, next);
+		} catch {
+			// ignore persistence failures
+		}
+		apply();
+	},
+	toggle() {
+		theme.set(resolved() === "dark" ? "light" : "dark");
+	},
+};
