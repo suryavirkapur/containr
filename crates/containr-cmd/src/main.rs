@@ -8,6 +8,11 @@ use containr_cmd::client_config::ClientConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+const SERVICES_PATH: &str = "/api/services";
+const RESOURCE_KIND_APP: &str = "app_service";
+const RESOURCE_KIND_DATABASE: &str = "managed_database";
+const RESOURCE_KIND_QUEUE: &str = "managed_queue";
+
 #[derive(Parser, Debug)]
 #[command(name = "containr-cmd")]
 #[command(about = "containr api client")]
@@ -120,7 +125,8 @@ struct ProjectDeployArgs {
 
 #[derive(Args, Debug)]
 struct ProjectDeploymentLogsArgs {
-    #[arg(long)]
+    /// service id (projects are now app services)
+    #[arg(long, alias = "service-id")]
     project_id: String,
     #[arg(long)]
     deployment_id: String,
@@ -132,7 +138,8 @@ struct ProjectDeploymentLogsArgs {
 
 #[derive(Args, Debug)]
 struct ProjectRollbackArgs {
-    #[arg(long)]
+    /// service id (projects are now app services)
+    #[arg(long, alias = "service-id")]
     project_id: String,
     #[arg(long)]
     deployment_id: String,
@@ -689,15 +696,21 @@ async fn run_project_command(
 ) -> Result<()> {
     match command {
         ProjectCommand::List => {
-            run_get_json(config_path, selected_instance, "/api/projects", true)
-                .await
-        }
-        ProjectCommand::Get { id } => {
-            run_get_json(
+            run_kind_list(
                 config_path,
                 selected_instance,
-                &format!("/api/projects/{}", id),
-                true,
+                None,
+                RESOURCE_KIND_APP,
+            )
+            .await
+        }
+        ProjectCommand::Get { id } => {
+            run_kind_operation(
+                config_path,
+                selected_instance,
+                &id,
+                RESOURCE_KIND_APP,
+                KindOperation::Get,
             )
             .await
         }
@@ -705,22 +718,16 @@ async fn run_project_command(
             run_project_apply(config_path, selected_instance, args).await
         }
         ProjectCommand::Delete { id } => {
-            run_delete_json(
+            run_kind_operation(
                 config_path,
                 selected_instance,
-                &format!("/api/projects/{}", id),
+                &id,
+                RESOURCE_KIND_APP,
+                KindOperation::Delete,
             )
             .await
         }
-        ProjectCommand::Metrics { id } => {
-            run_get_json(
-                config_path,
-                selected_instance,
-                &format!("/api/projects/{}/metrics", id),
-                true,
-            )
-            .await
-        }
+        ProjectCommand::Metrics { .. } => unsupported("projects metrics"),
         ProjectCommand::Deploy(args) => {
             run_project_deploy(config_path, selected_instance, args).await
         }
@@ -728,7 +735,7 @@ async fn run_project_command(
             run_get_json(
                 config_path,
                 selected_instance,
-                &format!("/api/projects/{}/deployments", id),
+                &service_deployments_path(&id),
                 true,
             )
             .await
@@ -753,20 +760,16 @@ async fn run_service_command(
             run_service_create(config_path, selected_instance, args).await
         }
         ServiceCommand::List(args) => {
-            run_resource_list(
-                config_path,
-                selected_instance,
-                "/api/services",
-                args.group_id.as_deref(),
-            )
-            .await
+            let path =
+                grouped_resource_path(SERVICES_PATH, args.group_id.as_deref());
+            run_get_json(config_path, selected_instance, &path, true).await
         }
         ServiceCommand::Get { id } => {
-            run_resource_get(
+            run_get_json(
                 config_path,
                 selected_instance,
-                "/api/services",
-                &id,
+                &service_item_path(&id),
+                true,
             )
             .await
         }
@@ -774,7 +777,7 @@ async fn run_service_command(
             run_get_json(
                 config_path,
                 selected_instance,
-                &format!("/api/services/{}/settings", id),
+                &format!("{}/settings", service_item_path(&id)),
                 true,
             )
             .await
@@ -783,12 +786,10 @@ async fn run_service_command(
             run_service_update(config_path, selected_instance, args).await
         }
         ServiceCommand::Logs(args) => {
-            run_resource_logs(
+            run_logs_command(
                 config_path,
                 selected_instance,
-                "/api/services",
-                &args.id,
-                args.tail,
+                &service_logs_path(&args.id, args.tail),
             )
             .await
         }
@@ -797,31 +798,44 @@ async fn run_service_command(
                 config_path,
                 selected_instance,
                 &format!(
-                    "/api/services/{}/http-logs?limit={}&offset={}",
-                    args.id, args.limit, args.offset
+                    "{}/http-logs?limit={}&offset={}",
+                    service_item_path(&args.id),
+                    args.limit,
+                    args.offset
                 ),
                 true,
             )
             .await
         }
         ServiceCommand::Start { id } => {
-            run_service_action(config_path, selected_instance, &id, "start")
-                .await
-        }
-        ServiceCommand::Stop { id } => {
-            run_service_action(config_path, selected_instance, &id, "stop")
-                .await
-        }
-        ServiceCommand::Restart { id } => {
-            run_service_action(config_path, selected_instance, &id, "restart")
-                .await
-        }
-        ServiceCommand::Delete { id } => {
-            run_resource_delete(
+            run_post_empty(
                 config_path,
                 selected_instance,
-                "/api/services",
-                &id,
+                &service_action_path(&id, "start"),
+            )
+            .await
+        }
+        ServiceCommand::Stop { id } => {
+            run_post_empty(
+                config_path,
+                selected_instance,
+                &service_action_path(&id, "stop"),
+            )
+            .await
+        }
+        ServiceCommand::Restart { id } => {
+            run_post_empty(
+                config_path,
+                selected_instance,
+                &service_action_path(&id, "restart"),
+            )
+            .await
+        }
+        ServiceCommand::Delete { id } => {
+            run_delete_json(
+                config_path,
+                selected_instance,
+                &service_item_path(&id),
             )
             .await
         }
@@ -833,183 +847,64 @@ async fn run_database_command(
     selected_instance: Option<&str>,
     command: DatabaseCommand,
 ) -> Result<()> {
-    match command {
+    let kind = RESOURCE_KIND_DATABASE;
+    let (id, operation) = match command {
         DatabaseCommand::List(args) => {
-            run_resource_list(
+            return run_kind_list(
                 config_path,
                 selected_instance,
-                "/api/databases",
                 args.group_id.as_deref(),
+                kind,
             )
-            .await
+            .await;
         }
         DatabaseCommand::Create(args) => {
-            let body = json!({
-                "name": args.name,
-                "db_type": args.db_type,
-                "version": args.version,
-                "memory_limit_mb": args.memory_limit_mb,
-                "cpu_limit": args.cpu_limit,
-                "group_id": args.group_id,
-            });
-            run_post_json(
-                config_path,
-                selected_instance,
-                "/api/databases",
-                &body,
-            )
-            .await
-        }
-        DatabaseCommand::Get { id } => {
-            run_resource_get(
-                config_path,
-                selected_instance,
-                "/api/databases",
-                &id,
-            )
-            .await
-        }
-        DatabaseCommand::Logs(args) => {
-            run_resource_logs(
-                config_path,
-                selected_instance,
-                "/api/databases",
-                &args.id,
-                args.tail,
-            )
-            .await
-        }
-        DatabaseCommand::Expose(args) => {
-            let body = json!({
-                "enabled": args.enabled,
-                "external_port": args.external_port,
-            });
-            run_post_json(
-                config_path,
-                selected_instance,
-                &resource_action_path("/api/databases", &args.id, "expose"),
-                &body,
-            )
-            .await
-        }
-        DatabaseCommand::Pitr(args) => {
-            let body = json!({ "enabled": args.enabled });
-            run_post_json(
-                config_path,
-                selected_instance,
-                &resource_action_path("/api/databases", &args.id, "pitr"),
-                &body,
-            )
-            .await
-        }
-        DatabaseCommand::Proxy(args) => {
-            let body = json!({
-                "enabled": args.enabled,
-                "external_port": args.external_port,
-            });
-            run_post_json(
-                config_path,
-                selected_instance,
-                &resource_action_path("/api/databases", &args.id, "proxy"),
-                &body,
-            )
-            .await
-        }
-        DatabaseCommand::BaseBackup(args) => {
-            let body = json!({
-                "label": args.label,
-            });
-            run_post_json(
-                config_path,
-                selected_instance,
-                &resource_nested_action_path(
-                    "/api/databases",
-                    &args.id,
-                    &["pitr", "base-backup"],
-                ),
-                &body,
-            )
-            .await
-        }
-        DatabaseCommand::RestorePoint(args) => {
-            let body = json!({
-                "restore_point": args.restore_point,
-            });
-            run_post_json(
-                config_path,
-                selected_instance,
-                &resource_nested_action_path(
-                    "/api/databases",
-                    &args.id,
-                    &["pitr", "restore-point"],
-                ),
-                &body,
-            )
-            .await
-        }
-        DatabaseCommand::Recover(args) => {
-            if args.restore_point.is_some() == args.target_time.is_some() {
+            if is_queue_template(&args.db_type) {
                 return Err(anyhow!(
-                    "provide exactly one of --restore-point or --target-time"
+                    "'{}' is a queue type; use `containr-cmd queues create`",
+                    args.db_type
                 ));
             }
-
-            let body = json!({
-                "restore_point": args.restore_point,
-                "target_time": args.target_time,
-            });
-            run_post_json(
+            let body = template_create_body(
+                args.name,
+                args.db_type,
+                args.version,
+                args.memory_limit_mb,
+                args.cpu_limit,
+                args.group_id,
+            );
+            return run_post_json(
                 config_path,
                 selected_instance,
-                &resource_nested_action_path(
-                    "/api/databases",
-                    &args.id,
-                    &["pitr", "recover"],
-                ),
+                SERVICES_PATH,
                 &body,
             )
-            .await
+            .await;
         }
-        DatabaseCommand::Start { id } => {
-            run_resource_action(
-                config_path,
-                selected_instance,
-                "/api/databases",
-                &id,
-                "start",
-            )
-            .await
+        DatabaseCommand::Expose(_) => return unsupported("databases expose"),
+        DatabaseCommand::Pitr(_) => return unsupported("databases pitr"),
+        DatabaseCommand::Proxy(_) => return unsupported("databases proxy"),
+        DatabaseCommand::BaseBackup(_) => {
+            return unsupported("databases base-backup");
         }
-        DatabaseCommand::Stop { id } => {
-            run_resource_action(
-                config_path,
-                selected_instance,
-                "/api/databases",
-                &id,
-                "stop",
-            )
-            .await
+        DatabaseCommand::RestorePoint(_) => {
+            return unsupported("databases restore-point");
         }
+        DatabaseCommand::Recover(_) => return unsupported("databases recover"),
+        DatabaseCommand::Get { id } => (id, KindOperation::Get),
+        DatabaseCommand::Logs(args) => {
+            (args.id, KindOperation::Logs { tail: args.tail })
+        }
+        DatabaseCommand::Start { id } => (id, KindOperation::Action("start")),
+        DatabaseCommand::Stop { id } => (id, KindOperation::Action("stop")),
         DatabaseCommand::Restart { id } => {
-            run_resource_action(
-                config_path,
-                selected_instance,
-                "/api/databases",
-                &id,
-                "restart",
-            )
-            .await
+            (id, KindOperation::Action("restart"))
         }
-        DatabaseCommand::Delete { id } => {
-            run_resource_delete(
-                config_path,
-                selected_instance,
-                "/api/databases",
-                &id,
-            )
-            .await
-        }
-    }
+        DatabaseCommand::Delete { id } => (id, KindOperation::Delete),
+    };
+
+    run_kind_operation(config_path, selected_instance, &id, kind, operation)
+        .await
 }
 
 async fn run_queue_command(
@@ -1017,144 +912,160 @@ async fn run_queue_command(
     selected_instance: Option<&str>,
     command: QueueCommand,
 ) -> Result<()> {
-    match command {
+    let kind = RESOURCE_KIND_QUEUE;
+    let (id, operation) = match command {
         QueueCommand::List(args) => {
-            run_resource_list(
+            return run_kind_list(
                 config_path,
                 selected_instance,
-                "/api/queues",
                 args.group_id.as_deref(),
+                kind,
             )
-            .await
+            .await;
         }
         QueueCommand::Create(args) => {
-            let body = json!({
-                "name": args.name,
-                "queue_type": args.queue_type,
-                "version": args.version,
-                "memory_limit_mb": args.memory_limit_mb,
-                "cpu_limit": args.cpu_limit,
-                "group_id": args.group_id,
-            });
-            run_post_json(config_path, selected_instance, "/api/queues", &body)
-                .await
-        }
-        QueueCommand::Get { id } => {
-            run_resource_get(config_path, selected_instance, "/api/queues", &id)
-                .await
-        }
-        QueueCommand::Expose(args) => {
-            let body = json!({
-                "enabled": args.enabled,
-                "external_port": args.external_port,
-            });
-            run_post_json(
+            if !is_queue_template(&args.queue_type) {
+                return Err(anyhow!(
+                    "unsupported queue type '{}'. supported: rabbitmq",
+                    args.queue_type
+                ));
+            }
+            let body = template_create_body(
+                args.name,
+                args.queue_type,
+                args.version,
+                args.memory_limit_mb,
+                args.cpu_limit,
+                args.group_id,
+            );
+            return run_post_json(
                 config_path,
                 selected_instance,
-                &resource_action_path("/api/queues", &args.id, "expose"),
+                SERVICES_PATH,
                 &body,
             )
-            .await
+            .await;
         }
-        QueueCommand::Start { id } => {
-            run_resource_action(
-                config_path,
-                selected_instance,
-                "/api/queues",
-                &id,
-                "start",
-            )
-            .await
+        QueueCommand::Expose(_) => return unsupported("queues expose"),
+        QueueCommand::Get { id } => (id, KindOperation::Get),
+        QueueCommand::Start { id } => (id, KindOperation::Action("start")),
+        QueueCommand::Stop { id } => (id, KindOperation::Action("stop")),
+        QueueCommand::Delete { id } => (id, KindOperation::Delete),
+    };
+
+    run_kind_operation(config_path, selected_instance, &id, kind, operation)
+        .await
+}
+
+/// operation on a service that must be of a specific resource kind
+enum KindOperation {
+    Get,
+    Logs { tail: usize },
+    Action(&'static str),
+    Delete,
+}
+
+fn unsupported(command: &str) -> Result<()> {
+    Err(anyhow!(
+        "`containr-cmd {command}` is not supported by this server version"
+    ))
+}
+
+fn is_queue_template(template: &str) -> bool {
+    template.trim().eq_ignore_ascii_case("rabbitmq")
+}
+
+fn template_create_body(
+    name: String,
+    template: String,
+    version: Option<String>,
+    memory_limit_mb: Option<u64>,
+    cpu_limit: Option<f64>,
+    group_id: Option<String>,
+) -> Value {
+    json!({
+        "source": "template",
+        "name": name,
+        "template": template,
+        "version": version,
+        "memory_limit_mb": memory_limit_mb,
+        "cpu_limit": cpu_limit,
+        "group_id": group_id,
+    })
+}
+
+async fn run_kind_list(
+    config_path: Option<&Path>,
+    selected_instance: Option<&str>,
+    group_id: Option<&str>,
+    kind: &str,
+) -> Result<()> {
+    let client = load_client(config_path, selected_instance, true)?;
+    let path = grouped_resource_path(SERVICES_PATH, group_id);
+    let response = client.get_json(&path).await?;
+    print_json(&filter_by_resource_kind(response, kind)?)
+}
+
+async fn run_kind_operation(
+    config_path: Option<&Path>,
+    selected_instance: Option<&str>,
+    id: &str,
+    kind: &str,
+    operation: KindOperation,
+) -> Result<()> {
+    let client = load_client(config_path, selected_instance, true)?;
+    let service = fetch_service_of_kind(&client, id, kind).await?;
+
+    match operation {
+        KindOperation::Get => print_json(&service),
+        KindOperation::Logs { tail } => {
+            let response =
+                client.get_json(&service_logs_path(id, tail)).await?;
+            let logs = extract_string(&response, &["logs"])?;
+            println!("{}", logs);
+            Ok(())
         }
-        QueueCommand::Stop { id } => {
-            run_resource_action(
-                config_path,
-                selected_instance,
-                "/api/queues",
-                &id,
-                "stop",
-            )
-            .await
+        KindOperation::Action(action) => {
+            let response =
+                client.post_empty(&service_action_path(id, action)).await?;
+            print_json(&response)
         }
-        QueueCommand::Delete { id } => {
-            run_resource_delete(
-                config_path,
-                selected_instance,
-                "/api/queues",
-                &id,
-            )
-            .await
+        KindOperation::Delete => {
+            let response = client.delete(&service_item_path(id)).await?;
+            print_json(&response)
         }
     }
 }
 
-async fn run_resource_list(
-    config_path: Option<&Path>,
-    selected_instance: Option<&str>,
-    base_path: &str,
-    group_id: Option<&str>,
-) -> Result<()> {
-    let path = grouped_resource_path(base_path, group_id);
-    run_get_json(config_path, selected_instance, &path, true).await
+async fn fetch_service_of_kind(
+    client: &ApiClient,
+    id: &str,
+    kind: &str,
+) -> Result<Value> {
+    let service = client.get_json(&service_item_path(id)).await?;
+    let actual = service
+        .get("resource_kind")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    if actual != kind {
+        return Err(anyhow!("service {id} is a {actual}, expected a {kind}"));
+    }
+    Ok(service)
 }
 
-async fn run_resource_get(
-    config_path: Option<&Path>,
-    selected_instance: Option<&str>,
-    base_path: &str,
-    id: &str,
-) -> Result<()> {
-    let path = resource_item_path(base_path, id);
-    run_get_json(config_path, selected_instance, &path, true).await
-}
+fn filter_by_resource_kind(value: Value, kind: &str) -> Result<Value> {
+    let Value::Array(items) = value else {
+        return Err(anyhow!("expected a json array of services"));
+    };
 
-async fn run_resource_logs(
-    config_path: Option<&Path>,
-    selected_instance: Option<&str>,
-    base_path: &str,
-    id: &str,
-    tail: usize,
-) -> Result<()> {
-    let path = format!(
-        "{}?tail={tail}",
-        resource_action_path(base_path, id, "logs")
-    );
-    run_logs_command(config_path, selected_instance, &path).await
-}
-
-async fn run_resource_action(
-    config_path: Option<&Path>,
-    selected_instance: Option<&str>,
-    base_path: &str,
-    id: &str,
-    action: &str,
-) -> Result<()> {
-    let path = resource_action_path(base_path, id, action);
-    run_post_empty(config_path, selected_instance, &path).await
-}
-
-async fn run_service_action(
-    config_path: Option<&Path>,
-    selected_instance: Option<&str>,
-    id: &str,
-    action: &str,
-) -> Result<()> {
-    run_post_empty(
-        config_path,
-        selected_instance,
-        &format!("/api/services/{}/actions/{}", id, action),
-    )
-    .await
-}
-
-async fn run_resource_delete(
-    config_path: Option<&Path>,
-    selected_instance: Option<&str>,
-    base_path: &str,
-    id: &str,
-) -> Result<()> {
-    let path = resource_item_path(base_path, id);
-    run_delete_json(config_path, selected_instance, &path).await
+    Ok(Value::Array(
+        items
+            .into_iter()
+            .filter(|item| {
+                item.get("resource_kind").and_then(Value::as_str) == Some(kind)
+            })
+            .collect(),
+    ))
 }
 
 fn grouped_resource_path(base_path: &str, group_id: Option<&str>) -> String {
@@ -1164,25 +1075,20 @@ fn grouped_resource_path(base_path: &str, group_id: Option<&str>) -> String {
     }
 }
 
-fn resource_item_path(base_path: &str, id: &str) -> String {
-    format!("{base_path}/{id}")
+fn service_item_path(id: &str) -> String {
+    format!("{SERVICES_PATH}/{id}")
 }
 
-fn resource_action_path(base_path: &str, id: &str, action: &str) -> String {
-    format!("{}/{}/{}", base_path, id, action)
+fn service_action_path(id: &str, action: &str) -> String {
+    format!("{SERVICES_PATH}/{id}/actions/{action}")
 }
 
-fn resource_nested_action_path(
-    base_path: &str,
-    id: &str,
-    actions: &[&str],
-) -> String {
-    let mut path = resource_item_path(base_path, id);
-    for action in actions {
-        path.push('/');
-        path.push_str(action);
-    }
-    path
+fn service_logs_path(id: &str, tail: usize) -> String {
+    format!("{SERVICES_PATH}/{id}/logs?tail={tail}")
+}
+
+fn service_deployments_path(id: &str) -> String {
+    format!("{SERVICES_PATH}/{id}/deployments")
 }
 
 async fn run_get_json(
@@ -1256,28 +1162,37 @@ async fn run_project_apply(
     args: ProjectApplyArgs,
 ) -> Result<()> {
     let spec = load_project_spec(&args.file)?;
-    let body = build_project_body(&spec);
     let client = load_client(config_path, selected_instance, true)?;
 
-    let project = match args.id.as_deref() {
-        Some(id) => {
-            client
-                .put_json(&format!("/api/projects/{}", id), &body)
-                .await?
+    let Some(id) = args.id.as_deref() else {
+        if args.no_deploy {
+            eprintln!(
+                "note: the server queues an initial deployment when a \
+                 service is created; --no-deploy only applies to updates"
+            );
         }
-        None => client.post_json("/api/projects", &body).await?,
+        let body = build_project_create_body(&spec)?;
+        let project = client.post_json(SERVICES_PATH, &body).await?;
+        return print_json(&json!({
+            "project": project,
+            "deployment": Value::Null,
+        }));
     };
 
-    let deployment = match args.id.as_deref() {
-        Some(id) if !args.no_deploy => Some(
+    let existing =
+        fetch_service_of_kind(&client, id, RESOURCE_KIND_APP).await?;
+    let existing_name = existing.get("name").and_then(Value::as_str);
+    let body = build_project_update_body(&spec, existing_name)?;
+    let project = client.patch_json(&service_item_path(id), &body).await?;
+
+    let deployment = if args.no_deploy {
+        None
+    } else {
+        Some(
             client
-                .post_json(
-                    &format!("/api/projects/{}/deployments", id),
-                    &json!({}),
-                )
+                .post_json(&service_deployments_path(id), &json!({}))
                 .await?,
-        ),
-        _ => None,
+        )
     };
 
     print_json(&json!({
@@ -1301,7 +1216,7 @@ async fn run_project_deploy(
     run_post_json(
         config_path,
         selected_instance,
-        &format!("/api/projects/{}/deployments", args.id),
+        &service_deployments_path(&args.id),
         &body,
     )
     .await
@@ -1315,8 +1230,11 @@ async fn run_project_deployment_logs(
     let client = load_client(config_path, selected_instance, true)?;
     let response = client
         .get_json(&format!(
-            "/api/projects/{}/deployments/{}/logs?limit={}&offset={}",
-            args.project_id, args.deployment_id, args.limit, args.offset
+            "{}/{}/logs?limit={}&offset={}",
+            service_deployments_path(&args.project_id),
+            args.deployment_id,
+            args.limit,
+            args.offset
         ))
         .await?;
 
@@ -1345,8 +1263,9 @@ async fn run_project_rollback(
         config_path,
         selected_instance,
         &format!(
-            "/api/projects/{}/deployments/{}/rollback",
-            args.project_id, args.deployment_id
+            "{}/{}/rollback",
+            service_deployments_path(&args.project_id),
+            args.deployment_id
         ),
         &body,
     )
@@ -1362,7 +1281,7 @@ async fn run_service_update(
     run_patch_json(
         config_path,
         selected_instance,
-        &format!("/api/services/{}", args.id),
+        &service_item_path(&args.id),
         &body,
     )
     .await
@@ -1374,7 +1293,7 @@ async fn run_service_create(
     args: ServiceCreateArgs,
 ) -> Result<()> {
     let body = load_structured_value(&args.file)?;
-    run_post_json(config_path, selected_instance, "/api/services", &body).await
+    run_post_json(config_path, selected_instance, SERVICES_PATH, &body).await
 }
 
 async fn run_container_logs(
@@ -1431,18 +1350,81 @@ fn load_structured_value(path: &Path) -> Result<Value> {
         })
 }
 
-fn build_project_body(spec: &ProjectSpec) -> Value {
-    json!({
+fn build_project_create_body(spec: &ProjectSpec) -> Result<Value> {
+    let service = select_project_service(spec, None)?;
+    Ok(json!({
+        "source": "git_repository",
         "name": spec.name,
         "github_url": resolve_project_source_url(spec),
         "branch": spec.branch,
-        "domains": spec.domains,
-        "domain": spec.domain,
-        "port": spec.port,
         "env_vars": spec.env_vars,
-        "services": spec.services,
+        "service": service,
         "rollout_strategy": spec.rollout_strategy,
-    })
+    }))
+}
+
+fn build_project_update_body(
+    spec: &ProjectSpec,
+    existing_service_name: Option<&str>,
+) -> Result<Value> {
+    let service = select_project_service(spec, existing_service_name)?;
+    let github_url = resolve_project_source_url(spec);
+    let github_url = (!github_url.is_empty()).then_some(github_url);
+    Ok(json!({
+        "github_url": github_url,
+        "branch": spec.branch,
+        "env_vars": spec.env_vars,
+        "rollout_strategy": spec.rollout_strategy,
+        "service": service,
+    }))
+}
+
+/// picks the single service definition the api accepts per service entity.
+/// project-level `port`/`domain(s)` are used when no services are listed
+/// and as fallback domains for a service that defines none.
+fn select_project_service(
+    spec: &ProjectSpec,
+    preferred_name: Option<&str>,
+) -> Result<Value> {
+    let selected = match spec.services.as_slice() {
+        [] => {
+            let port = spec.port.ok_or_else(|| {
+                anyhow!(
+                    "project spec must define `port` or a [[services]] entry"
+                )
+            })?;
+            return Ok(json!({
+                "name": spec.name,
+                "port": port,
+                "domains": spec.domains,
+                "domain": spec.domain,
+            }));
+        }
+        [service] => service,
+        services => preferred_name
+            .and_then(|name| {
+                services.iter().find(|service| service.name == name)
+            })
+            .ok_or_else(|| {
+                anyhow!(
+                    "project spec defines {} services, but the server \
+                     manages one service per entity; split the spec into \
+                     one file per service or pass --id of a service whose \
+                     name matches an entry",
+                    services.len()
+                )
+            })?,
+    };
+
+    let mut value = serde_json::to_value(selected)
+        .context("failed to encode service spec")?;
+    if selected.domains.is_none() && selected.domain.is_none() {
+        if let Some(object) = value.as_object_mut() {
+            object.insert("domains".to_string(), json!(spec.domains));
+            object.insert("domain".to_string(), json!(spec.domain));
+        }
+    }
+    Ok(value)
 }
 
 fn resolve_project_source_url(spec: &ProjectSpec) -> String {
