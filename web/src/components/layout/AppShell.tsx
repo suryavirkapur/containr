@@ -48,27 +48,27 @@ import { Logo, LogoMark } from "./Logo";
 type NavLink = {
 	href: string;
 	label: string;
-	icon: JSX.Element;
+	icon: () => JSX.Element;
 	match?: (path: string) => boolean;
 };
 
 const workspaceNav: NavLink[] = [
-	{ href: "/", label: "Overview", icon: <LayoutGrid />, match: (path) => path === "/" },
+	{ href: "/", label: "Overview", icon: () => <LayoutGrid />, match: (path) => path === "/" },
 	{
 		href: "/services",
 		label: "Services",
-		icon: <Boxes />,
+		icon: () => <Boxes />,
 		match: (path) => path.startsWith("/services"),
 	},
-	{ href: "/projects", label: "Projects", icon: <FolderKanban /> },
-	{ href: "/apps", label: "One-Click Apps", icon: <Store /> },
-	{ href: "/storage", label: "Storage", icon: <Package /> },
+	{ href: "/projects", label: "Projects", icon: () => <FolderKanban /> },
+	{ href: "/apps", label: "One-Click Apps", icon: () => <Store /> },
+	{ href: "/storage", label: "Storage", icon: () => <Package /> },
 ];
 
 const platformNav: NavLink[] = [
-	{ href: "/monitoring", label: "Monitoring", icon: <Activity /> },
-	{ href: "/server", label: "Server", icon: <Server /> },
-	{ href: "/settings", label: "Settings", icon: <Settings /> },
+	{ href: "/monitoring", label: "Monitoring", icon: () => <Activity /> },
+	{ href: "/server", label: "Server", icon: () => <Server /> },
+	{ href: "/settings", label: "Settings", icon: () => <Settings /> },
 ];
 
 const NavSection: Component<{ title?: string; links: NavLink[]; onNavigate?: () => void }> = (
@@ -90,7 +90,7 @@ const NavSection: Component<{ title?: string; links: NavLink[]; onNavigate?: () 
 						onClick={() => props.onNavigate?.()}
 						end
 					>
-						{link.icon}
+						{link.icon()}
 						{link.label}
 					</A>
 				)}
@@ -286,7 +286,7 @@ export const AppShell: ParentComponent = (props) => {
 			id: `nav:${link.href}`,
 			label: link.label,
 			group: "Navigate",
-			icon: link.icon,
+			icon: link.icon(),
 			run: () => navigate(link.href),
 		})),
 		{
