@@ -26,16 +26,19 @@ use crate::handlers::deployments::{
 };
 use crate::security::{encrypt_value, resolve_encryption_secret};
 use crate::state::AppState;
+use containr_common::config::ProxyConfig;
 use containr_common::managed_services::{
     DatabaseType, ManagedDatabase, ManagedQueue, QueueType, ServiceStatus,
 };
 use containr_common::models::{
-    App, BasicAuth, BuildArg, ContainerService, Deployment, DeploymentSource,
-    DeploymentStatus, EnvVar, HealthCheck, HttpRequestLog, PortMapping,
-    PortProtocol, RestartPolicy, RolloutStrategy, ServiceDeployment,
-    ServiceMount, ServiceRegistryAuth, ServiceType,
+    default_service_domain, App, BasicAuth, BuildArg, ContainerService,
+    Deployment, DeploymentSource, DeploymentStatus, EnvVar, HealthCheck,
+    HttpRequestLog, PortMapping, PortProtocol, RestartPolicy, RolloutStrategy,
+    ServiceDeployment, ServiceMount, ServiceRegistryAuth, ServiceType,
 };
-use containr_common::service_inventory::ServiceInventoryItem;
+use containr_common::service_inventory::{
+    ServiceInventoryItem, ServiceResourceKind,
+};
 use containr_common::Config;
 use containr_runtime::{
     AppServiceManager, DatabaseManager, DockerContainerManager,
@@ -490,9 +493,9 @@ pub fn supported_template_message() -> &'static str {
 impl InventoryServiceResponse {
     fn from_inventory(
         service: &ServiceInventoryItem,
-        base_domain: &str,
-        public_ip: Option<&str>,
+        proxy: &ProxyConfig,
     ) -> Self {
+        let public_ip = proxy.public_ip.as_deref();
         Self {
             id: service.id.to_string(),
             group_id: service.group_id.map(|value| value.to_string()),
@@ -514,7 +517,7 @@ impl InventoryServiceResponse {
             proxy_connection_string: service.proxy_connection_string.clone(),
             domains: service.domains.clone(),
             http_only_domains: service.http_only_domains.clone(),
-            default_urls: build_default_urls(service, base_domain),
+            default_urls: build_default_urls(service, proxy),
             schedule: service.schedule.clone(),
             notes: service.notes.clone(),
             port_mappings: service
@@ -665,12 +668,7 @@ impl ServiceSvc {
             },
         };
 
-        self.service_response(
-            user_id,
-            service_id,
-            &config.proxy.base_domain,
-            config.proxy.public_ip.as_deref(),
-        )
+        self.service_response(user_id, service_id, &config.proxy)
     }
 
     pub async fn list_services(
@@ -690,11 +688,7 @@ impl ServiceSvc {
         Ok(inventory
             .iter()
             .map(|service| {
-                InventoryServiceResponse::from_inventory(
-                    service,
-                    &config.proxy.base_domain,
-                    config.proxy.public_ip.as_deref(),
-                )
+                InventoryServiceResponse::from_inventory(service, &config.proxy)
             })
             .collect())
     }
@@ -705,12 +699,7 @@ impl ServiceSvc {
         service_id: Uuid,
     ) -> ApiResult<InventoryServiceResponse> {
         let config = self.state.config.read().await.clone();
-        self.service_response(
-            user_id,
-            service_id,
-            &config.proxy.base_domain,
-            config.proxy.public_ip.as_deref(),
-        )
+        self.service_response(user_id, service_id, &config.proxy)
     }
 
     pub async fn get_service_settings(
@@ -892,12 +881,7 @@ impl ServiceSvc {
             }
         }
 
-        self.service_response(
-            user_id,
-            service.id,
-            &config.proxy.base_domain,
-            config.proxy.public_ip.as_deref(),
-        )
+        self.service_response(user_id, service.id, &config.proxy)
     }
 
     pub async fn get_service_logs(
@@ -1029,12 +1013,7 @@ impl ServiceSvc {
             }
         }
 
-        self.service_response(
-            user_id,
-            service_id,
-            &config.proxy.base_domain,
-            config.proxy.public_ip.as_deref(),
-        )
+        self.service_response(user_id, service_id, &config.proxy)
     }
 
     pub async fn delete_service(
@@ -1884,12 +1863,7 @@ impl ServiceSvc {
             }
         }
 
-        self.service_response(
-            user_id,
-            service_id,
-            &config.proxy.base_domain,
-            config.proxy.public_ip.as_deref(),
-        )
+        self.service_response(user_id, service_id, &config.proxy)
     }
 
     /// queues a deployment that builds only this service from an extracted
@@ -2035,8 +2009,7 @@ impl ServiceSvc {
         &self,
         user_id: Uuid,
         service_id: Uuid,
-        base_domain: &str,
-        public_ip: Option<&str>,
+        proxy: &ProxyConfig,
     ) -> ApiResult<InventoryServiceResponse> {
         let inventory = self
             .state
@@ -2052,11 +2025,7 @@ impl ServiceSvc {
                 )
             })?;
 
-        Ok(InventoryServiceResponse::from_inventory(
-            &inventory,
-            base_domain,
-            public_ip,
-        ))
+        Ok(InventoryServiceResponse::from_inventory(&inventory, proxy))
     }
 }
 
@@ -2085,33 +2054,27 @@ fn normalize_public_ip(public_ip: Option<&str>) -> Option<String> {
     Some(public_ip.to_string())
 }
 
-fn push_unique(values: &mut Vec<String>, value: String) {
-    if !values.iter().any(|existing| existing == &value) {
-        values.push(value);
-    }
-}
-
+/// generated `service-xxxxx.<base_domain>` url served by the proxy.
+///
+/// default domains never get acme certificates, so they are plain http.
 fn build_default_urls(
     service: &ServiceInventoryItem,
-    _base_domain: &str,
+    proxy: &ProxyConfig,
 ) -> Vec<String> {
-    let mut urls = Vec::new();
-    for domain in &service.domains {
-        let domain = domain.trim();
-        if !domain.is_empty() {
-            let scheme = if service
-                .http_only_domains
-                .iter()
-                .any(|existing| existing == domain)
-            {
-                "http"
-            } else {
-                "https"
-            };
-            push_unique(&mut urls, format!("{}://{}", scheme, domain));
-        }
+    if service.resource_kind != ServiceResourceKind::AppService
+        || !service.public_http
+    {
+        return Vec::new();
     }
-    urls
+    let Some(domain) = default_service_domain(service.id, &proxy.base_domain)
+    else {
+        return Vec::new();
+    };
+    let url = match proxy.http_port {
+        80 => format!("http://{}", domain),
+        port => format!("http://{}:{}", domain, port),
+    };
+    vec![url]
 }
 
 fn internal_error<E: std::fmt::Display>(
@@ -4722,9 +4685,14 @@ pub(crate) async fn resolve_source_deployment_source(
 #[cfg(test)]
 mod services_test {
     use super::{
-        build_app_env_vars, build_service_env_vars, supported_template_message,
-        EnvVar, EnvVarRequest, ServiceAction, TemplateKind,
+        build_app_env_vars, build_default_urls, build_service_env_vars,
+        default_service_domain, supported_template_message, EnvVar,
+        EnvVarRequest, ProxyConfig, ServiceAction, ServiceInventoryItem,
+        ServiceResourceKind, ServiceType, TemplateKind,
     };
+    use chrono::Utc;
+    use containr_common::service_inventory::ServiceRuntimeStatus;
+    use uuid::Uuid;
 
     #[test]
     fn masked_env_var_keeps_existing_secret_even_if_marked_plain() {
@@ -5232,5 +5200,78 @@ mod services_test {
                 Some("/h")
             );
         }
+    }
+
+    fn inventory_item(
+        resource_kind: ServiceResourceKind,
+        public_http: bool,
+    ) -> ServiceInventoryItem {
+        ServiceInventoryItem {
+            id: Uuid::new_v4(),
+            owner_id: Uuid::new_v4(),
+            group_id: None,
+            project_id: None,
+            project_name: None,
+            resource_kind,
+            service_type: ServiceType::WebService,
+            name: "web".to_string(),
+            image: None,
+            status: ServiceRuntimeStatus::Running,
+            network_name: "net".to_string(),
+            internal_host: None,
+            port: Some(80),
+            external_port: None,
+            proxy_port: None,
+            proxy_external_port: None,
+            connection_string: None,
+            proxy_connection_string: None,
+            domains: vec!["app.example.com".to_string()],
+            http_only_domains: Vec::new(),
+            schedule: None,
+            notes: None,
+            port_mappings: Vec::new(),
+            public_http,
+            desired_instances: 1,
+            running_instances: 1,
+            container_ids: Vec::new(),
+            deployment_id: None,
+            pitr_enabled: false,
+            proxy_enabled: false,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn default_urls_only_contain_the_generated_domain() {
+        let mut proxy = ProxyConfig {
+            base_domain: "example.com".to_string(),
+            ..ProxyConfig::default()
+        };
+        let service = inventory_item(ServiceResourceKind::AppService, true);
+        let domain = default_service_domain(service.id, "example.com")
+            .expect("base domain is set");
+
+        assert_eq!(
+            build_default_urls(&service, &proxy),
+            vec![format!("http://{}", domain)]
+        );
+
+        proxy.http_port = 8080;
+        assert_eq!(
+            build_default_urls(&service, &proxy),
+            vec![format!("http://{}:8080", domain)]
+        );
+    }
+
+    #[test]
+    fn default_urls_skip_private_and_managed_services() {
+        let proxy = ProxyConfig::default();
+        let private = inventory_item(ServiceResourceKind::AppService, false);
+        let database =
+            inventory_item(ServiceResourceKind::ManagedDatabase, true);
+
+        assert!(build_default_urls(&private, &proxy).is_empty());
+        assert!(build_default_urls(&database, &proxy).is_empty());
     }
 }

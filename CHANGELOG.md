@@ -15,6 +15,7 @@ unreleased
 - projects api: list and rename projects; add services to an existing project; multi-service stacks
 - accounts: change password, remove users
 - docker calls behind system info, disk usage and metrics now time out instead of hanging the api
+- services api returns the generated `service-xxxxx.<base_domain>` url in `default_urls` again, so the ui shows where public services are reachable
 
 0.1.18-alpha - 2026-03-21
 - full ui overhaul: replaced all ad-hoc tailwind utility strings with a design system of cr-* classes (cr-btn, cr-input, cr-panel, cr-table, cr-badge, cr-chip, cr-nav-item, cr-tab, cr-project-card)
