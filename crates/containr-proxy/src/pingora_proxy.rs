@@ -15,6 +15,7 @@ use dashmap::DashMap;
 use pingora_core::listeners::tls::TlsSettings;
 use pingora_core::listeners::{TlsAccept, TlsAcceptCallbacks};
 use pingora_core::prelude::*;
+use pingora_core::server::configuration::ServerConf;
 use pingora_core::tls::{
     ext,
     pkey::{PKey, Private},
@@ -632,7 +633,14 @@ pub fn create_proxy_server(
     api_upstream: String,
     db: Database,
 ) -> anyhow::Result<Server> {
-    let mut server = Server::new(None).unwrap();
+    // pingora defaults to a 300s grace period; the systemd unit only allows
+    // 15s (TimeoutStopSec) before it sends SIGKILL.
+    let mut conf = ServerConf::new().ok_or_else(|| {
+        anyhow::anyhow!("failed to build proxy server config")
+    })?;
+    conf.grace_period_seconds = Some(5);
+    conf.graceful_shutdown_timeout_seconds = Some(5);
+    let mut server = Server::new_with_opt_and_conf(None, conf);
     server.bootstrap();
 
     let proxy = ContainrProxy::new(
