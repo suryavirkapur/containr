@@ -9,7 +9,7 @@ use containr_common::{Error, Result};
 
 // re-export from common
 pub use containr_common::models::DeploymentJob;
-use containr_common::models::GithubAppConfig;
+use containr_common::models::{same_repo_url, GithubAppConfig};
 
 const GITHUB_PAGE_SIZE: u32 = 100;
 
@@ -482,8 +482,6 @@ pub async fn get_repo_installation_token(
     private_key_pem: &str,
     repo_url: &str,
 ) -> Result<Option<String>> {
-    let normalized_repo = repo_url.trim_end_matches(".git");
-
     let jwt = generate_app_jwt(app_config.app_id, private_key_pem)?;
 
     let fresh_installation_ids: Vec<i64> = match list_app_installations(&jwt)
@@ -509,9 +507,8 @@ pub async fn get_repo_installation_token(
         let repos = get_installation_repos(&token_response.token).await?;
 
         if repos.iter().any(|repo| {
-            let clone_url = repo.clone_url.trim_end_matches(".git");
-            let html_url = repo.html_url.trim_end_matches(".git");
-            normalized_repo == clone_url || normalized_repo == html_url
+            same_repo_url(repo_url, &repo.clone_url)
+                || same_repo_url(repo_url, &repo.html_url)
         }) {
             return Ok(Some(token_response.token));
         }
