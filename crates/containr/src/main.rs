@@ -155,6 +155,12 @@ async fn run_server_command(
 
     // create data directory
     tokio::fs::create_dir_all(&args.data_dir).await?;
+    // docker rejects relative bind mount sources, and the default data dir
+    // is ./data, so pin every path derived from it to an absolute one
+    let args = &ServerArgs {
+        data_dir: std::path::absolute(&args.data_dir)?,
+        ..args.clone()
+    };
 
     // open database
     let db = Database::open(&config.database)?;

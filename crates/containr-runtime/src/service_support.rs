@@ -46,7 +46,9 @@ pub fn build_service_mounts(
                 path.to_path_buf()
             }
             None => {
-                let source = mounts_root.join(&mount.name);
+                // docker only accepts absolute bind mount sources
+                let source =
+                    std::path::absolute(mounts_root.join(&mount.name))?;
                 std::fs::create_dir_all(&source)?;
                 source
             }
@@ -178,6 +180,29 @@ mod tests {
             "ghcr.io/demo/web:1".to_string(),
             80,
         )
+    }
+
+    #[test]
+    fn managed_mounts_are_absolute_even_with_a_relative_data_dir() {
+        // the server's default data dir is ./data
+        let relative = std::path::PathBuf::from(format!(
+            "target/mount-test-{}",
+            Uuid::new_v4()
+        ));
+        let mut service = service();
+        service.mounts = vec![ServiceMount {
+            name: "config".to_string(),
+            target: "/etc/app".to_string(),
+            read_only: false,
+            host_path: None,
+        }];
+
+        let mounts = build_service_mounts(&relative, Uuid::nil(), &service)
+            .expect("mounts");
+        let source = std::path::Path::new(&mounts[0].source);
+        assert!(source.is_absolute(), "{} is relative", mounts[0].source);
+        assert!(source.is_dir());
+        std::fs::remove_dir_all(&relative).expect("cleanup");
     }
 
     #[test]
