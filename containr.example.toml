@@ -30,6 +30,12 @@ public_ip = ""
 # load balancing strategy: round_robin, least_connections, random
 load_balance = "round_robin"
 
+# serve a domain for an upstream containr does not manage, such as a compose
+# stack's published port. https is issued automatically. repeat as needed
+# [[proxy.external_routes]]
+# domain = "api.example.org"
+# upstream = "127.0.0.1:18080"
+
 [github]
 # github oauth app client id (optional, for github login)
 client_id = ""

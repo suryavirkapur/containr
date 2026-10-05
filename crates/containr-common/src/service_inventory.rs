@@ -121,7 +121,8 @@ pub fn summarize_app_service_runtime(
     deployments: &[Deployment],
 ) -> AppServiceRuntimeSummary {
     let mut deployments = deployments.to_vec();
-    deployments.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+    deployments
+        .sort_by_key(|deployment| std::cmp::Reverse(deployment.created_at));
 
     let desired_instances = if service.is_cron_job() {
         1

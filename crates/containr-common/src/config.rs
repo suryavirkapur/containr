@@ -92,6 +92,30 @@ pub struct ProxyConfig {
     pub public_ip: Option<String>,
     #[serde(default)]
     pub load_balance: LoadBalanceAlgorithm,
+    /// domains proxied to upstreams outside containr, such as a compose
+    /// stack's published port. https is issued for each domain
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub external_routes: Vec<ExternalRoute>,
+}
+
+/// a domain served by the proxy for an upstream containr does not manage
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalRoute {
+    pub domain: String,
+    /// `host:port`, e.g. `127.0.0.1:18080`
+    pub upstream: String,
+}
+
+impl ExternalRoute {
+    /// splits `upstream` into host and port
+    pub fn host_port(&self) -> Option<(String, u16)> {
+        let (host, port) = self.upstream.trim().rsplit_once(':')?;
+        let host = host.trim_start_matches('[').trim_end_matches(']');
+        if host.is_empty() {
+            return None;
+        }
+        Some((host.to_string(), port.parse().ok()?))
+    }
 }
 
 impl Default for ProxyConfig {
@@ -102,6 +126,7 @@ impl Default for ProxyConfig {
             base_domain: "svk77.com".to_string(),
             public_ip: None,
             load_balance: LoadBalanceAlgorithm::default(),
+            external_routes: Vec::new(),
         }
     }
 }
@@ -459,5 +484,37 @@ staging = true
             directory_config.sqlite_path(),
             root.join("containr.sqlite3")
         );
+    }
+
+    #[test]
+    fn external_routes_parse_from_toml() {
+        let proxy: ProxyConfig = toml::from_str(
+            r#"
+            http_port = 80
+            https_port = 443
+            base_domain = "example.com"
+
+            [[external_routes]]
+            domain = "api.example.org"
+            upstream = "127.0.0.1:18080"
+
+            [[external_routes]]
+            domain = "bad.example.org"
+            upstream = "no-port"
+            "#,
+        )
+        .expect("proxy config");
+
+        assert_eq!(proxy.external_routes.len(), 2);
+        assert_eq!(
+            proxy.external_routes[0].host_port(),
+            Some(("127.0.0.1".to_string(), 18080))
+        );
+        assert_eq!(proxy.external_routes[1].host_port(), None);
+        let none: ProxyConfig = toml::from_str(
+            "http_port = 80\nhttps_port = 443\nbase_domain = \"x\"",
+        )
+        .expect("no routes");
+        assert!(none.external_routes.is_empty());
     }
 }

@@ -3780,7 +3780,8 @@ async fn lookup_resolved_ips(
 }
 
 fn sort_deployments_desc(mut deployments: Vec<Deployment>) -> Vec<Deployment> {
-    deployments.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+    deployments
+        .sort_by_key(|deployment| std::cmp::Reverse(deployment.created_at));
     deployments
 }
 
@@ -4399,6 +4400,8 @@ async fn delete_app_service(
         delete_app_runtime(state, app).await?;
         state.db.delete_app(app.id).map_err(internal_error)?;
         detach_managed_services_from_app(state, app)?;
+        // the app is gone, so this drops its routes
+        refresh_proxy_routes(state, app.id).await;
         return Ok(());
     }
 
