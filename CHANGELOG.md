@@ -25,6 +25,10 @@ unreleased
 - on startup, apps and databases recorded as running whose containers are gone get redeployed or started again
 - a service's deployment history shows builds that are in progress or failed before starting containers
 - environment tab: an eye button shows the real value of secret variables (fetched on demand from `POST /api/services/{id}/env/reveal`, owner only, logged); before, secrets only ever showed `********`
+- proxy merges http/2 split `cookie` headers into one before forwarding, so session logins work in browsers (apps saw `a=1, b=2` and lost every cookie after the first; adminer logins silently failed)
+- proxy sends `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-For` and `X-Real-IP` to apps
+- services published on a host port show "Public TCP <ip>:<port>" instead of "Private service"
+- services list shows a loading state instead of "Deploy your first service" before the first load finishes
 - deleting an app removes its proxy routes right away instead of leaving them mapped until restart
 - one-click apps: replaced minio (no longer published on docker hub) with rustfs; updated default versions for ghost 6, nextcloud 35, gitea, forgejo 16, meilisearch v1, registry 3 and uptime kuma 2
 - one-click apps: ghost, nextcloud, baserow and vaultwarden require a domain; n8n works over the generated plain-http url; the regenerate button keeps the secret format (e.g. laravel `base64:` keys)

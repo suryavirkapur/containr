@@ -32,7 +32,14 @@ import {
 } from "../../components/ui";
 import { confirm, DropdownMenu, toast } from "../../components/ui/overlay";
 import { useAppStore } from "../../context/AppStore";
-import { displayHost, isAppService, primaryUrl, ServiceIcon, typeLabel } from "../../lib/services";
+import {
+	displayHost,
+	isAppService,
+	primaryUrl,
+	publicPorts,
+	ServiceIcon,
+	typeLabel,
+} from "../../lib/services";
 import { isInProgress } from "../../lib/status";
 import { ServiceContext, type ServiceContextValue, toServiceInput } from "./context";
 
@@ -240,6 +247,14 @@ const ServiceLayout: ParentComponent = (props) => {
 															<ExternalLink width={12} height={12} />
 														</a>
 													)}
+												</Show>
+												<Show when={publicPorts(current()).length > 0}>
+													<span
+														class="font-mono text-[12.5px] text-warning"
+														title="Published on the server's public ip; reachable from the internet"
+													>
+														Public TCP {publicPorts(current()).join(", ")}
+													</span>
 												</Show>
 											</>
 										)}

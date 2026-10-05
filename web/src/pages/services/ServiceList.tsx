@@ -33,6 +33,7 @@ import {
 	instancesLabel,
 	isManaged,
 	primaryUrl,
+	publicPorts,
 	ServiceIcon,
 	typeLabel,
 } from "../../lib/services";
@@ -208,7 +209,7 @@ const Services = () => {
 			</div>
 
 			<Switch>
-				<Match when={!store.loaded() && store.state.servicesLoading}>
+				<Match when={!store.loaded() && !store.state.servicesError}>
 					<div class="card space-y-3 p-4">
 						<Skeleton class="h-10" />
 						<Skeleton class="h-10" />
@@ -255,9 +256,18 @@ const Services = () => {
 										<Show
 											when={primaryUrl(service)}
 											fallback={
-												<span class="text-fg-faint">
-													{service.internal_host ?? "No public URL"}
-												</span>
+												<Show
+													when={publicPorts(service).length > 0}
+													fallback={
+														<span class="text-fg-faint">
+															{service.internal_host ?? "No public URL"}
+														</span>
+													}
+												>
+													<span class="text-warning">
+														Public TCP · {publicPorts(service).join(", ")}
+													</span>
+												</Show>
 											}
 										>
 											{(url) => displayHost(url())}
@@ -308,7 +318,16 @@ const Services = () => {
 														<div class="truncate text-[12px] text-fg-subtle">
 															<Show
 																when={primaryUrl(service)}
-																fallback={typeLabel(service.service_type)}
+																fallback={
+																	<Show
+																		when={publicPorts(service).length > 0}
+																		fallback={typeLabel(service.service_type)}
+																	>
+																		<span class="text-warning">
+																			Public TCP · {publicPorts(service).join(", ")}
+																		</span>
+																	</Show>
+																}
 															>
 																{(url) => (
 																	<a

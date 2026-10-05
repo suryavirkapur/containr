@@ -18,7 +18,7 @@ import {
 	StatusDot,
 } from "../../components/ui";
 import { formatBytes, formatDuration, formatPercent, shortId, timeAgo } from "../../lib/format";
-import { displayHost, typeLabel } from "../../lib/services";
+import { displayHost, publicPorts, typeLabel } from "../../lib/services";
 import { useService } from "./context";
 
 const UrlRow: Component<{ url: string; label?: JSX.Element }> = (props) => (
@@ -185,7 +185,9 @@ const ServiceOverview = () => {
 										<p class="text-[13px] text-fg-subtle">
 											{current().public_http
 												? "No domains yet."
-												: "This service isn't exposed over HTTP. Other services reach it on the internal network."}
+												: publicPorts(current()).length > 0
+													? `Not exposed over HTTP, but published on ${publicPorts(current()).join(", ")}: anyone on the internet can connect to that port. Remove the port mapping under Networking to make it private.`
+													: "This service isn't exposed over HTTP. Other services reach it on the internal network."}
 										</p>
 									}
 								>

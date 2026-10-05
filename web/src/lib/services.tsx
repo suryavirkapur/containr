@@ -91,6 +91,20 @@ export const primaryUrl = (service: Service): string | null => {
 	return service.default_urls[0] ?? null;
 };
 
+/**
+ * host:port addresses the server publishes for this service outside http,
+ * e.g. a database reachable from the internet on 203.0.113.4:5050
+ */
+export const publicPorts = (service: Service): string[] => {
+	const host = service.public_ip || window.location.hostname;
+	const ports = service.port_mappings.map(
+		(mapping) => `${host}:${mapping.host_port}${mapping.protocol === "udp" ? "/udp" : ""}`,
+	);
+	for (const port of [service.external_port, service.proxy_external_port])
+		if (port) ports.push(`${host}:${port}`);
+	return [...new Set(ports)];
+};
+
 export const displayHost = (url: string) => url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 
 export const instancesLabel = (service: Service) =>

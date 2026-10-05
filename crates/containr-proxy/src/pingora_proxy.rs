@@ -43,6 +43,12 @@ pub struct ProxyCtx {
     is_grpc: bool,
     /// Whether this is an SSE request
     is_sse: bool,
+    /// whether the client connected over tls, for X-Forwarded-Proto
+    client_tls: bool,
+    /// host the client asked for, for X-Forwarded-Host
+    client_host: String,
+    /// client ip, for X-Forwarded-For and X-Real-IP
+    client_ip: Option<String>,
 }
 
 /// Pingora-based proxy server
@@ -223,6 +229,9 @@ impl ProxyHttp for ContainrProxy {
             is_websocket: false,
             is_grpc: false,
             is_sse: false,
+            client_tls: false,
+            client_host: String::new(),
+            client_ip: None,
         }
     }
 
@@ -320,6 +329,12 @@ impl ProxyHttp for ContainrProxy {
             .digest()
             .map(|d| d.ssl_digest.is_some())
             .unwrap_or(false);
+        ctx.client_tls = is_tls;
+        ctx.client_host = host.clone();
+        ctx.client_ip = session
+            .client_addr()
+            .and_then(|addr| addr.as_inet())
+            .map(|addr| addr.ip().to_string());
         let https_required = if host.is_empty() {
             false
         } else if host == base_domain
@@ -469,16 +484,8 @@ impl ProxyHttp for ContainrProxy {
         upstream_request: &mut RequestHeader,
         ctx: &mut Self::CTX,
     ) -> Result<()> {
-        // For WebSocket, ensure connection headers are preserved
-        if ctx.is_websocket {
-            // Pingora handles WebSocket upgrades natively, but ensure headers are passed
-            upstream_request.insert_header("X-Forwarded-Proto", "http")?;
-        }
-
-        // For gRPC, ensure proper headers
-        if ctx.is_grpc {
-            upstream_request.insert_header("X-Forwarded-Proto", "http")?;
-        }
+        merge_cookie_headers(upstream_request)?;
+        set_forwarded_headers(upstream_request, ctx)?;
 
         // For SSE, add appropriate headers for streaming
         if ctx.is_sse {
@@ -703,5 +710,133 @@ fn parse_storage_management_upstream(endpoint: &str) -> Option<(String, bool)> {
         Some((authority.to_string(), tls))
     } else {
         Some((format!("{}:{}", authority, if tls { 443 } else { 80 }), tls))
+    }
+}
+
+/// http/2 clients may send each cookie as its own `cookie` header. an
+/// http/1.1 upstream expects one header joined with "; " (rfc 9113
+/// 8.2.3); left alone, apps receive "a=1, b=2" and lose all but the first
+/// cookie, which silently breaks session logins
+fn merge_cookie_headers(request: &mut RequestHeader) -> Result<()> {
+    let values: Vec<String> = request
+        .headers
+        .get_all("cookie")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+    if values.len() < 2 {
+        return Ok(());
+    }
+    request.remove_header("cookie");
+    request.insert_header("cookie", values.join("; "))?;
+    Ok(())
+}
+
+/// tells the app how the client reached the proxy, like nginx or caprover
+/// do: apps use these to build absolute urls, mark cookies secure and log
+/// the real client ip
+fn set_forwarded_headers(
+    request: &mut RequestHeader,
+    ctx: &ProxyCtx,
+) -> Result<()> {
+    let proto = if ctx.client_tls { "https" } else { "http" };
+    request.insert_header("X-Forwarded-Proto", proto)?;
+    if !ctx.client_host.is_empty() {
+        request.insert_header("X-Forwarded-Host", ctx.client_host.as_str())?;
+    }
+    if let Some(ip) = &ctx.client_ip {
+        let forwarded_for = match request
+            .headers
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            Some(existing) => format!("{}, {}", existing, ip),
+            None => ip.clone(),
+        };
+        request.insert_header("X-Forwarded-For", forwarded_for)?;
+        request.insert_header("X-Real-IP", ip.as_str())?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx(tls: bool, ip: Option<&str>) -> ProxyCtx {
+        ProxyCtx {
+            upstream_addr: None,
+            upstream_tls: false,
+            upstream_selection: None,
+            is_websocket: false,
+            is_grpc: false,
+            is_sse: false,
+            client_tls: tls,
+            client_host: "app.example.com".to_string(),
+            client_ip: ip.map(ToOwned::to_owned),
+        }
+    }
+
+    fn header(request: &RequestHeader, name: &str) -> Vec<String> {
+        request
+            .headers
+            .get_all(name)
+            .iter()
+            .map(|value| value.to_str().expect("ascii").to_string())
+            .collect()
+    }
+
+    #[test]
+    fn split_cookie_headers_are_joined_with_semicolons() {
+        let mut request =
+            RequestHeader::build("POST", b"/", None).expect("request");
+        request.append_header("cookie", "sid=abc").expect("cookie");
+        request.append_header("cookie", "key=def").expect("cookie");
+
+        merge_cookie_headers(&mut request).expect("merge");
+        assert_eq!(header(&request, "cookie"), vec!["sid=abc; key=def"]);
+    }
+
+    #[test]
+    fn a_single_cookie_header_is_left_alone() {
+        let mut request =
+            RequestHeader::build("GET", b"/", None).expect("request");
+        request.append_header("cookie", "a=1; b=2").expect("cookie");
+
+        merge_cookie_headers(&mut request).expect("merge");
+        assert_eq!(header(&request, "cookie"), vec!["a=1; b=2"]);
+    }
+
+    #[test]
+    fn forwarded_headers_describe_the_client() {
+        let mut request =
+            RequestHeader::build("GET", b"/", None).expect("request");
+        request
+            .append_header("x-forwarded-for", "203.0.113.9")
+            .expect("xff");
+
+        set_forwarded_headers(&mut request, &ctx(true, Some("198.51.100.4")))
+            .expect("forwarded");
+        assert_eq!(header(&request, "x-forwarded-proto"), vec!["https"]);
+        assert_eq!(
+            header(&request, "x-forwarded-host"),
+            vec!["app.example.com"]
+        );
+        assert_eq!(
+            header(&request, "x-forwarded-for"),
+            vec!["203.0.113.9, 198.51.100.4"]
+        );
+        assert_eq!(header(&request, "x-real-ip"), vec!["198.51.100.4"]);
+
+        let mut plain =
+            RequestHeader::build("GET", b"/", None).expect("request");
+        set_forwarded_headers(&mut plain, &ctx(false, None))
+            .expect("forwarded");
+        assert_eq!(header(&plain, "x-forwarded-proto"), vec!["http"]);
+        assert!(header(&plain, "x-forwarded-for").is_empty());
     }
 }

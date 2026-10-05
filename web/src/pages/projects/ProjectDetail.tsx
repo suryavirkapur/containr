@@ -21,7 +21,14 @@ import {
 import { Modal, toast } from "../../components/ui/overlay";
 import { useAppStore } from "../../context/AppStore";
 import { timeAgo } from "../../lib/format";
-import { displayHost, isManaged, primaryUrl, ServiceIcon, typeLabel } from "../../lib/services";
+import {
+	displayHost,
+	isManaged,
+	primaryUrl,
+	publicPorts,
+	ServiceIcon,
+	typeLabel,
+} from "../../lib/services";
 import { ServiceActions } from "../services/ServiceList";
 import { useProjectSummaries } from "./Projects";
 
@@ -152,6 +159,12 @@ const ProjectDetail = () => {
 													</code>
 													<Show when={primaryUrl(service)}>
 														{(url) => <> · {displayHost(url())}</>}
+													</Show>
+													<Show when={publicPorts(service).length > 0}>
+														<span class="text-warning">
+															{" "}
+															· public TCP {publicPorts(service).join(", ")}
+														</span>
 													</Show>
 												</div>
 											</div>
