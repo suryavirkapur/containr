@@ -74,7 +74,7 @@ const verifyAdminCanCreateUser = async (page, email) => {
   const dialog = page.getByRole('dialog');
   await dialog.locator('input[type="email"]').fill(email);
   await dialog.getByRole('button', { name: 'Add user' }).click();
-  await waitForVisible(page.getByText(email), 'new user did not appear in the users list');
+  await waitForVisible(page.getByText(email, { exact: true }), 'new user did not appear in the users list');
 };
 
 const run = async () => {

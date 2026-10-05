@@ -18,6 +18,12 @@ unreleased
 - services api returns the generated `service-xxxxx.<base_domain>` url in `default_urls` again, so the ui shows where public services are reachable
 - proxy shuts down within ~10s on sigterm instead of waiting out pingora's 300s grace period (the systemd unit kills after 15s)
 - fixed sidebar navigation icons disappearing after opening the command palette or mobile drawer
+- volumes now behave like docker named volumes: an empty volume gets the image's files and ownership on first deploy, so apps that run as a non-root user (grafana, n8n, prometheus, pgadmin, rustfs, ...) can write their data
+- deploys fall back to the local image when a pull fails (docker hub rate limits, registry outages) instead of failing
+- `[[proxy.external_routes]]` in the config serves a domain (with automatic https) for an upstream outside containr, e.g. a docker compose stack
+- deleting an app removes its proxy routes right away instead of leaving them mapped until restart
+- one-click apps: replaced minio (no longer published on docker hub) with rustfs; updated default versions for ghost 6, nextcloud 35, gitea, forgejo 16, meilisearch v1, registry 3 and uptime kuma 2
+- one-click apps: ghost, nextcloud, baserow and vaultwarden require a domain; n8n works over the generated plain-http url; the regenerate button keeps the secret format (e.g. laravel `base64:` keys)
 
 0.1.18-alpha - 2026-03-21
 - full ui overhaul: replaced all ad-hoc tailwind utility strings with a design system of cr-* classes (cr-btn, cr-input, cr-panel, cr-table, cr-badge, cr-chip, cr-nav-item, cr-tab, cr-project-card)

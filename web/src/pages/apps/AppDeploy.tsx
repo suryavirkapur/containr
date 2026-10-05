@@ -20,8 +20,12 @@ import {
 } from "../../components/ui";
 import { toast } from "../../components/ui/overlay";
 import { useAppStore } from "../../context/AppStore";
-import { findTemplate, initialValues, type TemplateContext } from "../../lib/catalog";
-import { randomSecret } from "../../lib/format";
+import {
+	findTemplate,
+	generateValue,
+	initialValues,
+	type TemplateContext,
+} from "../../lib/catalog";
 import { ServiceIcon, typeLabel } from "../../lib/services";
 import { nameProblem, ProjectField } from "../new/shared";
 import { AppLogo } from "./AppLogo";
@@ -92,6 +96,10 @@ const AppDeploy = () => {
 		if (!current || error()) return;
 		if (missing().length) {
 			toast.error(`Fill in ${missing()[0].label.toLowerCase()}`);
+			return;
+		}
+		if (current.needsDomain && !domain().trim()) {
+			toast.error(`${current.name} needs a domain to work`);
 			return;
 		}
 		setSubmitting(true);
@@ -176,11 +184,13 @@ const AppDeploy = () => {
 									<Field
 										class="mt-4"
 										label="Domain"
-										optional
+										optional={!current().needsDomain}
 										hint={
-											baseDomain()
-												? "Point DNS at this server; HTTPS is issued automatically."
-												: "Set a root domain in Settings to get one automatically."
+											current().needsDomain && !domain()
+												? `${current().name} only works behind its own domain.`
+												: baseDomain()
+													? "Point DNS at this server; HTTPS is issued automatically."
+													: "Set a root domain in Settings to get one automatically."
 										}
 									>
 										<Input
@@ -236,12 +246,7 @@ const AppDeploy = () => {
 																variant="secondary"
 																icon
 																title="Generate a new value"
-																onClick={() =>
-																	setValues(
-																		variable.id,
-																		randomSecret(variable.generate === "password" ? 20 : 40),
-																	)
-																}
+																onClick={() => setValues(variable.id, generateValue(variable))}
 															>
 																<RefreshCw />
 															</Button>
