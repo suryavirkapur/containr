@@ -122,6 +122,14 @@ export const deployDockerfile = (id: string, dockerfile: string) =>
 		dockerfile,
 	});
 
+/** real value of a secret variable; settings responses only carry a mask */
+export const revealEnvVar = (id: string, key: string, scope: "service" | "shared" = "service") =>
+	request<{ key: string; value: string }>(
+		"POST",
+		`/api/services/${encodeURIComponent(id)}/env/reveal`,
+		{ key, scope },
+	);
+
 export const moveService = (id: string, groupId: string | null) =>
 	request<Service>("POST", `/api/services/${encodeURIComponent(id)}/move`, {
 		group_id: groupId,

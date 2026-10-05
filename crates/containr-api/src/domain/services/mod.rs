@@ -8,7 +8,7 @@ use axum::{http::StatusCode, Json};
 use chrono::Utc;
 use croner::Cron;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use tracing::{info, warn};
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 use trust_dns_resolver::proto::rr::RecordType;
 use trust_dns_resolver::TokioAsyncResolver;
@@ -301,6 +301,21 @@ pub struct HttpRequestLogResponse {
     pub upstream: String,
     pub protocol: String,
     pub created_at: String,
+}
+
+/// asks for the stored value of one secret environment variable
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct RevealEnvVarRequest {
+    pub key: String,
+    /// `service` (default) for the service's own variables, `shared` for
+    /// the project's
+    pub scope: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct RevealEnvVarResponse {
+    pub key: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -700,6 +715,47 @@ impl ServiceSvc {
     ) -> ApiResult<InventoryServiceResponse> {
         let config = self.state.config.read().await.clone();
         self.service_response(user_id, service_id, &config.proxy)
+    }
+
+    /// returns the real value of a (usually secret) environment variable.
+    /// settings responses mask secrets, so the ui calls this on demand
+    pub fn reveal_env_var(
+        &self,
+        user_id: Uuid,
+        service_id: Uuid,
+        req: RevealEnvVarRequest,
+    ) -> ApiResult<RevealEnvVarResponse> {
+        let (app, service) =
+            resolve_owned_app_service_record(&self.state, user_id, service_id)?;
+        let key = req.key.trim();
+        let vars = match req.scope.as_deref().map(str::trim) {
+            None | Some("") | Some("service") => &service.env_vars,
+            Some("shared") => &app.env_vars,
+            Some(other) => {
+                return Err(bad_request(format!(
+                    "unknown scope {}; use service or shared",
+                    other
+                )));
+            }
+        };
+        let var = vars.iter().find(|var| var.key == key).ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: format!("variable {} not found", key),
+                }),
+            )
+        })?;
+        info!(
+            user_id = %user_id,
+            service_id = %service_id,
+            key = %key,
+            "revealed environment variable"
+        );
+        Ok(RevealEnvVarResponse {
+            key: var.key.clone(),
+            value: var.value.clone(),
+        })
     }
 
     pub async fn get_service_settings(
@@ -5019,6 +5075,67 @@ mod services_test {
             ] {
                 assert_eq!(parse_restart_policy(Some(raw)), expected);
             }
+        }
+
+        #[test]
+        fn secret_env_vars_can_be_revealed_by_the_owner() {
+            use super::super::{RevealEnvVarRequest, ServiceSvc};
+            use containr_common::models::EnvVar;
+
+            let (state, _dir) = state();
+            let mut app = app_with_mappings(&state.db, Vec::new());
+            app.env_vars = vec![EnvVar {
+                key: "SHARED_TOKEN".to_string(),
+                value: "shared-value".to_string(),
+                secret: true,
+            }];
+            app.services[0].env_vars = vec![EnvVar {
+                key: "POSTGRES_PASSWORD".to_string(),
+                value: "s3cret".to_string(),
+                secret: true,
+            }];
+            state.db.save_app(&app).expect("save app");
+            let service_id = app.services[0].id;
+            let svc = ServiceSvc::new(state.clone());
+            let ask = |key: &str, scope: Option<&str>| RevealEnvVarRequest {
+                key: key.to_string(),
+                scope: scope.map(ToOwned::to_owned),
+            };
+
+            let revealed = svc
+                .reveal_env_var(
+                    app.owner_id,
+                    service_id,
+                    ask("POSTGRES_PASSWORD", None),
+                )
+                .expect("reveal service var");
+            assert_eq!(revealed.value, "s3cret");
+            let shared = svc
+                .reveal_env_var(
+                    app.owner_id,
+                    service_id,
+                    ask("SHARED_TOKEN", Some("shared")),
+                )
+                .expect("reveal shared var");
+            assert_eq!(shared.value, "shared-value");
+
+            let missing = svc
+                .reveal_env_var(app.owner_id, service_id, ask("NOPE", None))
+                .expect_err("unknown key");
+            assert_eq!(missing.0, StatusCode::NOT_FOUND);
+
+            let stranger = User::new_with_password(
+                "stranger@example.com".to_string(),
+                "hash".to_string(),
+            );
+            state.db.save_user(&stranger).expect("save stranger");
+            assert!(svc
+                .reveal_env_var(
+                    stranger.id,
+                    service_id,
+                    ask("POSTGRES_PASSWORD", None)
+                )
+                .is_err());
         }
 
         #[tokio::test]

@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { revealEnvVar } from "../../api/platform";
 import { Card, Notice, SaveBar } from "../../components/ui";
 import { EnvEditor, type EnvRow } from "../../components/ui/editors";
 import { useService } from "./context";
@@ -51,6 +52,9 @@ const ServiceEnvironment = () => {
 			.filter((row) => row.key.trim())
 			.map((row) => ({ key: row.key.trim(), value: row.value, secret: row.secret }));
 
+	const reveal = async (key: string, scope: "service" | "shared") =>
+		(await revealEnvVar(ctx.id(), key, scope)).value;
+
 	const save = async () => {
 		const request = ctx.serviceRequest({ env_vars: clean(serviceVars()) });
 		if (!request) return;
@@ -72,6 +76,7 @@ const ServiceEnvironment = () => {
 				<EnvEditor
 					rows={serviceVars()}
 					onChange={setServiceVars}
+					onReveal={(key) => reveal(key, "service")}
 					emptyLabel="No variables set for this service."
 				/>
 				<Show when={duplicate()}>
@@ -84,7 +89,12 @@ const ServiceEnvironment = () => {
 				title="Shared variables"
 				description="Available to every service in this project. Service variables override shared ones with the same key."
 			>
-				<EnvEditor rows={sharedVars()} onChange={setSharedVars} emptyLabel="No shared variables." />
+				<EnvEditor
+					rows={sharedVars()}
+					onChange={setSharedVars}
+					onReveal={(key) => reveal(key, "shared")}
+					emptyLabel="No shared variables."
+				/>
 			</Card>
 			<SaveBar
 				dirty={dirty()}

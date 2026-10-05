@@ -1,9 +1,12 @@
+import Eye from "lucide-solid/icons/eye";
+import EyeOff from "lucide-solid/icons/eye-off";
 import Lock from "lucide-solid/icons/lock";
 import LockOpen from "lucide-solid/icons/lock-open";
 import Plus from "lucide-solid/icons/plus";
 import Trash2 from "lucide-solid/icons/trash";
 import { type Component, createSignal, For, Index, Show } from "solid-js";
 import { Button, cx, Input, Segmented, Textarea } from "./index";
+import { toast } from "./overlay";
 
 export const SECRET_MASK = "********";
 
@@ -49,9 +52,42 @@ export const EnvEditor: Component<{
 	keyPlaceholder?: string;
 	allowSecrets?: boolean;
 	emptyLabel?: string;
+	/** fetches the stored value of a masked secret so it can be shown */
+	onReveal?: (key: string) => Promise<string>;
 }> = (props) => {
 	const [mode, setMode] = createSignal<"table" | "raw">("table");
 	const [raw, setRaw] = createSignal("");
+	// revealed secrets stay out of the rows so showing one isn't an edit
+	const [revealed, setRevealed] = createSignal<Record<string, string>>({});
+	const [visible, setVisible] = createSignal<Record<string, boolean>>({});
+	const [revealing, setRevealing] = createSignal<string | null>(null);
+
+	const shown = (row: EnvRow) => {
+		const key = row.key.trim();
+		if (row.value === SECRET_MASK && visible()[key] && key in revealed()) return revealed()[key];
+		return row.value;
+	};
+
+	const toggleVisible = async (row: EnvRow) => {
+		const key = row.key.trim();
+		if (visible()[key]) {
+			setVisible({ ...visible(), [key]: false });
+			return;
+		}
+		if (row.value === SECRET_MASK && !(key in revealed()) && props.onReveal) {
+			setRevealing(key);
+			try {
+				const value = await props.onReveal(key);
+				setRevealed({ ...revealed(), [key]: value });
+			} catch (error) {
+				toast.error(`Could not show ${key}`, error);
+				return;
+			} finally {
+				setRevealing(null);
+			}
+		}
+		setVisible({ ...visible(), [key]: true });
+	};
 
 	const update = (index: number, patch: Partial<EnvRow>) => {
 		const next = props.rows.map((row, i) => (i === index ? { ...row, ...patch } : row));
@@ -153,8 +189,12 @@ export const EnvEditor: Component<{
 									mono
 									class="min-w-0 flex-1"
 									placeholder="value"
-									type={row().secret && row().value !== SECRET_MASK ? "password" : "text"}
-									value={row().value}
+									type={
+										row().secret && row().value !== SECRET_MASK && !visible()[row().key.trim()]
+											? "password"
+											: "text"
+									}
+									value={shown(row())}
 									onFocus={(event) => {
 										if (row().value === SECRET_MASK) event.currentTarget.select();
 									}}
@@ -162,6 +202,26 @@ export const EnvEditor: Component<{
 									spellcheck={false}
 									autocomplete="off"
 								/>
+								<Show
+									when={
+										row().secret &&
+										(row().value !== SECRET_MASK || props.onReveal) &&
+										row().key.trim()
+									}
+								>
+									<button
+										type="button"
+										title={visible()[row().key.trim()] ? "Hide value" : "Show value"}
+										aria-label={visible()[row().key.trim()] ? "Hide value" : "Show value"}
+										disabled={revealing() === row().key.trim()}
+										onClick={() => void toggleVisible(row())}
+										class="btn btn-ghost btn-icon shrink-0"
+									>
+										<Show when={visible()[row().key.trim()]} fallback={<Eye />}>
+											<EyeOff />
+										</Show>
+									</button>
+								</Show>
 								<Show when={props.allowSecrets !== false}>
 									<button
 										type="button"
