@@ -3,6 +3,7 @@
 //! async container operations using bollard docker api.
 
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -16,14 +17,15 @@ use bollard::models::{
     NetworkingConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum,
 };
 use bollard::query_parameters::{
-    CreateContainerOptions, InspectContainerOptions, ListContainersOptions,
-    LogsOptions, RemoveContainerOptions, StartContainerOptions, StatsOptions,
+    CreateContainerOptions, DownloadFromContainerOptions,
+    InspectContainerOptions, ListContainersOptions, LogsOptions,
+    RemoveContainerOptions, StartContainerOptions, StatsOptions,
     StopContainerOptions,
 };
 use bollard::Docker;
 use futures::{Stream, StreamExt};
 use serde::Deserialize;
-use tokio::io::AsyncWrite;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tracing::{error, info, warn};
 
 use crate::error::{ClientError, Result};
@@ -139,6 +141,9 @@ pub struct DockerBindMount {
     pub source: String,
     pub target: String,
     pub read_only: bool,
+    /// copy the image's content at `target` (with ownership) into `source`
+    /// when `source` is empty, like docker does for new named volumes
+    pub seed_from_image: bool,
 }
 
 /// host port published to a container port
@@ -406,6 +411,10 @@ impl DockerContainerManager {
             });
         }
 
+        for mount in config.mounts.iter().filter(|m| m.seed_from_image) {
+            self.seed_bind_mount(&config.id, &config.image, mount).await;
+        }
+
         // build environment variables
         let env: Vec<String> = config
             .env_vars
@@ -561,6 +570,133 @@ impl DockerContainerManager {
                 container_id: Some(container_id),
             },
         })
+    }
+
+    /// best-effort copy-up of image content into an empty bind mount dir.
+    /// without it, images that run as a non-root user cannot write to the
+    /// root-owned directory containr creates for their data.
+    async fn seed_bind_mount(
+        &self,
+        container_id: &str,
+        image: &str,
+        mount: &DockerBindMount,
+    ) {
+        match self.try_seed_bind_mount(container_id, image, mount).await {
+            Ok(true) => info!(
+                source = %mount.source,
+                target = %mount.target,
+                "seeded volume from image"
+            ),
+            Ok(false) => {}
+            Err(error) => warn!(
+                source = %mount.source,
+                target = %mount.target,
+                error = %error,
+                "could not seed volume from image"
+            ),
+        }
+    }
+
+    async fn try_seed_bind_mount(
+        &self,
+        container_id: &str,
+        image: &str,
+        mount: &DockerBindMount,
+    ) -> std::result::Result<bool, String> {
+        let source = PathBuf::from(&mount.source);
+        let target = mount.target.trim_end_matches('/');
+        if !target.starts_with('/') || target.len() < 2 {
+            return Ok(false);
+        }
+        if !dir_is_empty(&source).map_err(|e| e.to_string())? {
+            return Ok(false);
+        }
+        let Some(name) = source.file_name().and_then(|n| n.to_str()) else {
+            return Ok(false);
+        };
+        let archive = source.with_file_name(format!(".{name}.seed.tar"));
+
+        // a created, never started container exposes the image filesystem
+        let helper = format!("{container_id}-seed");
+        let remove = RemoveContainerOptions {
+            force: true,
+            ..Default::default()
+        };
+        let _ = self
+            .client()
+            .remove_container(&helper, Some(remove.clone()))
+            .await;
+        let body = ContainerCreateBody {
+            image: Some(image.to_string()),
+            entrypoint: Some(vec!["/containr-seed".to_string()]),
+            cmd: Some(Vec::new()),
+            network_disabled: Some(true),
+            ..Default::default()
+        };
+        let options = CreateContainerOptions {
+            name: Some(helper.clone()),
+            ..Default::default()
+        };
+        self.client()
+            .create_container(Some(options), body)
+            .await
+            .map_err(|e| e.to_string())?;
+        let downloaded = self.download_path(&helper, target, &archive).await;
+        let _ = self.client().remove_container(&helper, Some(remove)).await;
+
+        match downloaded {
+            Ok(true) => {}
+            Ok(false) => {
+                let _ = tokio::fs::remove_file(&archive).await;
+                return Ok(false);
+            }
+            Err(error) => {
+                let _ = tokio::fs::remove_file(&archive).await;
+                return Err(error);
+            }
+        }
+
+        tokio::task::spawn_blocking(move || {
+            let result = unpack_seed_archive(&archive, &source);
+            let _ = std::fs::remove_file(&archive);
+            result
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+    }
+
+    /// streams `path` from a container into a tar file. false when the
+    /// path does not exist in the container
+    async fn download_path(
+        &self,
+        container: &str,
+        path: &str,
+        dest: &Path,
+    ) -> std::result::Result<bool, String> {
+        let options = DownloadFromContainerOptions {
+            path: path.to_string(),
+        };
+        let mut stream = self
+            .client()
+            .download_from_container(container, Some(options));
+        let mut file = tokio::fs::File::create(dest)
+            .await
+            .map_err(|e| e.to_string())?;
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(bytes) => {
+                    file.write_all(&bytes).await.map_err(|e| e.to_string())?
+                }
+                Err(bollard::errors::Error::DockerResponseServerError {
+                    status_code: 404,
+                    ..
+                }) => return Ok(false),
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+        file.flush().await.map_err(|e| e.to_string())?;
+        Ok(true)
     }
 
     /// stops a running container
@@ -1137,6 +1273,61 @@ impl Default for DockerContainerManager {
     }
 }
 
+fn dir_is_empty(path: &Path) -> std::io::Result<bool> {
+    Ok(std::fs::read_dir(path)?.next().is_none())
+}
+
+fn unpack_archive(
+    archive: &Path,
+    dest: &Path,
+    preserve_ownership: bool,
+) -> std::io::Result<()> {
+    let mut archive = tar::Archive::new(std::fs::File::open(archive)?);
+    archive.set_preserve_permissions(true);
+    archive.set_preserve_ownerships(preserve_ownership);
+    archive.unpack(dest)
+}
+
+/// unpacks a docker archive of a directory into the empty `dest`. the
+/// archive root is the directory itself, so it replaces `dest` and keeps
+/// the image's owner and mode. ownership is only kept when running as
+/// root; otherwise the files are unpacked as the current user.
+fn unpack_seed_archive(archive: &Path, dest: &Path) -> std::io::Result<bool> {
+    let Some(name) = dest.file_name().and_then(|n| n.to_str()) else {
+        return Ok(false);
+    };
+    let staging = dest.with_file_name(format!(".{name}.seed"));
+    let reset = |staging: &Path| -> std::io::Result<()> {
+        if staging.exists() {
+            std::fs::remove_dir_all(staging)?;
+        }
+        std::fs::create_dir_all(staging)
+    };
+
+    reset(&staging)?;
+    if unpack_archive(archive, &staging, true).is_err() {
+        reset(&staging)?;
+        unpack_archive(archive, &staging, false)?;
+    }
+
+    let result = (|| {
+        let mut entries = std::fs::read_dir(&staging)?;
+        let root = match (entries.next(), entries.next()) {
+            (Some(entry), None) => entry?.path(),
+            _ => return Ok(false),
+        };
+        let is_dir = std::fs::symlink_metadata(&root)?.is_dir();
+        if !is_dir || !dir_is_empty(dest)? {
+            return Ok(false);
+        }
+        std::fs::remove_dir(dest)?;
+        std::fs::rename(&root, dest)?;
+        Ok(true)
+    })();
+    let _ = std::fs::remove_dir_all(&staging);
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1196,5 +1387,58 @@ mod tests {
         assert!(hostname.starts_with("containr-12345678-service-with-spaces"));
         assert!(hostname.len() <= 63);
         assert!(!hostname.contains('_'));
+    }
+
+    fn seed_archive(root: &Path, dir: &str) -> PathBuf {
+        let path = root.join("seed.tar");
+        let mut builder =
+            tar::Builder::new(std::fs::File::create(&path).expect("tar"));
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Directory);
+        header.set_mode(0o770);
+        header.set_size(0);
+        builder
+            .append_data(&mut header, format!("{dir}/"), std::io::empty())
+            .expect("dir entry");
+        let body = b"hello";
+        let mut header = tar::Header::new_gnu();
+        header.set_mode(0o640);
+        header.set_size(body.len() as u64);
+        builder
+            .append_data(&mut header, format!("{dir}/conf.ini"), &body[..])
+            .expect("file entry");
+        builder.finish().expect("finish");
+        path
+    }
+
+    #[test]
+    fn seed_archive_fills_an_empty_mount() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().expect("tempdir");
+        let archive = seed_archive(root.path(), "grafana");
+        let dest = root.path().join("data");
+        std::fs::create_dir(&dest).expect("dest");
+
+        assert!(unpack_seed_archive(&archive, &dest).expect("unpack"));
+        let content =
+            std::fs::read_to_string(dest.join("conf.ini")).expect("file");
+        assert_eq!(content, "hello");
+        let mode = std::fs::metadata(&dest).expect("meta").permissions();
+        assert_eq!(mode.mode() & 0o777, 0o770);
+        assert!(!root.path().join(".data.seed").exists());
+    }
+
+    #[test]
+    fn seed_archive_leaves_existing_data_alone() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let archive = seed_archive(root.path(), "grafana");
+        let dest = root.path().join("data");
+        std::fs::create_dir(&dest).expect("dest");
+        std::fs::write(dest.join("mine.txt"), "keep").expect("write");
+
+        assert!(!unpack_seed_archive(&archive, &dest).expect("unpack"));
+        assert!(dest.join("mine.txt").exists());
+        assert!(!dest.join("conf.ini").exists());
     }
 }
