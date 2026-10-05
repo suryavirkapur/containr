@@ -33,8 +33,9 @@ use containr_common::managed_services::{
 use containr_common::models::{
     default_service_domain, App, BasicAuth, BuildArg, ContainerService,
     Deployment, DeploymentSource, DeploymentStatus, EnvVar, HealthCheck,
-    HttpRequestLog, PortMapping, PortProtocol, RestartPolicy, RolloutStrategy,
-    ServiceDeployment, ServiceMount, ServiceRegistryAuth, ServiceType,
+    HttpRequestLog, LoginGate, LoginGateScope, PortMapping, PortProtocol,
+    RestartPolicy, RolloutStrategy, ServiceDeployment, ServiceMount,
+    ServiceRegistryAuth, ServiceType,
 };
 use containr_common::service_inventory::{
     ServiceInventoryItem, ServiceResourceKind,
@@ -167,7 +168,14 @@ pub struct ServiceSettingsServiceResponse {
     pub mounts: Vec<ServiceMountRequest>,
     pub notes: Option<String>,
     pub basic_auth: Option<BasicAuthResponse>,
+    pub login_gate: Option<LoginGateResponse>,
     pub port_mappings: Vec<PortMappingResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct LoginGateResponse {
+    /// `owner` or `all_users`
+    pub scope: String,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -207,6 +215,12 @@ pub struct BasicAuthRequest {
     pub username: Option<String>,
     /// omitted on update keeps the existing password
     pub password: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct LoginGateRequest {
+    /// `owner` (default) or `all_users`
+    pub scope: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -388,6 +402,11 @@ pub struct ServiceRequest {
     #[serde(default, deserialize_with = "deserialize_present")]
     #[schema(value_type = Option<BasicAuthRequest>)]
     pub basic_auth: Option<Option<BasicAuthRequest>>,
+    /// require a containr login for the service's domains. absent keeps
+    /// the current value, null disables it
+    #[serde(default, deserialize_with = "deserialize_present")]
+    #[schema(value_type = Option<LoginGateRequest>)]
+    pub login_gate: Option<Option<LoginGateRequest>>,
     /// published host ports. absent keeps the current mappings
     pub port_mappings: Option<Vec<PortMappingRequest>>,
 }
@@ -2429,6 +2448,9 @@ fn service_settings_service_response(
         basic_auth: service.basic_auth.as_ref().map(|auth| BasicAuthResponse {
             username: auth.username.clone(),
         }),
+        login_gate: service.login_gate.map(|gate| LoginGateResponse {
+            scope: login_gate_scope_name(gate.scope).to_string(),
+        }),
         port_mappings: service
             .port_mappings
             .iter()
@@ -2559,6 +2581,9 @@ fn service_request_from_model(service: &ContainerService) -> ServiceRequest {
                 username: Some(auth.username.clone()),
                 password: None,
             }
+        })),
+        login_gate: Some(service.login_gate.map(|gate| LoginGateRequest {
+            scope: Some(login_gate_scope_name(gate.scope).to_string()),
         })),
         port_mappings: Some(
             service
@@ -2781,6 +2806,37 @@ fn resolve_service_notes(
 
 /// resolves basic auth: absent keeps, null or empty username disables and
 /// an omitted password keeps the stored hash
+fn login_gate_scope_name(scope: LoginGateScope) -> &'static str {
+    match scope {
+        LoginGateScope::Owner => "owner",
+        LoginGateScope::AllUsers => "all_users",
+    }
+}
+
+/// absent keeps the current gate, null removes it
+fn resolve_login_gate(
+    requested: Option<Option<LoginGateRequest>>,
+    existing: Option<LoginGate>,
+) -> ApiResult<Option<LoginGate>> {
+    let Some(requested) = requested else {
+        return Ok(existing);
+    };
+    let Some(request) = requested else {
+        return Ok(None);
+    };
+    let scope = match request.scope.as_deref().map(str::trim) {
+        None | Some("") | Some("owner") => LoginGateScope::Owner,
+        Some("all_users") => LoginGateScope::AllUsers,
+        Some(other) => {
+            return Err(bad_request(format!(
+                "unknown login gate scope {}; use owner or all_users",
+                other
+            )));
+        }
+    };
+    Ok(Some(LoginGate { scope }))
+}
+
 fn resolve_service_basic_auth(
     value: Option<Option<BasicAuthRequest>>,
     existing: Option<&BasicAuth>,
@@ -3593,6 +3649,15 @@ fn build_services(
             request.basic_auth,
             service.basic_auth.as_ref(),
         )?;
+        service.login_gate =
+            resolve_login_gate(request.login_gate, service.login_gate)?;
+        if service.basic_auth.is_some() && service.login_gate.is_some() {
+            return Err(bad_request(format!(
+                "service {} can use basic auth or the containr login, not \
+                 both",
+                service.name
+            )));
+        }
         service.port_mappings = resolve_port_mappings(
             request.port_mappings,
             &service.port_mappings,

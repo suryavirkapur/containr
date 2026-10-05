@@ -1867,6 +1867,8 @@ fn row_to_service(row: Option<&SqliteRow>) -> Result<Option<ContainerService>> {
         row.try_get("service_type").map_err(Error::from)?;
     let basic_auth: Option<String> =
         row.try_get("basic_auth").map_err(Error::from)?;
+    let login_gate: Option<String> =
+        row.try_get("login_gate").map_err(Error::from)?;
     let port_mappings: String =
         row.try_get("port_mappings").map_err(Error::from)?;
     Ok(Some(ContainerService {
@@ -1913,6 +1915,7 @@ fn row_to_service(row: Option<&SqliteRow>) -> Result<Option<ContainerService>> {
         mounts: serde_json::from_str(&mounts).unwrap_or_default(),
         notes: row.try_get("notes").map_err(Error::from)?,
         basic_auth: basic_auth.and_then(|b| serde_json::from_str(&b).ok()),
+        login_gate: login_gate.and_then(|g| serde_json::from_str(&g).ok()),
         port_mappings: serde_json::from_str(&port_mappings).unwrap_or_default(),
         created_at: DateTime::parse_from_rfc3339(&created_at)
             .map_err(|e| Error::Internal(e.to_string()))?
@@ -2304,11 +2307,15 @@ async fn insert_service(
         Some(auth) => Some(serde_json::to_string(auth)?),
         None => None,
     };
+    let login_gate = match svc.login_gate.as_ref() {
+        Some(gate) => Some(serde_json::to_string(gate)?),
+        None => None,
+    };
 
     sqlx::query(
-        r#"INSERT INTO services (id, app_id, name, image, service_type, port, expose_http, additional_ports, replicas, memory_limit, cpu_limit, depends_on, health_check, restart_policy, registry_auth, env_vars, domains, http_only_domains, build_context, dockerfile_path, build_target, build_args, command, entrypoint, working_dir, schedule, mounts, notes, basic_auth, port_mappings, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, name=excluded.name, image=excluded.image, service_type=excluded.service_type, port=excluded.port, expose_http=excluded.expose_http, additional_ports=excluded.additional_ports, replicas=excluded.replicas, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, depends_on=excluded.depends_on, health_check=excluded.health_check, restart_policy=excluded.restart_policy, registry_auth=excluded.registry_auth, env_vars=excluded.env_vars, domains=excluded.domains, http_only_domains=excluded.http_only_domains, build_context=excluded.build_context, dockerfile_path=excluded.dockerfile_path, build_target=excluded.build_target, build_args=excluded.build_args, command=excluded.command, entrypoint=excluded.entrypoint, working_dir=excluded.working_dir, schedule=excluded.schedule, mounts=excluded.mounts, notes=excluded.notes, basic_auth=excluded.basic_auth, port_mappings=excluded.port_mappings, created_at=excluded.created_at, updated_at=excluded.updated_at"#
+        r#"INSERT INTO services (id, app_id, name, image, service_type, port, expose_http, additional_ports, replicas, memory_limit, cpu_limit, depends_on, health_check, restart_policy, registry_auth, env_vars, domains, http_only_domains, build_context, dockerfile_path, build_target, build_args, command, entrypoint, working_dir, schedule, mounts, notes, basic_auth, login_gate, port_mappings, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, name=excluded.name, image=excluded.image, service_type=excluded.service_type, port=excluded.port, expose_http=excluded.expose_http, additional_ports=excluded.additional_ports, replicas=excluded.replicas, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, depends_on=excluded.depends_on, health_check=excluded.health_check, restart_policy=excluded.restart_policy, registry_auth=excluded.registry_auth, env_vars=excluded.env_vars, domains=excluded.domains, http_only_domains=excluded.http_only_domains, build_context=excluded.build_context, dockerfile_path=excluded.dockerfile_path, build_target=excluded.build_target, build_args=excluded.build_args, command=excluded.command, entrypoint=excluded.entrypoint, working_dir=excluded.working_dir, schedule=excluded.schedule, mounts=excluded.mounts, notes=excluded.notes, basic_auth=excluded.basic_auth, login_gate=excluded.login_gate, port_mappings=excluded.port_mappings, created_at=excluded.created_at, updated_at=excluded.updated_at"#
     )
     .bind(svc.id.to_string())
     .bind(svc.app_id.to_string())
@@ -2339,6 +2346,7 @@ async fn insert_service(
     .bind(serde_json::to_string(&svc.mounts)?)
     .bind(&svc.notes)
     .bind(basic_auth)
+    .bind(login_gate)
     .bind(serde_json::to_string(&svc.port_mappings)?)
     .bind(svc.created_at.to_rfc3339())
     .bind(svc.updated_at.to_rfc3339())

@@ -1,4 +1,4 @@
-import { A, useNavigate } from "@solidjs/router";
+import { A, useNavigate, useSearchParams } from "@solidjs/router";
 import { createResource, createSignal, Show } from "solid-js";
 import { getRegistrationStatus } from "../../api/auth";
 import { errorMessage } from "../../api/http";
@@ -7,9 +7,19 @@ import { Button, Field, Input, Notice, PasswordInput } from "../../components/ui
 import { GithubIcon } from "../../components/ui/brand";
 import { useAuth } from "../../context/AuthContext";
 
+/** only same-site paths, so ?next= can't send people elsewhere */
+export const safeNext = (value: unknown) =>
+	typeof value === "string" &&
+	value.startsWith("/") &&
+	!value.startsWith("//") &&
+	!value.startsWith("/\\")
+		? value
+		: "/";
+
 const Login = () => {
 	const auth = useAuth();
 	const navigate = useNavigate();
+	const [params] = useSearchParams();
 	const [status] = createResource(getRegistrationStatus);
 	const [email, setEmail] = createSignal("");
 	const [password, setPassword] = createSignal("");
@@ -22,7 +32,7 @@ const Login = () => {
 		setError(null);
 		try {
 			await auth.login(email().trim(), password());
-			navigate("/");
+			navigate(safeNext(params.next), { replace: true });
 		} catch (requestError) {
 			setError(errorMessage(requestError, "Sign in failed"));
 		} finally {

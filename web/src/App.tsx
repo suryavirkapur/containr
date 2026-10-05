@@ -1,6 +1,7 @@
 import { Navigate, Route } from "@solidjs/router";
 import { type Component, lazy } from "solid-js";
 import { AppShell } from "./components/layout/AppShell";
+import Gate from "./pages/auth/Gate";
 import GithubCallback from "./pages/auth/GithubCallback";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
@@ -44,6 +45,7 @@ const redirect =
 const App: Component = () => (
 	<>
 		<Route path="/login" component={Login} />
+		<Route path="/gate" component={Gate} />
 		<Route path="/register" component={Register} />
 		<Route path="/github/callback" component={() => <GithubCallback />} />
 		<Route path="/github/install/callback" component={() => <GithubCallback install />} />

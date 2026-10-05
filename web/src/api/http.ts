@@ -32,7 +32,10 @@ const handleUnauthorized = (response: Response) => {
 	if (response.status !== 401) return;
 	localStorage.removeItem(TOKEN_KEY);
 	localStorage.removeItem(USER_KEY);
-	if (window.location.pathname !== "/login") window.location.assign("/login");
+	if (window.location.pathname === "/login") return;
+	// come back here after signing in again
+	const next = `${window.location.pathname}${window.location.search}`;
+	window.location.assign(next === "/" ? "/login" : `/login?next=${encodeURIComponent(next)}`);
 };
 
 export const request = async <T>(

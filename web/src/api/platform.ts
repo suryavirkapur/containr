@@ -130,6 +130,10 @@ export const revealEnvVar = (id: string, key: string, scope: "service" | "shared
 		{ key, scope },
 	);
 
+/** a short-lived pass for a service behind the containr login */
+export const createGatePass = (host: string, returnTo: string) =>
+	request<{ redirect_url: string }>("POST", "/api/gate/pass", { host, return_to: returnTo });
+
 export const moveService = (id: string, groupId: string | null) =>
 	request<Service>("POST", `/api/services/${encodeURIComponent(id)}/move`, {
 		group_id: groupId,
@@ -185,6 +189,8 @@ export type ServiceInput = {
 	mounts?: MountInput[];
 	notes?: string | null;
 	basic_auth?: { username: string; password?: string } | null;
+	/** require a containr login before the proxy forwards to the service */
+	login_gate?: { scope: "owner" | "all_users" } | null;
 	port_mappings?: PortMapping[];
 };
 

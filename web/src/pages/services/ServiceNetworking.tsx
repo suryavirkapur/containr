@@ -27,6 +27,7 @@ import {
 	Notice,
 	PasswordInput,
 	SaveBar,
+	Segmented,
 	Select,
 	SettingRow,
 	Switch,
@@ -61,6 +62,9 @@ const certTone = (status?: string): Tone => {
 	}
 };
 
+type Access = "public" | "login" | "password";
+type LoginScope = "owner" | "all_users";
+
 const ServiceNetworking = () => {
 	const ctx = useService();
 	const [platform] = createResource(() => getSettings().catch(() => null));
@@ -72,6 +76,7 @@ const ServiceNetworking = () => {
 		ctx.settings()?.service as
 			| (NonNullable<ReturnType<typeof ctx.settings>>["service"] & {
 					basic_auth?: { username: string } | null;
+					login_gate?: { scope: LoginScope } | null;
 					port_mappings?: PortMapping[];
 			  })
 			| undefined;
@@ -82,7 +87,9 @@ const ServiceNetworking = () => {
 	const [port, setPort] = createSignal("");
 	const [domains, setDomains] = createSignal<DomainRow[]>([]);
 	const [mappings, setMappings] = createSignal<PortMapping[]>([]);
-	const [authEnabled, setAuthEnabled] = createSignal(false);
+	const [access, setAccess] = createSignal<Access>("public");
+	const [loginScope, setLoginScope] = createSignal<LoginScope>("owner");
+	const authEnabled = () => access() === "password";
 	const [authUser, setAuthUser] = createSignal("");
 	const [authPassword, setAuthPassword] = createSignal("");
 	const [newDomain, setNewDomain] = createSignal("");
@@ -104,6 +111,8 @@ const ServiceNetworking = () => {
 				...item,
 				protocol: (item.protocol ?? "tcp") as "tcp" | "udp",
 			})),
+			access: (current.login_gate ? "login" : current.basic_auth ? "password" : "public") as Access,
+			loginScope: (current.login_gate?.scope ?? "owner") as LoginScope,
 			authEnabled: Boolean(current.basic_auth),
 			authUser: current.basic_auth?.username ?? "",
 		};
@@ -116,7 +125,8 @@ const ServiceNetworking = () => {
 		setPort(value.port);
 		setDomains(value.domains);
 		setMappings(value.mappings);
-		setAuthEnabled(value.authEnabled);
+		setAccess(value.access);
+		setLoginScope(value.loginScope);
 		setAuthUser(value.authUser);
 		setAuthPassword("");
 	};
@@ -130,7 +140,8 @@ const ServiceNetworking = () => {
 			port() !== value.port ||
 			JSON.stringify(domains()) !== JSON.stringify(value.domains) ||
 			JSON.stringify(mappings()) !== JSON.stringify(value.mappings) ||
-			authEnabled() !== value.authEnabled ||
+			access() !== value.access ||
+			(access() === "login" && loginScope() !== value.loginScope) ||
 			authUser() !== value.authUser ||
 			authPassword() !== ""
 		);
@@ -180,6 +191,7 @@ const ServiceNetworking = () => {
 			patch.basic_auth = authEnabled()
 				? { username: authUser().trim(), ...(authPassword() ? { password: authPassword() } : {}) }
 				: null;
+			patch.login_gate = access() === "login" ? { scope: loginScope() } : null;
 		}
 		const request = ctx.serviceRequest(patch);
 		if (!request) return;
@@ -376,27 +388,47 @@ const ServiceNetworking = () => {
 			</Card>
 
 			<Card
-				title="HTTP basic auth"
-				description="Ask for a username and password before anyone can reach this service."
+				title="Access"
+				description="Choose who can open this service's domains. Apps with their own login can stay public."
 			>
 				<Show
 					when={supportsParity()}
-					fallback={
-						<Notice>Update containr on this server to protect services with basic auth.</Notice>
-					}
+					fallback={<Notice>Update containr on this server to protect services.</Notice>}
 				>
 					<div class="-my-4 divide-y divide-border">
-						<SettingRow
-							title="Require a password"
-							description="Applies to every domain of this service."
-						>
-							<Switch
-								checked={authEnabled()}
-								onChange={setAuthEnabled}
-								label="Require a password"
+						<SettingRow title="Protection" description="Applies to every domain of this service.">
+							<Segmented<Access>
+								value={access()}
+								onChange={setAccess}
+								options={[
+									{ value: "public", label: "Public" },
+									{ value: "login", label: "containr login" },
+									{ value: "password", label: "Password" },
+								]}
 							/>
 						</SettingRow>
-						<Show when={authEnabled()}>
+						<Show when={access() === "login"}>
+							<SettingRow
+								title="Who can open it"
+								description="Visitors sign in with their containr account and are sent straight back."
+							>
+								<Select
+									value={loginScope()}
+									onChange={(event) => setLoginScope(event.currentTarget.value as LoginScope)}
+								>
+									<option value="owner">Only me</option>
+									<option value="all_users">Anyone with a containr account</option>
+								</Select>
+							</SettingRow>
+							<div class="py-4">
+								<Notice>
+									Best for dashboards you open in a browser, like Adminer or Grafana. Scripts,
+									webhooks and API clients can't sign in, so they get a 401; use a password or keep
+									the service public for those.
+								</Notice>
+							</div>
+						</Show>
+						<Show when={access() === "password"}>
 							<div class="grid gap-4 py-4 sm:grid-cols-2">
 								<Field label="Username">
 									<Input
