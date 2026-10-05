@@ -176,6 +176,7 @@ async fn run_server_command(
     let db_clone = db.clone();
     let algorithm = config.proxy.load_balance;
     let base_domain_clone = config.proxy.base_domain.clone();
+    add_external_routes(&routes, &config.proxy);
     tokio::spawn(async move {
         load_routes_from_db(
             &db_clone,
@@ -674,6 +675,37 @@ fn bootstrap_admin_user(db: &Database) -> anyhow::Result<()> {
 }
 
 /// loads routes from database for all apps with domains
+/// adds the configured routes to upstreams outside containr
+fn add_external_routes(
+    routes: &containr_proxy::RouteManager,
+    proxy: &containr_common::config::ProxyConfig,
+) {
+    for external in &proxy.external_routes {
+        let domain = external.domain.trim().to_lowercase();
+        let Some((host, port)) = external.host_port() else {
+            warn!(
+                domain = %domain,
+                upstream = %external.upstream,
+                "skipping external route: upstream must be host:port"
+            );
+            continue;
+        };
+        if domain.is_empty() {
+            continue;
+        }
+        routes.add_route(containr_proxy::routes::Route {
+            domain: domain.clone(),
+            app_id: None,
+            service_id: None,
+            upstreams: vec![containr_proxy::routes::Upstream { host, port }],
+            ssl_enabled: true,
+            algorithm: proxy.load_balance,
+            basic_auth: None,
+        });
+        info!(domain = %domain, upstream = %external.upstream, "added external route");
+    }
+}
+
 async fn load_routes_from_db(
     db: &containr_common::Database,
     routes: &containr_proxy::RouteManager,
@@ -741,7 +773,19 @@ async fn refresh_routes_for_app(
 ) {
     let app = match db.get_app(app_id) {
         Ok(Some(app)) => app,
-        _ => return,
+        Ok(None) => {
+            // deleted app: drop every route that still points at it
+            for route in routes.list_routes() {
+                if route.app_id == Some(app_id) {
+                    routes.remove_route(&route.domain);
+                }
+            }
+            return;
+        }
+        Err(error) => {
+            tracing::warn!(app_id = %app_id, "failed to load app: {}", error);
+            return;
+        }
     };
     // the newest deployment may still be building or may have failed; route
     // to the newest one that actually runs
@@ -926,6 +970,13 @@ async fn collect_managed_certificate_domains(
             .trim_start_matches("http://")
             .trim_end_matches('/')
             .to_lowercase();
+        if !normalized.is_empty() {
+            domains.insert(normalized);
+        }
+    }
+
+    for external in &config.proxy.external_routes {
+        let normalized = external.domain.trim().to_lowercase();
         if !normalized.is_empty() {
             domains.insert(normalized);
         }
