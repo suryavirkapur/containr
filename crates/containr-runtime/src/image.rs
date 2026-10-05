@@ -158,6 +158,20 @@ impl ImageManager {
                     }
                 }
                 Err(e) => {
+                    // a registry outage or rate limit should not stop a
+                    // redeploy of an image that is already on this host
+                    if matches!(self.image_exists(name).await, Ok(true)) {
+                        warn!(
+                            name = %name,
+                            error = %e,
+                            "pull failed, using the local image"
+                        );
+                        return Ok(ImageInfo {
+                            name: name.to_string(),
+                            digest: "unknown".to_string(),
+                            size: 0,
+                        });
+                    }
                     return Err(ClientError::Operation(format!(
                         "pull failed: {}",
                         e

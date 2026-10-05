@@ -55,6 +55,9 @@ pub fn build_service_mounts(
             source: source.to_string_lossy().to_string(),
             target: mount.target.clone(),
             read_only: mount.read_only,
+            // managed dirs behave like docker named volumes and get the
+            // image's files and ownership on first use
+            seed_from_image: host_path.is_none(),
         });
     }
 
@@ -200,7 +203,9 @@ mod tests {
         let mounts = build_service_mounts(root.path(), Uuid::nil(), &service)
             .expect("mounts");
         assert!(mounts[0].source.contains("app-mounts"));
+        assert!(mounts[0].seed_from_image);
         assert_eq!(mounts[1].source, host_dir.to_string_lossy());
+        assert!(!mounts[1].seed_from_image);
         assert!(host_dir.exists());
         assert!(mounts[1].read_only);
     }
