@@ -26,7 +26,9 @@ unreleased
 - a service's deployment history shows builds that are in progress or failed before starting containers
 - environment tab: an eye button shows the real value of secret variables (fetched on demand from `POST /api/services/{id}/env/reveal`, owner only, logged); before, secrets only ever showed `********`
 - proxy merges http/2 split `cookie` headers into one before forwarding, so session logins work in browsers (apps saw `a=1, b=2` and lost every cookie after the first; adminer logins silently failed)
-- proxy sends `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-For` and `X-Real-IP` to apps
+- proxy sends `X-Forwarded-Proto`, `X-Forwarded-Host` (with the port, when not the default), `X-Forwarded-For` and `X-Real-IP` to apps
+- proxy: requests under `/.well-known/acme-challenge/` no longer skip http basic auth unless they match an active challenge
+- proxy: http to https redirects use 308, so form posts keep their method and body
 - services published on a host port show "Public TCP <ip>:<port>" instead of "Private service"
 - services list shows a loading state instead of "Deploy your first service" before the first load finishes
 - deleting an app removes its proxy routes right away instead of leaving them mapped until restart
