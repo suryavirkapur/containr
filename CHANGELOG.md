@@ -27,6 +27,7 @@ unreleased
 - environment tab: an eye button shows the real value of secret variables (fetched on demand from `POST /api/services/{id}/env/reveal`, owner only, logged); before, secrets only ever showed `********`
 - containr login for services: under Networking → Access, a service can require a containr account (only its owner, or anyone on the server) instead of being public or using basic auth. visitors sign in to containr once and are sent back; the proxy then keeps them signed in on that domain with an httponly cookie for 12 hours. meant for browser dashboards like adminer or grafana; scripts and api clients get a 401
 - signing in again after a session expires returns you to the page you were on
+- deploys with managed volumes failed when containr ran with a relative data dir (the default `./data`): docker rejects relative bind mount sources. the data dir and mount paths are now absolute
 - proxy merges http/2 split `cookie` headers into one before forwarding, so session logins work in browsers (apps saw `a=1, b=2` and lost every cookie after the first; adminer logins silently failed)
 - proxy sends `X-Forwarded-Proto`, `X-Forwarded-Host` (with the port, when not the default), `X-Forwarded-For` and `X-Real-IP` to apps
 - proxy: requests under `/.well-known/acme-challenge/` no longer skip http basic auth unless they match an active challenge
