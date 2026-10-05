@@ -45,7 +45,7 @@ pub struct ProxyCtx {
     is_sse: bool,
     /// whether the client connected over tls, for X-Forwarded-Proto
     client_tls: bool,
-    /// host the client asked for, for X-Forwarded-Host
+    /// authority the client asked for, including its port, for X-Forwarded-Host
     client_host: String,
     /// client ip, for X-Forwarded-For and X-Real-IP
     client_ip: Option<String>,
@@ -257,16 +257,8 @@ impl ProxyHttp for ContainrProxy {
         );
         drop(config);
 
-        // try Host header first, then :authority pseudo-header (HTTP/2), then URI host
-        let host = req_header
-            .headers
-            .get("host")
-            .and_then(|h| h.to_str().ok())
-            .or_else(|| req_header.uri.host())
-            .or_else(|| req_header.uri.authority().map(|a| a.as_str()))
-            .map(|h| h.split(':').next().unwrap_or(h))
-            .map(normalize_hostname)
-            .unwrap_or_default();
+        let authority = request_authority(req_header);
+        let host = authority_hostname(&authority);
 
         // Detect WebSocket upgrade
         if let Some(upgrade) = req_header.headers.get("upgrade") {
@@ -330,7 +322,7 @@ impl ProxyHttp for ContainrProxy {
             .map(|d| d.ssl_digest.is_some())
             .unwrap_or(false);
         ctx.client_tls = is_tls;
-        ctx.client_host = host.clone();
+        ctx.client_host = authority;
         ctx.client_ip = session
             .client_addr()
             .and_then(|addr| addr.as_inet())
@@ -360,7 +352,7 @@ impl ProxyHttp for ContainrProxy {
                 let redirect_url = format!("https://{}{}", host, uri);
                 info!(host = %host, "redirecting http to https");
 
-                let mut header = ResponseHeader::build(301, None)?;
+                let mut header = ResponseHeader::build(308, None)?;
                 header.insert_header("Location", &redirect_url)?;
                 header.insert_header("Content-Length", "0")?;
                 session
@@ -415,8 +407,9 @@ impl ProxyHttp for ContainrProxy {
 
         // Find route for this host
         if let Some(route) = self.routes.get_route(&host) {
-            let is_acme = path.starts_with("/.well-known/acme-challenge/");
-            if !is_acme && !self.basic_auth_allowed(session, &host).await {
+            // Active ACME challenges were handled above. Unknown challenge
+            // paths must obey the same authentication as every other URL.
+            if !self.basic_auth_allowed(session, &host).await {
                 let body = "authentication required";
                 let mut header = ResponseHeader::build(401, None)?;
                 header.insert_header(
@@ -678,6 +671,31 @@ pub fn create_proxy_server(
     Ok(server)
 }
 
+/// Preserve the authority for apps constructing absolute URLs. Routing uses
+/// only the hostname, while forwarded headers must retain non-default ports.
+fn request_authority(request: &RequestHeader) -> String {
+    request
+        .headers
+        .get("host")
+        .and_then(|value| value.to_str().ok())
+        .or_else(|| request.uri.authority().map(|value| value.as_str()))
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn authority_hostname(authority: &str) -> String {
+    // Bracketed IPv6 literals contain colons that are not port separators.
+    let hostname = if authority.starts_with('[') {
+        authority
+            .find(']')
+            .map(|end| &authority[..=end])
+            .unwrap_or(authority)
+    } else {
+        authority.split(':').next().unwrap_or(authority)
+    };
+    normalize_hostname(hostname)
+}
+
 fn normalize_hostname(hostname: &str) -> String {
     hostname
         .trim_start_matches("https://")
@@ -788,6 +806,103 @@ mod tests {
             .iter()
             .map(|value| value.to_str().expect("ascii").to_string())
             .collect()
+    }
+
+    #[tokio::test]
+    async fn only_active_acme_challenges_bypass_route_auth() {
+        use crate::routes::Route;
+        use containr_common::config::{DatabaseConfig, LoadBalanceAlgorithm};
+        use containr_common::models::BasicAuth;
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::UnixStream;
+
+        let db_path = std::env::temp_dir()
+            .join(format!("containr-proxy-auth-{}.sqlite3", Uuid::new_v4()));
+        let db = Database::open(&DatabaseConfig {
+            path: db_path.to_string_lossy().into_owned(),
+        })
+        .expect("database");
+        let routes = RouteManager::new();
+        routes.add_route(Route {
+            domain: "app.example.com".to_string(),
+            app_id: None,
+            service_id: None,
+            upstreams: Vec::new(),
+            ssl_enabled: false,
+            algorithm: LoadBalanceAlgorithm::RoundRobin,
+            basic_auth: Some(BasicAuth {
+                username: "admin".to_string(),
+                password_hash: "unused without credentials".to_string(),
+            }),
+        });
+        let challenges = ChallengeStore::new();
+        challenges.add("active", "active.key");
+        let proxy = ContainrProxy::new(
+            routes,
+            challenges,
+            Arc::new(RwLock::new(AppConfig::default())),
+            "127.0.0.1:2077".to_string(),
+            db,
+        );
+        for (token, expected) in [("unknown", 401), ("active", 200)] {
+            let (mut client, server) = UnixStream::pair().expect("streams");
+            client.write_all(format!(
+                "GET /.well-known/acme-challenge/{token} HTTP/1.1\r\nHost: app.example.com\r\n\r\n"
+            ).as_bytes()).await.expect("request write");
+            let mut session = Session::new_h1(Box::new(
+                pingora_core::protocols::l4::stream::Stream::from(server),
+            ));
+            session
+                .as_downstream_mut()
+                .read_request()
+                .await
+                .expect("request read");
+            let mut context = proxy.new_ctx();
+            assert!(proxy
+                .request_filter(&mut session, &mut context)
+                .await
+                .expect("filter"));
+            assert_eq!(
+                session
+                    .response_written()
+                    .expect("response")
+                    .status
+                    .as_u16(),
+                expected
+            );
+            assert!(context.upstream_addr.is_none());
+        }
+        drop(proxy);
+        std::fs::remove_file(db_path).expect("remove test database");
+    }
+
+    #[test]
+    fn forwarding_preserves_authority_port_while_routing_ignores_it() {
+        let mut request =
+            RequestHeader::build("GET", b"/", None).expect("request");
+        request
+            .insert_header("host", "App.Example.com:8443")
+            .expect("host");
+        let authority = request_authority(&request);
+        assert_eq!(authority_hostname(&authority), "app.example.com");
+        let mut context = ctx(true, None);
+        context.client_host = authority;
+        set_forwarded_headers(&mut request, &context).expect("forwarded");
+        assert_eq!(
+            header(&request, "x-forwarded-host"),
+            vec!["App.Example.com:8443"]
+        );
+    }
+
+    #[test]
+    fn http2_authority_keeps_port_and_ipv6_address() {
+        let mut request =
+            RequestHeader::build("GET", b"/login", None).expect("request");
+        request.set_uri(
+            "https://app.example.com:8443/login".parse().expect("uri"),
+        );
+        assert_eq!(request_authority(&request), "app.example.com:8443");
+        assert_eq!(authority_hostname("[::1]:8443"), "[::1]");
     }
 
     #[test]
