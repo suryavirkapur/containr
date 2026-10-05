@@ -701,6 +701,7 @@ fn add_external_routes(
             ssl_enabled: true,
             algorithm: proxy.load_balance,
             basic_auth: None,
+            login_gate: None,
         });
         info!(domain = %domain, upstream = %external.upstream, "added external route");
     }
@@ -892,6 +893,12 @@ async fn refresh_routes_for_app(
                 ssl_enabled: service.domain_https_enabled(&domain),
                 algorithm,
                 basic_auth: service.basic_auth.clone(),
+                login_gate: service.login_gate.map(|gate| {
+                    containr_proxy::routes::RouteLoginGate {
+                        owner_id: app.owner_id,
+                        scope: gate.scope,
+                    }
+                }),
             });
             tracing::info!(
                 domain = %domain,

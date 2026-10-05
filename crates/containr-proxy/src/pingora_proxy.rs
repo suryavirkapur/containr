@@ -29,7 +29,14 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::acme::ChallengeStore;
-use crate::routes::{BasicAuthCheck, RouteManager, SelectedUpstream};
+use crate::routes::{
+    BasicAuthCheck, RouteLoginGate, RouteManager, SelectedUpstream,
+};
+use containr_common::access_gate::{
+    issue_gate_token, verify_gate_token, GateTokenKind, GATE_CALLBACK_PATH,
+    GATE_COOKIE, SESSION_TTL_SECONDS,
+};
+use containr_common::models::LoginGateScope;
 
 /// Context for each request
 pub struct ProxyCtx {
@@ -93,6 +100,138 @@ impl ContainrProxy {
                 tokio::task::spawn_blocking(move || pending.verify())
                     .await
                     .unwrap_or(false)
+            }
+        }
+    }
+
+    /// enforces a route's containr login. true when a response was
+    /// written (a redirect to the dashboard, the pass exchange or a 401),
+    /// false when the request may go on to the app
+    async fn enforce_login_gate(
+        &self,
+        session: &mut Session,
+        host: &str,
+        is_tls: bool,
+        gate: RouteLoginGate,
+    ) -> Result<bool> {
+        let config = self.config.read().await;
+        let secret = config.auth.jwt_secret.clone();
+        let base_domain = config.proxy.base_domain.clone();
+        let (http_port, https_port) =
+            (config.proxy.http_port, config.proxy.https_port);
+        drop(config);
+
+        let req = session.req_header();
+        let path = req.uri.path().to_string();
+        let path_and_query = req
+            .uri
+            .path_and_query()
+            .map(|pq| pq.as_str().to_string())
+            .unwrap_or_else(|| "/".to_string());
+        let is_navigation = matches!(req.method.as_str(), "GET" | "HEAD")
+            && req.headers.get("upgrade").is_none();
+
+        if path == GATE_CALLBACK_PATH {
+            let query = req.uri.query().unwrap_or_default();
+            let mut pass = None;
+            let mut return_to = None;
+            for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
+                match key.as_ref() {
+                    "pass" => pass = Some(value.into_owned()),
+                    "return" => return_to = Some(value.into_owned()),
+                    _ => {}
+                }
+            }
+            let user = pass.and_then(|pass| {
+                verify_gate_token(&secret, &pass, host, GateTokenKind::Pass)
+            });
+            let session_token = match user {
+                Some(user) if self.gate_allows(gate, user) => issue_gate_token(
+                    &secret,
+                    user,
+                    host,
+                    GateTokenKind::Session,
+                ),
+                _ => None,
+            };
+            let Some(session_token) = session_token else {
+                write_text(
+                    session,
+                    403,
+                    "this login link expired or isn't yours; open the \
+                     service again",
+                )
+                .await?;
+                return Ok(true);
+            };
+            let mut cookie = format!(
+                "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
+                GATE_COOKIE, session_token, SESSION_TTL_SECONDS
+            );
+            if is_tls {
+                cookie.push_str("; Secure");
+            }
+            let location = safe_return_path(return_to.as_deref());
+            let mut header = ResponseHeader::build(303, None)?;
+            header.insert_header("Location", location)?;
+            header.insert_header("Set-Cookie", cookie)?;
+            header.insert_header("Cache-Control", "no-store")?;
+            header.insert_header("Content-Length", "0")?;
+            session
+                .write_response_header(Box::new(header), true)
+                .await?;
+            return Ok(true);
+        }
+
+        let signed_in = cookie_value(req, GATE_COOKIE)
+            .and_then(|token| {
+                verify_gate_token(&secret, &token, host, GateTokenKind::Session)
+            })
+            .is_some_and(|user| self.gate_allows(gate, user));
+        if signed_in {
+            return Ok(false);
+        }
+
+        if !is_navigation {
+            write_text(session, 401, "containr login required").await?;
+            return Ok(true);
+        }
+        // the dashboard checks the containr session and sends the browser
+        // back with a pass
+        let (scheme, port) = if is_tls {
+            ("https", https_port)
+        } else {
+            ("http", http_port)
+        };
+        let port = match (scheme, port) {
+            ("https", 443) | ("http", 80) => String::new(),
+            (_, port) => format!(":{}", port),
+        };
+        let mut location = url::Url::parse(&format!(
+            "{}://{}{}/gate",
+            scheme, base_domain, port
+        ))
+        .map_err(|e| Error::explain(ErrorType::InternalError, e.to_string()))?;
+        location
+            .query_pairs_mut()
+            .append_pair("host", host)
+            .append_pair("return", &path_and_query);
+        let mut header = ResponseHeader::build(302, None)?;
+        header.insert_header("Location", location.as_str())?;
+        header.insert_header("Cache-Control", "no-store")?;
+        header.insert_header("Content-Length", "0")?;
+        session
+            .write_response_header(Box::new(header), true)
+            .await?;
+        Ok(true)
+    }
+
+    /// whether `user` may pass `gate`; deleted users lose access at once
+    fn gate_allows(&self, gate: RouteLoginGate, user: Uuid) -> bool {
+        match gate.scope {
+            LoginGateScope::Owner => gate.owner_id == user,
+            LoginGateScope::AllUsers => {
+                matches!(self.db.get_user(user), Ok(Some(_)))
             }
         }
     }
@@ -409,7 +548,14 @@ impl ProxyHttp for ContainrProxy {
         if let Some(route) = self.routes.get_route(&host) {
             // Active ACME challenges were handled above. Unknown challenge
             // paths must obey the same authentication as every other URL.
-            if !self.basic_auth_allowed(session, &host).await {
+            if let Some(gate) = route.login_gate {
+                if self
+                    .enforce_login_gate(session, &host, ctx.client_tls, gate)
+                    .await?
+                {
+                    return Ok(true);
+                }
+            } else if !self.basic_auth_allowed(session, &host).await {
                 let body = "authentication required";
                 let mut header = ResponseHeader::build(401, None)?;
                 header.insert_header(
@@ -478,6 +624,7 @@ impl ProxyHttp for ContainrProxy {
         ctx: &mut Self::CTX,
     ) -> Result<()> {
         merge_cookie_headers(upstream_request)?;
+        strip_cookie(upstream_request, GATE_COOKIE)?;
         set_forwarded_headers(upstream_request, ctx)?;
 
         // For SSE, add appropriate headers for streaming
@@ -731,6 +878,73 @@ fn parse_storage_management_upstream(endpoint: &str) -> Option<(String, bool)> {
     }
 }
 
+async fn write_text(
+    session: &mut Session,
+    status: u16,
+    body: &'static str,
+) -> Result<()> {
+    let mut header = ResponseHeader::build(status, None)?;
+    header.insert_header("Content-Type", "text/plain; charset=utf-8")?;
+    header.insert_header("Cache-Control", "no-store")?;
+    header.insert_header("Content-Length", body.len().to_string())?;
+    session
+        .write_response_header(Box::new(header), false)
+        .await?;
+    session.write_response_body(Some(body.into()), true).await?;
+    Ok(())
+}
+
+/// value of cookie `name` across all `cookie` headers
+fn cookie_value(request: &RequestHeader, name: &str) -> Option<String> {
+    request
+        .headers
+        .get_all("cookie")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(';'))
+        .filter_map(|pair| pair.trim().split_once('='))
+        .find(|(key, _)| *key == name)
+        .map(|(_, value)| value.to_string())
+}
+
+/// keeps containr's own cookie away from the app behind the proxy
+fn strip_cookie(request: &mut RequestHeader, name: &str) -> Result<()> {
+    let Some(value) = request
+        .headers
+        .get("cookie")
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned)
+    else {
+        return Ok(());
+    };
+    let kept: Vec<&str> = value
+        .split(';')
+        .map(str::trim)
+        .filter(|pair| !pair.is_empty())
+        .filter(|pair| pair.split('=').next() != Some(name))
+        .collect();
+    request.remove_header("cookie");
+    if !kept.is_empty() {
+        request.insert_header("cookie", kept.join("; "))?;
+    }
+    Ok(())
+}
+
+/// only same-site paths after the gate, so it can't be an open redirect
+fn safe_return_path(path: Option<&str>) -> String {
+    match path.map(str::trim) {
+        Some(path)
+            if path.starts_with('/')
+                && !path.starts_with("//")
+                && !path.starts_with("/\\")
+                && !path.chars().any(char::is_control) =>
+        {
+            path.to_string()
+        }
+        _ => "/".to_string(),
+    }
+}
+
 /// http/2 clients may send each cookie as its own `cookie` header. an
 /// http/1.1 upstream expects one header joined with "; " (rfc 9113
 /// 8.2.3); left alone, apps receive "a=1, b=2" and lose all but the first
@@ -834,6 +1048,7 @@ mod tests {
                 username: "admin".to_string(),
                 password_hash: "unused without credentials".to_string(),
             }),
+            login_gate: None,
         });
         let challenges = ChallengeStore::new();
         challenges.add("active", "active.key");
@@ -953,5 +1168,229 @@ mod tests {
             .expect("forwarded");
         assert_eq!(header(&plain, "x-forwarded-proto"), vec!["http"]);
         assert!(header(&plain, "x-forwarded-for").is_empty());
+    }
+
+    struct GateFixture {
+        proxy: ContainrProxy,
+        owner: Uuid,
+        db_path: std::path::PathBuf,
+    }
+
+    impl Drop for GateFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.db_path);
+        }
+    }
+
+    const SECRET: &str = "gate-test-secret";
+
+    fn gated_proxy(scope: LoginGateScope) -> GateFixture {
+        use crate::routes::{Route, Upstream};
+        use containr_common::config::{DatabaseConfig, LoadBalanceAlgorithm};
+
+        let db_path = std::env::temp_dir()
+            .join(format!("containr-gate-{}.sqlite3", Uuid::new_v4()));
+        let db = Database::open(&DatabaseConfig {
+            path: db_path.to_string_lossy().into_owned(),
+        })
+        .expect("database");
+        let owner = Uuid::new_v4();
+        let routes = RouteManager::new();
+        routes.add_route(Route {
+            domain: "adminer.example.com".to_string(),
+            app_id: None,
+            service_id: None,
+            upstreams: vec![Upstream {
+                host: "127.0.0.1".to_string(),
+                port: 9,
+            }],
+            ssl_enabled: false,
+            algorithm: LoadBalanceAlgorithm::RoundRobin,
+            basic_auth: None,
+            login_gate: Some(RouteLoginGate {
+                owner_id: owner,
+                scope,
+            }),
+        });
+        let mut config = AppConfig::default();
+        config.auth.jwt_secret = SECRET.to_string();
+        config.proxy.base_domain = "adm.example.com".to_string();
+        let proxy = ContainrProxy::new(
+            routes,
+            ChallengeStore::new(),
+            Arc::new(RwLock::new(config)),
+            "127.0.0.1:2077".to_string(),
+            db,
+        );
+        GateFixture {
+            proxy,
+            owner,
+            db_path,
+        }
+    }
+
+    /// runs one raw http/1.1 request through request_filter
+    async fn send(
+        proxy: &ContainrProxy,
+        raw: String,
+    ) -> (bool, Option<ResponseHeader>, ProxyCtx) {
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::UnixStream;
+
+        let (mut client, server) = UnixStream::pair().expect("streams");
+        client
+            .write_all(raw.as_bytes())
+            .await
+            .expect("request write");
+        let mut session = Session::new_h1(Box::new(
+            pingora_core::protocols::l4::stream::Stream::from(server),
+        ));
+        session
+            .as_downstream_mut()
+            .read_request()
+            .await
+            .expect("request read");
+        let mut ctx = proxy.new_ctx();
+        let handled = proxy
+            .request_filter(&mut session, &mut ctx)
+            .await
+            .expect("filter");
+        (handled, session.response_written().cloned(), ctx)
+    }
+
+    fn get(path: &str, cookie: Option<&str>) -> String {
+        let cookie = cookie
+            .map(|c| format!("Cookie: {}\r\n", c))
+            .unwrap_or_default();
+        format!(
+            "GET {} HTTP/1.1\r\nHost: adminer.example.com\r\n{}\r\n",
+            path, cookie
+        )
+    }
+
+    fn response_header(response: &ResponseHeader, name: &str) -> String {
+        response
+            .headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    #[tokio::test]
+    async fn gate_sends_browsers_to_the_dashboard() {
+        let fixture = gated_proxy(LoginGateScope::Owner);
+        let (handled, response, ctx) =
+            send(&fixture.proxy, get("/?pgsql=pg", None)).await;
+        let response = response.expect("response");
+
+        assert!(handled);
+        assert!(ctx.upstream_addr.is_none());
+        assert_eq!(response.status.as_u16(), 302);
+        assert_eq!(
+            response_header(&response, "location"),
+            "http://adm.example.com/gate?host=adminer.example.com&return=%2F%3Fpgsql%3Dpg"
+        );
+    }
+
+    #[tokio::test]
+    async fn gate_rejects_non_browser_requests_without_a_session() {
+        let fixture = gated_proxy(LoginGateScope::Owner);
+        let raw = "POST /api HTTP/1.1\r\nHost: adminer.example.com\r\nContent-Length: 0\r\n\r\n"
+            .to_string();
+        let (handled, response, _) = send(&fixture.proxy, raw).await;
+        assert!(handled);
+        assert_eq!(response.expect("response").status.as_u16(), 401);
+    }
+
+    #[tokio::test]
+    async fn gate_trades_a_pass_for_a_session_cookie() {
+        let fixture = gated_proxy(LoginGateScope::Owner);
+        let pass = issue_gate_token(
+            SECRET,
+            fixture.owner,
+            "adminer.example.com",
+            GateTokenKind::Pass,
+        )
+        .expect("pass");
+        let path = format!(
+            "{}?pass={}&return=%2F%3Fpgsql%3Dpg",
+            GATE_CALLBACK_PATH, pass
+        );
+        let (handled, response, _) =
+            send(&fixture.proxy, get(&path, None)).await;
+        let response = response.expect("response");
+
+        assert!(handled);
+        assert_eq!(response.status.as_u16(), 303);
+        assert_eq!(response_header(&response, "location"), "/?pgsql=pg");
+        let cookie = response_header(&response, "set-cookie");
+        assert!(cookie.starts_with(&format!("{}=", GATE_COOKIE)));
+        assert!(cookie.contains("HttpOnly"));
+
+        // a forged or foreign pass is refused, and never redirects off-site
+        let forged = format!(
+            "{}?pass=nope&return=%2F%2Fevil.example",
+            GATE_CALLBACK_PATH
+        );
+        let (_, response, _) = send(&fixture.proxy, get(&forged, None)).await;
+        assert_eq!(response.expect("response").status.as_u16(), 403);
+    }
+
+    #[tokio::test]
+    async fn gate_lets_a_valid_session_through_to_the_app() {
+        let fixture = gated_proxy(LoginGateScope::Owner);
+        let token = issue_gate_token(
+            SECRET,
+            fixture.owner,
+            "adminer.example.com",
+            GateTokenKind::Session,
+        )
+        .expect("session");
+        let cookie = format!("theme=dark; {}={}", GATE_COOKIE, token);
+        let (handled, _, ctx) =
+            send(&fixture.proxy, get("/", Some(&cookie))).await;
+        assert!(!handled);
+        assert_eq!(ctx.upstream_addr.as_deref(), Some("127.0.0.1:9"));
+
+        // the app never sees containr's cookie
+        let mut upstream =
+            RequestHeader::build("GET", b"/", None).expect("request");
+        upstream
+            .insert_header("cookie", cookie.as_str())
+            .expect("cookie");
+        strip_cookie(&mut upstream, GATE_COOKIE).expect("strip");
+        assert_eq!(header(&upstream, "cookie"), vec!["theme=dark"]);
+    }
+
+    #[tokio::test]
+    async fn owner_only_gates_refuse_other_users() {
+        let fixture = gated_proxy(LoginGateScope::Owner);
+        let stranger = issue_gate_token(
+            SECRET,
+            Uuid::new_v4(),
+            "adminer.example.com",
+            GateTokenKind::Session,
+        )
+        .expect("session");
+        let cookie = format!("{}={}", GATE_COOKIE, stranger);
+        let (handled, response, ctx) =
+            send(&fixture.proxy, get("/", Some(&cookie))).await;
+        assert!(handled);
+        assert!(ctx.upstream_addr.is_none());
+        assert_eq!(response.expect("response").status.as_u16(), 302);
+
+        // a token for another gated domain doesn't work here either
+        let elsewhere = issue_gate_token(
+            SECRET,
+            fixture.owner,
+            "grafana.example.com",
+            GateTokenKind::Session,
+        )
+        .expect("session");
+        let cookie = format!("{}={}", GATE_COOKIE, elsewhere);
+        let (handled, _, _) =
+            send(&fixture.proxy, get("/", Some(&cookie))).await;
+        assert!(handled);
     }
 }

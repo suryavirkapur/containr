@@ -14,7 +14,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use containr_common::config::LoadBalanceAlgorithm;
-use containr_common::models::BasicAuth;
+use containr_common::models::{BasicAuth, LoginGateScope};
 
 /// max cached successful credentials per route
 const MAX_AUTH_CACHE_ENTRIES: usize = 64;
@@ -30,6 +30,16 @@ pub struct Route {
     pub algorithm: LoadBalanceAlgorithm,
     /// http basic auth required for this route
     pub basic_auth: Option<BasicAuth>,
+    /// containr login required for this route
+    pub login_gate: Option<RouteLoginGate>,
+}
+
+/// who may pass a route's containr login gate
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RouteLoginGate {
+    /// owner of the service behind the route
+    pub owner_id: Uuid,
+    pub scope: LoginGateScope,
 }
 
 /// upstream target
@@ -56,6 +66,7 @@ struct RouteState {
     algorithm: LoadBalanceAlgorithm,
     rr_cursor: AtomicUsize,
     basic_auth: Option<BasicAuth>,
+    login_gate: Option<RouteLoginGate>,
     /// authorization header values that verified successfully. the cache
     /// lives on the route state, so it is dropped whenever routes refresh.
     auth_cache: Mutex<HashSet<String>>,
@@ -78,6 +89,7 @@ impl RouteState {
             ssl_enabled: self.ssl_enabled,
             algorithm: self.algorithm,
             basic_auth: self.basic_auth.clone(),
+            login_gate: self.login_gate,
         }
     }
 }
@@ -135,6 +147,7 @@ impl RouteManager {
             algorithm: route.algorithm,
             rr_cursor: AtomicUsize::new(0),
             basic_auth: route.basic_auth.clone(),
+            login_gate: route.login_gate,
             auth_cache: Mutex::new(HashSet::new()),
         });
 
@@ -392,6 +405,7 @@ mod tests {
                 username: "admin".to_string(),
                 password_hash: hash("s3cret"),
             }),
+            login_gate: None,
         });
         manager
     }

@@ -245,6 +245,27 @@ pub struct BasicAuth {
     pub password_hash: String,
 }
 
+/// who may pass a service's containr login gate
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum LoginGateScope {
+    /// only the user who owns the service
+    #[default]
+    Owner,
+    /// anyone with a containr account on this server
+    AllUsers,
+}
+
+/// requires a containr login before the proxy forwards requests to a
+/// service's public domains
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LoginGate {
+    #[serde(default)]
+    pub scope: LoginGateScope,
+}
+
 /// transport protocol of a published host port
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default,
@@ -484,6 +505,9 @@ pub struct ContainerService {
     /// http basic auth enforced by the proxy
     #[serde(default)]
     pub basic_auth: Option<BasicAuth>,
+    /// containr login required by the proxy before forwarding
+    #[serde(default)]
+    pub login_gate: Option<LoginGate>,
     /// host ports published to the first replica
     #[serde(default)]
     pub port_mappings: Vec<PortMapping>,
@@ -529,6 +553,7 @@ impl ContainerService {
             mounts: Vec::new(),
             notes: None,
             basic_auth: None,
+            login_gate: None,
             port_mappings: Vec::new(),
             created_at: now,
             updated_at: now,

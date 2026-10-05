@@ -1363,6 +1363,71 @@
         ]
       }
     },
+    "/api/gate/pass": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "create_gate_pass",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatePassRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "pass issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatePassResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "not logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not allowed to open this service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "no login gate on this domain",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/github/app": {
       "get": {
         "tags": [
@@ -2953,6 +3018,73 @@
           },
           "404": {
             "description": "deployment not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/services/{id}/env/reveal": {
+      "post": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "reveal_env_var",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevealEnvVarRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "variable value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevealEnvVarResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "service or variable not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -4778,6 +4910,37 @@
           }
         }
       },
+      "GatePassRequest": {
+        "type": "object",
+        "required": [
+          "host"
+        ],
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "the gated domain the user wants to open"
+          },
+          "return_to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "path to land on after the gate, e.g. `/?pgsql=pg`"
+          }
+        }
+      },
+      "GatePassResponse": {
+        "type": "object",
+        "required": [
+          "redirect_url"
+        ],
+        "properties": {
+          "redirect_url": {
+            "type": "string",
+            "description": "where to send the browser next"
+          }
+        }
+      },
       "GithubAppStatusResponse": {
         "type": "object",
         "description": "github app status response",
@@ -5154,6 +5317,30 @@
           }
         }
       },
+      "LoginGateRequest": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`owner` (default) or `all_users`"
+          }
+        }
+      },
+      "LoginGateResponse": {
+        "type": "object",
+        "required": [
+          "scope"
+        ],
+        "properties": {
+          "scope": {
+            "type": "string",
+            "description": "`owner` or `all_users`"
+          }
+        }
+      },
       "LoginRequest": {
         "type": "object",
         "description": "login request body",
@@ -5409,6 +5596,40 @@
           },
           "private": {
             "type": "boolean"
+          }
+        }
+      },
+      "RevealEnvVarRequest": {
+        "type": "object",
+        "description": "asks for the stored value of one secret environment variable",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "scope": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`service` (default) for the service's own variables, `shared` for\nthe project's"
+          }
+        }
+      },
+      "RevealEnvVarResponse": {
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
           }
         }
       },
@@ -5734,6 +5955,17 @@
               "null"
             ]
           },
+          "login_gate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LoginGateRequest",
+                "description": "require a containr login for the service's domains. absent keeps\nthe current value, null disables it"
+              }
+            ]
+          },
           "memory_limit_mb": {
             "type": [
               "integer",
@@ -5989,6 +6221,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "login_gate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LoginGateResponse"
+              }
             ]
           },
           "memory_limit_mb": {

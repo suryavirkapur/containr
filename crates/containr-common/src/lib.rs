@@ -1,5 +1,6 @@
 //! containr-common: shared types and database models for the containr paas platform
 
+pub mod access_gate;
 pub mod config;
 pub mod db;
 pub mod encryption;

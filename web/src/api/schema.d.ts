@@ -355,6 +355,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/gate/pass": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_gate_pass"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/github/app": {
         parameters: {
             query?: never;
@@ -682,6 +698,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["rollback_service_deployment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/services/{id}/env/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reveal_env_var"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1170,6 +1202,16 @@ export interface components {
             expires_at: string;
             token: string;
         };
+        GatePassRequest: {
+            /** @description the gated domain the user wants to open */
+            host: string;
+            /** @description path to land on after the gate, e.g. `/?pgsql=pg` */
+            return_to?: string | null;
+        };
+        GatePassResponse: {
+            /** @description where to send the browser next */
+            redirect_url: string;
+        };
         /** @description github app status response */
         GithubAppStatusResponse: {
             app?: null | components["schemas"]["AppDetails"];
@@ -1269,6 +1311,14 @@ export interface components {
             status: string;
             updated_at: string;
         };
+        LoginGateRequest: {
+            /** @description `owner` (default) or `all_users` */
+            scope?: string | null;
+        };
+        LoginGateResponse: {
+            /** @description `owner` or `all_users` */
+            scope: string;
+        };
         /** @description login request body */
         LoginRequest: {
             /** @description user email address */
@@ -1353,6 +1403,19 @@ export interface components {
             name: string;
             private: boolean;
         };
+        /** @description asks for the stored value of one secret environment variable */
+        RevealEnvVarRequest: {
+            key: string;
+            /**
+             * @description `service` (default) for the service's own variables, `shared` for
+             *     the project's
+             */
+            scope?: string | null;
+        };
+        RevealEnvVarResponse: {
+            key: string;
+            value: string;
+        };
         /** @description rollback request */
         RollbackRequest: {
             /** @description rollout strategy override (stop_first or start_first) */
@@ -1422,6 +1485,7 @@ export interface components {
             health_check?: null | components["schemas"]["HealthCheckRequest"];
             http_only_domains?: string[] | null;
             image?: string | null;
+            login_gate?: null | components["schemas"]["LoginGateRequest"];
             /** Format: int64 */
             memory_limit_mb?: number | null;
             mounts?: components["schemas"]["ServiceMountRequest"][] | null;
@@ -1471,6 +1535,7 @@ export interface components {
             health_check?: null | components["schemas"]["HealthCheckResponse"];
             http_only_domains: string[];
             image?: string | null;
+            login_gate?: null | components["schemas"]["LoginGateResponse"];
             /** Format: int64 */
             memory_limit_mb?: number | null;
             mounts: components["schemas"]["ServiceMountRequest"][];
@@ -2662,6 +2727,57 @@ export interface operations {
             };
         };
     };
+    create_gate_pass: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GatePassRequest"];
+            };
+        };
+        responses: {
+            /** @description pass issued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GatePassResponse"];
+                };
+            };
+            /** @description not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description not allowed to open this service */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description no login gate on this domain */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     get_github_app: {
         parameters: {
             query?: never;
@@ -3815,6 +3931,51 @@ export interface operations {
                 };
             };
             /** @description deployment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reveal_env_var: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevealEnvVarRequest"];
+            };
+        };
+        responses: {
+            /** @description variable value */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevealEnvVarResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service or variable not found */
             404: {
                 headers: {
                     [name: string]: unknown;

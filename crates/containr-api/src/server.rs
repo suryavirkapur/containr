@@ -24,8 +24,8 @@ use crate::domain::services::{run_database_action, ServiceAction};
 use crate::github::DeploymentJob;
 use crate::handlers::deployments::create_and_queue_deployment;
 use crate::handlers::{
-    auth, certificates, containers, github_app, github_repos, health, projects,
-    registries, settings, storage, system, webhooks, websocket,
+    auth, certificates, containers, gate, github_app, github_repos, health,
+    projects, registries, settings, storage, system, webhooks, websocket,
 };
 use crate::openapi::ApiDoc;
 use crate::routes;
@@ -135,6 +135,7 @@ pub async fn run_server(
         .route("/api/admin/users", post(auth::create_user))
         .route("/api/admin/users/{id}", delete(auth::delete_user))
         .route("/api/auth/password", post(auth::change_password))
+        .route("/api/gate/pass", post(gate::create_gate_pass))
         // projects
         .route("/api/projects", get(projects::list_projects))
         .route("/api/projects/{id}", patch(projects::update_project))
