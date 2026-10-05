@@ -16,7 +16,8 @@ use crate::auth::{extract_bearer_token, validate_token};
 use crate::domain::services::{
     CreateServiceRequest, DockerfileDeployRequest, HttpRequestLogResponse,
     HttpRequestLogsQuery, InventoryServiceResponse, ListServicesQuery,
-    MoveServiceRequest, ServiceAction, ServiceLogsQuery, ServiceLogsResponse,
+    MoveServiceRequest, RevealEnvVarRequest, RevealEnvVarResponse,
+    ServiceAction, ServiceLogsQuery, ServiceLogsResponse,
     ServiceMetricsResponse, ServiceSettingsResponse, ServiceSvc,
     UpdateServiceRequest,
 };
@@ -146,6 +147,30 @@ pub async fn get_service(
     let user_id = get_user_id(&state, &headers).await?;
     let service = ServiceSvc::new(state).get_service(user_id, id).await?;
     Ok(Json(service))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/services/{id}/env/reveal",
+    tag = "services",
+    params(("id" = Uuid, Path, description = "service id")),
+    request_body = RevealEnvVarRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "variable value", body = RevealEnvVarResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 404, description = "service or variable not found", body = ErrorResponse)
+    )
+)]
+pub async fn reveal_env_var(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(req): Json<RevealEnvVarRequest>,
+) -> Result<Json<RevealEnvVarResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = get_user_id(&state, &headers).await?;
+    let revealed = ServiceSvc::new(state).reveal_env_var(user_id, id, req)?;
+    Ok(Json(revealed))
 }
 
 #[utoipa::path(

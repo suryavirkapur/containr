@@ -42,6 +42,10 @@ pub fn router() -> Router<AppState> {
             "/api/services/{id}/settings",
             get(services::get_service_settings),
         )
+        .route(
+            "/api/services/{id}/env/reveal",
+            post(services::reveal_env_var),
+        )
         .route("/api/services/{id}/logs", get(services::get_service_logs))
         .route(
             "/api/services/{id}/http-logs",

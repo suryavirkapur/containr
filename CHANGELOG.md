@@ -24,6 +24,7 @@ unreleased
 - github repo urls match case-insensitively, so private org repos clone and push webhooks find their app when the stored url's case differs (e.g. `znskr` vs `Znskr`)
 - on startup, apps and databases recorded as running whose containers are gone get redeployed or started again
 - a service's deployment history shows builds that are in progress or failed before starting containers
+- environment tab: an eye button shows the real value of secret variables (fetched on demand from `POST /api/services/{id}/env/reveal`, owner only, logged); before, secrets only ever showed `********`
 - deleting an app removes its proxy routes right away instead of leaving them mapped until restart
 - one-click apps: replaced minio (no longer published on docker hub) with rustfs; updated default versions for ghost 6, nextcloud 35, gitea, forgejo 16, meilisearch v1, registry 3 and uptime kuma 2
 - one-click apps: ghost, nextcloud, baserow and vaultwarden require a domain; n8n works over the generated plain-http url; the regenerate button keeps the secret format (e.g. laravel `base64:` keys)
