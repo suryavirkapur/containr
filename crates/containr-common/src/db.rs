@@ -1003,10 +1003,9 @@ impl SqliteDatabase {
         github_url: &str,
         branch: &str,
     ) -> Result<Option<App>> {
-        let normalized = github_url.trim_end_matches(".git");
         let apps = self.list_apps()?;
         Ok(apps.into_iter().find(|a| {
-            a.github_url.trim_end_matches(".git") == normalized
+            crate::models::same_repo_url(&a.github_url, github_url)
                 && a.branch == branch
         }))
     }

@@ -8,6 +8,7 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -19,7 +20,9 @@ use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
 use crate::deployment_source::resolve_source_deployment_source;
+use crate::domain::services::{run_database_action, ServiceAction};
 use crate::github::DeploymentJob;
+use crate::handlers::deployments::create_and_queue_deployment;
 use crate::handlers::{
     auth, certificates, containers, github_app, github_repos, health, projects,
     registries, settings, storage, system, webhooks, websocket,
@@ -27,6 +30,7 @@ use crate::handlers::{
 use crate::openapi::ApiDoc;
 use crate::routes;
 use crate::state::AppState;
+use containr_common::managed_services::ServiceStatus;
 use containr_common::models::{
     App, Deployment, DeploymentSource, DeploymentStatus,
 };
@@ -244,10 +248,164 @@ pub async fn run_server(
     });
 
     tokio::spawn(async move {
-        replay_interrupted_deployments(replay_state).await;
+        replay_interrupted_deployments(replay_state.clone()).await;
+        restore_missing_containers(&replay_state).await;
     });
 
     Ok(rx)
+}
+
+/// brings back apps and databases that are recorded as running but whose
+/// containers no longer exist (removed by hand, lost with docker's data,
+/// ...). without this they stay "running" in the ui while nothing serves
+/// traffic. services stopped on purpose are left alone.
+async fn restore_missing_containers(state: &AppState) {
+    let docker = containr_runtime::DockerContainerManager::new();
+    if docker.is_stub() {
+        return;
+    }
+    let containers: HashSet<String> = match docker.list_containers().await {
+        Ok(containers) => containers.into_iter().map(|c| c.id).collect(),
+        Err(error) => {
+            tracing::warn!(error = %error, "skipping container restore");
+            return;
+        }
+    };
+
+    let apps = match state.db.list_apps() {
+        Ok(apps) => apps,
+        Err(error) => {
+            tracing::warn!(error = %error, "skipping container restore");
+            return;
+        }
+    };
+    for app in apps {
+        if let Err(error) = restore_app(state, &app, &containers).await {
+            tracing::warn!(
+                app_id = %app.id,
+                error = ?error,
+                "failed to redeploy app with missing containers"
+            );
+        }
+    }
+
+    let users = match state.db.list_users() {
+        Ok(users) => users,
+        Err(error) => {
+            tracing::warn!(error = %error, "skipping database restore");
+            return;
+        }
+    };
+    for user in users {
+        let Ok(databases) = state.db.list_managed_databases_by_owner(user.id)
+        else {
+            continue;
+        };
+        for mut database in databases {
+            let name = format!("containr-db-{}", database.id);
+            if database.status != ServiceStatus::Running
+                || containers.contains(&name)
+            {
+                continue;
+            }
+            tracing::warn!(
+                database = %database.name,
+                "database container is missing; starting it again"
+            );
+            if let Err(error) =
+                run_database_action(state, ServiceAction::Start, &mut database)
+                    .await
+            {
+                tracing::warn!(
+                    database = %database.name,
+                    error = ?error,
+                    "failed to start database with missing container"
+                );
+            }
+        }
+    }
+}
+
+async fn restore_app(
+    state: &AppState,
+    app: &App,
+    containers: &HashSet<String>,
+) -> std::result::Result<(), String> {
+    let mut deployments = state
+        .db
+        .list_deployments_by_app(app.id)
+        .map_err(|e| e.to_string())?;
+    deployments.sort_by_key(|deployment| deployment.created_at);
+    // only the newest deployment counts; a pending or failed one is
+    // handled by replay or by the user
+    let Some(current) = deployments.last() else {
+        return Ok(());
+    };
+    if current.status != DeploymentStatus::Running {
+        return Ok(());
+    }
+    let missing = missing_service_names(app, current, containers);
+    if missing.is_empty() {
+        return Ok(());
+    }
+    if app.requires_source_checkout() && app.github_url.trim().is_empty() {
+        tracing::warn!(
+            app_id = %app.id,
+            services = ?missing,
+            "containers are missing but the app has no repo to rebuild from"
+        );
+        return Ok(());
+    }
+
+    tracing::warn!(
+        app = %app.name,
+        services = ?missing,
+        "containers are missing; redeploying"
+    );
+    create_and_queue_deployment(
+        state,
+        app.owner_id,
+        app,
+        "redeploy".to_string(),
+        Some("redeployed: containers were missing".to_string()),
+        app.branch.clone(),
+        app.rollout_strategy,
+        None,
+        None,
+        false,
+    )
+    .await
+    .map(|_| ())
+    .map_err(|(_, body)| body.0.error)
+}
+
+/// long-running services the deployment runs that have no container,
+/// running or stopped
+fn missing_service_names(
+    app: &App,
+    deployment: &Deployment,
+    containers: &HashSet<String>,
+) -> Vec<String> {
+    app.services
+        .iter()
+        .filter(|service| !service.is_cron_job())
+        .filter(|service| {
+            deployment.service_deployments.iter().any(|sd| {
+                sd.service_id == service.id
+                    && sd.status == DeploymentStatus::Running
+            })
+        })
+        .filter(|service| {
+            // containr-{app}-{service}-{replica}-{deployment}
+            let prefix = format!("containr-{}-{}-", app.id, service.name);
+            !containers.iter().any(|name| {
+                name.strip_prefix(&prefix).is_some_and(|rest| {
+                    rest.starts_with(|c: char| c.is_ascii_digit())
+                })
+            })
+        })
+        .map(|service| service.name.clone())
+        .collect()
 }
 
 async fn replay_interrupted_deployments(state: AppState) {
@@ -402,4 +560,68 @@ fn is_interrupted_deployment_status(status: DeploymentStatus) -> bool {
             | DeploymentStatus::Pushing
             | DeploymentStatus::Starting
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use containr_common::models::{ContainerService, ServiceDeployment};
+    use uuid::Uuid;
+
+    fn app_with(names: &[&str]) -> App {
+        let mut app = App::new("demo".to_string(), String::new(), Uuid::nil());
+        app.services = names
+            .iter()
+            .map(|name| {
+                ContainerService::new(
+                    app.id,
+                    name.to_string(),
+                    "nginx:alpine".to_string(),
+                    80,
+                )
+            })
+            .collect();
+        app
+    }
+
+    fn running(app: &App, status: DeploymentStatus) -> Deployment {
+        let mut deployment = Deployment::new(app.id, "initial".to_string());
+        deployment.status = DeploymentStatus::Running;
+        deployment.service_deployments = app
+            .services
+            .iter()
+            .map(|service| {
+                let mut sd =
+                    ServiceDeployment::new(service.id, deployment.id, 0);
+                sd.status = status;
+                sd
+            })
+            .collect();
+        deployment
+    }
+
+    #[test]
+    fn finds_services_whose_containers_are_gone() {
+        let app = app_with(&["web", "web-worker"]);
+        let deployment = running(&app, DeploymentStatus::Running);
+        // only web-worker's container exists; its name shares the
+        // "web-" prefix but must not count for web
+        let containers = HashSet::from([format!(
+            "containr-{}-web-worker-0-abcd1234",
+            app.id
+        )]);
+
+        assert_eq!(
+            missing_service_names(&app, &deployment, &containers),
+            vec!["web".to_string()]
+        );
+    }
+
+    #[test]
+    fn ignores_services_stopped_on_purpose() {
+        let app = app_with(&["web"]);
+        let deployment = running(&app, DeploymentStatus::Stopped);
+        assert!(missing_service_names(&app, &deployment, &HashSet::new())
+            .is_empty());
+    }
 }

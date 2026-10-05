@@ -3814,10 +3814,13 @@ fn deployment_is_for_service(
         return true;
     }
 
-    deployment
-        .service_deployments
-        .iter()
-        .any(|sd| sd.service_id == service.id)
+    // a build that is still running or failed before starting containers
+    // has no service deployments yet; show it so failures are visible
+    deployment.service_deployments.is_empty()
+        || deployment
+            .service_deployments
+            .iter()
+            .any(|sd| sd.service_id == service.id)
 }
 
 fn deployment_response_for_service(
@@ -4479,7 +4482,7 @@ fn mark_database_starting(database: &mut ManagedDatabase) {
     database.updated_at = Utc::now();
 }
 
-async fn run_database_action(
+pub(crate) async fn run_database_action(
     state: &AppState,
     action: ServiceAction,
     database: &mut ManagedDatabase,

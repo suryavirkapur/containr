@@ -324,6 +324,32 @@ impl ContainerRegistry {
 const DOCKER_HUB_HOST: &str = "docker.io";
 
 /// normalizes a registry server into a comparable host name
+/// canonical form of a git repo url for comparisons. github owner and repo
+/// names are case-insensitive, so `https://github.com/Org/Repo.git` and
+/// `github.com/org/repo/` are the same repo.
+pub fn normalize_repo_url(url: &str) -> String {
+    let url = url.trim().to_ascii_lowercase();
+    let url = url
+        .strip_prefix("git@")
+        .map(|rest| rest.replacen(':', "/", 1))
+        .unwrap_or(url);
+    let url = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("ssh://")
+        .trim_start_matches("git@")
+        .trim_start_matches("www.");
+    url.trim_end_matches('/')
+        .trim_end_matches(".git")
+        .to_string()
+}
+
+/// true when both urls point at the same repo
+pub fn same_repo_url(left: &str, right: &str) -> bool {
+    let left = normalize_repo_url(left);
+    !left.is_empty() && left == normalize_repo_url(right)
+}
+
 pub fn normalize_registry_host(server: &str) -> String {
     let trimmed = server.trim();
     let without_scheme = trimmed
@@ -1116,6 +1142,20 @@ impl GithubInstallation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repo_urls_match_regardless_of_case_and_form() {
+        let stored = "https://github.com/znskr/cartelerp";
+        assert!(same_repo_url(stored, "https://github.com/Znskr/cartelerp"));
+        assert!(same_repo_url(
+            stored,
+            "https://github.com/Znskr/cartelerp.git"
+        ));
+        assert!(same_repo_url(stored, "git@github.com:Znskr/cartelerp.git"));
+        assert!(same_repo_url("github.com/znskr/cartelerp/", stored));
+        assert!(!same_repo_url(stored, "https://github.com/znskr/cartel"));
+        assert!(!same_repo_url("", ""));
+    }
     use serde_json::json;
 
     #[test]
