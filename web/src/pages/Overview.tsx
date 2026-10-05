@@ -38,7 +38,7 @@ import { createRollingSeries, Sparkline } from "../components/ui/chart";
 import { useAppStore } from "../context/AppStore";
 import { useAuth } from "../context/AuthContext";
 import { formatBytes, formatPercent, formatUptime, timeAgo } from "../lib/format";
-import { displayHost, primaryUrl, ServiceIcon, typeLabel } from "../lib/services";
+import { displayHost, primaryUrl, publicPorts, ServiceIcon, typeLabel } from "../lib/services";
 
 const StatCard: Component<{
 	label: string;
@@ -344,6 +344,12 @@ const Overview = () => {
 														{typeLabel(service.service_type)}
 														<Show when={primaryUrl(service)}>
 															{(url) => <> · {displayHost(url())}</>}
+														</Show>
+														<Show when={!primaryUrl(service) && publicPorts(service).length > 0}>
+															<span class="text-warning">
+																{" "}
+																· public TCP {publicPorts(service).join(", ")}
+															</span>
 														</Show>
 													</div>
 												</div>
