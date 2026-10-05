@@ -42,6 +42,8 @@ export type Template = {
 	instructions?: (ctx: TemplateContext) => string;
 	/** main service needs a public domain */
 	web?: boolean;
+	/** app only works behind its own domain, so the domain field is required */
+	needsDomain?: boolean;
 	tags?: string[];
 };
 
@@ -216,8 +218,9 @@ export const TEMPLATES: Template[] = [
 		category: "CMS & Blogs",
 		color: "#15171a",
 		website: "https://ghost.org",
-		version: "5-alpine",
+		version: "6-alpine",
 		web: true,
+		needsDomain: true,
 		variables: [dbPassword],
 		services: (ctx) => [
 			web(ctx, `ghost:${ctx.vars.version}`, 2368, {
@@ -235,7 +238,7 @@ export const TEMPLATES: Template[] = [
 				mounts: [volume(`${ctx.app}-content`, "/var/lib/ghost/content")],
 				depends_on: [db(ctx)],
 			}),
-			mysql(ctx, "ghost", "ghost", "8.0"),
+			mysql(ctx, "ghost", "ghost"),
 		],
 		instructions: (ctx) => `Create your admin account at ${ctx.url || "<url>"}/ghost.`,
 	},
@@ -452,6 +455,8 @@ export const TEMPLATES: Template[] = [
 						N8N_ENCRYPTION_KEY: ctx.vars.encryption_key,
 						N8N_HOST: ctx.domain || undefined,
 						N8N_PROTOCOL: ctx.domain ? "https" : undefined,
+						// the generated plain-http url can't carry a secure cookie
+						N8N_SECURE_COOKIE: ctx.domain ? undefined : "false",
 						WEBHOOK_URL: ctx.url ? `${ctx.url}/` : undefined,
 						GENERIC_TIMEZONE: ctx.vars.timezone,
 						TZ: ctx.vars.timezone,
@@ -529,7 +534,7 @@ export const TEMPLATES: Template[] = [
 		category: "Monitoring",
 		color: "#5cdd8b",
 		website: "https://uptime.kuma.pet",
-		version: "1",
+		version: "2",
 		web: true,
 		services: (ctx) => [
 			web(ctx, `louislam/uptime-kuma:${ctx.vars.version}`, 3001, {
@@ -602,7 +607,7 @@ export const TEMPLATES: Template[] = [
 		category: "Developer tools",
 		color: "#609926",
 		website: "https://about.gitea.com",
-		version: "1.22",
+		version: "28",
 		web: true,
 		services: (ctx) => [
 			web(ctx, `gitea/gitea:${ctx.vars.version}`, 3000, {
@@ -624,7 +629,7 @@ export const TEMPLATES: Template[] = [
 		category: "Developer tools",
 		color: "#fb923c",
 		website: "https://forgejo.org",
-		version: "9",
+		version: "16",
 		web: true,
 		services: (ctx) => [
 			web(ctx, `codeberg.org/forgejo/forgejo:${ctx.vars.version}`, 3000, {
@@ -644,7 +649,7 @@ export const TEMPLATES: Template[] = [
 		category: "Developer tools",
 		color: "#2496ed",
 		website: "https://distribution.github.io/distribution/",
-		version: "2",
+		version: "3",
 		web: true,
 		services: (ctx) => [
 			web(ctx, `registry:${ctx.vars.version}`, 5000, {
@@ -791,7 +796,7 @@ export const TEMPLATES: Template[] = [
 		category: "Databases",
 		color: "#ff5caa",
 		website: "https://www.meilisearch.com",
-		version: "v1.11",
+		version: "v1",
 		web: true,
 		variables: [{ id: "master_key", label: "Master key", generate: "secret", secret: true }],
 		services: (ctx) => [
@@ -804,30 +809,37 @@ export const TEMPLATES: Template[] = [
 		],
 	},
 	{
-		id: "minio",
-		name: "MinIO",
-		description: "S3-compatible object storage with a web console.",
+		id: "rustfs",
+		name: "RustFS",
+		description: "S3-compatible object storage with a web console, a drop-in MinIO alternative.",
 		category: "Databases",
-		color: "#c72e49",
-		website: "https://min.io",
+		color: "#e2532d",
+		website: "https://rustfs.com",
 		version: "latest",
 		web: true,
+		tags: ["minio", "s3", "object storage"],
 		variables: [
-			{ id: "root_user", label: "Root user", default: "minioadmin" },
-			adminPassword("Root password"),
+			{ id: "root_user", label: "Access key", default: "rustfsadmin" },
+			adminPassword("Secret key"),
 		],
 		services: (ctx) => [
-			web(ctx, `minio/minio:${ctx.vars.version}`, 9001, {
-				command: ["server", "/data", "--console-address", ":9001"],
+			web(ctx, `rustfs/rustfs:${ctx.vars.version}`, 9001, {
 				additional_ports: [9000],
 				env_vars: env(
-					{ MINIO_ROOT_USER: ctx.vars.root_user, MINIO_ROOT_PASSWORD: ctx.vars.admin_password },
-					["MINIO_ROOT_PASSWORD"],
+					{
+						RUSTFS_ACCESS_KEY: ctx.vars.root_user,
+						RUSTFS_SECRET_KEY: ctx.vars.admin_password,
+						RUSTFS_ADDRESS: ":9000",
+						RUSTFS_CONSOLE_ADDRESS: ":9001",
+						RUSTFS_CONSOLE_ENABLE: "true",
+					},
+					["RUSTFS_SECRET_KEY"],
 				),
 				mounts: [volume(`${ctx.app}-data`, "/data")],
 			}),
 		],
-		instructions: (ctx) => `The S3 API listens on ${ctx.app}:9000 inside the project network.`,
+		instructions: (ctx) =>
+			`Sign in to the console with your access and secret key. The S3 API listens on ${ctx.app}:9000 inside the project network.`,
 	},
 	{
 		id: "couchdb",
@@ -889,8 +901,9 @@ export const TEMPLATES: Template[] = [
 		category: "Files & Productivity",
 		color: "#0082c9",
 		website: "https://nextcloud.com",
-		version: "30-apache",
+		version: "35-apache",
 		web: true,
+		needsDomain: true,
 		variables: [
 			{ id: "admin_user", label: "Admin username", default: "admin" },
 			adminPassword(),
@@ -927,6 +940,7 @@ export const TEMPLATES: Template[] = [
 		website: "https://github.com/dani-garcia/vaultwarden",
 		version: "latest",
 		web: true,
+		needsDomain: true,
 		variables: [
 			{ id: "admin_token", label: "Admin panel token", generate: "secret", secret: true },
 		],
@@ -1106,6 +1120,7 @@ export const TEMPLATES: Template[] = [
 		website: "https://baserow.io",
 		version: "latest",
 		web: true,
+		needsDomain: true,
 		services: (ctx) => [
 			web(ctx, `baserow/baserow:${ctx.vars.version}`, 80, {
 				env_vars: env({ BASEROW_PUBLIC_URL: ctx.url || "http://localhost" }),
@@ -1346,6 +1361,14 @@ export const TEMPLATES: Template[] = [
 	},
 ];
 
+/** a fresh random value in the variable's generated format */
+export const generateValue = (variable: TemplateVariable): string => {
+	if (variable.generate === "hex64") return randomHex(32);
+	if (variable.generate === "laravel-key") return `base64:${randomBase64(32)}`;
+	if (variable.generate === "password") return randomSecret(20);
+	return randomSecret(40);
+};
+
 /** fills in generated defaults for a template's variables */
 export const initialValues = (
 	template: Template,
@@ -1353,11 +1376,7 @@ export const initialValues = (
 ): Record<string, string> => {
 	const values: Record<string, string> = { version: template.version ?? "latest" };
 	for (const variable of template.variables ?? []) {
-		if (variable.generate === "password") values[variable.id] = randomSecret(20);
-		else if (variable.generate === "secret") values[variable.id] = randomSecret(40);
-		else if (variable.generate === "hex64") values[variable.id] = randomHex(32);
-		else if (variable.generate === "laravel-key")
-			values[variable.id] = `base64:${randomBase64(32)}`;
+		if (variable.generate) values[variable.id] = generateValue(variable);
 		else if (typeof variable.default === "function")
 			values[variable.id] = variable.default({ ...ctx, vars: values });
 		else values[variable.id] = variable.default ?? "";
