@@ -5,7 +5,7 @@ containr context
 
 current context:
 - ui rebuilt for caprover parity: design tokens in web/src/index.css (light + dark via the .dark class, small radii), shared primitives in web/src/components/ui, app shell with sidebar, breadcrumbs and a cmd+k command palette in web/src/components/layout
-- pages: overview, services, projects, one-click apps (catalog in web/src/lib/catalog.ts), storage, monitoring, server (disk cleanup, backup), settings (general, account, users, github, registries)
+- pages: overview, services, projects, one-click apps (catalog in web/src/lib/catalog/, one module per category or hand-written stack; see docs/one-click-apps.md and run `pnpm test` in web/), storage, monitoring, server (disk cleanup, backup), settings (general, account, users, github, registries)
 - service detail tabs: overview, deployments (git/image/upload/dockerfile/webhook/cli deploys + rollback), logs, metrics, environment, networking (domains, https, basic auth, port mappings), storage (volumes + file browser), console (xterm exec), settings
 - new endpoints the ui relies on are typed in web/src/api/platform.ts; regenerate web/src/api/schema.d.ts with `pnpm run generate` after api changes
 - unifying all apps, databases, and queues under a single "service" entity.
