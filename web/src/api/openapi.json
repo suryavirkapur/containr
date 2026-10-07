@@ -259,6 +259,106 @@
         }
       }
     },
+    "/api/auth/github/link": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "start linking github to the signed-in account",
+        "operationId": "github_link_start",
+        "responses": {
+          "200": {
+            "description": "github authorization url",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubLinkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "github sign in isn't configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "unlink github from the signed-in account",
+        "operationId": "github_unlink",
+        "responses": {
+          "200": {
+            "description": "github unlinked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "no github account linked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "the account has no password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "tags": [
@@ -4187,9 +4287,14 @@
         "description": "auth response with token",
         "required": [
           "token",
-          "user"
+          "user",
+          "linked"
         ],
         "properties": {
+          "linked": {
+            "type": "boolean",
+            "description": "true when this github round trip linked github to a signed-in\naccount instead of signing in"
+          },
           "token": {
             "type": "string",
             "description": "jwt authentication token"
@@ -5130,6 +5235,19 @@
           }
         }
       },
+      "GithubLinkResponse": {
+        "type": "object",
+        "description": "where to send the browser to link a github account",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "github authorization url"
+          }
+        }
+      },
       "HealthCheckRequest": {
         "type": "object",
         "required": [
@@ -5672,9 +5790,14 @@
         "description": "public registration status",
         "required": [
           "registration_open",
-          "user_count"
+          "user_count",
+          "github_enabled"
         ],
         "properties": {
+          "github_enabled": {
+            "type": "boolean",
+            "description": "whether sign in and linking with github are configured"
+          },
           "registration_open": {
             "type": "boolean",
             "description": "whether the first account can still be registered publicly"
@@ -6960,7 +7083,8 @@
         "required": [
           "id",
           "email",
-          "is_admin"
+          "is_admin",
+          "has_password"
         ],
         "properties": {
           "email": {
@@ -6973,6 +7097,10 @@
               "null"
             ],
             "description": "github username if linked"
+          },
+          "has_password": {
+            "type": "boolean",
+            "description": "whether the account can sign in with a password"
           },
           "id": {
             "type": "string",
