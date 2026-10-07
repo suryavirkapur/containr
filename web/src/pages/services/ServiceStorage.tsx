@@ -184,7 +184,8 @@ const VolumesEditor = () => {
 				</Button>
 				<p class="hint">
 					Shared volumes are the same directory for every service in this project that mounts the
-					same name.
+					same name. Turning sharing on moves this volume's data into the shared one; turning it off
+					keeps a copy.
 				</p>
 				<Show when={auth.user()?.is_admin}>
 					<p class="hint">

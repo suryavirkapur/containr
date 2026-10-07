@@ -8,7 +8,7 @@ unreleased
 - one-click apps: catalog of 51 preconfigured apps (wordpress, ghost, n8n, uptime kuma, nextcloud, vaultwarden, metabase, open webui, ...) deployed as projects with databases, volumes and generated secrets
 - new deploy methods: tarball upload, pasted dockerfile, image redeploy, plus `containr-cmd services deploy` with `--upload` and `--dockerfile`
 - per-service http basic auth enforced by the proxy, host port mappings, notes, and admin-only host path volumes
-- shared volumes: a mount marked `shared` is one directory for every service in the project that mounts the same name
+- shared volumes: a mount marked `shared` is one directory for every service in the project that mounts the same name. turning sharing on moves the volume's data into the shared one, turning it off keeps a copy
 - one-click kanidm (identity management with oauth2/oidc, passkeys and ldap): a one-shot worker creates its internal tls certificate in a shared volume and caddy forwards http to kanidm's https port
 - updates: the server page checks github releases and installs a newer containr in place (checksum-verified, previous binary kept as `containr.previous`); a release workflow publishes linux amd64 and arm64 binaries for `v*` tags
 - install.sh installs or updates containr from github releases on any linux server: it writes a config with random secrets and sets up the service for systemd, openrc, runit, dinit or sysvinit (`containr service install|restart`)
