@@ -3,7 +3,7 @@
 changelog
 =========
 
-unreleased
+0.1.17-alpha (2026-10-08)
 - link github to an existing account from settings → account (and unlink it again, once the account has a password); github sign-in and linking only show up when the server has a github oauth app configured
 - github sign-in refreshes the stored github username, so renamed accounts stay current
 
