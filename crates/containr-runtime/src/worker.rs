@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use base64::Engine;
 use tokio::sync::mpsc;
@@ -26,6 +27,44 @@ use containr_common::Database;
 
 /// directory under the work dir holding uploaded/dockerfile sources
 pub const UPLOADS_DIR_NAME: &str = "uploads";
+
+/// set while containr installs an update. the worker holds queued jobs
+/// instead of starting them; they stay pending in the database and the
+/// restarted process replays them.
+static DEPLOYMENTS_PAUSED: AtomicBool = AtomicBool::new(false);
+/// whether the worker is processing a job right now
+static DEPLOYMENT_RUNNING: AtomicBool = AtomicBool::new(false);
+const PAUSE_POLL: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// stops the worker from starting new deployments
+pub fn pause_deployments() {
+    DEPLOYMENTS_PAUSED.store(true, Ordering::SeqCst);
+}
+
+/// lets the worker start deployments again
+pub fn resume_deployments() {
+    DEPLOYMENTS_PAUSED.store(false, Ordering::SeqCst);
+}
+
+/// whether a deployment is being processed. after `pause_deployments`,
+/// false means none will start until `resume_deployments`.
+pub fn deployment_running() -> bool {
+    DEPLOYMENT_RUNNING.load(Ordering::SeqCst)
+}
+
+/// blocks until deployments aren't paused, then marks one as running. the
+/// flag is set before re-checking the pause so a pauser that sees
+/// `deployment_running() == false` can't race a job that's starting.
+async fn begin_deployment() {
+    loop {
+        DEPLOYMENT_RUNNING.store(true, Ordering::SeqCst);
+        if !DEPLOYMENTS_PAUSED.load(Ordering::SeqCst) {
+            return;
+        }
+        DEPLOYMENT_RUNNING.store(false, Ordering::SeqCst);
+        tokio::time::sleep(PAUSE_POLL).await;
+    }
+}
 
 // use shared type from common
 use containr_common::models::DeploymentJob;
@@ -108,6 +147,7 @@ impl DeploymentWorker {
         info!(stub_mode = %self.stub_mode, "deployment worker started");
 
         while let Some(job) = rx.recv().await {
+            begin_deployment().await;
             info!(
                 app_id = %job.app_id,
                 deployment_id = %job.deployment_id,
@@ -117,6 +157,7 @@ impl DeploymentWorker {
 
             let result = self.process_job(&job).await;
             self.cleanup_uploaded_source(&job).await;
+            DEPLOYMENT_RUNNING.store(false, Ordering::SeqCst);
 
             if let Err(e) = result {
                 error!(
@@ -1588,6 +1629,23 @@ mod tests {
             config.dockerfile.as_deref(),
             Some("docker/Prod.Dockerfile")
         );
+    }
+
+    #[tokio::test]
+    async fn paused_worker_holds_jobs_until_resumed() {
+        pause_deployments();
+        let started = tokio::spawn(begin_deployment());
+        tokio::time::sleep(PAUSE_POLL * 3).await;
+        assert!(!started.is_finished(), "job started while paused");
+        assert!(!deployment_running());
+
+        resume_deployments();
+        tokio::time::timeout(PAUSE_POLL * 4, started)
+            .await
+            .expect("job starts after resume")
+            .expect("task");
+        assert!(deployment_running());
+        DEPLOYMENT_RUNNING.store(false, Ordering::SeqCst);
     }
 
     #[tokio::test]
