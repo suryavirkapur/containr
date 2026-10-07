@@ -5092,11 +5092,11 @@
           "app": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/AppDetails",
                 "description": "app details if configured"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -6008,11 +6008,11 @@
           "basic_auth": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/BasicAuthRequest",
                 "description": "http basic auth for the service's domains. absent keeps the current\nvalue, null (or a null/empty username) disables it"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -6110,10 +6110,10 @@
           "health_check": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/HealthCheckRequest"
               },
               {
-                "$ref": "#/components/schemas/HealthCheckRequest"
+                "type": "null"
               }
             ]
           },
@@ -6135,11 +6135,11 @@
           "login_gate": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/LoginGateRequest",
                 "description": "require a containr login for the service's domains. absent keeps\nthe current value, null disables it"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -6188,10 +6188,10 @@
           "registry_auth": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/ServiceRegistryAuthRequest"
               },
               {
-                "$ref": "#/components/schemas/ServiceRegistryAuthRequest"
+                "type": "null"
               }
             ]
           },
@@ -6301,10 +6301,10 @@
           "basic_auth": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/BasicAuthResponse"
               },
               {
-                "$ref": "#/components/schemas/BasicAuthResponse"
+                "type": "null"
               }
             ]
           },
@@ -6381,10 +6381,10 @@
           "health_check": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/HealthCheckResponse"
               },
               {
-                "$ref": "#/components/schemas/HealthCheckResponse"
+                "type": "null"
               }
             ]
           },
@@ -6403,10 +6403,10 @@
           "login_gate": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/LoginGateResponse"
               },
               {
-                "$ref": "#/components/schemas/LoginGateResponse"
+                "type": "null"
               }
             ]
           },
@@ -6447,10 +6447,10 @@
           "registry_auth": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/ServiceRegistryAuthResponse"
               },
               {
-                "$ref": "#/components/schemas/ServiceRegistryAuthResponse"
+                "type": "null"
               }
             ]
           },
@@ -6801,10 +6801,10 @@
           "auto_deploy": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/AutoDeploySettingsRequest"
               },
               {
-                "$ref": "#/components/schemas/AutoDeploySettingsRequest"
+                "type": "null"
               }
             ]
           },
@@ -6838,10 +6838,10 @@
           "service": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/ServiceRequest"
               },
               {
-                "$ref": "#/components/schemas/ServiceRequest"
+                "type": "null"
               }
             ]
           }

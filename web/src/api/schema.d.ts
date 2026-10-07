@@ -1232,7 +1232,7 @@ export interface components {
         };
         /** @description github app status response */
         GithubAppStatusResponse: {
-            app?: null | components["schemas"]["AppDetails"];
+            app?: components["schemas"]["AppDetails"] | null;
             /** @description whether a github app is configured */
             configured: boolean;
             /** @description list of installations */
@@ -1502,7 +1502,7 @@ export interface components {
         };
         ServiceRequest: {
             additional_ports?: number[] | null;
-            basic_auth?: null | components["schemas"]["BasicAuthRequest"];
+            basic_auth?: components["schemas"]["BasicAuthRequest"] | null;
             build_args?: components["schemas"]["EnvVarRequest"][] | null;
             build_context?: string | null;
             build_target?: string | null;
@@ -1516,10 +1516,10 @@ export interface components {
             entrypoint?: string[] | null;
             env_vars?: components["schemas"]["EnvVarRequest"][] | null;
             expose_http?: boolean | null;
-            health_check?: null | components["schemas"]["HealthCheckRequest"];
+            health_check?: components["schemas"]["HealthCheckRequest"] | null;
             http_only_domains?: string[] | null;
             image?: string | null;
-            login_gate?: null | components["schemas"]["LoginGateRequest"];
+            login_gate?: components["schemas"]["LoginGateRequest"] | null;
             /** Format: int64 */
             memory_limit_mb?: number | null;
             mounts?: components["schemas"]["ServiceMountRequest"][] | null;
@@ -1533,7 +1533,7 @@ export interface components {
             port: number;
             /** @description published host ports. absent keeps the current mappings */
             port_mappings?: components["schemas"]["PortMappingRequest"][] | null;
-            registry_auth?: null | components["schemas"]["ServiceRegistryAuthRequest"];
+            registry_auth?: components["schemas"]["ServiceRegistryAuthRequest"] | null;
             /** Format: int32 */
             replicas?: number | null;
             restart_policy?: string | null;
@@ -1553,7 +1553,7 @@ export interface components {
         };
         ServiceSettingsServiceResponse: {
             additional_ports: number[];
-            basic_auth?: null | components["schemas"]["BasicAuthResponse"];
+            basic_auth?: components["schemas"]["BasicAuthResponse"] | null;
             build_args: components["schemas"]["EditableEnvVarResponse"][];
             build_context?: string | null;
             build_target?: string | null;
@@ -1566,10 +1566,10 @@ export interface components {
             entrypoint?: string[] | null;
             env_vars: components["schemas"]["EditableEnvVarResponse"][];
             expose_http: boolean;
-            health_check?: null | components["schemas"]["HealthCheckResponse"];
+            health_check?: components["schemas"]["HealthCheckResponse"] | null;
             http_only_domains: string[];
             image?: string | null;
-            login_gate?: null | components["schemas"]["LoginGateResponse"];
+            login_gate?: components["schemas"]["LoginGateResponse"] | null;
             /** Format: int64 */
             memory_limit_mb?: number | null;
             mounts: components["schemas"]["ServiceMountRequest"][];
@@ -1578,7 +1578,7 @@ export interface components {
             /** Format: int32 */
             port: number;
             port_mappings: components["schemas"]["PortMappingResponse"][];
-            registry_auth?: null | components["schemas"]["ServiceRegistryAuthResponse"];
+            registry_auth?: components["schemas"]["ServiceRegistryAuthResponse"] | null;
             /** Format: int32 */
             replicas: number;
             restart_policy: string;
@@ -1706,12 +1706,12 @@ export interface components {
             name: string;
         };
         UpdateServiceRequest: {
-            auto_deploy?: null | components["schemas"]["AutoDeploySettingsRequest"];
+            auto_deploy?: components["schemas"]["AutoDeploySettingsRequest"] | null;
             branch?: string | null;
             env_vars?: components["schemas"]["EnvVarRequest"][] | null;
             github_url?: string | null;
             rollout_strategy?: string | null;
-            service?: null | components["schemas"]["ServiceRequest"];
+            service?: components["schemas"]["ServiceRequest"] | null;
         };
         /** @description update settings request */
         UpdateSettingsRequest: {

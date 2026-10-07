@@ -11,7 +11,7 @@
     "build": "pnpm exec vite build",
     "preview": "pnpm exec vite preview",
     "generate:schema": "cd .. && cargo run --bin openapi --features openapi-only 2>/dev/null > web/src/api/openapi.json",
-    "generate:client": "pnpm exec openapi-typescript src/api/openapi.json -o src/api/schema.d.ts",
+    "generate:client": "pnpm dlx --package=openapi-typescript@7.13.0 --package=typescript@5.9.3 openapi-typescript src/api/openapi.json -o src/api/schema.d.ts",
     "generate": "pnpm run generate:schema && pnpm run generate:client",
     "smoke:ui": "node scripts/ui-smoke.mjs"
   },
@@ -28,7 +28,6 @@
     "@biomejs/biome": "^2.5.15",
     "@tailwindcss/vite": "^4.3.3",
     "autoprefixer": "^10.6.1",
-    "openapi-typescript": "^7.13.0",
     "playwright": "^1.63.0",
     "postcss": "^8.5.29",
     "tailwindcss": "^4.3.3",
