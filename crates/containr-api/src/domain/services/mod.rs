@@ -1,3 +1,5 @@
+mod shared_mounts;
+
 use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
 use std::net::IpAddr;
@@ -929,8 +931,19 @@ impl ServiceSvc {
             .ok_or_else(|| internal_error("updated service not found"))?;
         validate_port_mappings(&self.state, &config, &app)?;
         validate_app_service_domains(&self.state, &config, &app).await?;
+        // a volume switched between per-service and shared keeps its data
+        let mount_migrations = shared_mounts::plan(
+            &self.state.data_dir,
+            app.id,
+            &previous_service,
+            &updated_service,
+        )?;
+        let moved = shared_mounts::apply(mount_migrations).await?;
         app.updated_at = Utc::now();
-        self.state.db.save_app(&app).map_err(internal_error)?;
+        if let Err(save_error) = self.state.db.save_app(&app) {
+            shared_mounts::undo(moved).await;
+            return Err(internal_error(save_error));
+        }
 
         if previous_service.replicas != updated_service.replicas {
             reconcile_app_service_replicas(
