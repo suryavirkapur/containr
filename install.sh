@@ -222,9 +222,17 @@ fi
 cp "$tmp/$asset" "$binary_path.new"
 mv -f "$binary_path.new" "$binary_path"
 
-if [ -n "$current" ] \
-    && "$binary_path" service restart --init "$init" --service-name "$service"; then
+if [ -n "$current" ]; then
+    # an existing install keeps its service and config. never fall back to
+    # the first-install steps: they would point the service at a new config
+    # with new secrets and an empty database.
+    "$binary_path" service restart --init "$init" --service-name "$service" \
+        || fail "installed containr $target at $binary_path, but couldn't restart the $service service. restart it yourself (pass --init if the init system was guessed wrong). if containr never ran as a service, set one up with: $binary_path service install"
     say "updated containr $current -> $target"
+    if [ ! -f "$install_dir/containr.toml" ]; then
+        say "restarted $service; its config isn't in $install_dir, so check it's running yourself"
+        exit 0
+    fi
 else
     write_config "$install_dir/containr.toml" "$install_dir/data"
     "$binary_path" service install \
