@@ -21,13 +21,15 @@ use utoipa::ToSchema;
 
 use crate::handlers::auth::{require_admin_user, ErrorResponse};
 use crate::state::AppState;
-use containr_common::models::DeploymentStatus;
+use containr_runtime::worker;
 
 type ApiError = (StatusCode, Json<ErrorResponse>);
 
 const GITHUB_API: &str = "https://api.github.com";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
+/// how long an install waits for a running deployment to finish
+const DEPLOYMENT_WAIT: Duration = Duration::from_secs(120);
 /// time for the install response to reach the browser before re-exec
 const RESTART_DELAY: Duration = Duration::from_secs(1);
 
@@ -177,13 +179,6 @@ pub async fn install_update(
     let target = parse_version(&request.version).ok_or_else(|| {
         error(StatusCode::BAD_REQUEST, "invalid version".to_string())
     })?;
-    if deployments_in_progress(&state)? {
-        return Err(error(
-            StatusCode::CONFLICT,
-            "a deployment is in progress. try again once it finishes"
-                .to_string(),
-        ));
-    }
     if INSTALLING.swap(true, Ordering::SeqCst) {
         return Err(error(
             StatusCode::CONFLICT,
@@ -191,10 +186,13 @@ pub async fn install_update(
         ));
     }
 
-    let result = install(&state, &target).await;
-    let exe = match result {
+    // queued deployments wait (and are replayed after the restart) so the
+    // re-exec can't cut one off halfway
+    worker::pause_deployments();
+    let exe = match install(&state, &target).await {
         Ok(exe) => exe,
         Err(install_error) => {
+            worker::resume_deployments();
             INSTALLING.store(false, Ordering::SeqCst);
             return Err(install_error);
         }
@@ -293,6 +291,12 @@ async fn install(
     if let Err(staged_error) = staged_result {
         let _ = tokio::fs::remove_file(&staged).await;
         return Err(staged_error);
+    }
+
+    // a deployment that started before the pause gets to finish
+    if let Err(busy) = wait_for_running_deployment().await {
+        let _ = tokio::fs::remove_file(&staged).await;
+        return Err(busy);
     }
 
     // keep the previous binary for a manual rollback
@@ -439,25 +443,19 @@ fn newest_release<'a>(
         .max_by(|(left, _), (right, _)| left.cmp(right))
 }
 
-fn deployments_in_progress(state: &AppState) -> Result<bool, ApiError> {
-    for app in state.db.list_apps().map_err(internal)? {
-        let deployments =
-            state.db.list_deployments_by_app(app.id).map_err(internal)?;
-        let busy = deployments.iter().any(|deployment| {
-            matches!(
-                deployment.status,
-                DeploymentStatus::Pending
-                    | DeploymentStatus::Cloning
-                    | DeploymentStatus::Building
-                    | DeploymentStatus::Pushing
-                    | DeploymentStatus::Starting
-            )
-        });
-        if busy {
-            return Ok(true);
+async fn wait_for_running_deployment() -> Result<(), ApiError> {
+    let deadline = tokio::time::Instant::now() + DEPLOYMENT_WAIT;
+    while worker::deployment_running() {
+        if tokio::time::Instant::now() >= deadline {
+            return Err(error(
+                StatusCode::CONFLICT,
+                "a deployment is still running. try again once it finishes"
+                    .to_string(),
+            ));
         }
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    Ok(false)
+    Ok(())
 }
 
 fn http_client(timeout: Duration) -> Result<reqwest::Client, ApiError> {
