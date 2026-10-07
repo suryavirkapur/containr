@@ -33,11 +33,11 @@ use containr_common::managed_services::{
     DatabaseType, ManagedDatabase, ManagedQueue, QueueType, ServiceStatus,
 };
 use containr_common::models::{
-    default_service_domain, App, BasicAuth, BuildArg, ContainerService,
-    Deployment, DeploymentSource, DeploymentStatus, EnvVar, HealthCheck,
-    HttpRequestLog, LoginGate, LoginGateScope, PortMapping, PortProtocol,
-    RestartPolicy, RolloutStrategy, ServiceDeployment, ServiceMount,
-    ServiceRegistryAuth, ServiceType,
+    default_service_domain, App, BasicAuth, BuildArg, ConfigFile,
+    ContainerService, Deployment, DeploymentSource, DeploymentStatus, EnvVar,
+    HealthCheck, HttpRequestLog, LoginGate, LoginGateScope, PortMapping,
+    PortProtocol, RestartPolicy, RolloutStrategy, ServiceDeployment,
+    ServiceMount, ServiceRegistryAuth, ServiceType,
 };
 use containr_common::service_inventory::{
     ServiceInventoryItem, ServiceResourceKind,
@@ -172,6 +172,15 @@ pub struct ServiceSettingsServiceResponse {
     pub basic_auth: Option<BasicAuthResponse>,
     pub login_gate: Option<LoginGateResponse>,
     pub port_mappings: Vec<PortMappingResponse>,
+    pub files: Vec<ConfigFileRequest>,
+}
+
+/// a config file containr mounts read-only into the service's containers
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ConfigFileRequest {
+    /// absolute path inside the container
+    pub path: String,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -415,6 +424,9 @@ pub struct ServiceRequest {
     pub login_gate: Option<Option<LoginGateRequest>>,
     /// published host ports. absent keeps the current mappings
     pub port_mappings: Option<Vec<PortMappingRequest>>,
+    /// config files mounted read-only. absent keeps the current files
+    #[serde(default)]
+    pub files: Option<Vec<ConfigFileRequest>>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -2473,6 +2485,14 @@ fn service_settings_service_response(
             .iter()
             .map(PortMappingResponse::from)
             .collect(),
+        files: service.files.iter().map(config_file_request).collect(),
+    }
+}
+
+fn config_file_request(file: &ConfigFile) -> ConfigFileRequest {
+    ConfigFileRequest {
+        path: file.path.clone(),
+        content: file.content.clone(),
     }
 }
 
@@ -2614,6 +2634,7 @@ fn service_request_from_model(service: &ContainerService) -> ServiceRequest {
                 })
                 .collect(),
         ),
+        files: Some(service.files.iter().map(config_file_request).collect()),
     }
 }
 
@@ -2774,6 +2795,68 @@ fn build_service_mounts(
         });
     }
 
+    Ok(parsed)
+}
+
+const MAX_CONFIG_FILES: usize = 32;
+const MAX_CONFIG_FILE_BYTES: usize = 256 * 1024;
+
+/// validates config files: absolute, distinct paths that aren't inside a
+/// volume (the volume mount would hide them)
+fn build_config_files(
+    files: Vec<ConfigFileRequest>,
+    mounts: &[ServiceMount],
+) -> ApiResult<Vec<ConfigFile>> {
+    if files.len() > MAX_CONFIG_FILES {
+        return Err(bad_request(format!(
+            "a service can have at most {} config files",
+            MAX_CONFIG_FILES
+        )));
+    }
+    let mut seen = HashSet::new();
+    let mut parsed = Vec::new();
+    for file in files {
+        let path = file.path.trim().to_string();
+        let valid = path.starts_with('/')
+            && !path.ends_with('/')
+            && !FsPath::new(&path)
+                .components()
+                .any(|part| matches!(part, Component::ParentDir));
+        if !valid {
+            return Err(bad_request(format!(
+                "config file path must be an absolute file path: {:?}",
+                path
+            )));
+        }
+        if file.content.len() > MAX_CONFIG_FILE_BYTES {
+            return Err(bad_request(format!(
+                "config file {} is larger than {} KiB",
+                path,
+                MAX_CONFIG_FILE_BYTES / 1024
+            )));
+        }
+        if !seen.insert(path.clone()) {
+            return Err(bad_request(format!(
+                "duplicate config file path: {}",
+                path
+            )));
+        }
+        let shadowed = mounts.iter().any(|mount| {
+            let target = mount.target.trim_end_matches('/');
+            path == target || path.starts_with(&format!("{}/", target))
+        });
+        if shadowed {
+            return Err(bad_request(format!(
+                "config file {} is inside a volume; put it outside the \
+                 volume's path",
+                path
+            )));
+        }
+        parsed.push(ConfigFile {
+            path,
+            content: file.content,
+        });
+    }
     Ok(parsed)
 }
 
@@ -3688,6 +3771,12 @@ fn build_services(
             &service.port_mappings,
             service_type,
         )?;
+        // re-checked when only the volumes change, so a new volume can't
+        // hide an existing file
+        let files = request.files.unwrap_or_else(|| {
+            service.files.iter().map(config_file_request).collect()
+        });
+        service.files = build_config_files(files, &service.mounts)?;
         service.health_check =
             request.health_check.map(|health_check| HealthCheck {
                 path: health_check.path,
@@ -4935,10 +5024,11 @@ mod services_test {
 
     mod parity {
         use super::super::{
-            build_service_mounts, resolve_port_mappings,
+            build_config_files, build_service_mounts, resolve_port_mappings,
             resolve_service_basic_auth, resolve_service_notes,
-            validate_port_mappings, BasicAuthRequest, PortMappingRequest,
-            ServiceMountRequest, ServiceRequest,
+            validate_port_mappings, BasicAuthRequest, ConfigFileRequest,
+            PortMappingRequest, ServiceMountRequest, ServiceRequest,
+            MAX_CONFIG_FILE_BYTES,
         };
         use crate::state::AppState;
         use axum::http::StatusCode;
@@ -5411,6 +5501,51 @@ mod services_test {
             let mounts = build_service_mounts(Some(vec![shared]), &[], false)
                 .expect("shared mount");
             assert!(mounts[0].shared);
+        }
+
+        #[test]
+        fn config_files_are_validated() {
+            let file = |path: &str| ConfigFileRequest {
+                path: path.to_string(),
+                content: "x".to_string(),
+            };
+            let volume = ServiceMount {
+                name: "data".to_string(),
+                target: "/data".to_string(),
+                read_only: false,
+                host_path: None,
+                shared: false,
+            };
+
+            let files = build_config_files(
+                vec![file(" /etc/app/config.yml "), file("/data.yml")],
+                std::slice::from_ref(&volume),
+            )
+            .expect("valid files");
+            assert_eq!(files[0].path, "/etc/app/config.yml");
+
+            for invalid in ["relative.yml", "/etc/app/", "/etc/../shadow"] {
+                assert!(
+                    build_config_files(vec![file(invalid)], &[]).is_err(),
+                    "{invalid}"
+                );
+            }
+            assert!(build_config_files(
+                vec![file("/a.yml"), file("/a.yml")],
+                &[]
+            )
+            .is_err());
+            // a volume mounted over the file would hide it
+            assert!(build_config_files(
+                vec![file("/data/config.yml")],
+                std::slice::from_ref(&volume)
+            )
+            .is_err());
+            let huge = ConfigFileRequest {
+                path: "/big".to_string(),
+                content: "x".repeat(MAX_CONFIG_FILE_BYTES + 1),
+            };
+            assert!(build_config_files(vec![huge], &[]).is_err());
         }
 
         #[test]

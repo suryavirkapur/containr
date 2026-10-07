@@ -22,6 +22,7 @@ import {
 } from "solid-js";
 import { errorMessage } from "../../api/http";
 import {
+	type ConfigFileInput,
 	createVolumeDirectory,
 	deleteVolumeEntry,
 	downloadVolumeEntry,
@@ -40,6 +41,7 @@ import {
 	Select,
 	Skeleton,
 	Switch,
+	Textarea,
 } from "../../components/ui";
 import { confirm, toast } from "../../components/ui/overlay";
 import { useAuth } from "../../context/AuthContext";
@@ -199,6 +201,103 @@ const VolumesEditor = () => {
 				onSave={() => void save()}
 				onReset={reset}
 				label="Unsaved volume changes · redeploy to apply"
+			/>
+		</Card>
+	);
+};
+
+const ConfigFilesEditor = () => {
+	const ctx = useService();
+	const [files, setFiles] = createSignal<ConfigFileInput[]>([]);
+	const [saving, setSaving] = createSignal(false);
+
+	const initial = createMemo(() =>
+		(ctx.settings()?.service.files ?? []).map((file) => ({
+			path: file.path,
+			content: file.content,
+		})),
+	);
+	const reset = () => setFiles(initial().map((file) => ({ ...file })));
+	createEffect(on(initial, reset));
+
+	const dirty = () => JSON.stringify(files()) !== JSON.stringify(initial());
+	const update = (index: number, patch: Partial<ConfigFileInput>) =>
+		setFiles(files().map((file, i) => (i === index ? { ...file, ...patch } : file)));
+
+	const save = async () => {
+		const cleaned = files()
+			.map((file) => ({ ...file, path: file.path.trim() }))
+			.filter((file) => file.path || file.content);
+		for (const file of cleaned) {
+			if (!file.path.startsWith("/") || file.path.endsWith("/")) {
+				toast.error("File paths must be absolute", file.path || "Missing path");
+				return;
+			}
+		}
+		const request = ctx.serviceRequest({ files: cleaned });
+		if (!request) return;
+		setSaving(true);
+		await ctx.save({ service: request }, "Config files saved");
+		setSaving(false);
+	};
+
+	return (
+		<Card
+			title="Config files"
+			description="containr writes these files and mounts them read-only into the container, for configs like a Caddyfile or YAML settings."
+		>
+			<div class="space-y-3">
+				<Index
+					each={files()}
+					fallback={
+						<div class="rounded-md border border-dashed border-border px-4 py-6 text-center text-[13px] text-fg-subtle">
+							No config files.
+						</div>
+					}
+				>
+					{(file, index) => (
+						<div class="space-y-2 rounded-md border border-border p-3">
+							<div class="flex items-center gap-2">
+								<Input
+									mono
+									placeholder="/etc/app/config.yml"
+									value={file().path}
+									onInput={(event) => update(index, { path: event.currentTarget.value })}
+								/>
+								<button
+									type="button"
+									class="btn btn-ghost btn-icon hover:text-danger!"
+									aria-label="Remove file"
+									onClick={() => setFiles(files().filter((_, i) => i !== index))}
+								>
+									<Trash />
+								</button>
+							</div>
+							<Textarea
+								mono
+								rows={8}
+								spellcheck={false}
+								value={file().content}
+								onInput={(event) => update(index, { content: event.currentTarget.value })}
+							/>
+						</div>
+					)}
+				</Index>
+				<Button
+					variant="secondary"
+					size="sm"
+					onClick={() => setFiles([...files(), { path: "", content: "" }])}
+				>
+					<Plus />
+					Add file
+				</Button>
+			</div>
+			<SaveBar
+				dirty={dirty()}
+				saving={saving()}
+				onSave={() => void save()}
+				onReset={reset}
+				label="Unsaved file changes · redeploy to apply"
 			/>
 		</Card>
 	);
@@ -538,6 +637,7 @@ const ServiceStorage = () => {
 		<div class="space-y-6">
 			<Show when={ctx.isApp()}>
 				<VolumesEditor />
+				<ConfigFilesEditor />
 			</Show>
 			<FileBrowser />
 		</div>

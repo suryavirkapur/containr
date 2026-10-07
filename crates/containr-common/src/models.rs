@@ -241,6 +241,14 @@ pub struct ServiceMount {
     pub shared: bool,
 }
 
+/// a config file containr writes and mounts read-only at `path`
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigFile {
+    /// absolute path of the file inside the container
+    pub path: String,
+    pub content: String,
+}
+
 /// http basic auth enforced by the proxy for a service's domains
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BasicAuth {
@@ -515,6 +523,9 @@ pub struct ContainerService {
     /// host ports published to the first replica
     #[serde(default)]
     pub port_mappings: Vec<PortMapping>,
+    /// files written by containr and mounted read-only into the container
+    #[serde(default)]
+    pub files: Vec<ConfigFile>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -559,6 +570,7 @@ impl ContainerService {
             basic_auth: None,
             login_gate: None,
             port_mappings: Vec::new(),
+            files: Vec::new(),
             created_at: now,
             updated_at: now,
         }

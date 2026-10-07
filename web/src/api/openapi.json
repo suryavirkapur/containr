@@ -4487,6 +4487,23 @@
           }
         }
       },
+      "ConfigFileRequest": {
+        "type": "object",
+        "description": "a config file containr mounts read-only into the service's containers",
+        "required": [
+          "path",
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "absolute path inside the container"
+          }
+        }
+      },
       "ContainerListItem": {
         "type": "object",
         "required": [
@@ -6107,6 +6124,16 @@
               "null"
             ]
           },
+          "files": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ConfigFileRequest"
+            },
+            "description": "config files mounted read-only. absent keeps the current files"
+          },
           "health_check": {
             "oneOf": [
               {
@@ -6287,7 +6314,8 @@
           "env_vars",
           "build_args",
           "mounts",
-          "port_mappings"
+          "port_mappings",
+          "files"
         ],
         "properties": {
           "additional_ports": {
@@ -6377,6 +6405,12 @@
           },
           "expose_http": {
             "type": "boolean"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigFileRequest"
+            }
           },
           "health_check": {
             "oneOf": [
