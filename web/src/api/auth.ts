@@ -41,13 +41,23 @@ export const register = async (body: RegisterBody): Promise<AuthResponse> => {
 	return data;
 };
 
-export const finishGithubLogin = async (code: string, state: string): Promise<AuthResponse> => {
+/**
+ * finishes a github round trip: signs in, or links github to the signed-in
+ * account (`linked` in the response) when the link was started there
+ */
+export const finishGithubLogin = async (
+	code: string,
+	state: string,
+	token?: string | null,
+): Promise<AuthResponse> => {
 	const response = await fetch(
 		`/api/auth/github/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
 		{
 			method: "GET",
 			headers: {
 				Accept: "application/json",
+				// a link has to finish in the session that started it
+				...(token ? { Authorization: `Bearer ${token}` } : {}),
 			},
 		},
 	);
@@ -57,6 +67,21 @@ export const finishGithubLogin = async (code: string, state: string): Promise<Au
 	}
 
 	return response.json() as Promise<AuthResponse>;
+};
+
+/** github authorization url for linking github to the signed-in account */
+export const startGithubLink = async (): Promise<string> => {
+	const { data, error } = await api.POST("/api/auth/github/link");
+	if (error) throw error;
+	if (!data) throw new Error("missing github link response");
+	return data.url;
+};
+
+export const unlinkGithub = async (): Promise<AuthUser> => {
+	const { data, error } = await api.DELETE("/api/auth/github/link");
+	if (error) throw error;
+	if (!data) throw new Error("missing user response");
+	return data;
 };
 
 export const getCurrentUser = async (): Promise<AuthUser> => {

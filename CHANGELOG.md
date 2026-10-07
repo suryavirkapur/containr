@@ -3,6 +3,10 @@
 changelog
 =========
 
+unreleased
+- link github to an existing account from settings → account (and unlink it again, once the account has a password); github sign-in and linking only show up when the server has a github oauth app configured
+- github sign-in refreshes the stored github username, so renamed accounts stay current
+
 0.1.16-alpha (2026-10-07)
 - rebuilt the web ui as a modern control panel: light and dark themes, overview dashboard, command palette (cmd+k), breadcrumbs, mobile navigation drawer, toasts and confirm dialogs
 - one-click apps: catalog of 56 preconfigured apps (wordpress, ghost, n8n, uptime kuma, nextcloud, vaultwarden, metabase, open webui, ...) deployed as projects with databases, volumes and generated secrets

@@ -59,6 +59,8 @@ use crate::handlers::{
         auth::change_password,
         auth::github_start,
         auth::github_callback,
+        auth::github_link_start,
+        auth::github_unlink,
         // settings
         settings::get_settings,
         settings::update_settings,
@@ -140,6 +142,7 @@ use crate::handlers::{
             auth::CreateUserRequest,
             auth::ChangePasswordRequest,
             auth::AuthResponse,
+            auth::GithubLinkResponse,
             auth::UserResponse,
             auth::ErrorResponse,
             // settings

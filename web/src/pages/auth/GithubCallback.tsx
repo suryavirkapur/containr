@@ -36,12 +36,12 @@ const GithubCallback = (props: { install?: boolean }) => {
 			if (!code) throw new Error("GitHub did not return an authorization code.");
 
 			if (state) {
-				setMessage("Signing you in…");
-				const response = await finishGithubLogin(code, state);
+				setMessage(token ? "Linking your GitHub account…" : "Signing you in…");
+				const response = await finishGithubLogin(code, state, token);
 				localStorage.setItem(TOKEN_KEY, response.token);
 				// replace any cached user from a previous session
 				localStorage.setItem(USER_KEY, JSON.stringify(response.user));
-				window.location.replace("/");
+				window.location.replace(response.linked ? "/settings/account?github=linked" : "/");
 				return;
 			}
 

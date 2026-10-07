@@ -136,6 +136,10 @@ pub async fn run_server(
         .route("/api/auth/me", get(auth::me))
         .route("/api/auth/github", get(auth::github_start))
         .route("/api/auth/github/callback", get(auth::github_callback))
+        .route(
+            "/api/auth/github/link",
+            post(auth::github_link_start).delete(auth::github_unlink),
+        )
         .route("/api/admin/users", get(auth::list_users))
         .route("/api/admin/users", post(auth::create_user))
         .route("/api/admin/users/{id}", delete(auth::delete_user))

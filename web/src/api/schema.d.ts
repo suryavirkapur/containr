@@ -73,6 +73,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/github/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** start linking github to the signed-in account */
+        post: operations["github_link_start"];
+        /** unlink github from the signed-in account */
+        delete: operations["github_unlink"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -972,6 +990,11 @@ export interface components {
         };
         /** @description auth response with token */
         AuthResponse: {
+            /**
+             * @description true when this github round trip linked github to a signed-in
+             *     account instead of signing in
+             */
+            linked: boolean;
             /** @description jwt authentication token */
             token: string;
             /** @description authenticated user info */
@@ -1244,6 +1267,11 @@ export interface components {
             /** @description list of installations */
             installations: components["schemas"]["InstallationDetails"][];
         };
+        /** @description where to send the browser to link a github account */
+        GithubLinkResponse: {
+            /** @description github authorization url */
+            url: string;
+        };
         HealthCheckRequest: {
             /** Format: int32 */
             interval_secs?: number | null;
@@ -1403,6 +1431,8 @@ export interface components {
         };
         /** @description public registration status */
         RegistrationStatusResponse: {
+            /** @description whether sign in and linking with github are configured */
+            github_enabled: boolean;
             /** @description whether the first account can still be registered publicly */
             registration_open: boolean;
             /** @description total number of known users */
@@ -1755,6 +1785,8 @@ export interface components {
             email: string;
             /** @description github username if linked */
             github_username?: string | null;
+            /** @description whether the account can sign in with a password */
+            has_password: boolean;
             /**
              * Format: uuid
              * @description unique user id
@@ -1976,6 +2008,91 @@ export interface operations {
             };
             /** @description invalid oauth code */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    github_link_start: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description github authorization url */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GithubLinkResponse"];
+                };
+            };
+            /** @description github sign in isn't configured */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    github_unlink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description github unlinked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+            /** @description no github account linked */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description the account has no password */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

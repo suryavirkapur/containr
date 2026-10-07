@@ -80,15 +80,17 @@ const Login = () => {
 				<Button type="submit" variant="primary" size="lg" class="w-full" loading={saving()}>
 					Sign in
 				</Button>
-				<div class="flex items-center gap-3 text-[12px] text-fg-faint">
-					<div class="h-px flex-1 bg-border" />
-					or
-					<div class="h-px flex-1 bg-border" />
-				</div>
-				<a href="/api/auth/github" class="btn btn-secondary btn-lg w-full">
-					<GithubIcon />
-					Continue with GitHub
-				</a>
+				<Show when={status()?.github_enabled}>
+					<div class="flex items-center gap-3 text-[12px] text-fg-faint">
+						<div class="h-px flex-1 bg-border" />
+						or
+						<div class="h-px flex-1 bg-border" />
+					</div>
+					<a href="/api/auth/github" class="btn btn-secondary btn-lg w-full">
+						<GithubIcon />
+						Continue with GitHub
+					</a>
+				</Show>
 			</form>
 		</AuthLayout>
 	);

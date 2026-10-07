@@ -18,7 +18,7 @@ use crate::auth::{
 };
 use crate::github::{exchange_code_for_token, get_github_user};
 use crate::security::encrypt_value;
-use crate::state::AppState;
+use crate::state::{AppState, OAuthPurpose};
 use containr_common::models::User;
 
 /// login request body
@@ -46,6 +46,16 @@ pub struct AuthResponse {
     pub token: String,
     /// authenticated user info
     pub user: UserResponse,
+    /// true when this github round trip linked github to a signed-in
+    /// account instead of signing in
+    pub linked: bool,
+}
+
+/// where to send the browser to link a github account
+#[derive(Debug, Serialize, ToSchema)]
+pub struct GithubLinkResponse {
+    /// github authorization url
+    pub url: String,
 }
 
 /// user info in responses
@@ -59,6 +69,8 @@ pub struct UserResponse {
     pub github_username: Option<String>,
     /// whether this user can manage server settings and users
     pub is_admin: bool,
+    /// whether the account can sign in with a password
+    pub has_password: bool,
 }
 
 /// public registration status
@@ -68,6 +80,8 @@ pub struct RegistrationStatusResponse {
     pub registration_open: bool,
     /// total number of known users
     pub user_count: usize,
+    /// whether sign in and linking with github are configured
+    pub github_enabled: bool,
 }
 
 /// admin-managed local user creation request
@@ -107,10 +121,12 @@ pub async fn status(
 ) -> Result<Json<RegistrationStatusResponse>, (StatusCode, Json<ErrorResponse>)>
 {
     let user_count = state.db.list_users().map_err(internal_error)?.len();
+    let github_enabled = github_oauth_configured(&state).await;
 
     Ok(Json(RegistrationStatusResponse {
         registration_open: user_count == 0,
         user_count,
+        github_enabled,
     }))
 }
 
@@ -129,23 +145,143 @@ pub struct GithubCallbackQuery {
     responses((status = 302, description = "redirect to github oauth"))
 )]
 pub async fn github_start(State(state): State<AppState>) -> Redirect {
+    if !github_oauth_configured(&state).await {
+        return Redirect::temporary("/login");
+    }
+    match github_authorize_url(&state, OAuthPurpose::Login).await {
+        Ok(url) => Redirect::temporary(&url),
+        Err(_) => Redirect::temporary("/login"),
+    }
+}
+
+/// start linking github to the signed-in account
+#[utoipa::path(
+    post,
+    path = "/api/auth/github/link",
+    tag = "auth",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "github authorization url", body = GithubLinkResponse),
+        (status = 400, description = "github sign in isn't configured", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse)
+    )
+)]
+pub async fn github_link_start(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<GithubLinkResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let user = require_authenticated_user(&state, &headers).await?;
+    if !github_oauth_configured(&state).await {
+        return Err(bad_request(
+            "github isn't configured on this server: set [github] \
+             client_id and client_secret in containr.toml",
+        ));
+    }
+    let url = github_authorize_url(&state, OAuthPurpose::Link(user.id))
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(GithubLinkResponse { url }))
+}
+
+/// unlink github from the signed-in account
+#[utoipa::path(
+    delete,
+    path = "/api/auth/github/link",
+    tag = "auth",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "github unlinked", body = UserResponse),
+        (status = 400, description = "no github account linked", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 409, description = "the account has no password", body = ErrorResponse)
+    )
+)]
+pub async fn github_unlink(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<UserResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let mut user = require_authenticated_user(&state, &headers).await?;
+    unlink_github(&mut user)?;
+    user.updated_at = chrono::Utc::now();
+    state.db.save_user(&user).map_err(internal_error)?;
+    Ok(Json(user_response(&user)))
+}
+
+async fn github_oauth_configured(state: &AppState) -> bool {
+    let config = state.config.read().await;
+    !config.github.client_id.trim().is_empty()
+        && !config.github.client_secret.trim().is_empty()
+}
+
+/// creates a single-use oauth state for `purpose` and returns the github
+/// authorization url carrying it
+async fn github_authorize_url(
+    state: &AppState,
+    purpose: OAuthPurpose,
+) -> Result<String, url::ParseError> {
     let state_value = generate_oauth_state();
     let now = chrono::Utc::now().timestamp();
-    let expires_at = now + 600;
     state.cleanup_expired_oauth_states(now);
-    state.insert_oauth_state(&state_value, expires_at);
+    state.insert_oauth_state(&state_value, now + 600, purpose);
 
-    let config = state.config.read().await.clone();
+    let config = state.config.read().await;
     let mut auth_url =
-        url::Url::parse("https://github.com/login/oauth/authorize")
-            .expect("valid github oauth url");
+        url::Url::parse("https://github.com/login/oauth/authorize")?;
     auth_url
         .query_pairs_mut()
         .append_pair("client_id", &config.github.client_id)
         .append_pair("state", &state_value)
         .append_pair("scope", "repo");
+    Ok(auth_url.to_string())
+}
 
-    Redirect::temporary(auth_url.as_str())
+/// attaches a github identity to `user`. a github account can belong to
+/// one containr user only; `current_owner` is whoever has it now.
+fn link_github(
+    user: &mut User,
+    current_owner: Option<&User>,
+    github_id: i64,
+    github_login: &str,
+    encrypted_token: String,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    if current_owner.is_some_and(|owner| owner.id != user.id) {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "this GitHub account is already linked to another \
+                        containr account"
+                    .to_string(),
+            }),
+        ));
+    }
+    user.github_id = Some(github_id);
+    user.github_username = Some(github_login.to_string());
+    user.github_access_token = Some(encrypted_token);
+    Ok(())
+}
+
+/// removes the github identity and token. refused for accounts without a
+/// password, which could no longer sign in.
+fn unlink_github(
+    user: &mut User,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    if user.github_id.is_none() && user.github_access_token.is_none() {
+        return Err(bad_request("no GitHub account is linked"));
+    }
+    if user.password_hash.is_none() {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "set a password before unlinking GitHub, or you \
+                        won't be able to sign in"
+                    .to_string(),
+            }),
+        ));
+    }
+    user.github_id = None;
+    user.github_username = None;
+    user.github_access_token = None;
+    Ok(())
 }
 
 /// register a new user with email/password
@@ -221,12 +357,8 @@ pub async fn register(
 
     Ok(Json(AuthResponse {
         token,
-        user: UserResponse {
-            id: user.id,
-            email: user.email,
-            github_username: user.github_username,
-            is_admin: user.is_admin,
-        },
+        user: user_response(&user),
+        linked: false,
     }))
 }
 
@@ -498,12 +630,8 @@ pub async fn login(
 
     Ok(Json(AuthResponse {
         token,
-        user: UserResponse {
-            id: user.id,
-            email: user.email,
-            github_username: user.github_username,
-            is_admin: user.is_admin,
-        },
+        user: user_response(&user),
+        linked: false,
     }))
 }
 
@@ -522,19 +650,33 @@ pub async fn login(
 )]
 pub async fn github_callback(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<GithubCallbackQuery>,
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
     // verify state
     let now = chrono::Utc::now().timestamp();
-    let expires_at = state.take_oauth_state(&query.state);
-    if expires_at.is_none() || expires_at.unwrap_or(0) < now {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "invalid oauth state".to_string(),
-            }),
-        ));
-    }
+    let purpose = match state.take_oauth_state(&query.state) {
+        Some((expires_at, purpose)) if expires_at >= now => purpose,
+        _ => return Err(bad_request("invalid oauth state")),
+    };
+    // a link must finish in the session that started it
+    let linking_user = match purpose {
+        OAuthPurpose::Login => None,
+        OAuthPurpose::Link(user_id) => {
+            let user = require_authenticated_user(&state, &headers).await?;
+            if user.id != user_id {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(ErrorResponse {
+                        error: "this GitHub link was started by another \
+                                account"
+                            .to_string(),
+                    }),
+                ));
+            }
+            Some(user)
+        }
+    };
 
     // exchange code for token
     let config = state.config.read().await.clone();
@@ -576,19 +718,32 @@ pub async fn github_callback(
         )
     })?;
 
-    let user = if let Some(mut user) = state
+    let current_owner = state
         .db
         .get_user_by_github_id(github_user.id)
-        .map_err(internal_error)?
-    {
+        .map_err(internal_error)?;
+    let linked = linking_user.is_some();
+    let user = if let Some(mut user) = linking_user {
+        link_github(
+            &mut user,
+            current_owner.as_ref(),
+            github_user.id,
+            &github_user.login,
+            token_to_store,
+        )?;
+        user.updated_at = chrono::Utc::now();
+        state.db.save_user(&user).map_err(internal_error)?;
+        user
+    } else if let Some(mut user) = current_owner {
         if !user.is_admin
             && !state.db.has_admin_user().map_err(internal_error)?
         {
             user.is_admin = true;
         }
 
-        // update access token
+        // refresh the token and the (renameable) github login
         user.github_access_token = Some(token_to_store);
+        user.github_username = Some(github_user.login.clone());
         state.db.save_user(&user).map_err(internal_error)?;
         user
     } else {
@@ -629,12 +784,8 @@ pub async fn github_callback(
 
     Ok(Json(AuthResponse {
         token,
-        user: UserResponse {
-            id: user.id,
-            email: user.email,
-            github_username: user.github_username,
-            is_admin: user.is_admin,
-        },
+        user: user_response(&user),
+        linked,
     }))
 }
 
@@ -644,6 +795,7 @@ fn user_response(user: &User) -> UserResponse {
         email: user.email.clone(),
         github_username: user.github_username.clone(),
         is_admin: user.is_admin,
+        has_password: user.password_hash.is_some(),
     }
 }
 
@@ -740,4 +892,64 @@ fn generate_oauth_state() -> String {
     let mut bytes = [0u8; 32];
     rand::rng().fill(&mut bytes);
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn password_user() -> User {
+        User::new_with_password(
+            "dev@example.com".to_string(),
+            "$argon2id$hash".to_string(),
+        )
+    }
+
+    #[test]
+    fn linking_attaches_the_github_identity() {
+        let mut user = password_user();
+        link_github(&mut user, None, 42, "octocat", "enc:token".to_string())
+            .expect("link");
+        assert_eq!(user.github_id, Some(42));
+        assert_eq!(user.github_username.as_deref(), Some("octocat"));
+        assert_eq!(user.github_access_token.as_deref(), Some("enc:token"));
+
+        // relinking the same account (e.g. a renamed login) is fine
+        let same = user.clone();
+        link_github(&mut user, Some(&same), 42, "octo", "enc:new".to_string())
+            .expect("relink");
+        assert_eq!(user.github_username.as_deref(), Some("octo"));
+    }
+
+    #[test]
+    fn a_github_account_belongs_to_one_user() {
+        let mut user = password_user();
+        let other =
+            User::new_with_github("o@example.com".into(), 42, "octo".into());
+        let error =
+            link_github(&mut user, Some(&other), 42, "octo", "enc:t".into())
+                .expect_err("taken");
+        assert_eq!(error.0, StatusCode::CONFLICT);
+        assert_eq!(user.github_id, None);
+    }
+
+    #[test]
+    fn unlinking_needs_a_password_to_fall_back_on() {
+        let mut github_only =
+            User::new_with_github("g@example.com".into(), 7, "gh".into());
+        let error = unlink_github(&mut github_only).expect_err("no password");
+        assert_eq!(error.0, StatusCode::CONFLICT);
+        assert_eq!(github_only.github_id, Some(7));
+
+        let mut user = password_user();
+        assert_eq!(
+            unlink_github(&mut user).expect_err("nothing linked").0,
+            StatusCode::BAD_REQUEST
+        );
+        link_github(&mut user, None, 7, "gh", "enc:t".into()).expect("link");
+        unlink_github(&mut user).expect("unlink");
+        assert!(user.github_id.is_none());
+        assert!(user.github_username.is_none());
+        assert!(user.github_access_token.is_none());
+    }
 }
