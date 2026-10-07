@@ -14,6 +14,10 @@ use containr_common::{decrypt, derive_key, Database};
 /// service ids are uuids, so this never collides with a service dir.
 pub const SHARED_MOUNTS_DIR: &str = "shared";
 
+/// dir under a service's mount dir holding its config files. volume names
+/// can't start with a dot, so this never collides with a volume.
+const CONFIG_FILES_DIR: &str = ".files";
+
 /// builds bind mounts for a service. managed mounts live under
 /// `{work_dir}/app-mounts/{app}/{service}/{name}`, shared ones under
 /// `{work_dir}/app-mounts/{app}/shared/{name}`; mounts with a host_path
@@ -71,6 +75,50 @@ pub fn build_service_mounts(
         });
     }
 
+    mounts.extend(write_config_files(&mounts_root, service)?);
+    Ok(mounts)
+}
+
+/// writes the service's config files (fresh on every deploy, so edits and
+/// removals apply) and returns read-only bind mounts for them
+fn write_config_files(
+    mounts_root: &Path,
+    service: &ContainerService,
+) -> anyhow::Result<Vec<DockerBindMount>> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = std::path::absolute(mounts_root.join(CONFIG_FILES_DIR))?;
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    if service.files.is_empty() {
+        return Ok(Vec::new());
+    }
+    std::fs::create_dir_all(&dir)?;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755))?;
+
+    let mut mounts = Vec::new();
+    for (index, file) in service.files.iter().enumerate() {
+        let name = Path::new(&file.path)
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| "file".to_string());
+        let source = dir.join(format!("{}-{}", index, name));
+        std::fs::write(&source, &file.content)?;
+        // readable by images that run as a non-root user
+        std::fs::set_permissions(
+            &source,
+            std::fs::Permissions::from_mode(0o644),
+        )?;
+        mounts.push(DockerBindMount {
+            source: source.to_string_lossy().to_string(),
+            target: file.path.clone(),
+            read_only: true,
+            seed_from_image: false,
+        });
+    }
     Ok(mounts)
 }
 
@@ -177,7 +225,8 @@ pub fn should_pull_service_image(
 mod tests {
     use super::*;
     use containr_common::models::{
-        ContainerRegistry, PortMapping, PortProtocol, ServiceMount, User,
+        ConfigFile, ContainerRegistry, PortMapping, PortProtocol, ServiceMount,
+        User,
     };
     use containr_common::{encrypt, DatabaseConfig};
 
@@ -273,6 +322,35 @@ mod tests {
         assert_eq!(source(&first), source(&second));
         assert!(source(&first).ends_with("/shared/data"));
         assert_ne!(source(&first), source(&private));
+    }
+
+    #[test]
+    fn config_files_are_written_and_mounted_read_only() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let mut service = service();
+        service.files = vec![ConfigFile {
+            path: "/etc/caddy/Caddyfile".to_string(),
+            content: ":80 {\n}\n".to_string(),
+        }];
+
+        let mounts = build_service_mounts(root.path(), Uuid::nil(), &service)
+            .expect("mounts");
+        assert_eq!(mounts.len(), 1);
+        assert_eq!(mounts[0].target, "/etc/caddy/Caddyfile");
+        assert!(mounts[0].read_only);
+        assert!(!mounts[0].seed_from_image);
+        assert_eq!(
+            std::fs::read_to_string(&mounts[0].source).ok(),
+            Some(":80 {\n}\n".to_string())
+        );
+
+        // removed files disappear on the next deploy
+        let source = mounts[0].source.clone();
+        service.files.clear();
+        let mounts = build_service_mounts(root.path(), Uuid::nil(), &service)
+            .expect("mounts");
+        assert!(mounts.is_empty());
+        assert!(!Path::new(&source).exists());
     }
 
     #[test]

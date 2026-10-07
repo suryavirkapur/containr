@@ -1058,6 +1058,12 @@ export interface components {
             /** Format: int64 */
             reclaimed_bytes: number;
         };
+        /** @description a config file containr mounts read-only into the service's containers */
+        ConfigFileRequest: {
+            content: string;
+            /** @description absolute path inside the container */
+            path: string;
+        };
         ContainerListItem: {
             id: string;
             name: string;
@@ -1516,6 +1522,8 @@ export interface components {
             entrypoint?: string[] | null;
             env_vars?: components["schemas"]["EnvVarRequest"][] | null;
             expose_http?: boolean | null;
+            /** @description config files mounted read-only. absent keeps the current files */
+            files?: components["schemas"]["ConfigFileRequest"][] | null;
             health_check?: components["schemas"]["HealthCheckRequest"] | null;
             http_only_domains?: string[] | null;
             image?: string | null;
@@ -1566,6 +1574,7 @@ export interface components {
             entrypoint?: string[] | null;
             env_vars: components["schemas"]["EditableEnvVarResponse"][];
             expose_http: boolean;
+            files: components["schemas"]["ConfigFileRequest"][];
             health_check?: components["schemas"]["HealthCheckResponse"] | null;
             http_only_domains: string[];
             image?: string | null;

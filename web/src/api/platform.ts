@@ -179,6 +179,12 @@ export type MountInput = {
 	shared?: boolean | null;
 };
 
+/** a file containr writes and mounts read-only into the container */
+export type ConfigFileInput = {
+	path: string;
+	content: string;
+};
+
 export type PortMapping = {
 	host_port: number;
 	container_port: number;
@@ -221,6 +227,7 @@ export type ServiceInput = {
 	/** require a containr login before the proxy forwards to the service */
 	login_gate?: { scope: "owner" | "all_users" } | null;
 	port_mappings?: PortMapping[];
+	files?: ConfigFileInput[];
 };
 
 export type CreateRequest =
