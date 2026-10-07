@@ -13,7 +13,8 @@
     "generate:schema": "cd .. && cargo run --bin openapi --features openapi-only 2>/dev/null > web/src/api/openapi.json",
     "generate:client": "pnpm dlx --package=openapi-typescript@7.13.0 --package=typescript@5.9.3 openapi-typescript src/api/openapi.json -o src/api/schema.d.ts",
     "generate": "pnpm run generate:schema && pnpm run generate:client",
-    "smoke:ui": "node scripts/ui-smoke.mjs"
+    "smoke:ui": "node scripts/ui-smoke.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@solidjs/router": "^1.0.0",
@@ -33,6 +34,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.3",
-    "vite-plugin-solid": "^2.11.14"
+    "vite-plugin-solid": "^2.11.14",
+    "vitest": "^5.0.3"
   }
 }

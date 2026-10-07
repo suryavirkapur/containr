@@ -5,11 +5,14 @@ changelog
 
 unreleased
 - rebuilt the web ui as a modern control panel: light and dark themes, overview dashboard, command palette (cmd+k), breadcrumbs, mobile navigation drawer, toasts and confirm dialogs
-- one-click apps: catalog of 51 preconfigured apps (wordpress, ghost, n8n, uptime kuma, nextcloud, vaultwarden, metabase, open webui, ...) deployed as projects with databases, volumes and generated secrets
+- one-click apps: catalog of 56 preconfigured apps (wordpress, ghost, n8n, uptime kuma, nextcloud, vaultwarden, metabase, open webui, ...) deployed as projects with databases, volumes and generated secrets
 - new deploy methods: tarball upload, pasted dockerfile, image redeploy, plus `containr-cmd services deploy` with `--upload` and `--dockerfile`
 - per-service http basic auth enforced by the proxy, host port mappings, notes, and admin-only host path volumes
 - shared volumes: a mount marked `shared` is one directory for every service in the project that mounts the same name. turning sharing on moves the volume's data into the shared one, turning it off keeps a copy
 - one-click kanidm (identity management with oauth2/oidc, passkeys and ldap): a one-shot worker creates its internal tls certificate in a shared volume and caddy forwards http to kanidm's https port
+- config files: a service can have files containr writes and mounts read-only (`files` in the api, "Config files" on the storage tab), so apps get real config files instead of shell tricks
+- one-click ory kratos, hydra (with kratos login and the ory ui for consent), keto and oathkeeper in a new identity category
+- the one-click catalog is split into modules with shared helpers (caddy path router, one-shot jobs, shared volumes, config files) and a `pnpm test` check that every app expands to a valid stack; docs/one-click-apps.md explains how to add apps
 - updates: the server page checks github releases and installs a newer containr in place (checksum-verified, previous binary kept as `containr.previous`); a release workflow publishes linux amd64 and arm64 binaries for `v*` tags
 - install.sh installs or updates containr from github releases on any linux server: it writes a config with random secrets and sets up the service for systemd, openrc, runit, dinit or sysvinit (`containr service install|restart`)
 - release binaries are fully static (musl, mimalloc) and run on any x86-64 or arm64 linux
