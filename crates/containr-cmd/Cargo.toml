@@ -12,6 +12,7 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { version = "4", features = ["derive"] }
+rustls = { workspace = true }
 reqwest = { workspace = true, features = ["multipart"] }
 flate2 = "1"
 tar = "0.4"

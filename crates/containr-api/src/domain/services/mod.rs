@@ -42,8 +42,8 @@ use containr_common::service_inventory::{
 };
 use containr_common::Config;
 use containr_runtime::{
-    AppServiceManager, DatabaseManager, DockerContainerManager,
-    ProxyRouteUpdate, QueueManager,
+    service_support, AppServiceManager, DatabaseManager,
+    DockerContainerManager, ProxyRouteUpdate, QueueManager,
 };
 
 pub type ApiResult<T> = Result<T, (StatusCode, Json<ErrorResponse>)>;
@@ -355,6 +355,10 @@ pub struct ServiceMountRequest {
     /// absolute host path to bind instead of a managed volume (admin only)
     #[serde(default)]
     pub host_path: Option<String>,
+    /// share the volume with every service in the project that mounts the
+    /// same name
+    #[serde(default)]
+    pub shared: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -2465,6 +2469,7 @@ fn mount_request_from_model(mount: &ServiceMount) -> ServiceMountRequest {
         target: mount.target.clone(),
         read_only: Some(mount.read_only),
         host_path: mount.host_path.clone(),
+        shared: Some(mount.shared),
     }
 }
 
@@ -2731,6 +2736,12 @@ fn build_service_mounts(
         }
 
         let host_path = normalize_host_path(mount.host_path)?;
+        let shared = mount.shared.unwrap_or(false);
+        if shared && host_path.is_some() {
+            return Err(bad_request(
+                "a host path mount cannot also be a shared volume",
+            ));
+        }
         if host_path.is_some() && !is_admin {
             // non-admins may resubmit a host path an admin already set
             let unchanged = existing.iter().any(|existing| {
@@ -2746,6 +2757,7 @@ fn build_service_mounts(
             target,
             read_only: mount.read_only.unwrap_or(false),
             host_path,
+            shared,
         });
     }
 
@@ -4061,16 +4073,19 @@ async fn refresh_proxy_routes(state: &AppState, app_id: Uuid) {
     }
 }
 
+fn app_mount_root(data_dir: &FsPath, app_id: Uuid) -> PathBuf {
+    data_dir
+        .join("builds")
+        .join("app-mounts")
+        .join(app_id.to_string())
+}
+
 fn service_mount_root(
     data_dir: &FsPath,
     app_id: Uuid,
     service_id: Uuid,
 ) -> PathBuf {
-    data_dir
-        .join("builds")
-        .join("app-mounts")
-        .join(app_id.to_string())
-        .join(service_id.to_string())
+    app_mount_root(data_dir, app_id).join(service_id.to_string())
 }
 
 async fn app_service_manager(
@@ -4458,9 +4473,14 @@ async fn delete_app_runtime(state: &AppState, app: &App) -> ApiResult<()> {
         .await
         .map_err(internal_error)?;
 
-    for service in &app.services {
-        let mount_root =
-            service_mount_root(&state.data_dir, app.id, service.id);
+    let shared_root = app_mount_root(&state.data_dir, app.id)
+        .join(service_support::SHARED_MOUNTS_DIR);
+    let mount_roots = app
+        .services
+        .iter()
+        .map(|service| service_mount_root(&state.data_dir, app.id, service.id))
+        .chain(std::iter::once(shared_root));
+    for mount_root in mount_roots {
         if let Err(error) = tokio::fs::remove_dir_all(&mount_root).await {
             if error.kind() != ErrorKind::NotFound {
                 return Err(internal_error(format!(
@@ -5319,6 +5339,7 @@ mod services_test {
                 target: "/data".to_string(),
                 read_only: None,
                 host_path: host_path.map(ToOwned::to_owned),
+                shared: None,
             };
 
             let error = build_service_mounts(
@@ -5342,6 +5363,7 @@ mod services_test {
                 target: "/data".to_string(),
                 read_only: false,
                 host_path: Some("/srv".to_string()),
+                shared: false,
             }];
             assert!(build_service_mounts(
                 Some(vec![mount(Some("/srv"))]),
@@ -5359,6 +5381,23 @@ mod services_test {
                 .expect_err("invalid host path");
                 assert_eq!(error.0, StatusCode::BAD_REQUEST);
             }
+
+            let shared_host_path = ServiceMountRequest {
+                shared: Some(true),
+                ..mount(Some("/srv"))
+            };
+            let error =
+                build_service_mounts(Some(vec![shared_host_path]), &[], true)
+                    .expect_err("shared host path");
+            assert_eq!(error.0, StatusCode::BAD_REQUEST);
+
+            let shared = ServiceMountRequest {
+                shared: Some(true),
+                ..mount(None)
+            };
+            let mounts = build_service_mounts(Some(vec![shared]), &[], false)
+                .expect("shared mount");
+            assert!(mounts[0].shared);
         }
 
         #[test]

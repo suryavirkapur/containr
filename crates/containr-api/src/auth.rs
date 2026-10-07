@@ -1,16 +1,13 @@
 //! authentication module - jwt + password hashing
 
 use argon2::{
-    password_hash::{
-        PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
-    },
+    password_hash::{PasswordHasher, PasswordVerifier},
     Argon2,
 };
 use chrono::{Duration, Utc};
 use jsonwebtoken::{
     decode, encode, DecodingKey, EncodingKey, Header, Validation,
 };
-use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -36,25 +33,22 @@ pub struct ExecTokenClaims {
 
 /// hashes a password using argon2
 pub fn hash_password(password: &str) -> Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
-    let argon2 = Argon2::default();
-    let hash =
-        argon2
-            .hash_password(password.as_bytes(), &salt)
-            .map_err(|e| {
-                Error::Internal(format!("failed to hash password: {}", e))
-            })?;
+    // a random salt is generated from the os rng
+    let hash = Argon2::default()
+        .hash_password(password.as_bytes())
+        .map_err(|e| {
+            Error::Internal(format!("failed to hash password: {}", e))
+        })?;
     Ok(hash.to_string())
 }
 
 /// verifies a password against a hash
 pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
-    let parsed_hash = PasswordHash::new(hash).map_err(|e| {
-        Error::Internal(format!("invalid password hash: {}", e))
-    })?;
-    Ok(Argon2::default()
-        .verify_password(password.as_bytes(), &parsed_hash)
-        .is_ok())
+    match Argon2::default().verify_password(password.as_bytes(), hash) {
+        Ok(()) => Ok(true),
+        Err(argon2::password_hash::Error::PasswordInvalid) => Ok(false),
+        Err(e) => Err(Error::Internal(format!("invalid password hash: {}", e))),
+    }
 }
 
 /// creates a jwt token for a user

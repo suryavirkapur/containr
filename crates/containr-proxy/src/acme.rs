@@ -8,7 +8,6 @@ use instant_acme::{
     LetsEncrypt, NewAccount, NewOrder, OrderStatus,
 };
 use parking_lot::RwLock;
-use pingora_core::tls::x509::X509;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -336,19 +335,32 @@ impl AcmeManager {
 fn parse_certificate_expiry(
     cert_chain: &str,
 ) -> anyhow::Result<chrono::DateTime<Utc>> {
-    let mut certs = X509::stack_from_pem(cert_chain.as_bytes())?;
-    let leaf = certs
-        .drain(..)
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("certificate chain is empty"))?;
-    let not_after = leaf.not_after().to_string();
-    let not_after = not_after.strip_suffix(" GMT").ok_or_else(|| {
-        anyhow::anyhow!("unexpected certificate expiry format")
-    })?;
-    let expires_at =
-        chrono::NaiveDateTime::parse_from_str(not_after, "%b %e %H:%M:%S %Y")?;
-    let expires_at =
-        chrono::DateTime::<Utc>::from_naive_utc_and_offset(expires_at, Utc);
+    // the leaf is the first certificate in a fullchain pem
+    let (_, pem) = x509_parser::pem::parse_x509_pem(cert_chain.as_bytes())
+        .map_err(|error| anyhow::anyhow!("invalid certificate pem: {error}"))?;
+    let leaf = pem
+        .parse_x509()
+        .map_err(|error| anyhow::anyhow!("invalid certificate: {error}"))?;
+    let not_after = leaf.validity().not_after.timestamp();
+    chrono::DateTime::<Utc>::from_timestamp(not_after, 0)
+        .ok_or_else(|| anyhow::anyhow!("certificate expiry out of range"))
+}
 
-    Ok(expires_at)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn certificate_expiry_reads_the_leaf_not_after() {
+        let key = rcgen::KeyPair::generate().expect("key");
+        let mut params =
+            rcgen::CertificateParams::new(vec!["app.test".to_string()])
+                .expect("params");
+        params.not_after = rcgen::date_time_ymd(2031, 3, 4);
+        let pem = params.self_signed(&key).expect("cert").pem();
+
+        let expires_at = parse_certificate_expiry(&pem).expect("expiry");
+        assert_eq!(expires_at.to_rfc3339(), "2031-03-04T00:00:00+00:00");
+        assert!(parse_certificate_expiry("garbage").is_err());
+    }
 }

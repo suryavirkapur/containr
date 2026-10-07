@@ -8,6 +8,13 @@ unreleased
 - one-click apps: catalog of 51 preconfigured apps (wordpress, ghost, n8n, uptime kuma, nextcloud, vaultwarden, metabase, open webui, ...) deployed as projects with databases, volumes and generated secrets
 - new deploy methods: tarball upload, pasted dockerfile, image redeploy, plus `containr-cmd services deploy` with `--upload` and `--dockerfile`
 - per-service http basic auth enforced by the proxy, host port mappings, notes, and admin-only host path volumes
+- shared volumes: a mount marked `shared` is one directory for every service in the project that mounts the same name
+- one-click kanidm (identity management with oauth2/oidc, passkeys and ldap): a one-shot worker creates its internal tls certificate in a shared volume and caddy forwards http to kanidm's https port
+- updates: the server page checks github releases and installs a newer containr in place (checksum-verified, previous binary kept as `containr.previous`); a release workflow publishes linux amd64 and arm64 binaries for `v*` tags
+- install.sh installs or updates containr from github releases on any linux server: it writes a config with random secrets and sets up the service for systemd, openrc, runit, dinit or sysvinit (`containr service install|restart`)
+- release binaries are fully static (musl, mimalloc) and run on any x86-64 or arm64 linux
+- dropped openssl: the proxy terminates tls with rustls (pingora 0.9) and every tls client uses rustls with ring; git deploys run the system `git` instead of libgit2, so servers that deploy from git need git installed
+- updated all rust and web dependencies to their latest versions (pingora 0.9, bollard 0.21, utoipa 6, tower-http 0.7, typescript 7, vite 8, solid router 1.0, ...)
 - per-service metrics (cpu, memory, network, disk io) and a monitoring page with live host charts
 - server page: system info, docker disk usage, cleanup of unused images, build cache and stopped containers, database backup download
 - container registries per user, used automatically when pulling private images

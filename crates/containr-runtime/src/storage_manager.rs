@@ -9,6 +9,7 @@ use aws_sdk_s3::{
     primitives::ByteStream,
     Client, Config,
 };
+use aws_smithy_http_client::tls::{rustls_provider::CryptoMode, Provider};
 use tracing::{error, info};
 
 use crate::error::{ClientError, Result};
@@ -30,7 +31,13 @@ impl StorageManager {
         let creds =
             Credentials::new(access_key, secret_key, None, None, "containr");
 
+        // rustls with ring, matching the rest of containr
+        let http_client = aws_smithy_http_client::Builder::new()
+            .tls_provider(Provider::Rustls(CryptoMode::Ring))
+            .build_https();
+
         let config = Config::builder()
+            .http_client(http_client)
             .endpoint_url(endpoint)
             .region(Region::new("us-east-1"))
             .credentials_provider(creds)

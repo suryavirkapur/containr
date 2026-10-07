@@ -7,7 +7,7 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
-use rand::Rng;
+use rand::RngExt;
 
 /// encryption errors
 #[derive(Debug, thiserror::Error)]
@@ -41,11 +41,11 @@ pub fn encrypt(plaintext: &str, key: &[u8]) -> Result<String> {
     // generate random nonce
     let mut nonce_bytes = [0u8; NONCE_SIZE];
     rand::rng().fill(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Nonce::from(nonce_bytes);
 
     // encrypt
     let ciphertext = cipher
-        .encrypt(nonce, plaintext.as_bytes())
+        .encrypt(&nonce, plaintext.as_bytes())
         .map_err(|e| EncryptionError::Encryption(e.to_string()))?;
 
     // prepend nonce to ciphertext and base64 encode
@@ -68,13 +68,14 @@ pub fn decrypt(encrypted: &str, key: &[u8]) -> Result<String> {
     }
 
     let (nonce_bytes, ciphertext) = combined.split_at(NONCE_SIZE);
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let nonce = Nonce::try_from(nonce_bytes)
+        .map_err(|_| EncryptionError::InvalidFormat)?;
 
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|e| EncryptionError::Decryption(e.to_string()))?;
 
     let plaintext = cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(&nonce, ciphertext)
         .map_err(|e| EncryptionError::Decryption(e.to_string()))?;
 
     String::from_utf8(plaintext)

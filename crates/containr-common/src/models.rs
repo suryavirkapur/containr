@@ -235,6 +235,10 @@ pub struct ServiceMount {
     /// absolute host path bind-mounted instead of a managed volume dir
     #[serde(default)]
     pub host_path: Option<String>,
+    /// managed dir shared by every service in the project that mounts the
+    /// same name, instead of one dir per service
+    #[serde(default)]
+    pub shared: bool,
 }
 
 /// http basic auth enforced by the proxy for a service's domains

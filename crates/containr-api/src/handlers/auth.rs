@@ -7,7 +7,7 @@ use axum::{
     Json,
 };
 use base64::Engine;
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;

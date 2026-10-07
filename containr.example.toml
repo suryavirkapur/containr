@@ -1,6 +1,6 @@
 # containr example configuration
 # copy this file to containr.toml and update with your values
-# or run ./install.sh to generate config with random secrets
+# or run ./install.sh --config-only to generate one with random secrets
 
 [server]
 # api server bind address
@@ -89,3 +89,7 @@ rustfs_public_hostname = ""
 rustfs_access_key = ""
 # rustfs secret key for managed buckets and backup uploads
 rustfs_secret_key = ""
+
+[updates]
+# github owner/repo whose releases the server page checks and installs
+repo = "suryavirkapur/containr"

@@ -3982,6 +3982,146 @@
         ]
       }
     },
+    "/api/system/update": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "check github for a newer containr release (admin)",
+        "operationId": "check_update",
+        "responses": {
+          "200": {
+            "description": "update status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateCheckResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "github error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "download and install a containr release, then restart (admin)",
+        "operationId": "install_update",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "update installed, restarting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallUpdateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "install not possible right now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "github or download error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -5092,6 +5232,36 @@
           }
         }
       },
+      "InstallUpdateRequest": {
+        "type": "object",
+        "description": "install request",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "release version to install, as returned by the check"
+          }
+        }
+      },
+      "InstallUpdateResponse": {
+        "type": "object",
+        "description": "install response",
+        "required": [
+          "version",
+          "restarting"
+        ],
+        "properties": {
+          "restarting": {
+            "type": "boolean",
+            "description": "containr restarts right after responding"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
       "InstallationDetails": {
         "type": "object",
         "description": "installation details",
@@ -5760,6 +5930,13 @@
               "boolean",
               "null"
             ]
+          },
+          "shared": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "share the volume with every service in the project that mounts the\nsame name"
           },
           "target": {
             "type": "string"
@@ -6542,6 +6719,66 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "UpdateCheckResponse": {
+        "type": "object",
+        "description": "result of checking github for a newer release",
+        "required": [
+          "current_version",
+          "update_available",
+          "can_install"
+        ],
+        "properties": {
+          "can_install": {
+            "type": "boolean",
+            "description": "whether this server can install the update itself"
+          },
+          "current_version": {
+            "type": "string"
+          },
+          "install_blocker": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "why installing isn't possible, when `can_install` is false"
+          },
+          "latest_version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "newest release version, without the leading `v`"
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "release_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "release_notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "release notes (markdown)"
+          },
+          "release_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "update_available": {
+            "type": "boolean"
           }
         }
       },

@@ -12,6 +12,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Context};
 use bollard::query_parameters::ListContainersOptions;
 use clap::{Args as ClapArgs, Parser, Subcommand};
+use containr::service::{self, InitSystem};
 use containr::systemd::{install_service_unit, ServiceUnitConfig};
 use serde_json::json;
 use tokio::sync::RwLock;
@@ -22,6 +23,10 @@ use containr_common::models::{default_service_domain, User};
 use containr_common::{Config, Database};
 
 mod logging;
+
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 const CERT_RENEWAL_CHECK_INTERVAL_SECS: u64 = 6 * 60 * 60;
 
@@ -69,8 +74,49 @@ enum Command {
     Server,
     GenerateApiKey(GenerateApiKeyArgs),
     SetupSystemd(SetupSystemdArgs),
+    /// manage the containr service for systemd, openrc, runit, dinit or
+    /// sysvinit
+    #[command(subcommand)]
+    Service(ServiceCommand),
     #[command(subcommand)]
     Docker(DockerCommand),
+}
+
+#[derive(Subcommand, Debug)]
+enum ServiceCommand {
+    /// write and enable the service, then start it
+    Install(ServiceInstallArgs),
+    /// restart (or start) the installed service
+    Restart(ServiceTargetArgs),
+}
+
+#[derive(ClapArgs, Debug)]
+struct ServiceTargetArgs {
+    /// auto, systemd, openrc, runit, dinit or sysvinit
+    #[arg(long, default_value = "auto")]
+    init: String,
+    #[arg(long, default_value = "containr")]
+    service_name: String,
+}
+
+#[derive(ClapArgs, Debug)]
+struct ServiceInstallArgs {
+    #[command(flatten)]
+    target: ServiceTargetArgs,
+    #[arg(long, default_value = "/usr/local/bin/containr")]
+    binary_path: PathBuf,
+    #[arg(long, default_value = "/opt/containr")]
+    working_directory: PathBuf,
+    #[arg(long, default_value = "/opt/containr/containr.toml")]
+    config_path: PathBuf,
+    #[arg(long, default_value = "root")]
+    user: String,
+    /// enable the service without starting it
+    #[arg(long)]
+    no_start: bool,
+    /// print the service files instead of installing them
+    #[arg(long)]
+    print: bool,
 }
 
 #[derive(ClapArgs, Debug)]
@@ -119,6 +165,8 @@ struct DockerContainersArgs {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // every tls client and server uses rustls with ring
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let cli = Cli::parse();
 
     match cli.command {
@@ -138,6 +186,11 @@ async fn main() -> anyhow::Result<()> {
             let _logging =
                 logging::init_console_logging(&cli.server.log_level)?;
             run_setup_systemd_command(&args)
+        }
+        Some(Command::Service(command)) => {
+            let _logging =
+                logging::init_console_logging(&cli.server.log_level)?;
+            run_service_command(command, &cli.server.log_level)
         }
         Some(Command::Docker(command)) => {
             let _logging =
@@ -582,6 +635,47 @@ fn run_setup_systemd_command(args: &SetupSystemdArgs) -> anyhow::Result<()> {
 
     println!("{}", output_path.display());
     Ok(())
+}
+
+fn resolve_init(value: &str) -> anyhow::Result<InitSystem> {
+    if value.trim().eq_ignore_ascii_case("auto") {
+        InitSystem::detect()
+    } else {
+        value.parse()
+    }
+}
+
+fn run_service_command(
+    command: ServiceCommand,
+    log_level: &str,
+) -> anyhow::Result<()> {
+    match command {
+        ServiceCommand::Install(args) => {
+            let init = resolve_init(&args.target.init)?;
+            let config = ServiceUnitConfig {
+                service_name: args.target.service_name.clone(),
+                user: args.user.clone(),
+                working_directory: args.working_directory.clone(),
+                binary_path: args.binary_path.clone(),
+                config_path: args.config_path.clone(),
+                log_level: log_level.to_string(),
+            };
+            if args.print {
+                for file in service::render(init, &config)? {
+                    println!("# {}\n{}", file.path.display(), file.content);
+                }
+                return Ok(());
+            }
+            for path in service::install(init, &config, !args.no_start)? {
+                println!("{}", path.display());
+            }
+            Ok(())
+        }
+        ServiceCommand::Restart(args) => {
+            let init = resolve_init(&args.init)?;
+            service::restart(init, &args.service_name)
+        }
+    }
 }
 
 async fn run_docker_command(command: DockerCommand) -> anyhow::Result<()> {

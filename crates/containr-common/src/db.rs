@@ -2514,6 +2514,7 @@ mod tests {
             target: "/var/run/x.sock".to_string(),
             read_only: true,
             host_path: Some("/var/run/x.sock".to_string()),
+            shared: false,
         }];
         db.save_app(&app).expect("save app");
 

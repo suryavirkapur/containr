@@ -1,6 +1,6 @@
 //! github integration - webhooks and oauth
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
 use tracing::warn;

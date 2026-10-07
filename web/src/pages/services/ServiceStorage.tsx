@@ -58,6 +58,7 @@ const VolumesEditor = () => {
 			target: mount.target,
 			read_only: mount.read_only ?? false,
 			host_path: (mount as MountInput).host_path ?? null,
+			shared: (mount as MountInput).shared ?? false,
 		})),
 	);
 	const reset = () => setMounts(initial().map((mount) => ({ ...mount })));
@@ -84,7 +85,7 @@ const VolumesEditor = () => {
 				name: mount.name.trim() || mount.target.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, ""),
 				target: mount.target.trim(),
 				read_only: mount.read_only,
-				...(mount.host_path ? { host_path: mount.host_path.trim() } : {}),
+				...(mount.host_path ? { host_path: mount.host_path.trim() } : { shared: mount.shared }),
 			})),
 		});
 		if (!request) return;
@@ -100,9 +101,10 @@ const VolumesEditor = () => {
 		>
 			<div class="space-y-2">
 				<Show when={mounts().length > 0}>
-					<div class="grid grid-cols-[1fr_1.4fr_auto_32px] gap-2 px-0.5 text-[12px] text-fg-subtle">
+					<div class="grid grid-cols-[1fr_1.4fr_auto_auto_32px] gap-2 px-0.5 text-[12px] text-fg-subtle">
 						<span>{auth.user()?.is_admin ? "Volume name or host path" : "Volume name"}</span>
 						<span>Path in container</span>
+						<span>Shared</span>
 						<span>Read-only</span>
 						<span />
 					</div>
@@ -117,7 +119,7 @@ const VolumesEditor = () => {
 					}
 				>
 					{(mount, index) => (
-						<div class="grid grid-cols-[1fr_1.4fr_auto_32px] items-center gap-2">
+						<div class="grid grid-cols-[1fr_1.4fr_auto_auto_32px] items-center gap-2">
 							<Input
 								mono
 								placeholder={auth.user()?.is_admin ? "data or /srv/data" : "data"}
@@ -125,7 +127,11 @@ const VolumesEditor = () => {
 								onInput={(event) => {
 									const value = event.currentTarget.value;
 									if (auth.user()?.is_admin && value.startsWith("/")) {
-										update(index, { host_path: value, name: mount().name || "host" });
+										update(index, {
+											host_path: value,
+											name: mount().name || "host",
+											shared: false,
+										});
 									} else {
 										update(index, { name: value, host_path: null });
 									}
@@ -137,6 +143,14 @@ const VolumesEditor = () => {
 								value={mount().target}
 								onInput={(event) => update(index, { target: event.currentTarget.value })}
 							/>
+							<div class="flex justify-center">
+								<Switch
+									checked={mount().shared ?? false}
+									disabled={Boolean(mount().host_path)}
+									onChange={(value) => update(index, { shared: value })}
+									label="Shared"
+								/>
+							</div>
 							<div class="flex justify-center">
 								<Switch
 									checked={mount().read_only ?? false}
@@ -159,12 +173,19 @@ const VolumesEditor = () => {
 					variant="secondary"
 					size="sm"
 					onClick={() =>
-						setMounts([...mounts(), { name: "", target: "", read_only: false, host_path: null }])
+						setMounts([
+							...mounts(),
+							{ name: "", target: "", read_only: false, host_path: null, shared: false },
+						])
 					}
 				>
 					<Plus />
 					Add volume
 				</Button>
+				<p class="hint">
+					Shared volumes are the same directory for every service in this project that mounts the
+					same name.
+				</p>
 				<Show when={auth.user()?.is_admin}>
 					<p class="hint">
 						Start the first field with / to bind a directory from the server (admins only).

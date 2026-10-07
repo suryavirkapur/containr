@@ -26,6 +26,7 @@ import {
 import { confirm, toast } from "../../components/ui/overlay";
 import { useAuth } from "../../context/AuthContext";
 import { formatBytes, formatNumber, formatUptime } from "../../lib/format";
+import { UpdatesCard } from "./UpdatesCard";
 
 const ServerPage = () => {
 	useBreadcrumbs(() => [{ label: "Server" }]);
@@ -231,6 +232,8 @@ const ServerPage = () => {
 						when={isAdmin()}
 						fallback={<Notice>Maintenance tools are available to administrators.</Notice>}
 					>
+						<UpdatesCard />
+
 						<Card
 							title="Disk cleanup"
 							description="Free space taken by things no service uses anymore."

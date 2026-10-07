@@ -2,7 +2,7 @@
 //!
 //! manages the mapping between domains and upstream containers.
 
-use argon2::password_hash::{PasswordHash, PasswordVerifier};
+use argon2::password_hash::PasswordVerifier;
 use argon2::Argon2;
 use base64::Engine;
 use dashmap::DashMap;
@@ -326,11 +326,8 @@ pub fn verify_basic_credentials(
     if username != expected.username {
         return false;
     }
-    let Ok(hash) = PasswordHash::new(&expected.password_hash) else {
-        return false;
-    };
     Argon2::default()
-        .verify_password(password.as_bytes(), &hash)
+        .verify_password(password.as_bytes(), expected.password_hash.as_str())
         .is_ok()
 }
 
@@ -374,13 +371,11 @@ impl SelectedUpstream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use argon2::password_hash::{PasswordHasher, SaltString};
+    use argon2::password_hash::PasswordHasher;
 
     fn hash(password: &str) -> String {
-        let salt = SaltString::encode_b64(b"containr-test-salt")
-            .expect("salt should encode");
         Argon2::default()
-            .hash_password(password.as_bytes(), &salt)
+            .hash_password_with_salt(password.as_bytes(), b"containr-salt")
             .expect("hash should succeed")
             .to_string()
     }

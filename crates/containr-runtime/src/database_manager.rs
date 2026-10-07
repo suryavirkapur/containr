@@ -14,8 +14,8 @@ use bollard::container::LogOutput;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
 use bollard::models::{
     ContainerCreateBody, EndpointSettings, HealthConfig, HealthStatusEnum,
-    HostConfig, Mount, MountTypeEnum, NetworkingConfig, PortBinding,
-    RestartPolicy, RestartPolicyNameEnum,
+    HostConfig, Mount, MountType, NetworkingConfig, PortBinding, RestartPolicy,
+    RestartPolicyNameEnum,
 };
 use bollard::query_parameters::{
     CreateContainerOptions, InspectContainerOptions, InspectNetworkOptions,
@@ -119,7 +119,7 @@ impl DatabaseManager {
         let mut mounts = vec![Mount {
             target: Some(db.container_mount_target().to_string()),
             source: Some(db.host_data_path.clone()),
-            typ: Some(MountTypeEnum::BIND),
+            typ: Some(MountType::BIND),
             ..Default::default()
         }];
 
@@ -129,7 +129,7 @@ impl DatabaseManager {
             mounts.push(Mount {
                 target: Some(POSTGRES_PITR_MOUNT_PATH.to_string()),
                 source: Some(db.pitr_root_path().to_string_lossy().to_string()),
-                typ: Some(MountTypeEnum::BIND),
+                typ: Some(MountType::BIND),
                 ..Default::default()
             });
             cmd = Some(Self::build_postgres_pitr_command());
@@ -430,7 +430,7 @@ impl DatabaseManager {
             mounts: Some(vec![Mount {
                 target: Some(PGDOG_CONFIG_DIR.to_string()),
                 source: Some(config_dir.to_string_lossy().to_string()),
-                typ: Some(MountTypeEnum::BIND),
+                typ: Some(MountType::BIND),
                 ..Default::default()
             }]),
             memory: Some(DATABASE_PROXY_MEMORY_LIMIT_BYTES),
