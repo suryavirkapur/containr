@@ -14,5 +14,6 @@ pub mod services;
 pub mod settings;
 pub mod storage;
 pub mod system;
+pub mod updates;
 pub mod webhooks;
 pub mod websocket;

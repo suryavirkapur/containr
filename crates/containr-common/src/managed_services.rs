@@ -272,7 +272,7 @@ impl DatabaseCredentials {
 
 /// generates a random alphanumeric password
 fn generate_random_password(len: usize) -> String {
-    use rand::Rng;
+    use rand::RngExt;
     const CHARSET: &[u8] =
         b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     let mut rng = rand::rng();

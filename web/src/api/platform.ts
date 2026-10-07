@@ -80,6 +80,33 @@ export const runCleanup = (options: CleanupOptions) =>
 export const downloadBackup = () =>
 	download("/api/system/backup", `containr-backup-${new Date().toISOString()}.sqlite3`);
 
+// ---- updates -------------------------------------------------------------
+
+export type UpdateCheck = {
+	current_version: string;
+	latest_version: string | null;
+	update_available: boolean;
+	release_name: string | null;
+	release_url: string | null;
+	release_notes: string | null;
+	published_at: string | null;
+	can_install: boolean;
+	install_blocker: string | null;
+};
+
+export const checkForUpdate = () => request<UpdateCheck>("GET", "/api/system/update");
+
+export const installUpdate = (version: string) =>
+	request<{ version: string; restarting: boolean }>("POST", "/api/system/update", { version });
+
+/** version reported by the unauthenticated health endpoint */
+export const getServerVersion = async (): Promise<string | null> => {
+	const response = await fetch("/health", { cache: "no-store" });
+	if (!response.ok) return null;
+	const data: { version?: string } = await response.json();
+	return data.version ?? null;
+};
+
 // ---- accounts ------------------------------------------------------------
 
 export const changePassword = (current_password: string, new_password: string) =>
@@ -148,6 +175,8 @@ export type MountInput = {
 	target: string;
 	read_only?: boolean | null;
 	host_path?: string | null;
+	/** one dir for every service in the project that mounts the same name */
+	shared?: boolean | null;
 };
 
 export type PortMapping = {

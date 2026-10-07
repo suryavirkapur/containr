@@ -13,8 +13,8 @@ use bollard::exec::{
 use bollard::models::{
     ContainerCreateBody, ContainerStateStatusEnum, ContainerSummaryStateEnum,
     EndpointSettings, HealthStatusEnum, HostConfig, Ipam, IpamConfig, Mount,
-    MountTypeEnum, NetworkConnectRequest, NetworkCreateRequest,
-    NetworkingConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum,
+    MountType, NetworkConnectRequest, NetworkCreateRequest, NetworkingConfig,
+    PortBinding, RestartPolicy, RestartPolicyNameEnum,
 };
 use bollard::query_parameters::{
     CreateContainerOptions, DownloadFromContainerOptions,
@@ -463,7 +463,7 @@ impl DockerContainerManager {
                         target: Some(mount.target.clone()),
                         source: Some(mount.source.clone()),
                         read_only: Some(mount.read_only),
-                        typ: Some(MountTypeEnum::BIND),
+                        typ: Some(MountType::BIND),
                         ..Default::default()
                     })
                     .collect(),
@@ -967,6 +967,7 @@ impl DockerContainerManager {
                 ContainerStateStatusEnum::PAUSED => "paused",
                 ContainerStateStatusEnum::RESTARTING => "restarting",
                 ContainerStateStatusEnum::REMOVING => "removing",
+                ContainerStateStatusEnum::STOPPING => "stopping",
                 ContainerStateStatusEnum::EXITED => "exited",
                 ContainerStateStatusEnum::DEAD => "dead",
                 ContainerStateStatusEnum::EMPTY => "empty",

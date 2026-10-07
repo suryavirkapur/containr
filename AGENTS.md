@@ -18,6 +18,7 @@ important decisions:
 - documentation lives in Markdown (.md) with normal capitalization; prefer README.md + CHANGELOG.md.
 - rust format max width to 80, explicitly handle errors without unwrap().
 - rely on toml for config.
+- no openssl: tls is rustls with the ring provider everywhere (installed as the process default in main); release binaries are static musl builds.
 - use solid.js and tailwind css v4; icons from lucide-solid deep imports (lucide-solid/icons/<name>), terminal via @xterm/xterm.
 - ui copy is sentence case; buttons say what they do ("Deploy image", "Save changes").
 

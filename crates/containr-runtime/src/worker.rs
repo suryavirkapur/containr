@@ -6,8 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use git2::build::RepoBuilder;
-use git2::{Cred, FetchOptions, RemoteCallbacks};
+use base64::Engine;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -1197,7 +1196,7 @@ impl DeploymentWorker {
         Ok(sorted)
     }
 
-    /// clones the git repository using git2
+    /// clones the git repository with the git cli
     async fn clone_repo(&self, job: &DeploymentJob) -> anyhow::Result<PathBuf> {
         let repo_path = self.work_dir.join(format!(
             "{}_{}_{}",
@@ -1234,40 +1233,42 @@ impl DeploymentWorker {
             "cloning repository"
         );
 
-        // clone with shallow depth using git2
-        // git2 is synchronous, so we spawn_blocking
-        let url = source_url;
-        let branch = job.branch.clone();
-        let path = repo_path.clone();
-        let source = source.clone();
+        // shallow clone with the system git, which brings its own tls
+        let token = match &source {
+            DeploymentSource::RemoteGit { token, .. } => token.clone(),
+            _ => None,
+        };
+        let git = Git::new(token);
+        let path = repo_path.to_string_lossy().to_string();
+        git.run(
+            None,
+            &[
+                "clone",
+                "--depth",
+                "1",
+                "--single-branch",
+                "--branch",
+                &job.branch,
+                "--",
+                &source_url,
+                &path,
+            ],
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("git clone failed: {}", e))?;
+
         let commit_sha = job.commit_sha.trim().to_ascii_lowercase();
-
-        tokio::task::spawn_blocking(move || {
-            let mut builder = RepoBuilder::new();
-            builder.branch(&branch);
-
-            if let Some(fetch_opts) = remote_fetch_options(&source) {
-                builder.fetch_options(fetch_opts);
+        if looks_like_commit_sha(&commit_sha) {
+            if let Err(error) =
+                checkout_commit(&git, &repo_path, &commit_sha).await
+            {
+                warn!(
+                    commit = %commit_sha,
+                    error = %error,
+                    "could not check out requested commit; using branch tip"
+                );
             }
-
-            let repo = builder
-                .clone(&url, &path)
-                .map_err(|e| anyhow::anyhow!("git clone failed: {}", e))?;
-
-            if looks_like_commit_sha(&commit_sha) {
-                if let Err(error) = checkout_commit(&repo, &source, &commit_sha)
-                {
-                    warn!(
-                        commit = %commit_sha,
-                        error = %error,
-                        "could not check out requested commit; using branch tip"
-                    );
-                }
-            }
-
-            Ok::<(), anyhow::Error>(())
-        })
-        .await??;
+        }
 
         Ok(repo_path)
     }
@@ -1363,60 +1364,99 @@ fn looks_like_commit_sha(value: &str) -> bool {
         && value.chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
-fn remote_fetch_options(
-    source: &DeploymentSource,
-) -> Option<FetchOptions<'static>> {
-    let DeploymentSource::RemoteGit { token, .. } = source else {
-        return None;
-    };
-    let mut fetch_opts = FetchOptions::new();
-    fetch_opts.depth(1);
-    if let Some(token) = token.clone() {
-        let mut callbacks = RemoteCallbacks::new();
-        callbacks.credentials(move |_url, _username, _allowed| {
-            Cred::userpass_plaintext("x-access-token", &token)
-        });
-        fetch_opts.remote_callbacks(callbacks);
+/// runs the system `git`. an access token is passed as an http header
+/// through `GIT_CONFIG_*` env vars, so it never shows up in the process
+/// list or the cloned repo's remote url.
+struct Git {
+    token: Option<String>,
+}
+
+impl Git {
+    fn new(token: Option<String>) -> Self {
+        Self { token }
     }
-    Some(fetch_opts)
+
+    async fn run(
+        &self,
+        dir: Option<&Path>,
+        args: &[&str],
+    ) -> anyhow::Result<String> {
+        let mut command = tokio::process::Command::new("git");
+        if let Some(dir) = dir {
+            command.arg("-C").arg(dir);
+        }
+        command
+            .args(args)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_ASKPASS", "true")
+            .stdin(std::process::Stdio::null())
+            .kill_on_drop(true);
+        if let Some(token) = &self.token {
+            let credentials = base64::engine::general_purpose::STANDARD
+                .encode(format!("x-access-token:{}", token));
+            command
+                .env("GIT_CONFIG_COUNT", "1")
+                .env("GIT_CONFIG_KEY_0", "http.extraHeader")
+                .env(
+                    "GIT_CONFIG_VALUE_0",
+                    format!("Authorization: Basic {}", credentials),
+                );
+        }
+
+        let output = command.output().await.map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                anyhow::anyhow!(
+                    "git is not installed on this server. install git to \
+                     deploy from repositories"
+                )
+            } else {
+                anyhow::anyhow!("failed to run git: {}", error)
+            }
+        })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!(
+                "{}",
+                stderr.trim().lines().last().unwrap_or("git failed")
+            ));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
 }
 
 /// checks out `sha` if the cloned branch tip isn't already at it. full shas
 /// missing from the shallow clone are fetched directly from origin.
-fn checkout_commit(
-    repo: &git2::Repository,
-    source: &DeploymentSource,
+async fn checkout_commit(
+    git: &Git,
+    repo: &Path,
     sha: &str,
 ) -> anyhow::Result<()> {
-    let head = repo.head()?.peel_to_commit()?;
-    if head.id().to_string().starts_with(sha) {
+    let head = git.run(Some(repo), &["rev-parse", "HEAD"]).await?;
+    if head.starts_with(sha) {
         return Ok(());
     }
 
-    let commit = match repo
-        .revparse_single(sha)
-        .and_then(|object| object.peel_to_commit())
+    let commit = format!("{}^{{commit}}", sha);
+    let target = match git
+        .run(Some(repo), &["rev-parse", "--verify", "--quiet", &commit])
+        .await
     {
-        Ok(commit) => commit,
+        Ok(full) => full,
         Err(_) => {
             if sha.len() != 40 {
                 return Err(anyhow::anyhow!(
                     "short sha not present in shallow clone"
                 ));
             }
-            let mut remote = repo.find_remote("origin")?;
-            let mut fetch_opts =
-                remote_fetch_options(source).unwrap_or_default();
-            remote.fetch(&[sha], Some(&mut fetch_opts), None)?;
-            repo.find_commit(git2::Oid::from_str(sha)?)?
+            git.run(Some(repo), &["fetch", "--depth", "1", "origin", sha])
+                .await?;
+            sha.to_string()
         }
     };
 
-    let mut checkout = git2::build::CheckoutBuilder::new();
-    checkout.force();
-    repo.checkout_tree(commit.as_object(), Some(&mut checkout))?;
-    repo.set_head_detached(commit.id())?;
-    info!(commit = %commit.id(), "checked out requested commit");
+    git.run(Some(repo), &["checkout", "--force", "--detach", &target])
+        .await?;
+    info!(commit = %target, "checked out requested commit");
     Ok(())
 }
 
@@ -1548,6 +1588,75 @@ mod tests {
             config.dockerfile.as_deref(),
             Some("docker/Prod.Dockerfile")
         );
+    }
+
+    #[tokio::test]
+    async fn git_clone_checks_out_the_requested_commit() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let origin = root.path().join("origin");
+        let git = Git::new(None);
+        let run = |dir: &Path, args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .status()
+                .expect("run git");
+            assert!(status.success(), "git {:?}", args);
+        };
+        std::fs::create_dir_all(&origin).expect("origin dir");
+        run(&origin, &["init", "-q", "-b", "main"]);
+        std::fs::write(origin.join("file"), "one").expect("write");
+        run(&origin, &["add", "file"]);
+        run(&origin, &["commit", "-q", "-m", "one"]);
+        let first = git
+            .run(Some(&origin), &["rev-parse", "HEAD"])
+            .await
+            .expect("first sha");
+        std::fs::write(origin.join("file"), "two").expect("write");
+        run(&origin, &["commit", "-q", "-am", "two"]);
+
+        let clone = root.path().join("clone");
+        let url = format!("file://{}", origin.display());
+        let clone_path = clone.to_string_lossy().to_string();
+        git.run(
+            None,
+            &[
+                "clone",
+                "--single-branch",
+                "--branch",
+                "main",
+                "--",
+                &url,
+                &clone_path,
+            ],
+        )
+        .await
+        .expect("clone");
+        assert_eq!(
+            std::fs::read_to_string(clone.join("file")).unwrap_or_default(),
+            "two"
+        );
+
+        checkout_commit(&git, &clone, &first[..12])
+            .await
+            .expect("checkout");
+        assert_eq!(
+            std::fs::read_to_string(clone.join("file")).unwrap_or_default(),
+            "one"
+        );
+
+        let missing = git
+            .run(
+                None,
+                &["clone", "--", "file:///nonexistent/repo", &clone_path],
+            )
+            .await;
+        assert!(missing.is_err());
     }
 
     #[test]

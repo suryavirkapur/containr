@@ -10,8 +10,13 @@ use crate::image::RegistryCredentials;
 use containr_common::models::{is_docker_hub_host, ContainerService};
 use containr_common::{decrypt, derive_key, Database};
 
+/// dir under `app-mounts/{app}` holding mounts shared between services.
+/// service ids are uuids, so this never collides with a service dir.
+pub const SHARED_MOUNTS_DIR: &str = "shared";
+
 /// builds bind mounts for a service. managed mounts live under
-/// `{work_dir}/app-mounts/{app}/{service}/{name}`; mounts with a host_path
+/// `{work_dir}/app-mounts/{app}/{service}/{name}`, shared ones under
+/// `{work_dir}/app-mounts/{app}/shared/{name}`; mounts with a host_path
 /// bind that absolute host path instead.
 pub fn build_service_mounts(
     work_dir: &Path,
@@ -19,10 +24,9 @@ pub fn build_service_mounts(
     service: &ContainerService,
 ) -> anyhow::Result<Vec<DockerBindMount>> {
     let mut mounts = Vec::new();
-    let mounts_root = work_dir
-        .join("app-mounts")
-        .join(app_id.to_string())
-        .join(service.id.to_string());
+    let app_root = work_dir.join("app-mounts").join(app_id.to_string());
+    let mounts_root = app_root.join(service.id.to_string());
+    let shared_root = app_root.join(SHARED_MOUNTS_DIR);
 
     for mount in &service.mounts {
         let host_path = mount
@@ -46,9 +50,13 @@ pub fn build_service_mounts(
                 path.to_path_buf()
             }
             None => {
+                let root = if mount.shared {
+                    &shared_root
+                } else {
+                    &mounts_root
+                };
                 // docker only accepts absolute bind mount sources
-                let source =
-                    std::path::absolute(mounts_root.join(&mount.name))?;
+                let source = std::path::absolute(root.join(&mount.name))?;
                 std::fs::create_dir_all(&source)?;
                 source
             }
@@ -195,6 +203,7 @@ mod tests {
             target: "/etc/app".to_string(),
             read_only: false,
             host_path: None,
+            shared: false,
         }];
 
         let mounts = build_service_mounts(&relative, Uuid::nil(), &service)
@@ -216,12 +225,14 @@ mod tests {
                 target: "/data".to_string(),
                 read_only: false,
                 host_path: None,
+                shared: false,
             },
             ServiceMount {
                 name: "host".to_string(),
                 target: "/host".to_string(),
                 read_only: true,
                 host_path: Some(host_dir.to_string_lossy().to_string()),
+                shared: false,
             },
         ];
 
@@ -233,6 +244,35 @@ mod tests {
         assert!(!mounts[1].seed_from_image);
         assert!(host_dir.exists());
         assert!(mounts[1].read_only);
+    }
+
+    #[test]
+    fn shared_mounts_use_one_dir_per_project() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let app_id = Uuid::new_v4();
+        let mount = |shared| ServiceMount {
+            name: "data".to_string(),
+            target: "/data".to_string(),
+            read_only: false,
+            host_path: None,
+            shared,
+        };
+        let mut first = service();
+        first.mounts = vec![mount(true)];
+        let mut second = service();
+        second.mounts = vec![mount(true)];
+        let mut private = service();
+        private.mounts = vec![mount(false)];
+
+        let source = |service: &ContainerService| {
+            build_service_mounts(root.path(), app_id, service)
+                .expect("mounts")
+                .remove(0)
+                .source
+        };
+        assert_eq!(source(&first), source(&second));
+        assert!(source(&first).ends_with("/shared/data"));
+        assert_ne!(source(&first), source(&private));
     }
 
     #[test]

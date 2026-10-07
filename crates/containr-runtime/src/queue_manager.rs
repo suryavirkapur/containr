@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use bollard::models::{
     ContainerCreateBody, EndpointSettings, HealthStatusEnum, HostConfig, Mount,
-    MountTypeEnum, NetworkingConfig, RestartPolicy, RestartPolicyNameEnum,
+    MountType, NetworkingConfig, RestartPolicy, RestartPolicyNameEnum,
 };
 use bollard::query_parameters::{
     CreateContainerOptions, InspectContainerOptions, InspectNetworkOptions,
@@ -116,7 +116,7 @@ impl QueueManager {
         let mount = Mount {
             target: Some(queue.queue_type.volume_path().to_string()),
             source: Some(queue.host_data_path.clone()),
-            typ: Some(MountTypeEnum::BIND),
+            typ: Some(MountType::BIND),
             ..Default::default()
         };
 

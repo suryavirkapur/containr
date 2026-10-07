@@ -5,7 +5,7 @@ use utoipa::{Modify, OpenApi};
 
 use crate::handlers::{
     auth, certificates, containers, deployments, github_app, health, projects,
-    registries, services, settings, storage, system,
+    registries, services, settings, storage, system, updates,
 };
 
 /// api documentation
@@ -39,6 +39,8 @@ use crate::handlers::{
         system::get_disk_usage,
         system::run_cleanup,
         system::download_backup,
+        updates::check_update,
+        updates::install_update,
         // projects
         projects::list_projects,
         projects::update_project,
@@ -122,6 +124,9 @@ use crate::handlers::{
             system::DiskUsageResponse,
             system::CleanupRequest,
             system::CleanupResponse,
+            updates::UpdateCheckResponse,
+            updates::InstallUpdateRequest,
+            updates::InstallUpdateResponse,
             // projects
             projects::ProjectResponse,
             projects::UpdateProjectRequest,

@@ -25,7 +25,8 @@ use crate::github::DeploymentJob;
 use crate::handlers::deployments::create_and_queue_deployment;
 use crate::handlers::{
     auth, certificates, containers, gate, github_app, github_repos, health,
-    projects, registries, settings, storage, system, webhooks, websocket,
+    projects, registries, settings, storage, system, updates, webhooks,
+    websocket,
 };
 use crate::openapi::ApiDoc;
 use crate::routes;
@@ -103,6 +104,10 @@ pub async fn run_server(
         .route("/api/system/disk-usage", get(system::get_disk_usage))
         .route("/api/system/cleanup", post(system::run_cleanup))
         .route("/api/system/backup", get(system::download_backup))
+        .route(
+            "/api/system/update",
+            get(updates::check_update).post(updates::install_update),
+        )
         // openapi docs
         .merge(Scalar::with_url("/api/docs", ApiDoc::openapi()))
         // services (canonical)

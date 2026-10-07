@@ -18,6 +18,8 @@ pub struct Config {
     pub acme: AcmeConfig,
     #[serde(default)]
     pub storage: StorageConfig,
+    #[serde(default)]
+    pub updates: UpdatesConfig,
 }
 
 /// api server configuration
@@ -190,6 +192,26 @@ fn default_cors_allowed_origins() -> Vec<String> {
         "http://localhost:5173".to_string(),
         "http://127.0.0.1:5173".to_string(),
     ]
+}
+
+/// self-update configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdatesConfig {
+    /// github `owner/repo` whose releases provide containr binaries
+    #[serde(default = "default_updates_repo")]
+    pub repo: String,
+}
+
+fn default_updates_repo() -> String {
+    "suryavirkapur/containr".to_string()
+}
+
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        Self {
+            repo: default_updates_repo(),
+        }
+    }
 }
 
 /// acme / let's encrypt configuration

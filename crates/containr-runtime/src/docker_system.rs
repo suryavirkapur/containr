@@ -263,7 +263,7 @@ impl DockerContainerManager {
             },
         )?;
 
-        let images = match df.images_disk_usage {
+        let images = match df.image_usage {
             Some(summary) => DockerDiskUsageEntry {
                 count: non_negative(summary.total_count),
                 size_bytes: non_negative(summary.total_size),
@@ -287,7 +287,7 @@ impl DockerContainerManager {
             }
         };
 
-        let containers = match df.containers_disk_usage {
+        let containers = match df.container_usage {
             Some(summary) => DockerDiskUsageEntry {
                 count: non_negative(summary.total_count),
                 size_bytes: non_negative(summary.total_size),
@@ -331,7 +331,7 @@ impl DockerContainerManager {
         };
 
         let volumes = df
-            .volumes_disk_usage
+            .volume_usage
             .map(|summary| DockerDiskUsageEntry {
                 count: non_negative(summary.total_count),
                 size_bytes: non_negative(summary.total_size),
@@ -340,7 +340,7 @@ impl DockerContainerManager {
             .unwrap_or_default();
 
         let build_cache = df
-            .build_cache_disk_usage
+            .build_cache_usage
             .map(|summary| DockerDiskUsageEntry {
                 count: non_negative(summary.total_count),
                 size_bytes: non_negative(summary.total_size),

@@ -920,6 +920,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** check github for a newer containr release (admin) */
+        get: operations["check_update"];
+        put?: never;
+        /** download and install a containr release, then restart (admin) */
+        post: operations["install_update"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1255,6 +1273,17 @@ export interface components {
             status: number;
             upstream: string;
         };
+        /** @description install request */
+        InstallUpdateRequest: {
+            /** @description release version to install, as returned by the check */
+            version: string;
+        };
+        /** @description install response */
+        InstallUpdateResponse: {
+            /** @description containr restarts right after responding */
+            restarting: boolean;
+            version: string;
+        };
         /** @description installation details */
         InstallationDetails: {
             account_login: string;
@@ -1454,6 +1483,11 @@ export interface components {
             host_path?: string | null;
             name: string;
             read_only?: boolean | null;
+            /**
+             * @description share the volume with every service in the project that mounts the
+             *     same name
+             */
+            shared?: boolean | null;
             target: string;
         };
         ServiceRegistryAuthRequest: {
@@ -1649,6 +1683,22 @@ export interface components {
             network_tx_bytes: number;
             /** Format: int64 */
             uptime_seconds: number;
+        };
+        /** @description result of checking github for a newer release */
+        UpdateCheckResponse: {
+            /** @description whether this server can install the update itself */
+            can_install: boolean;
+            current_version: string;
+            /** @description why installing isn't possible, when `can_install` is false */
+            install_blocker?: string | null;
+            /** @description newest release version, without the leading `v` */
+            latest_version?: string | null;
+            published_at?: string | null;
+            release_name?: string | null;
+            /** @description release notes (markdown) */
+            release_notes?: string | null;
+            release_url?: string | null;
+            update_available: boolean;
         };
         /** @description project rename request */
         UpdateProjectRequest: {
@@ -4638,6 +4688,122 @@ export interface operations {
             };
             /** @description forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    check_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description update status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateCheckResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description admin access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description github error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    install_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description update installed, restarting */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallUpdateResponse"];
+                };
+            };
+            /** @description invalid version */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description admin access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description install not possible right now */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description github or download error */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -16,24 +16,24 @@
     "smoke:ui": "node scripts/ui-smoke.mjs"
   },
   "dependencies": {
-    "@solidjs/router": "^0.15.4",
+    "@solidjs/router": "^1.0.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "geist": "^1.7.0",
-    "lucide-solid": "^1.51.0",
-    "openapi-fetch": "^0.15.0",
-    "solid-js": "^1.9.10"
+    "geist": "^1.7.2",
+    "lucide-solid": "^1.52.0",
+    "openapi-fetch": "^0.17.0",
+    "solid-js": "^1.9.16"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.2.4",
-    "@tailwindcss/vite": "^4.2.1",
-    "autoprefixer": "^10.4.27",
+    "@biomejs/biome": "^2.5.15",
+    "@tailwindcss/vite": "^4.3.3",
+    "autoprefixer": "^10.6.1",
     "openapi-typescript": "^7.13.0",
-    "playwright": "^1.54.2",
-    "postcss": "^8.5.8",
-    "tailwindcss": "^4.2.1",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.1",
-    "vite-plugin-solid": "^2.11.10"
+    "playwright": "^1.63.0",
+    "postcss": "^8.5.29",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.3",
+    "vite-plugin-solid": "^2.11.14"
   }
 }

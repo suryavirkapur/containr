@@ -13,17 +13,14 @@ use containr_common::Config as AppConfig;
 use containr_common::{Database, HttpRequestLog};
 use dashmap::DashMap;
 use pingora_core::listeners::tls::TlsSettings;
-use pingora_core::listeners::{TlsAccept, TlsAcceptCallbacks};
 use pingora_core::prelude::*;
 use pingora_core::server::configuration::ServerConf;
-use pingora_core::tls::{
-    ext,
-    pkey::{PKey, Private},
-    ssl,
-    x509::X509,
-};
 use pingora_http::{RequestHeader, ResponseHeader};
 use pingora_proxy::{ProxyHttp, Session};
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::server::{ClientHello, ResolvesServerCert};
+use rustls::sign::CertifiedKey;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -246,32 +243,37 @@ impl ContainrProxy {
     }
 }
 
+/// picks the certificate for each tls handshake by sni from the database.
+/// parsed certificates are cached until the stored one changes.
 pub struct DynamicCertResolver {
     db: Database,
-    cache: Arc<DashMap<String, CachedCertificate>>,
+    cache: DashMap<String, CachedCertificate>,
+}
+
+impl std::fmt::Debug for DynamicCertResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DynamicCertResolver")
+            .field("cached", &self.cache.len())
+            .finish()
+    }
 }
 
 #[derive(Clone)]
 struct CachedCertificate {
     id: Uuid,
     expires_at: DateTime<Utc>,
-    leaf: X509,
-    chain: Vec<X509>,
-    key: PKey<Private>,
+    key: Arc<CertifiedKey>,
 }
 
 impl DynamicCertResolver {
     pub fn new(db: Database) -> Self {
         Self {
             db,
-            cache: Arc::new(DashMap::new()),
+            cache: DashMap::new(),
         }
     }
 
-    async fn load_cert(
-        &self,
-        domain: &str,
-    ) -> Option<(X509, Vec<X509>, PKey<Private>)> {
+    fn load_cert(&self, domain: &str) -> Option<Arc<CertifiedKey>> {
         let cert =
             match self.db.get_certificate_by_domain(domain).ok().flatten() {
                 Some(cert) if cert.expires_at > Utc::now() => cert,
@@ -283,76 +285,56 @@ impl DynamicCertResolver {
 
         if let Some(cached) = self.cache.get(domain) {
             if cached.id == cert.id && cached.expires_at == cert.expires_at {
-                return Some((
-                    cached.leaf.clone(),
-                    cached.chain.clone(),
-                    cached.key.clone(),
-                ));
+                return Some(cached.key.clone());
             }
         }
 
-        // Support fullchain PEM files: first cert is leaf, remainder is the chain.
-        let mut certs = X509::stack_from_pem(cert.cert_pem.as_bytes()).ok()?;
-        if certs.is_empty() {
-            return None;
-        }
-        let leaf = certs.remove(0);
-        let chain = certs;
-
-        let key = PKey::private_key_from_pem(cert.key_pem.as_bytes()).ok()?;
-
-        let cached = CachedCertificate {
-            id: cert.id,
-            expires_at: cert.expires_at,
-            leaf,
-            chain,
-            key,
+        let key = match certified_key(&cert.cert_pem, &cert.key_pem) {
+            Ok(key) => Arc::new(key),
+            Err(error) => {
+                warn!(error = %error, domain = %domain, "invalid stored tls certificate");
+                return None;
+            }
         };
-
-        self.cache.insert(domain.to_string(), cached.clone());
-
-        Some((cached.leaf, cached.chain, cached.key))
+        self.cache.insert(
+            domain.to_string(),
+            CachedCertificate {
+                id: cert.id,
+                expires_at: cert.expires_at,
+                key: key.clone(),
+            },
+        );
+        Some(key)
     }
 }
 
-#[async_trait]
-impl TlsAccept for DynamicCertResolver {
-    async fn certificate_callback(
-        &self,
-        ssl: &mut pingora_core::protocols::tls::TlsRef,
-    ) -> () {
-        let domain = match ssl.servername(ssl::NameType::HOST_NAME) {
-            Some(name) => name.to_string(),
-            None => {
-                warn!("tls handshake missing server name");
-                return;
-            }
+/// builds a rustls key from a fullchain pem (leaf first) and its key
+fn certified_key(
+    cert_pem: &str,
+    key_pem: &str,
+) -> anyhow::Result<CertifiedKey> {
+    let chain = CertificateDer::pem_slice_iter(cert_pem.as_bytes())
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    if chain.is_empty() {
+        anyhow::bail!("certificate chain is empty");
+    }
+    let key = PrivateKeyDer::from_pem_slice(key_pem.as_bytes())?;
+    let signing_key = rustls::crypto::ring::sign::any_supported_type(&key)?;
+    Ok(CertifiedKey::new(chain, signing_key))
+}
+
+impl ResolvesServerCert for DynamicCertResolver {
+    fn resolve(&self, hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+        let Some(domain) = hello.server_name() else {
+            warn!("tls handshake missing server name");
+            return None;
         };
-
-        match self.load_cert(&domain).await {
-            Some((cert, chain, key)) => {
-                if let Err(error) = ext::ssl_use_certificate(ssl, &cert) {
-                    warn!(error = %error, domain = %domain, "failed to set tls certificate");
-                    return;
-                }
-
-                // Attach intermediate chain certs so clients can validate the leaf.
-                for c in chain {
-                    if let Err(error) = ssl.add_chain_cert(c) {
-                        warn!(error = %error, domain = %domain, "failed to add extra chain cert");
-                        return;
-                    }
-                }
-
-                if let Err(error) = ext::ssl_use_private_key(ssl, &key) {
-                    warn!(error = %error, domain = %domain, "failed to set tls private key");
-                    return;
-                }
-            }
-            None => {
-                warn!(domain = %domain, "no tls certificate found for domain");
-            }
+        let domain = domain.to_ascii_lowercase();
+        let key = self.load_cert(&domain);
+        if key.is_none() {
+            warn!(domain = %domain, "no tls certificate found for domain");
         }
+        key
     }
 }
 
@@ -803,9 +785,9 @@ pub fn create_proxy_server(
 
     proxy_service.add_tcp(&format!("0.0.0.0:{}", http_port));
 
-    let resolver = DynamicCertResolver::new(db);
-    let callbacks: TlsAcceptCallbacks = Box::new(resolver);
-    let mut tls_settings = TlsSettings::with_callbacks(callbacks)?;
+    // certificate paths are ignored once a resolver is set
+    let mut tls_settings = TlsSettings::intermediate("", "")?;
+    tls_settings.set_cert_resolver(Arc::new(DynamicCertResolver::new(db)));
     tls_settings.enable_h2();
     proxy_service.add_tls_with_settings(
         &format!("0.0.0.0:{}", https_port),
@@ -998,6 +980,20 @@ fn set_forwarded_headers(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn certified_key_loads_rcgen_pem_and_rejects_garbage() {
+        let generated =
+            rcgen::generate_simple_self_signed(vec!["app.test".to_string()])
+                .expect("generate cert");
+        let cert_pem = generated.cert.pem();
+        let key_pem = generated.signing_key.serialize_pem();
+
+        let key = certified_key(&cert_pem, &key_pem).expect("certified key");
+        assert_eq!(key.cert.len(), 1);
+        assert!(certified_key("not a pem", &key_pem).is_err());
+        assert!(certified_key(&cert_pem, "not a key").is_err());
+    }
 
     fn ctx(tls: bool, ip: Option<&str>) -> ProxyCtx {
         ProxyCtx {

@@ -495,6 +495,8 @@ struct ServiceSpec {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // reqwest uses rustls without a bundled crypto provider
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let cli = Cli::parse();
 
     match cli.command {
