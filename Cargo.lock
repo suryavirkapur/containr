@@ -1047,7 +1047,7 @@ dependencies = [
 
 [[package]]
 name = "containr"
-version = "0.1.15-alpha"
+version = "0.1.16-alpha"
 dependencies = [
  "anyhow",
  "bollard",
@@ -1074,7 +1074,7 @@ dependencies = [
 
 [[package]]
 name = "containr-api"
-version = "0.1.15-alpha"
+version = "0.1.16-alpha"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1121,7 +1121,7 @@ dependencies = [
 
 [[package]]
 name = "containr-cmd"
-version = "0.1.15-alpha"
+version = "0.1.16-alpha"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1139,7 +1139,7 @@ dependencies = [
 
 [[package]]
 name = "containr-common"
-version = "0.1.15-alpha"
+version = "0.1.16-alpha"
 dependencies = [
  "aes-gcm",
  "base64 0.23.1",
@@ -1161,7 +1161,7 @@ dependencies = [
 
 [[package]]
 name = "containr-proxy"
-version = "0.1.15-alpha"
+version = "0.1.16-alpha"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1194,7 +1194,7 @@ dependencies = [
 
 [[package]]
 name = "containr-runtime"
-version = "0.1.15-alpha"
+version = "0.1.16-alpha"
 dependencies = [
  "anyhow",
  "async-trait",
