@@ -13,6 +13,7 @@ import Menu from "lucide-solid/icons/menu";
 import Monitor from "lucide-solid/icons/monitor";
 import Moon from "lucide-solid/icons/moon";
 import Package from "lucide-solid/icons/package";
+import Palette from "lucide-solid/icons/palette";
 import Plus from "lucide-solid/icons/plus";
 import Search from "lucide-solid/icons/search";
 import Server from "lucide-solid/icons/server";
@@ -38,7 +39,7 @@ import {
 import { errorMessage } from "../../api/http";
 import { useAppStore } from "../../context/AppStore";
 import { useAuth } from "../../context/AuthContext";
-import { theme } from "../../context/ThemeContext";
+import { palettes, theme } from "../../context/ThemeContext";
 import { Button, cx, Notice, Spinner } from "../ui";
 import { ConfirmHost, DropdownMenu, Toaster } from "../ui/overlay";
 import { crumbs } from "./breadcrumbs";
@@ -368,6 +369,14 @@ export const AppShell: ParentComponent = (props) => {
 			icon: <Moon />,
 			run: () => theme.toggle(),
 		},
+		...palettes.map((palette) => ({
+			id: `palette:${palette.id}`,
+			label: `Use ${palette.label} theme`,
+			group: "Preferences",
+			icon: <Palette />,
+			keywords: "theme appearance palette colors",
+			run: () => theme.setPalette(palette.id),
+		})),
 		{
 			id: "logout",
 			label: "Sign out",
