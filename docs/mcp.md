@@ -74,10 +74,23 @@ Some endpoints aren't exposed: sign-in and OAuth flows, password changes, token 
 
 Deployments are asynchronous. `trigger_service_deployment` and `rollback_service_deployment` accept `timeout_secs` in the body to wait for a terminal status in one call, and `wait_for_service_deployment` long-polls any deployment (default 60s, max 600s) and reports `timed_out` when it was still in progress.
 
+## Resources
+
+Read-only state is also exposed as MCP resources under the `containr://` scheme, so clients can browse or subscribe instead of re-calling list tools:
+
+- `containr://services` — every service with its status; `resources/list` also emits one `containr://services/{id}` per service.
+- `containr://services/{id}` — a single service.
+- `containr://services/{id}/settings` — editable settings (env var secrets stay masked).
+- `containr://services/{id}/deployments` and `containr://services/{id}/deployments/{deployment_id}` — deployment history and a single deployment.
+- `containr://services/{id}/metrics` — recent cpu/memory/network usage.
+- `containr://projects` and `containr://system` — project list and server info.
+
+Each read is dispatched through the API router like a tool call, so token scope and ownership checks apply identically.
+
 ## How it works
 
 `crates/containr-api/src/handlers/api_tokens.rs` has a middleware that runs in front of every route. It swaps a valid `ctr_` token for a short-lived session JWT, so existing handlers accept tokens without changes. The middleware also blocks writes from read-only tokens.
 
-`crates/containr-api/src/mcp/` handles the JSON-RPC methods (`initialize`, `ping`, `tools/list`, `tools/call`). It sends each tool call through the API router as an internal request with the caller's credentials, so the API's own permission checks always apply.
+`crates/containr-api/src/mcp/` handles the JSON-RPC methods (`initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`, `resources/read`, `resources/templates/list`). It sends each tool call and resource read through the API router as an internal request with the caller's credentials, so the API's own permission checks always apply.
 
 To improve a tool's description, edit the `DESCRIPTIONS` table in `mcp/tools.rs`. It's keyed by operation id.
