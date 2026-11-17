@@ -49,10 +49,12 @@ const INSTRUCTIONS: &str = "containr is a self-hosted platform that runs \
 apps, databases, queues and one-click apps as services on Docker. Start with \
 list_services to find service ids, and list_containers for container ids \
 used by the container, file and exec tools. Services in the same project \
-share a private network. Deployments are asynchronous: after a deploy, poll \
-get_service_deployment or read get_service_deployment_logs. Use api_request \
-only for endpoints without a dedicated tool. Confirm with the user before \
-destructive actions such as deleting services or running cleanup.";
+share a private network. Deployments are asynchronous: pass timeout_secs \
+when triggering one, or call wait_for_service_deployment. Read-only state \
+is also available as containr:// resources (services, deployments, \
+settings, metrics). Use api_request only for endpoints without a \
+dedicated tool. Confirm with the user before destructive actions such \
+as deleting services or running cleanup.";
 
 #[derive(Clone)]
 pub struct McpState {
@@ -202,8 +204,11 @@ async fn handle_message(
                 .list_json(caller.scope.scope == ApiTokenScope::Read),
         })),
         "tools/call" => call_tool(state, caller, &params).await,
-        "resources/list" => Ok(json!({ "resources": [] })),
-        "resources/templates/list" => Ok(json!({ "resourceTemplates": [] })),
+        "resources/list" => list_resources(state, caller).await,
+        "resources/read" => read_resource(state, caller, &params).await,
+        "resources/templates/list" => {
+            Ok(json!({ "resourceTemplates": resource_templates() }))
+        }
         "prompts/list" => Ok(json!({ "prompts": [] })),
         _ => Err((-32601, format!("method not found: {}", method))),
     };
@@ -228,6 +233,7 @@ fn initialize(params: &Value) -> Value {
         "protocolVersion": version,
         "capabilities": {
             "tools": { "listChanged": false },
+            "resources": { "listChanged": false },
         },
         "serverInfo": {
             "name": "containr",
@@ -283,6 +289,207 @@ async fn call_tool(
     } else {
         Ok(tool_error(&format!("HTTP {}: {}", status.as_u16(), text)))
     }
+}
+
+/// uri scheme for containr state resources
+const RESOURCE_SCHEME: &str = "containr://";
+
+/// resources that don't depend on a service id
+fn static_resources() -> Vec<Value> {
+    vec![
+        json!({
+            "uri": "containr://services",
+            "name": "services",
+            "title": "All services",
+            "description": "every app, database, queue and one-click \
+                            service with its status",
+            "mimeType": "application/json",
+        }),
+        json!({
+            "uri": "containr://projects",
+            "name": "projects",
+            "title": "All projects",
+            "description": "projects group services onto a shared \
+                            private network",
+            "mimeType": "application/json",
+        }),
+        json!({
+            "uri": "containr://system",
+            "name": "system",
+            "title": "Server info",
+            "description": "containr version, host and runtime \
+                            information",
+            "mimeType": "application/json",
+        }),
+    ]
+}
+
+/// uri templates advertised to clients that don't enumerate resources
+fn resource_templates() -> Vec<Value> {
+    [
+        (
+            "containr://services/{service_id}",
+            "service",
+            "one service: status, type, image and project",
+        ),
+        (
+            "containr://services/{service_id}/settings",
+            "service settings",
+            "full editable settings; env var secrets are masked",
+        ),
+        (
+            "containr://services/{service_id}/deployments",
+            "service deployments",
+            "deployment history with status and triggered_via",
+        ),
+        (
+            "containr://services/{service_id}/deployments/{deployment_id}",
+            "service deployment",
+            "one deployment's status and result",
+        ),
+        (
+            "containr://services/{service_id}/metrics",
+            "service metrics",
+            "recent cpu, memory and network usage",
+        ),
+    ]
+    .iter()
+    .map(|(uri_template, name, description)| {
+        json!({
+            "uriTemplate": uri_template,
+            "name": name,
+            "mimeType": "application/json",
+            "description": description,
+        })
+    })
+    .collect()
+}
+
+/// maps a containr:// resource uri onto a read-only api path; ids are
+/// restricted to identifier characters so a uri can't reach other paths
+fn resource_api_path(uri: &str) -> Option<String> {
+    let path = uri.strip_prefix(RESOURCE_SCHEME)?;
+    match path {
+        "services" => Some("/api/services".to_string()),
+        "projects" => Some("/api/projects".to_string()),
+        "system" => Some("/api/system/info".to_string()),
+        _ => {
+            let mut parts = path.split('/');
+            if parts.next() != Some("services") {
+                return None;
+            }
+            let id = parts.next()?;
+            let tail: Vec<&str> = parts.collect();
+            let api = match tail.as_slice() {
+                [] => format!("/api/services/{}", id),
+                ["settings"] => format!("/api/services/{}/settings", id),
+                ["deployments"] => {
+                    format!("/api/services/{}/deployments", id)
+                }
+                ["deployments", deployment_id]
+                    if is_resource_id(deployment_id) =>
+                {
+                    format!(
+                        "/api/services/{}/deployments/{}",
+                        id, deployment_id
+                    )
+                }
+                ["metrics"] => format!("/api/services/{}/metrics", id),
+                _ => return None,
+            };
+            is_resource_id(id).then_some(api)
+        }
+    }
+}
+
+fn is_resource_id(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// resources/list: the fixed resources plus one per service
+async fn list_resources(
+    state: &McpState,
+    caller: &Caller,
+) -> Result<Value, (i64, String)> {
+    let mut resources = static_resources();
+    let call = ApiCall {
+        method: Method::GET,
+        uri: "/api/services".to_string(),
+        body: None,
+    };
+    if let Ok((status, _, body)) = dispatch(state, caller, call).await {
+        if status.is_success() {
+            if let Ok(Value::Array(services)) =
+                serde_json::from_slice::<Value>(&body)
+            {
+                for service in services {
+                    let id = service.get("id").and_then(Value::as_str);
+                    let name = service
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("service");
+                    let status = service
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown");
+                    if let Some(id) = id.filter(|id| is_resource_id(id)) {
+                        resources.push(json!({
+                            "uri": format!("containr://services/{}", id),
+                            "name": name,
+                            "title": format!("Service {}", name),
+                            "description": format!("status: {}", status),
+                            "mimeType": "application/json",
+                        }));
+                    }
+                }
+            }
+        }
+    }
+    Ok(json!({ "resources": resources }))
+}
+
+/// resources/read: serves the mapped api response as resource contents
+async fn read_resource(
+    state: &McpState,
+    caller: &Caller,
+    params: &Value,
+) -> Result<Value, (i64, String)> {
+    let uri = params
+        .get("uri")
+        .and_then(Value::as_str)
+        .ok_or((-32602, "missing resource uri".to_string()))?;
+    let path = resource_api_path(uri).ok_or_else(|| {
+        (
+            -32602,
+            format!(
+                "unknown resource: {}. expected a containr:// uri from \
+                 resources/list or a uri template",
+                uri
+            ),
+        )
+    })?;
+    let call = ApiCall {
+        method: Method::GET,
+        uri: path,
+        body: None,
+    };
+    let (status, content_type, body) = dispatch(state, caller, call)
+        .await
+        .map_err(|error| (-32603, error))?;
+    let text = render_body(&content_type, &body);
+    if !status.is_success() {
+        return Err((-32602, format!("HTTP {}: {}", status.as_u16(), text)));
+    }
+    Ok(json!({
+        "contents": [{
+            "uri": uri,
+            "mimeType": "application/json",
+            "text": text,
+        }]
+    }))
 }
 
 /// a resolved api call
@@ -605,6 +812,31 @@ mod tests {
             "path": "/api/tokens",
         })))
         .is_err());
+    }
+
+    #[test]
+    fn resource_uris_map_to_read_only_api_paths() {
+        assert_eq!(
+            resource_api_path("containr://services").as_deref(),
+            Some("/api/services")
+        );
+        assert_eq!(
+            resource_api_path("containr://services/abc-123").as_deref(),
+            Some("/api/services/abc-123")
+        );
+        assert_eq!(
+            resource_api_path("containr://services/abc/settings").as_deref(),
+            Some("/api/services/abc/settings")
+        );
+        assert_eq!(
+            resource_api_path("containr://services/abc/deployments/d1")
+                .as_deref(),
+            Some("/api/services/abc/deployments/d1")
+        );
+        // ids can't escape into other paths
+        assert_eq!(resource_api_path("containr://services/../tokens"), None);
+        assert_eq!(resource_api_path("containr://tokens"), None);
+        assert_eq!(resource_api_path("https://x/services"), None);
     }
 
     #[test]
