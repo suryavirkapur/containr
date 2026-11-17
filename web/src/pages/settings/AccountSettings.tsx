@@ -1,10 +1,12 @@
 import { useSearchParams } from "@solidjs/router";
-import { createResource, createSignal, onMount, Show } from "solid-js";
+import Check from "lucide-solid/icons/check";
+import { createResource, createSignal, For, onMount, Show } from "solid-js";
 import { getRegistrationStatus, startGithubLink, unlinkGithub } from "../../api/auth";
 import { changePassword } from "../../api/platform";
 import {
 	Button,
 	Card,
+	cx,
 	DescriptionList,
 	Field,
 	PasswordInput,
@@ -14,7 +16,7 @@ import {
 import { GithubIcon } from "../../components/ui/brand";
 import { confirm, toast } from "../../components/ui/overlay";
 import { useAuth } from "../../context/AuthContext";
-import { type ThemePreference, theme } from "../../context/ThemeContext";
+import { palettes, type ThemePreference, theme } from "../../context/ThemeContext";
 
 const AccountSettings = () => {
 	const auth = useAuth();
@@ -189,9 +191,46 @@ const AccountSettings = () => {
 				</form>
 			</Card>
 
-			<Card title="Appearance">
-				<div class="-my-4">
-					<SettingRow title="Theme" description="Match your system or pick one.">
+			<Card
+				title="Appearance"
+				description="Pick a palette, then match your system or choose a mode."
+			>
+				<div class="theme-grid">
+					<For each={palettes}>
+						{(palette) => (
+							<button
+								type="button"
+								class={cx("theme-card", theme.palette() === palette.id && "active")}
+								onClick={() => theme.setPalette(palette.id)}
+								aria-pressed={theme.palette() === palette.id}
+							>
+								<span class="theme-card-preview" aria-hidden="true">
+									<For each={[palette.light, palette.dark]}>
+										{(swatch) => (
+											<span class="theme-card-half" style={{ background: swatch.bg }}>
+												<span class="theme-card-window" style={{ background: swatch.surface }}>
+													<span class="theme-card-dot" style={{ background: swatch.accent }} />
+													<span
+														class="theme-card-line"
+														style={{ background: swatch.fg, opacity: "0.3" }}
+													/>
+												</span>
+											</span>
+										)}
+									</For>
+								</span>
+								<span class="theme-card-name">
+									{palette.label}
+									<Show when={theme.palette() === palette.id}>
+										<Check />
+									</Show>
+								</span>
+							</button>
+						)}
+					</For>
+				</div>
+				<div class="-mx-[18px] -mb-[18px] mt-5 border-t border-border px-[18px]">
+					<SettingRow title="Mode" description="Applies to the selected palette.">
 						<Segmented<ThemePreference>
 							value={theme.preference()}
 							onChange={(value) => theme.set(value)}

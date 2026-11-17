@@ -84,6 +84,8 @@ pub struct ServiceInventoryItem {
     pub proxy_connection_string: Option<String>,
     pub domains: Vec<String>,
     pub http_only_domains: Vec<String>,
+    #[serde(default)]
+    pub cloudflare_domains: Vec<String>,
     pub schedule: Option<String>,
     #[serde(default)]
     pub notes: Option<String>,

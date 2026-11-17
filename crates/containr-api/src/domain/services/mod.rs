@@ -91,6 +91,8 @@ pub struct InventoryServiceResponse {
     pub proxy_connection_string: Option<String>,
     pub domains: Vec<String>,
     pub http_only_domains: Vec<String>,
+    /// custom domains served through the cloudflare tunnel
+    pub cloudflare_domains: Vec<String>,
     pub default_urls: Vec<String>,
     pub schedule: Option<String>,
     pub notes: Option<String>,
@@ -150,6 +152,8 @@ pub struct ServiceSettingsServiceResponse {
     pub expose_http: bool,
     pub domains: Vec<String>,
     pub http_only_domains: Vec<String>,
+    /// custom domains served through the cloudflare tunnel
+    pub cloudflare_domains: Vec<String>,
     pub additional_ports: Vec<u16>,
     pub replicas: u32,
     pub memory_limit_mb: Option<u64>,
@@ -389,6 +393,9 @@ pub struct ServiceRequest {
     pub domains: Option<Vec<String>>,
     pub domain: Option<String>,
     pub http_only_domains: Option<Vec<String>>,
+    /// custom domains to serve through the cloudflare tunnel. entries must
+    /// be in `domains`; absent keeps the current selection
+    pub cloudflare_domains: Option<Vec<String>>,
     pub additional_ports: Option<Vec<u16>>,
     pub replicas: Option<u32>,
     pub memory_limit_mb: Option<u64>,
@@ -569,6 +576,7 @@ impl InventoryServiceResponse {
             proxy_connection_string: service.proxy_connection_string.clone(),
             domains: service.domains.clone(),
             http_only_domains: service.http_only_domains.clone(),
+            cloudflare_domains: service.cloudflare_domains.clone(),
             default_urls: build_default_urls(service, proxy),
             schedule: service.schedule.clone(),
             notes: service.notes.clone(),
@@ -1514,6 +1522,7 @@ impl ServiceSvc {
                 warn!("certificate issuance not available for new app domain");
             }
         }
+        nudge_cloudflare_sync(&self.state);
 
         let service_id =
             app.services.first().map(|service| service.id).ok_or_else(
@@ -1862,6 +1871,7 @@ impl ServiceSvc {
                 let _ = tx.try_send(domain);
             }
         }
+        nudge_cloudflare_sync(&self.state);
 
         app.services
             .first()
@@ -2429,6 +2439,7 @@ fn service_settings_service_response(
         expose_http: service.expose_http,
         domains: service.domains.clone(),
         http_only_domains: service.http_only_domains(),
+        cloudflare_domains: service.cloudflare_domains(),
         additional_ports: service.additional_ports.clone(),
         replicas: service.replicas,
         memory_limit_mb: service.memory_limit.map(|value| value / 1024 / 1024),
@@ -2526,6 +2537,11 @@ fn service_request_from_model(service: &ContainerService) -> ServiceRequest {
             None
         } else {
             Some(service.http_only_domains())
+        },
+        cloudflare_domains: if service.cloudflare_domains().is_empty() {
+            None
+        } else {
+            Some(service.cloudflare_domains())
         },
         additional_ports: if service.additional_ports.is_empty() {
             None
@@ -3562,6 +3578,8 @@ fn build_services(
         let service_type = resolve_service_type(&request, Some(&service))?;
         let requested_domains = requested_service_domains(&request);
         let requested_http_only_domains = requested_http_only_domains(&request);
+        let requested_cloudflare_domains =
+            request.cloudflare_domains.clone().map(normalize_domains);
         let port = request.port;
         let schedule = normalize_cron_schedule(
             request.schedule,
@@ -3720,6 +3738,16 @@ fn build_services(
             } else {
                 Vec::new()
             };
+        service.cloudflare_domains =
+            if matches!(service_type, ServiceType::WebService) {
+                normalize_http_only_domains(
+                    requested_cloudflare_domains
+                        .unwrap_or_else(|| service.cloudflare_domains()),
+                    &service.domains,
+                )
+            } else {
+                Vec::new()
+            };
         service.build_context = normalize_repo_relative_path(
             "service build context",
             request.build_context,
@@ -3867,6 +3895,7 @@ async fn validate_app_service_domains(
     app: &App,
 ) -> ApiResult<Vec<String>> {
     let mut domains = Vec::new();
+    let mut cloudflare_domains = Vec::new();
     let mut seen = HashSet::new();
 
     for service in &app.services {
@@ -3880,6 +3909,23 @@ async fn validate_app_service_domains(
             ));
         }
 
+        let via_cloudflare = service.cloudflare_domains();
+        let http_only = service.http_only_domains();
+        for domain in &via_cloudflare {
+            if http_only.iter().any(|entry| entry == domain) {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!(
+                            "cloudflare domain {} cannot be http-only; it \
+                             gets https at the cloudflare edge",
+                            domain
+                        ),
+                    }),
+                ));
+            }
+        }
+
         for domain in service.custom_domains() {
             if !seen.insert(domain.clone()) {
                 return Err((
@@ -3889,25 +3935,33 @@ async fn validate_app_service_domains(
                     }),
                 ));
             }
-            domains.push(domain);
+            if via_cloudflare.iter().any(|entry| entry == &domain) {
+                cloudflare_domains.push(domain);
+            } else {
+                domains.push(domain);
+            }
         }
     }
 
-    if domains.is_empty() {
-        return Ok(domains);
+    if !domains.is_empty() {
+        // cloudflare manages dns for its own domains, so they skip the
+        // resolve-to-this-server check
+        validate_domains(
+            &domains,
+            &config.proxy.base_domain,
+            config.proxy.public_ip.as_deref(),
+        )
+        .await
+        .map_err(|error| {
+            (StatusCode::BAD_REQUEST, Json(ErrorResponse { error }))
+        })?;
     }
 
-    validate_domains(
-        &domains,
-        &config.proxy.base_domain,
-        config.proxy.public_ip.as_deref(),
-    )
-    .await
-    .map_err(|error| {
-        (StatusCode::BAD_REQUEST, Json(ErrorResponse { error }))
-    })?;
+    if !cloudflare_domains.is_empty() {
+        validate_cloudflare_domains(state, &cloudflare_domains).await?;
+    }
 
-    for domain in &domains {
+    for domain in domains.iter().chain(cloudflare_domains.iter()) {
         if let Some(existing) =
             state.db.get_app_by_domain(domain).map_err(internal_error)?
         {
@@ -3922,7 +3976,68 @@ async fn validate_app_service_domains(
         }
     }
 
-    Ok(domains)
+    let mut all_domains = domains;
+    all_domains.extend(cloudflare_domains);
+    Ok(all_domains)
+}
+
+/// cloudflare-fronted domains need a connected account and a zone that
+/// covers them; containr creates their dns records itself
+async fn validate_cloudflare_domains(
+    state: &AppState,
+    domains: &[String],
+) -> ApiResult<()> {
+    let connected = state
+        .db
+        .get_cloudflare_settings()
+        .map_err(internal_error)?
+        .is_some();
+    if !connected {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error:
+                    "connect cloudflare in settings before enabling it on a domain"
+                        .to_string(),
+            }),
+        ));
+    }
+
+    let Some(manager) = &state.cloudflare else {
+        return Ok(());
+    };
+    let mut zones = manager.zone_names().await;
+    if zones.is_empty() {
+        zones = manager
+            .refresh_zones()
+            .await
+            .map(|list| list.iter().map(|zone| zone.name.clone()).collect())
+            .unwrap_or_default();
+    }
+    if zones.is_empty() {
+        // the zone list could not be fetched; the sync reports dns state
+        // on the status endpoint instead of blocking the update
+        return Ok(());
+    }
+
+    for domain in domains {
+        let covered = zones.iter().any(|zone| {
+            domain == zone || domain.ends_with(&format!(".{}", zone))
+        });
+        if !covered {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!(
+                        "no cloudflare zone covers {}; available zones: {}",
+                        domain,
+                        zones.join(", ")
+                    ),
+                }),
+            ));
+        }
+    }
+    Ok(())
 }
 
 async fn validate_domains(
@@ -4172,6 +4287,15 @@ fn persist_deployment(
 async fn refresh_proxy_routes(state: &AppState, app_id: Uuid) {
     if let Some(sender) = &state.proxy_update_tx {
         let _ = sender.send(ProxyRouteUpdate::RefreshApp { app_id }).await;
+    }
+    nudge_cloudflare_sync(state);
+}
+
+/// route changes may add or remove cloudflare domains; the manager syncs
+/// tunnel ingress, dns records and the firewall in the background
+fn nudge_cloudflare_sync(state: &AppState) {
+    if let Some(manager) = &state.cloudflare {
+        manager.request_sync();
     }
 }
 
@@ -5072,6 +5196,7 @@ mod services_test {
                 tx,
                 None,
                 None,
+                None,
             )
             .expect("state");
             (state, dir)
@@ -5602,6 +5727,7 @@ mod services_test {
             proxy_connection_string: None,
             domains: vec!["app.example.com".to_string()],
             http_only_domains: Vec::new(),
+            cloudflare_domains: Vec::new(),
             schedule: None,
             notes: None,
             port_mappings: Vec::new(),

@@ -24,9 +24,9 @@ use crate::domain::services::{run_database_action, ServiceAction};
 use crate::github::DeploymentJob;
 use crate::handlers::deployments::create_and_queue_deployment;
 use crate::handlers::{
-    auth, certificates, containers, gate, github_app, github_repos, health,
-    projects, registries, settings, storage, system, updates, webhooks,
-    websocket,
+    api_tokens, auth, certificates, cloudflare, containers, gate, github_app,
+    github_repos, health, projects, registries, settings, storage, system,
+    updates, webhooks, websocket,
 };
 use crate::openapi::ApiDoc;
 use crate::routes;
@@ -45,6 +45,7 @@ pub async fn run_server(
     db: Database,
     proxy_update_tx: Option<mpsc::Sender<containr_runtime::ProxyRouteUpdate>>,
     cert_request_tx: Option<mpsc::Sender<String>>,
+    cloudflare: Option<Arc<crate::cloudflare::CloudflareManager>>,
 ) -> Result<mpsc::Receiver<DeploymentJob>> {
     // create deployment queue channel
     let (tx, rx) = mpsc::channel::<DeploymentJob>(100);
@@ -59,6 +60,7 @@ pub async fn run_server(
         tx,
         proxy_update_tx,
         cert_request_tx,
+        cloudflare,
     )?;
     let replay_state = state.clone();
 
@@ -96,7 +98,7 @@ pub async fn run_server(
     };
 
     // build router
-    let app = Router::new()
+    let api = Router::new()
         // health
         .route("/health", get(health::health))
         .route("/api/system/stats", get(system::get_system_stats))
@@ -145,6 +147,12 @@ pub async fn run_server(
         .route("/api/admin/users/{id}", delete(auth::delete_user))
         .route("/api/auth/password", post(auth::change_password))
         .route("/api/gate/pass", post(gate::create_gate_pass))
+        // api tokens
+        .route(
+            "/api/tokens",
+            get(api_tokens::list_api_tokens).post(api_tokens::create_api_token),
+        )
+        .route("/api/tokens/{id}", delete(api_tokens::delete_api_token))
         // projects
         .route("/api/projects", get(projects::list_projects))
         .route("/api/projects/{id}", patch(projects::update_project))
@@ -158,6 +166,14 @@ pub async fn run_server(
         .route(
             "/api/settings/certificate",
             post(settings::issue_dashboard_certificate),
+        )
+        // cloudflare tunnel integration
+        .route("/api/cloudflare", get(cloudflare::get_cloudflare_status))
+        .route("/api/cloudflare", put(cloudflare::connect_cloudflare))
+        .route("/api/cloudflare", delete(cloudflare::disconnect_cloudflare))
+        .route(
+            "/api/cloudflare/zones",
+            get(cloudflare::list_cloudflare_zones),
         )
         .route("/api/github/status", get(github_repos::github_status))
         .route("/api/github/repos", get(github_repos::github_repos))
@@ -195,6 +211,7 @@ pub async fn run_server(
             "/api/containers/{id}/exec/token",
             post(containers::issue_exec_token),
         )
+        .route("/api/containers/{id}/exec", post(containers::exec_command))
         .route(
             "/api/containers/{id}/exec/ws",
             get(containers::container_exec_ws),
@@ -237,10 +254,18 @@ pub async fn run_server(
         .route("/webhooks/deploy/{id}", post(webhooks::deploy_webhook))
         // static files fallback (spa)
         .fallback(crate::static_files::serve_static)
-        // middleware
+        .with_state(state.clone());
+
+    // the mcp endpoint dispatches tool calls into the api router, so it is
+    // built from a copy of it. api tokens are resolved once, up front.
+    let app = crate::mcp::router(state.clone(), api.clone())
+        .merge(api)
+        .layer(axum::middleware::from_fn_with_state(
+            state,
+            api_tokens::api_token_auth,
+        ))
         .layer(TraceLayer::new_for_http())
-        .layer(cors)
-        .with_state(state);
+        .layer(cors);
 
     let addr: SocketAddr = format!(
         "{}:{}",

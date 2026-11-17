@@ -317,6 +317,57 @@ pub struct PortMapping {
     pub protocol: PortProtocol,
 }
 
+/// what an api token may do
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiTokenScope {
+    /// read-only: GET requests and read-only mcp tools
+    Read,
+    /// everything the owning user can do
+    Full,
+}
+
+impl ApiTokenScope {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ApiTokenScope::Read => "read",
+            ApiTokenScope::Full => "full",
+        }
+    }
+
+    /// parses a scope name, accepting any case
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "read" | "read_only" | "readonly" => Some(ApiTokenScope::Read),
+            "full" | "write" | "read_write" => Some(ApiTokenScope::Full),
+            _ => None,
+        }
+    }
+}
+
+/// revocable personal access token for the api and mcp endpoint. only the
+/// sha-256 hash of the secret is kept.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiToken {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub token_hash: String,
+    /// first characters of the secret, shown so tokens can be told apart
+    pub prefix: String,
+    pub scope: ApiTokenScope,
+    pub created_at: DateTime<Utc>,
+    pub last_used_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+impl ApiToken {
+    /// true once the token is past its expiry
+    pub fn is_expired(&self, now: DateTime<Utc>) -> bool {
+        self.expires_at.is_some_and(|expires_at| expires_at <= now)
+    }
+}
+
 /// owner-scoped private container registry credentials
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContainerRegistry {
@@ -493,6 +544,11 @@ pub struct ContainerService {
     pub domains: Vec<String>,
     #[serde(default)]
     pub http_only_domains: Vec<String>,
+    /// domains routed through the cloudflare tunnel. these are not served
+    /// on the server's public http/https ports and get no local tls
+    /// certificate; cloudflare terminates tls at the edge
+    #[serde(default)]
+    pub cloudflare_domains: Vec<String>,
     #[serde(default)]
     pub build_context: Option<String>,
     #[serde(default)]
@@ -557,6 +613,7 @@ impl ContainerService {
             env_vars: Vec::new(),
             domains: Vec::new(),
             http_only_domains: Vec::new(),
+            cloudflare_domains: Vec::new(),
             build_context: None,
             dockerfile_path: None,
             build_target: None,
@@ -641,13 +698,39 @@ impl ContainerService {
         domains
     }
 
+    /// returns the custom domains routed through the cloudflare tunnel.
+    /// only domains that are still attached count
+    pub fn cloudflare_domains(&self) -> Vec<String> {
+        let custom_domains = self.custom_domains();
+        let mut domains = Vec::new();
+        for domain in &self.cloudflare_domains {
+            if custom_domains.iter().any(|existing| existing == domain)
+                && !domains.iter().any(|existing| existing == domain)
+            {
+                domains.push(domain.clone());
+            }
+        }
+        domains
+    }
+
+    /// returns true when the given custom domain is tunnel-fronted
+    pub fn domain_via_cloudflare(&self, domain: &str) -> bool {
+        self.cloudflare_domains()
+            .iter()
+            .any(|existing| existing == domain)
+    }
+
     /// returns the custom domains configured with managed https
     pub fn https_domains(&self) -> Vec<String> {
         let http_only_domains = self.http_only_domains();
+        let cloudflare_domains = self.cloudflare_domains();
         self.custom_domains()
             .into_iter()
             .filter(|domain| {
                 !http_only_domains.iter().any(|existing| existing == domain)
+                    && !cloudflare_domains
+                        .iter()
+                        .any(|existing| existing == domain)
             })
             .collect()
     }
@@ -983,6 +1066,21 @@ impl Certificate {
             CertificateStatus::Valid
         }
     }
+}
+
+/// the server's cloudflare account connection for tunnel-fronted domains
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudflareSettings {
+    /// cloudflare api token, encrypted at rest
+    pub api_token: String,
+    pub account_id: String,
+    /// cloudflare tunnel created by containr for this server
+    pub tunnel_id: Option<String>,
+    pub tunnel_name: Option<String>,
+    /// token used by cloudflared to run the tunnel, encrypted at rest
+    pub tunnel_token: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 /// route configuration for the proxy
@@ -1684,6 +1782,44 @@ mod tests {
             let encoded = serde_json::to_string(&health).unwrap();
             assert_eq!(encoded, format!("\"{}\"", expected));
         }
+    }
+
+    #[test]
+    fn test_cloudflare_domains_filter_to_attached_domains() {
+        let mut service = ContainerService::new(
+            Uuid::new_v4(),
+            "web".to_string(),
+            "node:18".to_string(),
+            3000,
+        );
+        service.domains = vec![
+            "app.example.com".to_string(),
+            "api.example.com".to_string(),
+            "old.example.com".to_string(),
+        ];
+        service.cloudflare_domains = vec![
+            "app.example.com".to_string(),
+            "app.example.com".to_string(),
+            "gone.example.com".to_string(),
+        ];
+        service.http_only_domains = vec!["api.example.com".to_string()];
+
+        // only attached custom domains count, deduplicated
+        assert_eq!(
+            service.cloudflare_domains(),
+            vec!["app.example.com".to_string()]
+        );
+        assert!(service.domain_via_cloudflare("app.example.com"));
+        assert!(!service.domain_via_cloudflare("api.example.com"));
+
+        // cloudflare domains are not locally acme-managed; http-only stays
+        // excluded too
+        assert_eq!(
+            service.https_domains(),
+            vec!["old.example.com".to_string()]
+        );
+        assert!(!service.domain_https_enabled("app.example.com"));
+        assert!(!service.domain_https_enabled("api.example.com"));
     }
 
     #[test]

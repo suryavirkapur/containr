@@ -493,6 +493,104 @@ pub async fn issue_exec_token(
     }))
 }
 
+/// longest a one-shot exec may run
+const MAX_EXEC_TIMEOUT_SECS: u64 = 300;
+/// output kept per stream for a one-shot exec
+const MAX_EXEC_OUTPUT_BYTES: usize = 256 * 1024;
+
+/// a command to run once in a container
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ExecCommandRequest {
+    /// shell command, run with `/bin/sh -c`
+    pub command: String,
+    /// working directory inside the container
+    pub workdir: Option<String>,
+    /// seconds to wait before giving up (default 60, max 300)
+    pub timeout_secs: Option<u64>,
+}
+
+/// output of a one-shot command
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ExecCommandResponse {
+    /// exit code; null when the command timed out
+    pub exit_code: Option<i64>,
+    pub stdout: String,
+    pub stderr: String,
+    /// output was cut at 256 KiB per stream
+    pub truncated: bool,
+    pub timed_out: bool,
+}
+
+/// run a shell command in a container and wait for its output
+#[utoipa::path(
+    post,
+    path = "/api/containers/{id}/exec",
+    tag = "containers",
+    params(("id" = String, Path, description = "container id")),
+    request_body = ExecCommandRequest,
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "command output", body = ExecCommandResponse),
+        (status = 400, description = "invalid request", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 403, description = "forbidden", body = ErrorResponse)
+    )
+)]
+pub async fn exec_command(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<ExecCommandRequest>,
+) -> Result<Json<ExecCommandResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let config = state.config.read().await.clone();
+    let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
+    drop(config);
+    ensure_container_owned(&state, user_id, &id).await?;
+
+    if req.command.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "command is required".to_string(),
+            }),
+        ));
+    }
+    let timeout = req
+        .timeout_secs
+        .unwrap_or(60)
+        .clamp(1, MAX_EXEC_TIMEOUT_SECS);
+    let workdir = req
+        .workdir
+        .map(|dir| dir.trim().to_string())
+        .filter(|dir| !dir.is_empty());
+
+    let output = DockerContainerManager::new()
+        .run_exec(
+            &id,
+            vec!["/bin/sh".to_string(), "-c".to_string(), req.command],
+            workdir,
+            std::time::Duration::from_secs(timeout),
+            MAX_EXEC_OUTPUT_BYTES,
+        )
+        .await
+        .map_err(|error| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: error.to_string(),
+                }),
+            )
+        })?;
+
+    Ok(Json(ExecCommandResponse {
+        exit_code: output.exit_code,
+        stdout: output.stdout,
+        stderr: output.stderr,
+        truncated: output.truncated,
+        timed_out: output.timed_out,
+    }))
+}
+
 pub async fn container_exec_ws(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,

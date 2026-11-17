@@ -1,3 +1,4 @@
+import Cloud from "lucide-solid/icons/cloud";
 import ExternalLink from "lucide-solid/icons/external-link";
 import Plus from "lucide-solid/icons/plus";
 import RefreshCw from "lucide-solid/icons/refresh-cw";
@@ -15,7 +16,7 @@ import {
 } from "solid-js";
 import type { PortMapping } from "../../api/platform";
 import { getServiceCertificates, reissueServiceCertificate } from "../../api/services";
-import { getSettings } from "../../api/settings";
+import { getCloudflareStatus, getSettings } from "../../api/settings";
 import {
 	Badge,
 	Button,
@@ -38,7 +39,7 @@ import { timeAgo } from "../../lib/format";
 import { statusLabel, type Tone } from "../../lib/status";
 import { useService } from "./context";
 
-type DomainRow = { domain: string; https: boolean };
+type DomainRow = { domain: string; https: boolean; cloudflare: boolean };
 
 const certTone = (status?: string): Tone => {
 	switch (status) {
@@ -71,6 +72,8 @@ const ServiceNetworking = () => {
 	const [certificates, { refetch: refetchCertificates }] = createResource(ctx.id, (id) =>
 		getServiceCertificates(id).catch(() => []),
 	);
+	const [cloudflare] = createResource(() => getCloudflareStatus().catch(() => null));
+	const cloudflareConnected = () => Boolean(cloudflare()?.connected);
 
 	const settingsService = () =>
 		ctx.settings()?.service as
@@ -106,6 +109,7 @@ const ServiceNetworking = () => {
 			domains: current.domains.map((domain) => ({
 				domain,
 				https: !current.http_only_domains.includes(domain),
+				cloudflare: (current.cloudflare_domains ?? []).includes(domain),
 			})),
 			mappings: (current.port_mappings ?? []).map((item) => ({
 				...item,
@@ -158,7 +162,7 @@ const ServiceNetworking = () => {
 			setDomainError("This domain is already attached");
 			return;
 		}
-		setDomains([...domains(), { domain: value, https: true }]);
+		setDomains([...domains(), { domain: value, https: true, cloudflare: false }]);
 		setNewDomain("");
 		setDomainError(null);
 		if (!exposeHttp()) setExposeHttp(true);
@@ -183,7 +187,10 @@ const ServiceNetworking = () => {
 			port: portNumber,
 			domains: domains().map((row) => row.domain),
 			http_only_domains: domains()
-				.filter((row) => !row.https)
+				.filter((row) => !row.cloudflare && !row.https)
+				.map((row) => row.domain),
+			cloudflare_domains: domains()
+				.filter((row) => row.cloudflare)
 				.map((row) => row.domain),
 		};
 		if (supportsParity()) {
@@ -270,7 +277,7 @@ const ServiceNetworking = () => {
 				title="Custom domains"
 				description="HTTPS certificates are issued automatically with Let's Encrypt."
 				actions={
-					<Show when={domains().some((row) => row.https)}>
+					<Show when={domains().some((row) => row.https && !row.cloudflare)}>
 						<Button
 							variant="secondary"
 							size="sm"
@@ -300,42 +307,72 @@ const ServiceNetworking = () => {
 											<ExternalLink width={12} height={12} class="text-fg-faint" />
 										</a>
 										<div class="mt-0.5 flex items-center gap-2 text-[12px] text-fg-subtle">
-											<Show when={row.https} fallback="Plain HTTP, no certificate">
-												<Show
-													when={cert()}
-													fallback="Certificate issued after you save and DNS resolves"
-												>
-													{(value) => (
-														<>
-															<Badge tone={certTone(value().status)}>
-																<ShieldCheck width={11} height={11} />
-																{value().status === "none"
-																	? "Not issued yet"
-																	: statusLabel(value().status)}
-															</Badge>
-															<Show when={value().expires_at}>
-																<span>expires {timeAgo(value().expires_at)}</span>
-															</Show>
-														</>
-													)}
-												</Show>
+											<Show
+												when={row.cloudflare}
+												fallback={
+													<Show when={row.https} fallback="Plain HTTP, no certificate">
+														<Show
+															when={cert()}
+															fallback="Certificate issued after you save and DNS resolves"
+														>
+															{(value) => (
+																<>
+																	<Badge tone={certTone(value().status)}>
+																		<ShieldCheck width={11} height={11} />
+																		{value().status === "none"
+																			? "Not issued yet"
+																			: statusLabel(value().status)}
+																	</Badge>
+																	<Show when={value().expires_at}>
+																		<span>expires {timeAgo(value().expires_at)}</span>
+																	</Show>
+																</>
+															)}
+														</Show>
+													</Show>
+												}
+											>
+												<Badge tone="info">
+													<Cloud width={11} height={11} />
+													Via Cloudflare Tunnel, HTTPS at the edge
+												</Badge>
 											</Show>
 										</div>
 									</div>
-									<div class="flex items-center gap-2 text-[12.5px] text-fg-muted">
-										HTTPS
-										<Switch
-											checked={row.https}
-											onChange={(value) =>
-												setDomains(
-													domains().map((item) =>
-														item.domain === row.domain ? { ...item, https: value } : item,
-													),
-												)
-											}
-											label={`HTTPS for ${row.domain}`}
-										/>
-									</div>
+									<Show when={cloudflareConnected()}>
+										<div class="flex items-center gap-2 text-[12.5px] text-fg-muted">
+											Cloudflare
+											<Switch
+												checked={row.cloudflare}
+												onChange={(value) =>
+													setDomains(
+														domains().map((item) =>
+															item.domain === row.domain
+																? { ...item, cloudflare: value }
+																: item,
+														),
+													)
+												}
+												label={`Cloudflare Tunnel for ${row.domain}`}
+											/>
+										</div>
+									</Show>
+									<Show when={!row.cloudflare}>
+										<div class="flex items-center gap-2 text-[12.5px] text-fg-muted">
+											HTTPS
+											<Switch
+												checked={row.https}
+												onChange={(value) =>
+													setDomains(
+														domains().map((item) =>
+															item.domain === row.domain ? { ...item, https: value } : item,
+														),
+													)
+												}
+												label={`HTTPS for ${row.domain}`}
+											/>
+										</div>
+									</Show>
 									<button
 										type="button"
 										class="btn btn-ghost btn-icon btn-sm hover:text-danger!"

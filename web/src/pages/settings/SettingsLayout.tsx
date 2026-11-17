@@ -9,6 +9,7 @@ const TABS = [
 	{ href: "/settings/account", label: "Account" },
 	{ href: "/settings/users", label: "Users", admin: true },
 	{ href: "/settings/github", label: "GitHub", admin: true },
+	{ href: "/settings/cloudflare", label: "Cloudflare", admin: true },
 	{ href: "/settings/registries", label: "Registries" },
 ];
 

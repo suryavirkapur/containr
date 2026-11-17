@@ -573,6 +573,7 @@ mod tests {
             deployment_tx,
             None,
             None,
+            None,
         )?;
 
         Ok(TestFixture { state, config, app })

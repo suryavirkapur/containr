@@ -1,5 +1,6 @@
 import { A, Navigate, useLocation, useNavigate } from "@solidjs/router";
 import Activity from "lucide-solid/icons/activity";
+import Bot from "lucide-solid/icons/bot";
 import Boxes from "lucide-solid/icons/boxes";
 import ChevronRight from "lucide-solid/icons/chevron-right";
 import ChevronsUpDown from "lucide-solid/icons/chevrons-up-down";
@@ -13,6 +14,7 @@ import Menu from "lucide-solid/icons/menu";
 import Monitor from "lucide-solid/icons/monitor";
 import Moon from "lucide-solid/icons/moon";
 import Package from "lucide-solid/icons/package";
+import Palette from "lucide-solid/icons/palette";
 import Plus from "lucide-solid/icons/plus";
 import Search from "lucide-solid/icons/search";
 import Server from "lucide-solid/icons/server";
@@ -38,7 +40,7 @@ import {
 import { errorMessage } from "../../api/http";
 import { useAppStore } from "../../context/AppStore";
 import { useAuth } from "../../context/AuthContext";
-import { theme } from "../../context/ThemeContext";
+import { palettes, theme } from "../../context/ThemeContext";
 import { Button, cx, Notice, Spinner } from "../ui";
 import { ConfirmHost, DropdownMenu, Toaster } from "../ui/overlay";
 import { crumbs } from "./breadcrumbs";
@@ -68,6 +70,7 @@ const workspaceNav: NavLink[] = [
 const platformNav: NavLink[] = [
 	{ href: "/monitoring", label: "Monitoring", icon: () => <Activity /> },
 	{ href: "/server", label: "Server", icon: () => <Server /> },
+	{ href: "/mcp", label: "MCP & API", icon: () => <Bot /> },
 	{ href: "/settings", label: "Settings", icon: () => <Settings /> },
 ];
 
@@ -368,6 +371,14 @@ export const AppShell: ParentComponent = (props) => {
 			icon: <Moon />,
 			run: () => theme.toggle(),
 		},
+		...palettes.map((palette) => ({
+			id: `palette:${palette.id}`,
+			label: `Use ${palette.label} theme`,
+			group: "Preferences",
+			icon: <Palette />,
+			keywords: "theme appearance palette colors",
+			run: () => theme.setPalette(palette.id),
+		})),
 		{
 			id: "logout",
 			label: "Sign out",
