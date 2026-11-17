@@ -73,7 +73,7 @@ pub fn issue_gate_token(
     encode(
         &Header::new(Algorithm::HS256),
         &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
+        &EncodingKey::from_secret(secret.as_bytes()).ok()?,
     )
     .ok()
 }
@@ -90,7 +90,7 @@ pub fn verify_gate_token(
     validation.leeway = 5;
     let claims = decode::<GateClaims>(
         token,
-        &DecodingKey::from_secret(secret.as_bytes()),
+        &DecodingKey::from_secret(secret.as_bytes()).ok()?,
         &validation,
     )
     .ok()?

@@ -109,7 +109,8 @@ pub fn create_exec_token(
     let token = encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
+        &EncodingKey::from_secret(secret.as_bytes())
+            .map_err(|e| Error::Internal(format!("invalid secret: {}", e)))?,
     )
     .map_err(|e| {
         Error::Internal(format!("failed to create exec token: {}", e))
@@ -122,7 +123,8 @@ pub fn create_exec_token(
 pub fn validate_token(token: &str, secret: &str) -> Result<Claims> {
     let token_data = decode::<Claims>(
         token,
-        &DecodingKey::from_secret(secret.as_bytes()),
+        &DecodingKey::from_secret(secret.as_bytes())
+            .map_err(|e| Error::Internal(format!("invalid secret: {}", e)))?,
         &Validation::default(),
     )
     .map_err(|e| Error::Unauthorized(format!("invalid token: {}", e)))?;
@@ -137,7 +139,8 @@ pub fn validate_exec_token(
 ) -> Result<ExecTokenClaims> {
     let token_data = decode::<ExecTokenClaims>(
         token,
-        &DecodingKey::from_secret(secret.as_bytes()),
+        &DecodingKey::from_secret(secret.as_bytes())
+            .map_err(|e| Error::Internal(format!("invalid secret: {}", e)))?,
         &Validation::default(),
     )
     .map_err(|e| Error::Unauthorized(format!("invalid exec token: {}", e)))?;
@@ -177,7 +180,8 @@ fn create_claims_token(
     encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
+        &EncodingKey::from_secret(secret.as_bytes())
+            .map_err(|e| Error::Internal(format!("invalid secret: {}", e)))?,
     )
     .map_err(|e| Error::Internal(format!("failed to create token: {}", e)))
 }
