@@ -94,6 +94,7 @@ use crate::handlers::{
         services::reveal_env_var,
         crate::handlers::gate::create_gate_pass,
         services::update_service,
+        services::preview_service_update,
         services::get_service_logs,
         services::list_service_http_logs,
         services::run_service_action,

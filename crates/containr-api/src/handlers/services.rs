@@ -18,8 +18,8 @@ use crate::domain::services::{
     HttpRequestLogsQuery, InventoryServiceResponse, ListServicesQuery,
     MoveServiceRequest, RevealEnvVarRequest, RevealEnvVarResponse,
     ServiceAction, ServiceLogsQuery, ServiceLogsResponse,
-    ServiceMetricsResponse, ServiceSettingsResponse, ServiceSvc,
-    UpdateServiceRequest,
+    ServiceMetricsResponse, ServiceSettingsResponse,
+    ServiceUpdatePreview, ServiceSvc, UpdateServiceRequest,
 };
 use crate::handlers::auth::ErrorResponse;
 use crate::handlers::deployments::{
@@ -224,6 +224,34 @@ pub async fn update_service(
         .update_service(user_id, id, req)
         .await?;
     Ok(Json(service))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/services/{id}/preview-update",
+    tag = "services",
+    params(("id" = Uuid, Path, description = "service id")),
+    security(("bearer" = [])),
+    request_body = UpdateServiceRequest,
+    responses(
+        (status = 200, description = "what the update would change, nothing applied", body = ServiceUpdatePreview),
+        (status = 400, description = "invalid request", body = ErrorResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 404, description = "service not found", body = ErrorResponse),
+        (status = 409, description = "conflict", body = ErrorResponse)
+    )
+)]
+pub async fn preview_service_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateServiceRequest>,
+) -> Result<Json<ServiceUpdatePreview>, (StatusCode, Json<ErrorResponse>)> {
+    let user_id = get_user_id(&state, &headers).await?;
+    let preview = ServiceSvc::new(state)
+        .preview_service_update(user_id, id, req)
+        .await?;
+    Ok(Json(preview))
 }
 
 #[utoipa::path(

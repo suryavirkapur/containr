@@ -3877,6 +3877,93 @@
         ]
       }
     },
+    "/api/services/{id}/preview-update": {
+      "post": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "preview_service_update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateServiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "what the update would change, nothing applied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceUpdatePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/services/{id}/settings": {
       "get": {
         "tags": [
@@ -7504,6 +7591,46 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "ServiceUpdateFieldChange": {
+        "type": "object",
+        "description": "one changed field in an update preview (values are masked like the\nsettings endpoint, so secrets never appear)",
+        "required": [
+          "field"
+        ],
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "dotted path, e.g. `service.domains` or `env_vars.DATABASE_URL`"
+          },
+          "from": {
+            "description": "value before the update; null when the entry is new"
+          },
+          "to": {
+            "description": "value after the update; null when the entry is removed"
+          }
+        }
+      },
+      "ServiceUpdatePreview": {
+        "type": "object",
+        "description": "what an update would change, returned by the preview endpoint",
+        "required": [
+          "changes",
+          "settings"
+        ],
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceUpdateFieldChange"
+            },
+            "description": "fields that would change; empty when the request is a no-op"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ServiceSettingsResponse",
+            "description": "settings as they would look after the update (secrets masked)"
           }
         }
       },
