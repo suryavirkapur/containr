@@ -864,6 +864,13 @@ pub enum DeploymentStatus {
     Stopped,
 }
 
+impl DeploymentStatus {
+    /// true once the deployment can no longer change state on its own
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Running | Self::Failed | Self::Stopped)
+    }
+}
+
 /// represents a single deployment of an app
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Deployment {

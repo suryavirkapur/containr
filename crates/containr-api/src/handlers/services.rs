@@ -23,7 +23,8 @@ use crate::domain::services::{
 };
 use crate::handlers::auth::ErrorResponse;
 use crate::handlers::deployments::{
-    DeploymentResponse, DeploymentTriggerRequest, LogsQuery, RollbackRequest,
+    DeploymentResponse, DeploymentTriggerRequest, DeploymentWaitResponse,
+    LogsQuery, RollbackRequest, WaitQuery,
 };
 use crate::state::AppState;
 
@@ -437,6 +438,41 @@ pub async fn rollback_service_deployment(
         )
         .await?;
     Ok((StatusCode::CREATED, Json(deployment)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/services/{id}/deployments/{deployment_id}/wait",
+    tag = "services",
+    params(
+        ("id" = Uuid, Path, description = "service id"),
+        ("deployment_id" = Uuid, Path, description = "deployment id"),
+        ("timeout_secs" = Option<u64>, Query, description = "seconds to wait for a terminal status (default 60, max 600; 0 returns the current status immediately)")
+    ),
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "deployment after waiting", body = DeploymentWaitResponse),
+        (status = 401, description = "unauthorized", body = ErrorResponse),
+        (status = 404, description = "deployment not found", body = ErrorResponse)
+    )
+)]
+pub async fn wait_for_service_deployment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((id, deployment_id)): Path<(Uuid, Uuid)>,
+    Query(query): Query<WaitQuery>,
+) -> Result<Json<DeploymentWaitResponse>, (StatusCode, Json<ErrorResponse>)>
+{
+    let user_id = get_user_id(&state, &headers).await?;
+    let deployment = ServiceSvc::new(state)
+        .wait_for_service_deployment(
+            user_id,
+            id,
+            deployment_id,
+            query.timeout_secs,
+        )
+        .await?;
+    Ok(Json(deployment))
 }
 
 #[utoipa::path(
