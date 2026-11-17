@@ -877,6 +877,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/services/{id}/preview-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["preview_service_update"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/services/{id}/settings": {
         parameters: {
             query?: never;
@@ -1859,6 +1875,25 @@ export interface components {
             schedule?: string | null;
             service_type: string;
             working_dir?: string | null;
+        };
+        /**
+         * @description one changed field in an update preview (values are masked like the
+         *     settings endpoint, so secrets never appear)
+         */
+        ServiceUpdateFieldChange: {
+            /** @description dotted path, e.g. `service.domains` or `env_vars.DATABASE_URL` */
+            field: string;
+            /** @description value before the update; null when the entry is new */
+            from?: unknown;
+            /** @description value after the update; null when the entry is removed */
+            to?: unknown;
+        };
+        /** @description what an update would change, returned by the preview endpoint */
+        ServiceUpdatePreview: {
+            /** @description fields that would change; empty when the request is a no-op */
+            changes: components["schemas"]["ServiceUpdateFieldChange"][];
+            /** @description settings as they would look after the update (secrets masked) */
+            settings: components["schemas"]["ServiceSettingsResponse"];
         };
         /** @description settings response - only exposes safe fields */
         SettingsResponse: {
@@ -4871,6 +4906,69 @@ export interface operations {
             };
             /** @description service or group not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    preview_service_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateServiceRequest"];
+            };
+        };
+        responses: {
+            /** @description what the update would change, nothing applied */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceUpdatePreview"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

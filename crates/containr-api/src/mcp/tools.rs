@@ -96,6 +96,7 @@ const DESCRIPTIONS: &[(&str, &str)] = &[
     ("create_service", "Create a service. `body.source` picks the kind: `git_repository` builds from a repo, `template` creates a database, queue or one-click app from a template, and image-based variants deploy a Docker image. Set `deploy: false` to create without deploying."),
     ("get_service", "Get one service: status, image or repo, domains, replicas and runtime details."),
     ("update_service", "Change a service: image, env vars, domains, port, replicas, resources, health check, volumes and more. Only the fields you send change."),
+    ("preview_service_update", "Dry-run a service update: validates the request and returns `changes` (a field-level diff with secrets masked) plus the resolved settings — nothing is applied. Call before update_service to verify the result."),
     ("delete_service", "Delete a service, its containers and its deployments. This cannot be undone."),
     ("get_service_settings", "Get a service's full editable settings, including env vars (secrets masked), domains, basic auth, port mappings, mounts, files and auto-deploy."),
     ("update_service_settings", "Replace a service's settings in one go. Read them with get_service_settings first and send back the edited version."),
