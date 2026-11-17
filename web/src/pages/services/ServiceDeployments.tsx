@@ -463,6 +463,10 @@ containr-cmd services deploy ${ctx.id()} --upload .`}
 															{" "}
 															· {formatDuration(deployment.started_at, deployment.finished_at)}
 														</Show>
+														<Show when={deployment.triggered_via !== "manual"}>
+															{" "}
+															· via {deployment.triggered_via}
+														</Show>
 													</div>
 												</div>
 												<Show

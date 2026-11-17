@@ -134,6 +134,7 @@ async fn handle_post(
     let scope = scope.map(|Extension(scope)| scope).unwrap_or(RequestScope {
         scope: ApiTokenScope::Full,
         via_api_token: false,
+        via_mcp: false,
     });
     let caller = Caller { headers, scope };
 
@@ -424,8 +425,12 @@ async fn dispatch(
         None => Body::empty(),
     };
     let mut request = builder.body(body).map_err(|e| e.to_string())?;
-    // keep the caller's scope so the api applies the same limits
-    request.extensions_mut().insert(caller.scope);
+    // keep the caller's scope so the api applies the same limits, and
+    // mark the call as mcp-originated for the deployment audit trail
+    request.extensions_mut().insert(RequestScope {
+        via_mcp: true,
+        ..caller.scope
+    });
 
     let response = match state.api.clone().oneshot(request).await {
         Ok(response) => response,
@@ -626,6 +631,7 @@ mod tests {
             scope: RequestScope {
                 scope: ApiTokenScope::Read,
                 via_api_token: true,
+                via_mcp: false,
             },
         };
         let reply = handle_message(

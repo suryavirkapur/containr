@@ -33,7 +33,7 @@ use crate::routes;
 use crate::state::AppState;
 use containr_common::managed_services::ServiceStatus;
 use containr_common::models::{
-    App, Deployment, DeploymentSource, DeploymentStatus,
+    App, Deployment, DeploymentChannel, DeploymentSource, DeploymentStatus,
 };
 use containr_common::{Config, Database, Result};
 
@@ -408,6 +408,7 @@ async fn restore_app(
         None,
         None,
         false,
+        DeploymentChannel::System,
     )
     .await
     .map(|_| ())

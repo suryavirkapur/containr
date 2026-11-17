@@ -17,7 +17,7 @@ use crate::handlers::deployments::{
 };
 use crate::security::decrypt_value;
 use crate::state::AppState;
-use containr_common::models::RolloutStrategy;
+use containr_common::models::{DeploymentChannel, RolloutStrategy};
 
 /// webhook response
 #[derive(Debug, Serialize)]
@@ -163,6 +163,7 @@ pub async fn github_webhook(
                 None,
                 Some(source),
                 app.auto_deploy_cleanup_stale_deployments,
+                DeploymentChannel::Github,
             )
             .await?;
 
@@ -262,6 +263,7 @@ pub async fn deploy_webhook(
         None,
         None,
         app.auto_deploy_cleanup_stale_deployments,
+        DeploymentChannel::Webhook,
     )
     .await?;
 
