@@ -20,6 +20,7 @@ use base64::Engine;
 use chrono::{DateTime, Utc};
 use containr_common::models::CloudflareSettings;
 use containr_common::{Config, Database};
+use dashmap::DashSet;
 use rand::RngExt;
 use tokio::process::Child;
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -28,7 +29,7 @@ use uuid::Uuid;
 
 use crate::security::{decrypt_value, encrypt_value};
 
-pub use client::{CloudflareClient, Zone};
+pub use client::{CloudflareClient, DnsRecord, Zone};
 
 const TUNNEL_NAME: &str = "containr";
 const CHILD_WATCH_SECS: u64 = 10;
@@ -78,14 +79,19 @@ pub struct CloudflareManager {
     sync_tx: mpsc::Sender<()>,
     sync_lock: Mutex<()>,
     inner: Mutex<Inner>,
+    /// domains whose dns is confirmed to point at the tunnel; the proxy
+    /// only refuses direct hits for these
+    dns_ready: Arc<DashSet<String>>,
 }
 
 impl CloudflareManager {
-    /// the receiver drives the supervisor loop in `run`
+    /// the receiver drives the supervisor loop in `run`; `dns_ready` is
+    /// shared with the proxy's route table
     pub fn new(
         db: Database,
         config: Arc<RwLock<Config>>,
         data_dir: PathBuf,
+        dns_ready: Arc<DashSet<String>>,
     ) -> (Self, mpsc::Receiver<()>) {
         let (sync_tx, sync_rx) = mpsc::channel(4);
         (
@@ -105,6 +111,7 @@ impl CloudflareManager {
                     last_sync_at: None,
                     last_error: None,
                 }),
+                dns_ready,
             },
             sync_rx,
         )
@@ -258,6 +265,7 @@ impl CloudflareManager {
         let _guard = self.sync_lock.lock().await;
 
         let Some(settings) = self.settings() else {
+            self.dns_ready.clear();
             self.stop_cloudflared().await;
             let _ = firewall::remove().await;
             return;
@@ -267,11 +275,13 @@ impl CloudflareManager {
         let client = match self.client_for(&config, &settings) {
             Ok(client) => client,
             Err(error) => {
+                self.dns_ready.clear();
                 self.set_error(error).await;
                 return;
             }
         };
         let Some(tunnel_id) = settings.tunnel_id.clone() else {
+            self.dns_ready.clear();
             self.set_error("cloudflare tunnel is not provisioned".to_string())
                 .await;
             return;
@@ -333,10 +343,18 @@ impl CloudflareManager {
             warn!(error = %error, "failed to clean up tunnel dns records");
         }
 
+        // the proxy starts refusing direct hits on a domain only once its
+        // dns points at the tunnel; until then visitors may still arrive
+        // through the old record
+        self.publish_dns_ready(&domain_status);
+        let all_dns_ready = domain_status.iter().all(|status| status.dns_ready);
+
         // ports only close once the tunnel carries every public hostname;
-        // the dashboard and any direct domains keep them open
-        let firewall_required =
-            !desired.is_empty() && !self.any_direct_ingress(&config);
+        // the dashboard, any direct domains and any domain whose dns is not
+        // on the tunnel yet keep them open
+        let firewall_required = !desired.is_empty()
+            && all_dns_ready
+            && !self.any_direct_ingress(&config);
         let firewall_active = if firewall_required {
             match firewall::apply(&[
                 config.proxy.http_port,
@@ -425,6 +443,7 @@ impl CloudflareManager {
             cloudflared_running: running,
             firewall_active: firewall::is_active().await,
             firewall_required: !self.cloudflare_domains().is_empty()
+                && inner.domains.iter().all(|status| status.dns_ready)
                 && !self.any_direct_ingress(&config),
             domains: inner.domains.clone(),
             last_sync_at: inner.last_sync_at,
@@ -484,8 +503,9 @@ impl CloudflareManager {
         }
     }
 
-    /// creates the proxied cname when the zone does not already point the
-    /// domain at this tunnel
+    /// makes `domain` a proxied cname to the tunnel. a record already on
+    /// the name (say an a record from before the domain moved to the
+    /// tunnel) is rewritten in place rather than left to block the cname.
     async fn ensure_dns_record(
         &self,
         client: &CloudflareClient,
@@ -494,14 +514,57 @@ impl CloudflareManager {
         target: &str,
     ) -> Result<(), String> {
         let records = client.list_dns_records(zone_id).await?;
-        let already = records.iter().any(|record| {
-            record.name.eq_ignore_ascii_case(domain)
-                && record.content.eq_ignore_ascii_case(target)
-        });
-        if already {
-            return Ok(());
+        let existing: Vec<&DnsRecord> = records
+            .iter()
+            .filter(|record| {
+                record.name.eq_ignore_ascii_case(domain)
+                    && matches!(
+                        record.record_type.as_str(),
+                        "A" | "AAAA" | "CNAME"
+                    )
+            })
+            .collect();
+
+        match plan_dns(&existing, target) {
+            DnsPlan::Ready => Ok(()),
+            DnsPlan::Create => {
+                client.create_dns_cname(zone_id, domain, target).await
+            }
+            DnsPlan::Replace { keep, remove } => {
+                // a cname cannot share its name, so extra records go first
+                for record in remove {
+                    info!(
+                        domain = %domain,
+                        record_type = %record.record_type,
+                        content = %record.content,
+                        "removing dns record in the way of the tunnel"
+                    );
+                    client.delete_dns_record(zone_id, &record.id).await?;
+                }
+                info!(
+                    domain = %domain,
+                    record_type = %keep.record_type,
+                    content = %keep.content,
+                    "pointing existing dns record at the tunnel"
+                );
+                client
+                    .update_dns_cname(zone_id, &keep.id, domain, target)
+                    .await
+            }
         }
-        client.create_dns_cname(zone_id, domain, target).await
+    }
+
+    /// replaces the shared set of tunnel-ready domains with this sync's
+    fn publish_dns_ready(&self, statuses: &[DomainStatus]) {
+        let ready: HashSet<String> = statuses
+            .iter()
+            .filter(|status| status.dns_ready)
+            .map(|status| normalize_domain(&status.domain))
+            .collect();
+        self.dns_ready.retain(|domain| ready.contains(domain));
+        for domain in ready {
+            self.dns_ready.insert(domain);
+        }
     }
 
     /// deletes cnames that point at this tunnel but are no longer wanted
@@ -663,6 +726,52 @@ impl CloudflareManager {
     }
 }
 
+/// what to do with the a/aaaa/cname records already on a domain
+#[derive(Debug, PartialEq)]
+enum DnsPlan<'a> {
+    /// a proxied cname to the tunnel is already the only record
+    Ready,
+    /// nothing is on the name yet
+    Create,
+    /// rewrite `keep` as the tunnel cname after deleting `remove`
+    Replace {
+        keep: &'a DnsRecord,
+        remove: Vec<&'a DnsRecord>,
+    },
+}
+
+fn plan_dns<'a>(existing: &[&'a DnsRecord], target: &str) -> DnsPlan<'a> {
+    let is_tunnel = |record: &DnsRecord| {
+        record.record_type == "CNAME"
+            && record
+                .content
+                .trim_end_matches('.')
+                .eq_ignore_ascii_case(target)
+    };
+    match existing {
+        [] => DnsPlan::Create,
+        [only] if is_tunnel(only) && only.proxied => DnsPlan::Ready,
+        _ => {
+            // prefer rewriting a record that already targets the tunnel
+            let keep = existing
+                .iter()
+                .copied()
+                .find(|record| is_tunnel(record))
+                .unwrap_or(existing[0]);
+            let remove = existing
+                .iter()
+                .copied()
+                .filter(|record| record.id != keep.id)
+                .collect();
+            DnsPlan::Replace { keep, remove }
+        }
+    }
+}
+
+fn normalize_domain(domain: &str) -> String {
+    domain.trim().trim_end_matches('.').to_lowercase()
+}
+
 fn tunnel_target(tunnel_id: &str) -> String {
     format!("{}.cfargotunnel.com", tunnel_id)
 }
@@ -684,4 +793,70 @@ fn tunnel_secret() -> String {
     let mut bytes = [0u8; 32];
     rand::rng().fill(&mut bytes);
     base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TARGET: &str = "tunnel-id.cfargotunnel.com";
+
+    fn record(id: &str, kind: &str, content: &str, proxied: bool) -> DnsRecord {
+        DnsRecord {
+            id: id.to_string(),
+            name: "app.example.com".to_string(),
+            record_type: kind.to_string(),
+            content: content.to_string(),
+            proxied,
+        }
+    }
+
+    #[test]
+    fn empty_name_gets_a_new_cname() {
+        assert_eq!(plan_dns(&[], TARGET), DnsPlan::Create);
+    }
+
+    #[test]
+    fn proxied_tunnel_cname_is_left_alone() {
+        let cname = record("1", "CNAME", TARGET, true);
+        assert_eq!(plan_dns(&[&cname], TARGET), DnsPlan::Ready);
+    }
+
+    #[test]
+    fn unproxied_tunnel_cname_is_rewritten() {
+        let cname = record("1", "CNAME", TARGET, false);
+        assert_eq!(
+            plan_dns(&[&cname], TARGET),
+            DnsPlan::Replace {
+                keep: &cname,
+                remove: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn direct_a_record_is_taken_over() {
+        let a = record("1", "A", "203.0.113.7", false);
+        assert_eq!(
+            plan_dns(&[&a], TARGET),
+            DnsPlan::Replace {
+                keep: &a,
+                remove: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn extra_records_are_removed_and_tunnel_cname_kept() {
+        let a = record("1", "A", "203.0.113.7", false);
+        let aaaa = record("2", "AAAA", "2001:db8::7", false);
+        let cname = record("3", "CNAME", "TUNNEL-ID.cfargotunnel.com.", true);
+        assert_eq!(
+            plan_dns(&[&a, &aaaa, &cname], TARGET),
+            DnsPlan::Replace {
+                keep: &cname,
+                remove: vec![&a, &aaaa],
+            }
+        );
+    }
 }

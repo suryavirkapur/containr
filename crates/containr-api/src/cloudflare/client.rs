@@ -26,7 +26,7 @@ pub struct Tunnel {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct DnsRecord {
     pub id: String,
     pub name: String,
@@ -284,28 +284,33 @@ impl CloudflareClient {
         name: &str,
         content: &str,
     ) -> Result<(), String> {
-        #[derive(Serialize)]
-        struct Record<'a> {
-            #[serde(rename = "type")]
-            record_type: &'a str,
-            name: &'a str,
-            content: &'a str,
-            proxied: bool,
-            ttl: u32,
-            comment: &'a str,
-        }
         self.send::<serde_json::Value>(
             self.http
                 .post(format!("{}/zones/{}/dns_records", API_BASE, zone_id))
-                .json(&Record {
-                    record_type: "CNAME",
-                    name,
-                    content,
-                    proxied: true,
-                    ttl: 1,
-                    comment: "managed by containr",
-                }),
+                .json(&cname_record(name, content)),
             "create dns record",
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// rewrites an existing record in place as a proxied cname to `content`,
+    /// so the name keeps resolving while it moves onto the tunnel
+    pub async fn update_dns_cname(
+        &self,
+        zone_id: &str,
+        record_id: &str,
+        name: &str,
+        content: &str,
+    ) -> Result<(), String> {
+        self.send::<serde_json::Value>(
+            self.http
+                .put(format!(
+                    "{}/zones/{}/dns_records/{}",
+                    API_BASE, zone_id, record_id
+                ))
+                .json(&cname_record(name, content)),
+            "update dns record",
         )
         .await?;
         Ok(())
@@ -325,5 +330,28 @@ impl CloudflareClient {
         )
         .await?;
         Ok(())
+    }
+}
+
+#[derive(Serialize)]
+struct CnameRecord<'a> {
+    #[serde(rename = "type")]
+    record_type: &'a str,
+    name: &'a str,
+    content: &'a str,
+    proxied: bool,
+    ttl: u32,
+    comment: &'a str,
+}
+
+/// the proxied cname containr keeps for each tunnel-fronted domain
+fn cname_record<'a>(name: &'a str, content: &'a str) -> CnameRecord<'a> {
+    CnameRecord {
+        record_type: "CNAME",
+        name,
+        content,
+        proxied: true,
+        ttl: 1,
+        comment: "managed by containr",
     }
 }

@@ -5,7 +5,7 @@
 use argon2::password_hash::PasswordVerifier;
 use argon2::Argon2;
 use base64::Engine;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -32,10 +32,15 @@ pub struct Route {
     pub basic_auth: Option<BasicAuth>,
     /// containr login required for this route
     pub login_gate: Option<RouteLoginGate>,
-    /// served through the cloudflare tunnel; only cloudflared (a loopback
-    /// peer) may reach it, and CF-Connecting-IP carries the real client
+    /// served through the cloudflare tunnel; once its dns points at the
+    /// tunnel only cloudflared (a loopback peer) may reach it, and
+    /// CF-Connecting-IP carries the real client
     pub via_cloudflare: bool,
 }
+
+/// domains whose cloudflare dns record is confirmed to point at the tunnel,
+/// shared with the cloudflare sync that fills it
+pub type CloudflareDnsReady = Arc<DashSet<String>>;
 
 /// who may pass a route's containr login gate
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +108,7 @@ impl RouteState {
 #[derive(Clone)]
 pub struct RouteManager {
     routes: Arc<DashMap<String, Arc<RouteState>>>,
+    cloudflare_dns_ready: CloudflareDnsReady,
 }
 
 impl RouteManager {
@@ -110,7 +116,25 @@ impl RouteManager {
     pub fn new() -> Self {
         Self {
             routes: Arc::new(DashMap::new()),
+            cloudflare_dns_ready: Arc::new(DashSet::new()),
         }
+    }
+
+    /// handle the cloudflare sync uses to publish which domains have
+    /// tunnel dns in place
+    pub fn cloudflare_dns_ready(&self) -> CloudflareDnsReady {
+        self.cloudflare_dns_ready.clone()
+    }
+
+    /// whether direct (non-tunnel) hits on `domain` must be refused: only
+    /// once the domain is tunnel-fronted and its dns points at the tunnel.
+    /// until then the old dns may still send visitors straight here, and
+    /// refusing them would take the site down.
+    pub fn tunnel_only(&self, route: &Route) -> bool {
+        route.via_cloudflare
+            && self
+                .cloudflare_dns_ready
+                .contains(&normalize_domain(&route.domain))
     }
 
     // adds or updates a route
@@ -410,6 +434,38 @@ mod tests {
             via_cloudflare: false,
         });
         manager
+    }
+
+    fn cloudflare_route(domain: &str) -> Route {
+        Route {
+            domain: domain.to_string(),
+            app_id: None,
+            service_id: None,
+            upstreams: Vec::new(),
+            ssl_enabled: true,
+            algorithm: LoadBalanceAlgorithm::RoundRobin,
+            basic_auth: None,
+            login_gate: None,
+            via_cloudflare: true,
+        }
+    }
+
+    #[test]
+    fn tunnel_lock_waits_for_dns() {
+        let manager = RouteManager::new();
+        let route = cloudflare_route("App.Example.com");
+        assert!(!manager.tunnel_only(&route));
+
+        manager
+            .cloudflare_dns_ready()
+            .insert("app.example.com".to_string());
+        assert!(manager.tunnel_only(&route));
+
+        let direct = Route {
+            via_cloudflare: false,
+            ..cloudflare_route("app.example.com")
+        };
+        assert!(!manager.tunnel_only(&direct));
     }
 
     #[test]

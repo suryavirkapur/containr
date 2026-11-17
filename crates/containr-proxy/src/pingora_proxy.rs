@@ -533,26 +533,7 @@ impl ProxyHttp for ContainrProxy {
 
         // Find route for this host
         if let Some(route) = self.routes.get_route(&host) {
-            if route.via_cloudflare {
-                if !peer_is_loopback {
-                    // cloudflare-fronted domains are only reachable through
-                    // the tunnel; direct hits are refused even when the
-                    // host firewall is not in place
-                    let body = "origin is only reachable via cloudflare";
-                    let mut header = ResponseHeader::build(403, None)?;
-                    header.insert_header("Content-Type", "text/plain")?;
-                    header.insert_header(
-                        "Content-Length",
-                        body.len().to_string(),
-                    )?;
-                    session
-                        .write_response_header(Box::new(header), false)
-                        .await?;
-                    session
-                        .write_response_body(Some(body.into()), true)
-                        .await?;
-                    return Ok(true);
-                }
+            if route.via_cloudflare && peer_is_loopback {
                 // only trust the real client ip from the tunnel itself
                 if let Some(client_ip) = req_header
                     .headers
@@ -563,6 +544,21 @@ impl ProxyHttp for ContainrProxy {
                 {
                     ctx.client_ip = Some(client_ip.to_string());
                 }
+            } else if self.routes.tunnel_only(&route) {
+                // cloudflare-fronted domains are only reachable through
+                // the tunnel once their dns points at it; direct hits
+                // are refused even when the host firewall is not in
+                // place
+                let body = "origin is only reachable via cloudflare";
+                let mut header = ResponseHeader::build(403, None)?;
+                header.insert_header("Content-Type", "text/plain")?;
+                header
+                    .insert_header("Content-Length", body.len().to_string())?;
+                session
+                    .write_response_header(Box::new(header), false)
+                    .await?;
+                session.write_response_body(Some(body.into()), true).await?;
+                return Ok(true);
             }
 
             // Active ACME challenges were handled above. Unknown challenge
