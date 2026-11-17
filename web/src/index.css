@@ -3,19 +3,17 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* geist, bundled from the geist npm package */
+/* geist, vendored in public/fonts (ofl-licensed) */
 @font-face {
   font-family: "Geist";
-  src: url("../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2")
-    format("woff2-variations");
+  src: url("/fonts/Geist-Variable.woff2") format("woff2-variations");
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: "Geist Mono";
-  src: url("../node_modules/geist/dist/fonts/geist-mono/GeistMono-Variable.woff2")
-    format("woff2-variations");
+  src: url("/fonts/GeistMono-Variable.woff2") format("woff2-variations");
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;

@@ -10,12 +10,13 @@ use std::time::Duration;
 use axum::{http::StatusCode, Json};
 use chrono::Utc;
 use croner::Cron;
+use hickory_resolver::config::{ResolverConfig, ResolverOpts};
+use hickory_resolver::net::runtime::TokioRuntimeProvider;
+use hickory_resolver::proto::rr::RecordType;
+use hickory_resolver::{Resolver, TokioResolver};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{info, warn};
-use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
-use trust_dns_resolver::proto::rr::RecordType;
-use trust_dns_resolver::TokioAsyncResolver;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -4461,10 +4462,13 @@ async fn validate_domain(
         return Err("www subdomains are not supported".to_string());
     }
 
-    let resolver = TokioAsyncResolver::tokio(
+    let resolver = Resolver::builder_with_config(
         ResolverConfig::default(),
-        ResolverOpts::default(),
-    );
+        TokioRuntimeProvider::default(),
+    )
+    .with_options(ResolverOpts::default())
+    .build()
+    .map_err(|e| format!("failed to start dns resolver: {}", e))?;
 
     let domain_ips = lookup_resolved_ips(&resolver, domain).await;
     if let Some(public_ip) =
@@ -4495,8 +4499,8 @@ async fn validate_domain(
         })?;
 
     let suffix = format!(".{}", base_domain.trim_end_matches('.'));
-    for record in cname_lookup.iter() {
-        if let trust_dns_resolver::proto::rr::RData::CNAME(cname) = record {
+    for record in cname_lookup.answers() {
+        if let hickory_resolver::proto::rr::RData::CNAME(cname) = &record.data {
             let target = cname.to_utf8();
             let target = target.trim_end_matches('.');
             if target.eq_ignore_ascii_case(&base_domain)
@@ -4514,7 +4518,7 @@ async fn validate_domain(
 }
 
 async fn lookup_resolved_ips(
-    resolver: &TokioAsyncResolver,
+    resolver: &TokioResolver,
     domain: &str,
 ) -> HashSet<IpAddr> {
     resolver
