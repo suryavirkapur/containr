@@ -37,10 +37,10 @@ use containr_common::managed_services::{
 };
 use containr_common::models::{
     default_service_domain, App, BasicAuth, BuildArg, ConfigFile,
-    ContainerService, Deployment, DeploymentSource, DeploymentStatus, EnvVar,
-    HealthCheck, HttpRequestLog, LoginGate, LoginGateScope, PortMapping,
-    PortProtocol, RestartPolicy, RolloutStrategy, ServiceDeployment,
-    ServiceMount, ServiceRegistryAuth, ServiceType,
+    ContainerService, Deployment, DeploymentChannel, DeploymentSource,
+    DeploymentStatus, EnvVar, HealthCheck, HttpRequestLog, LoginGate,
+    LoginGateScope, PortMapping, PortProtocol, RestartPolicy, RolloutStrategy,
+    ServiceDeployment, ServiceMount, ServiceRegistryAuth, ServiceType,
 };
 use containr_common::service_inventory::{
     ServiceInventoryItem, ServiceResourceKind,
@@ -665,6 +665,7 @@ impl ServiceSvc {
         &self,
         user_id: Uuid,
         req: CreateServiceRequest,
+        via: DeploymentChannel,
     ) -> ApiResult<InventoryServiceResponse> {
         let config = self.state.config.read().await.clone();
         let service_id = match req {
@@ -697,6 +698,7 @@ impl ServiceSvc {
                                 require_images: false,
                                 deploy,
                             },
+                            via,
                         )
                         .await?
                     }
@@ -711,6 +713,7 @@ impl ServiceSvc {
                             *service,
                             rollout_strategy,
                             deploy,
+                            via,
                         )
                         .await?
                     }
@@ -755,12 +758,13 @@ impl ServiceSvc {
                             require_images: true,
                             deploy: true,
                         },
+                        via,
                     )
                     .await?
                 }
                 None => {
                     self.create_stack_service(
-                        &config, user_id, name, env_vars, services,
+                        &config, user_id, name, env_vars, services, via,
                     )
                     .await?
                 }
@@ -873,17 +877,19 @@ impl ServiceSvc {
     ) -> ApiResult<ServiceUpdatePreview> {
         let (before_app, before_service) =
             resolve_owned_app_service_record(&self.state, user_id, service_id)?;
-        let plan = self
-            .plan_service_update(user_id, service_id, req)
-            .await?;
+        let plan = self.plan_service_update(user_id, service_id, req).await?;
 
         let mut changes = Vec::new();
-        let before =
-            serde_json::to_value(settings_response(&before_app, &before_service))
-                .map_err(internal_error)?;
-        let after =
-            serde_json::to_value(settings_response(&plan.app, &plan.updated_service))
-                .map_err(internal_error)?;
+        let before = serde_json::to_value(settings_response(
+            &before_app,
+            &before_service,
+        ))
+        .map_err(internal_error)?;
+        let after = serde_json::to_value(settings_response(
+            &plan.app,
+            &plan.updated_service,
+        ))
+        .map_err(internal_error)?;
         diff_settings_values("", &before, &after, &mut changes);
 
         // masked secret values compare equal, so flag real secret changes
@@ -1093,9 +1099,7 @@ impl ServiceSvc {
         req: UpdateServiceRequest,
     ) -> ApiResult<InventoryServiceResponse> {
         let config = self.state.config.read().await.clone();
-        let plan = self
-            .plan_service_update(user_id, service_id, req)
-            .await?;
+        let plan = self.plan_service_update(user_id, service_id, req).await?;
         let ServiceUpdatePlan {
             mut app,
             previous_service,
@@ -1393,6 +1397,7 @@ impl ServiceSvc {
         user_id: Uuid,
         service_id: Uuid,
         body: Option<DeploymentTriggerRequest>,
+        via: DeploymentChannel,
     ) -> ApiResult<DeploymentResponse> {
         let (app, service) =
             resolve_owned_app_service_record(&self.state, user_id, service_id)?;
@@ -1433,18 +1438,15 @@ impl ServiceSvc {
             None,
             None,
             false,
+            via,
         )
         .await?;
 
-        let deployment = match trigger
-            .as_ref()
-            .and_then(|value| value.timeout_secs)
-        {
-            Some(secs) => {
-                self.wait_for_settle(deployment.id, secs).await?
-            }
-            None => deployment,
-        };
+        let deployment =
+            match trigger.as_ref().and_then(|value| value.timeout_secs) {
+                Some(secs) => self.wait_for_settle(deployment.id, secs).await?,
+                None => deployment,
+            };
 
         Ok(deployment_response_for_service(&deployment, &service))
     }
@@ -1455,6 +1457,7 @@ impl ServiceSvc {
         service_id: Uuid,
         target_deployment_id: Uuid,
         body: Option<RollbackRequest>,
+        via: DeploymentChannel,
     ) -> ApiResult<DeploymentResponse> {
         let (app, service) =
             resolve_owned_app_service_record(&self.state, user_id, service_id)?;
@@ -1511,14 +1514,13 @@ impl ServiceSvc {
             Some(target_deployment_id),
             None,
             false,
+            via,
         )
         .await?;
 
         let deployment = match req.as_ref().and_then(|value| value.timeout_secs)
         {
-            Some(secs) => {
-                self.wait_for_settle(deployment.id, secs).await?
-            }
+            Some(secs) => self.wait_for_settle(deployment.id, secs).await?,
             None => deployment,
         };
 
@@ -1565,10 +1567,7 @@ impl ServiceSvc {
         };
         let timed_out = !deployment.status.is_terminal();
         Ok(DeploymentWaitResponse {
-            deployment: deployment_response_for_service(
-                &deployment,
-                &service,
-            ),
+            deployment: deployment_response_for_service(&deployment, &service),
             timed_out,
         })
     }
@@ -1670,6 +1669,7 @@ impl ServiceSvc {
         mut service: ServiceRequest,
         rollout_strategy: Option<String>,
         deploy: bool,
+        via: DeploymentChannel,
     ) -> ApiResult<Uuid> {
         if name.is_empty() || name.len() > 64 {
             return Err((
@@ -1746,6 +1746,7 @@ impl ServiceSvc {
                 None,
                 None,
                 false,
+                via,
             )
             .await
             {
@@ -1909,6 +1910,7 @@ impl ServiceSvc {
         user_id: Uuid,
         group_id: &str,
         addition: ProjectAddition,
+        via: DeploymentChannel,
     ) -> ApiResult<Uuid> {
         let app_id = resolve_group_id(&self.state, user_id, Some(group_id))?
             .ok_or_else(|| bad_request("group_id is required"))?;
@@ -2027,6 +2029,7 @@ impl ServiceSvc {
                 None,
                 None,
                 false,
+                via,
             )
             .await
             {
@@ -2054,6 +2057,7 @@ impl ServiceSvc {
         name: String,
         env_vars: Option<Vec<EnvVarRequest>>,
         services: Vec<ServiceRequest>,
+        via: DeploymentChannel,
     ) -> ApiResult<Uuid> {
         let name = name.trim().to_string();
         if name.is_empty() || name.len() > 64 {
@@ -2100,6 +2104,7 @@ impl ServiceSvc {
             None,
             None,
             false,
+            via,
         )
         .await
         {
@@ -2231,6 +2236,7 @@ impl ServiceSvc {
         service_id: Uuid,
         source_dir: PathBuf,
         label: &str,
+        via: DeploymentChannel,
     ) -> ApiResult<DeploymentResponse> {
         let (app, service) =
             resolve_owned_app_service_record(&self.state, user_id, service_id)?;
@@ -2242,6 +2248,7 @@ impl ServiceSvc {
             source_dir.to_string_lossy().to_string(),
             label.to_string(),
             format!("{} deployment of {}", label, service.name),
+            via,
         )
         .await?;
 
@@ -2681,11 +2688,7 @@ fn settings_response(
         resource_kind: "app_service".to_string(),
         github_url: app.github_url.clone(),
         branch: app.branch.clone(),
-        env_vars: app
-            .env_vars
-            .iter()
-            .map(masked_env_var_response)
-            .collect(),
+        env_vars: app.env_vars.iter().map(masked_env_var_response).collect(),
         rollout_strategy: rollout_strategy_label(app.rollout_strategy)
             .to_string(),
         auto_deploy: AutoDeploySettingsResponse {
@@ -2743,7 +2746,10 @@ fn diff_settings_values(
         return;
     }
     match (before, after) {
-        (serde_json::Value::Object(before), serde_json::Value::Object(after)) => {
+        (
+            serde_json::Value::Object(before),
+            serde_json::Value::Object(after),
+        ) => {
             let keys: std::collections::BTreeSet<&String> =
                 before.keys().chain(after.keys()).collect();
             for key in keys {
@@ -5450,8 +5456,8 @@ mod services_test {
         build_app_env_vars, build_default_urls, build_service_env_vars,
         default_service_domain, diff_settings_values,
         supported_template_message, EnvVar, EnvVarRequest, ProxyConfig,
-        ServiceAction, ServiceInventoryItem, ServiceResourceKind,
-        ServiceType, TemplateKind,
+        ServiceAction, ServiceInventoryItem, ServiceResourceKind, ServiceType,
+        TemplateKind,
     };
     use chrono::Utc;
     use containr_common::service_inventory::ServiceRuntimeStatus;
@@ -5596,8 +5602,8 @@ mod services_test {
         use crate::state::AppState;
         use axum::http::StatusCode;
         use containr_common::models::{
-            App, BasicAuth, ContainerService, PortMapping, PortProtocol,
-            ServiceMount, ServiceType, User,
+            App, BasicAuth, ContainerService, DeploymentChannel, PortMapping,
+            PortProtocol, ServiceMount, ServiceType, User,
         };
         use containr_common::{Config, Database, DatabaseConfig};
         use std::sync::Arc;
@@ -5914,7 +5920,11 @@ mod services_test {
             };
 
             let error = svc
-                .create_service(app.owner_id, request("web", ""))
+                .create_service(
+                    app.owner_id,
+                    request("web", ""),
+                    DeploymentChannel::Manual,
+                )
                 .await
                 .expect_err("duplicate name");
             assert_eq!(error.0, StatusCode::BAD_REQUEST);
@@ -5923,13 +5933,18 @@ mod services_test {
                 .create_service(
                     app.owner_id,
                     request("api", "https://github.com/other/repo"),
+                    DeploymentChannel::Manual,
                 )
                 .await
                 .expect_err("different repository");
             assert!(error.1.error.contains("single repository"));
 
             let created = svc
-                .create_service(app.owner_id, request("api", ""))
+                .create_service(
+                    app.owner_id,
+                    request("api", ""),
+                    DeploymentChannel::Manual,
+                )
                 .await
                 .expect("service added");
             assert_eq!(created.name, "api");
@@ -5964,7 +5979,7 @@ mod services_test {
             )
             .expect("parse request");
             let created = svc
-                .create_service(user.id, request)
+                .create_service(user.id, request, DeploymentChannel::Manual)
                 .await
                 .expect("created without deploy");
             let service_id = Uuid::parse_str(&created.id).expect("uuid");
@@ -5977,7 +5992,12 @@ mod services_test {
                 .is_empty());
 
             let error = svc
-                .trigger_service_deployment(user.id, service_id, None)
+                .trigger_service_deployment(
+                    user.id,
+                    service_id,
+                    None,
+                    DeploymentChannel::Manual,
+                )
                 .await
                 .expect_err("no source");
             assert_eq!(error.0, StatusCode::BAD_REQUEST);

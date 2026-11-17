@@ -23,7 +23,7 @@ use uuid::Uuid;
 use crate::auth::{create_token, extract_bearer_token};
 use crate::handlers::auth::{require_authenticated_user, ErrorResponse};
 use crate::state::AppState;
-use containr_common::models::{ApiToken, ApiTokenScope};
+use containr_common::models::{ApiToken, ApiTokenScope, DeploymentChannel};
 
 /// prefix every api token starts with
 pub const TOKEN_PREFIX: &str = "ctr_";
@@ -40,6 +40,17 @@ pub struct RequestScope {
     pub scope: ApiTokenScope,
     /// true when the caller used an api token rather than a session
     pub via_api_token: bool,
+    /// true when the request was dispatched by the mcp endpoint
+    pub via_mcp: bool,
+}
+
+/// maps the request scope to the channel recorded on new deployments
+pub fn deployment_channel(scope: Option<RequestScope>) -> DeploymentChannel {
+    match scope {
+        Some(scope) if scope.via_mcp => DeploymentChannel::Mcp,
+        Some(scope) if scope.via_api_token => DeploymentChannel::Api,
+        _ => DeploymentChannel::Manual,
+    }
 }
 
 /// api token as listed (the secret is never returned again)
@@ -248,6 +259,7 @@ pub async fn api_token_auth(
             req.extensions_mut().insert(RequestScope {
                 scope: ApiTokenScope::Full,
                 via_api_token: false,
+                via_mcp: false,
             });
         }
         return next.run(req).await;
@@ -268,6 +280,13 @@ pub async fn api_token_auth(
             .into_response();
     }
 
+    // an mcp tool call dispatches a ctr_ token through this middleware a
+    // second time; keep the marker instead of losing it to the rebuild
+    let via_mcp = req
+        .extensions()
+        .get::<RequestScope>()
+        .is_some_and(|scope| scope.via_mcp);
+
     let Ok(value) = HeaderValue::from_str(&format!("Bearer {}", session))
     else {
         return internal_error("session token is not a valid header")
@@ -277,6 +296,7 @@ pub async fn api_token_auth(
     req.extensions_mut().insert(RequestScope {
         scope,
         via_api_token: true,
+        via_mcp,
     });
     next.run(req).await
 }

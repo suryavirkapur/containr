@@ -24,8 +24,9 @@ use crate::managed_services::{
 };
 use crate::models::{
     ApiToken, ApiTokenScope, App, Certificate, CloudflareSettings,
-    ContainerRegistry, ContainerService, Deployment, DeploymentStatus,
-    GithubAppConfig, HttpRequestLog, Project, ServiceDeployment, User,
+    ContainerRegistry, ContainerService, Deployment, DeploymentChannel,
+    DeploymentStatus, GithubAppConfig, HttpRequestLog, Project,
+    ServiceDeployment, User,
 };
 use crate::service_inventory::{
     summarize_app_service_runtime, ServiceInventoryItem, ServiceResourceKind,
@@ -1286,9 +1287,9 @@ impl SqliteDatabase {
             let mut tx = self.pool.begin().await.map_err(Error::from)?;
 
             sqlx::query(
-                r#"INSERT INTO deployments (id, app_id, commit_sha, commit_message, branch, source_url, rollout_strategy, rollback_from_deployment_id, app_snapshot, status, container_id, image_id, started_at, finished_at, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, commit_sha=excluded.commit_sha, commit_message=excluded.commit_message, branch=excluded.branch, source_url=excluded.source_url, rollout_strategy=excluded.rollout_strategy, rollback_from_deployment_id=excluded.rollback_from_deployment_id, app_snapshot=excluded.app_snapshot, status=excluded.status, container_id=excluded.container_id, image_id=excluded.image_id, started_at=excluded.started_at, finished_at=excluded.finished_at, created_at=excluded.created_at"#
+                r#"INSERT INTO deployments (id, app_id, commit_sha, commit_message, branch, source_url, rollout_strategy, rollback_from_deployment_id, app_snapshot, triggered_via, status, container_id, image_id, started_at, finished_at, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, commit_sha=excluded.commit_sha, commit_message=excluded.commit_message, branch=excluded.branch, source_url=excluded.source_url, rollout_strategy=excluded.rollout_strategy, rollback_from_deployment_id=excluded.rollback_from_deployment_id, app_snapshot=excluded.app_snapshot, triggered_via=excluded.triggered_via, status=excluded.status, container_id=excluded.container_id, image_id=excluded.image_id, started_at=excluded.started_at, finished_at=excluded.finished_at, created_at=excluded.created_at"#
             )
             .bind(dep.id.to_string())
             .bind(dep.app_id.to_string())
@@ -1299,6 +1300,7 @@ impl SqliteDatabase {
             .bind(serde_json::to_string(&dep.rollout_strategy)?)
             .bind(dep.rollback_from_deployment_id.map(|id| id.to_string()))
             .bind(dep.app_snapshot.as_ref().map(|s| serde_json::to_string(s).unwrap_or_default()))
+            .bind(serde_json::to_string(&dep.triggered_via)?)
             .bind(serde_json::to_string(&dep.status)?)
             .bind(&dep.container_id)
             .bind(&dep.image_id)
@@ -2260,6 +2262,8 @@ fn row_to_deployment(row: Option<&SqliteRow>) -> Result<Option<Deployment>> {
     let rollout_strategy: String =
         row.try_get("rollout_strategy").map_err(Error::from)?;
     let status: String = row.try_get("status").map_err(Error::from)?;
+    let triggered_via: Option<String> =
+        row.try_get("triggered_via").map_err(Error::from)?;
     let container_id: Option<String> =
         row.try_get("container_id").map_err(Error::from)?;
     let image_id: Option<String> =
@@ -2284,6 +2288,13 @@ fn row_to_deployment(row: Option<&SqliteRow>) -> Result<Option<Deployment>> {
         app_snapshot: app_snapshot.and_then(|s| serde_json::from_str(&s).ok()),
         status: serde_json::from_str(&status)
             .unwrap_or(DeploymentStatus::Pending),
+        triggered_via: triggered_via
+            .map(|value| {
+                serde_json::from_str(&value).unwrap_or_else(|_| {
+                    DeploymentChannel::parse(&value).unwrap_or_default()
+                })
+            })
+            .unwrap_or_default(),
         container_id,
         image_id,
         service_deployments: Vec::new(),
