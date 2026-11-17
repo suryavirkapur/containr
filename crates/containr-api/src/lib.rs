@@ -2,10 +2,12 @@
 
 pub mod archive;
 pub mod auth;
+pub mod cloudflare;
 pub mod deployment_source;
 pub mod domain;
 pub mod github;
 pub mod handlers;
+pub mod mcp;
 pub mod openapi;
 pub mod security;
 pub mod server;

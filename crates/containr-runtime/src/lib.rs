@@ -21,8 +21,8 @@ pub use database_manager::DatabaseManager;
 pub use docker::{
     DockerBindMount, DockerContainerConfig, DockerContainerInfo,
     DockerContainerManager, DockerContainerState, DockerContainerStats,
-    DockerContainerStatus, DockerExecSession, DockerMountInfo,
-    DockerNetworkAttachment, DockerPortMapping,
+    DockerContainerStatus, DockerExecOutput, DockerExecSession,
+    DockerMountInfo, DockerNetworkAttachment, DockerPortMapping,
 };
 pub use docker_system::{
     DockerCleanupResult, DockerContainerMetrics, DockerDiskUsage,

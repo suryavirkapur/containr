@@ -5,8 +5,9 @@ containr context
 
 current context:
 - ui rebuilt for caprover parity: design tokens in web/src/index.css (light + dark via the .dark class, small radii), shared primitives in web/src/components/ui, app shell with sidebar, breadcrumbs and a cmd+k command palette in web/src/components/layout
-- pages: overview, services, projects, one-click apps (catalog in web/src/lib/catalog/, one module per category or hand-written stack; see docs/one-click-apps.md and run `pnpm test` in web/), storage, monitoring, server (disk cleanup, backup), settings (general, account, users, github, registries)
+- pages: overview, services, projects, mcp & api (tokens, client snippets, tool list), one-click apps (catalog in web/src/lib/catalog/, one module per category or hand-written stack; see docs/one-click-apps.md and run `pnpm test` in web/), storage, monitoring, server (disk cleanup, backup), settings (general, account, users, github, registries)
 - service detail tabs: overview, deployments (git/image/upload/dockerfile/webhook/cli deploys + rollback), logs, metrics, environment, networking (domains, https, basic auth, port mappings), storage (volumes + file browser), console (xterm exec), settings
+- mcp server at /mcp (crates/containr-api/src/mcp): tools are generated from the openapi doc, so document new endpoints with utoipa and they become tools; api tokens (ctr_…) are swapped for a session jwt by middleware in handlers/api_tokens.rs. see docs/mcp.md
 - new endpoints the ui relies on are typed in web/src/api/platform.ts; regenerate web/src/api/schema.d.ts with `pnpm run generate` after api changes
 - unifying all apps, databases, and queues under a single "service" entity.
 - moving toward a hybrid platform combining render's easy ui with caprover's full-featured backend.

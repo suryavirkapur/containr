@@ -845,6 +845,219 @@
         ]
       }
     },
+    "/api/cloudflare": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "get the cloudflare connection status",
+        "operationId": "get_cloudflare_status",
+        "responses": {
+          "200": {
+            "description": "cloudflare status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudflareStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "connect the server to a cloudflare account; verifies the token and\ncreates the tunnel containr manages",
+        "operationId": "connect_cloudflare",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectCloudflareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "cloudflare connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudflareStatusResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "disconnect cloudflare: removes the tunnel and its dns records and turns\ncloudflare domains back into direct routes",
+        "operationId": "disconnect_cloudflare",
+        "responses": {
+          "200": {
+            "description": "cloudflare disconnected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudflareStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/cloudflare/zones": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "refresh the zone list from cloudflare",
+        "operationId": "list_cloudflare_zones",
+        "responses": {
+          "200": {
+            "description": "cloudflare zones",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CloudflareZoneResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "not connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/containers": {
       "get": {
         "tags": [
@@ -867,6 +1080,83 @@
           },
           "401": {
             "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/containers/{id}/exec": {
+      "post": {
+        "tags": [
+          "containers"
+        ],
+        "summary": "run a shell command in a container and wait for its output",
+        "operationId": "exec_command",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "container id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "command output",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecCommandResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -4222,6 +4512,160 @@
         ]
       }
     },
+    "/api/tokens": {
+      "get": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "list the caller's api tokens",
+        "operationId": "list_api_tokens",
+        "responses": {
+          "200": {
+            "description": "api tokens",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiTokenResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "create an api token",
+        "operationId": "create_api_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApiTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "token created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedApiTokenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "api tokens cannot create tokens",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/tokens/{id}": {
+      "delete": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "revoke an api token",
+        "operationId": "delete_api_token",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "token id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "token revoked"
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "token not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -4246,6 +4690,49 @@
   },
   "components": {
     "schemas": {
+      "ApiTokenResponse": {
+        "type": "object",
+        "description": "api token as listed (the secret is never returned again)",
+        "required": [
+          "id",
+          "name",
+          "prefix",
+          "scope",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string",
+            "description": "first characters of the token, e.g. `ctr_AbCd1234`"
+          },
+          "scope": {
+            "type": "string",
+            "description": "`read` or `full`"
+          }
+        }
+      },
       "AppDetails": {
         "type": "object",
         "description": "app details",
@@ -4592,6 +5079,124 @@
           }
         }
       },
+      "CloudflareDomainResponse": {
+        "type": "object",
+        "description": "how a cloudflare domain is doing after the last sync",
+        "required": [
+          "domain",
+          "dns_ready"
+        ],
+        "properties": {
+          "dns_ready": {
+            "type": "boolean",
+            "description": "whether the proxied cname exists on cloudflare"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CloudflareStatusResponse": {
+        "type": "object",
+        "description": "cloudflare connection and runtime status",
+        "required": [
+          "connected",
+          "zones",
+          "cloudflared_installed",
+          "cloudflared_running",
+          "firewall_active",
+          "firewall_required",
+          "domains"
+        ],
+        "properties": {
+          "account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cloudflared_installed": {
+            "type": "boolean",
+            "description": "whether a cloudflared binary is installed"
+          },
+          "cloudflared_running": {
+            "type": "boolean",
+            "description": "whether the tunnel connector is running"
+          },
+          "connected": {
+            "type": "boolean",
+            "description": "whether a cloudflare account is connected"
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CloudflareDomainResponse"
+            },
+            "description": "configured cloudflare domains and their dns state"
+          },
+          "firewall_active": {
+            "type": "boolean",
+            "description": "whether the firewall currently blocks public :80/:443"
+          },
+          "firewall_required": {
+            "type": "boolean",
+            "description": "whether everything public is tunnel-fronted, so the firewall could\nclose :80/:443 once active"
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_sync_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tunnel_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tunnel_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CloudflareZoneResponse"
+            },
+            "description": "zones the account can manage, cached from the last sync"
+          }
+        }
+      },
+      "CloudflareZoneResponse": {
+        "type": "object",
+        "description": "a dns zone the connected account can manage",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "ConfigFileRequest": {
         "type": "object",
         "description": "a config file containr mounts read-only into the service's containers",
@@ -4606,6 +5211,24 @@
           "path": {
             "type": "string",
             "description": "absolute path inside the container"
+          }
+        }
+      },
+      "ConnectCloudflareRequest": {
+        "type": "object",
+        "description": "connect request: a cloudflare api token and the account it manages",
+        "required": [
+          "api_token",
+          "account_id"
+        ],
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "the cloudflare account id the tunnel is created in"
+          },
+          "api_token": {
+            "type": "string",
+            "description": "api token with cloudflare tunnel edit and zone dns edit permissions"
           }
         }
       },
@@ -4717,6 +5340,34 @@
           },
           "status": {
             "type": "string"
+          }
+        }
+      },
+      "CreateApiTokenRequest": {
+        "type": "object",
+        "description": "token to create",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "expires_in_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "days until the token stops working; omit for no expiry"
+          },
+          "name": {
+            "type": "string",
+            "description": "label to recognise the token by, e.g. \"claude code\""
+          },
+          "scope": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`read` (GET requests and read-only tools) or `full`; default `full`"
           }
         }
       },
@@ -4925,6 +5576,22 @@
           "password": {
             "type": "string",
             "description": "password (min 8 characters)"
+          }
+        }
+      },
+      "CreatedApiTokenResponse": {
+        "type": "object",
+        "description": "newly created token; `token` is shown only this once",
+        "required": [
+          "token",
+          "api_token"
+        ],
+        "properties": {
+          "api_token": {
+            "$ref": "#/components/schemas/ApiTokenResponse"
+          },
+          "token": {
+            "type": "string"
           }
         }
       },
@@ -5154,6 +5821,68 @@
           "error": {
             "type": "string",
             "description": "error message"
+          }
+        }
+      },
+      "ExecCommandRequest": {
+        "type": "object",
+        "description": "a command to run once in a container",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "shell command, run with `/bin/sh -c`"
+          },
+          "timeout_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "seconds to wait before giving up (default 60, max 300)",
+            "minimum": 0
+          },
+          "workdir": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "working directory inside the container"
+          }
+        }
+      },
+      "ExecCommandResponse": {
+        "type": "object",
+        "description": "output of a one-shot command",
+        "required": [
+          "stdout",
+          "stderr",
+          "truncated",
+          "timed_out"
+        ],
+        "properties": {
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "exit code; null when the command timed out"
+          },
+          "stderr": {
+            "type": "string"
+          },
+          "stdout": {
+            "type": "string"
+          },
+          "timed_out": {
+            "type": "boolean"
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "output was cut at 256 KiB per stream"
           }
         }
       },
@@ -5436,6 +6165,7 @@
           "network_name",
           "domains",
           "http_only_domains",
+          "cloudflare_domains",
           "default_urls",
           "port_mappings",
           "public_http",
@@ -5448,6 +6178,13 @@
           "updated_at"
         ],
         "properties": {
+          "cloudflare_domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "custom domains served through the cloudflare tunnel"
+          },
           "connection_string": {
             "type": [
               "string",
@@ -6177,6 +6914,16 @@
               "null"
             ]
           },
+          "cloudflare_domains": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "custom domains to serve through the cloudflare tunnel. entries must\nbe in `domains`; absent keeps the current selection"
+          },
           "command": {
             "type": [
               "array",
@@ -6430,6 +7177,7 @@
           "expose_http",
           "domains",
           "http_only_domains",
+          "cloudflare_domains",
           "additional_ports",
           "replicas",
           "depends_on",
@@ -6476,6 +7224,13 @@
               "string",
               "null"
             ]
+          },
+          "cloudflare_domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "custom domains served through the cloudflare tunnel"
           },
           "command": {
             "type": [
@@ -7200,6 +7955,10 @@
     {
       "name": "projects",
       "description": "projects grouping services on one network"
+    },
+    {
+      "name": "tokens",
+      "description": "api tokens for scripts and the mcp endpoint"
     }
   ]
 }

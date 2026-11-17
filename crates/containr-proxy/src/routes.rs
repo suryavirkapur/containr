@@ -32,6 +32,9 @@ pub struct Route {
     pub basic_auth: Option<BasicAuth>,
     /// containr login required for this route
     pub login_gate: Option<RouteLoginGate>,
+    /// served through the cloudflare tunnel; only cloudflared (a loopback
+    /// peer) may reach it, and CF-Connecting-IP carries the real client
+    pub via_cloudflare: bool,
 }
 
 /// who may pass a route's containr login gate
@@ -67,6 +70,7 @@ struct RouteState {
     rr_cursor: AtomicUsize,
     basic_auth: Option<BasicAuth>,
     login_gate: Option<RouteLoginGate>,
+    via_cloudflare: bool,
     /// authorization header values that verified successfully. the cache
     /// lives on the route state, so it is dropped whenever routes refresh.
     auth_cache: Mutex<HashSet<String>>,
@@ -90,6 +94,7 @@ impl RouteState {
             algorithm: self.algorithm,
             basic_auth: self.basic_auth.clone(),
             login_gate: self.login_gate,
+            via_cloudflare: self.via_cloudflare,
         }
     }
 }
@@ -148,6 +153,7 @@ impl RouteManager {
             rr_cursor: AtomicUsize::new(0),
             basic_auth: route.basic_auth.clone(),
             login_gate: route.login_gate,
+            via_cloudflare: route.via_cloudflare,
             auth_cache: Mutex::new(HashSet::new()),
         });
 
@@ -360,7 +366,7 @@ impl SelectedUpstream {
 
     pub fn complete(&self) {
         let upstream = &self.route.upstreams[self.index];
-        let _ = upstream.inflight.fetch_update(
+        let _ = upstream.inflight.try_update(
             Ordering::Relaxed,
             Ordering::Relaxed,
             |value| value.checked_sub(1),
@@ -401,6 +407,7 @@ mod tests {
                 password_hash: hash("s3cret"),
             }),
             login_gate: None,
+            via_cloudflare: false,
         });
         manager
     }

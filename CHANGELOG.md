@@ -3,6 +3,13 @@
 changelog
 =========
 
+unreleased
+- cloudflare tunnel support: connect a cloudflare account in settings → cloudflare, then mark any custom domain for tunnel routing in a service's networking tab. containr creates and manages a remotely-configured tunnel, runs `cloudflared` locally, writes proxied dns records, and drops public :80/:443 on the host firewall (nftables) once every public ingress is tunnel-fronted. cloudflare-fronted domains get https at the edge instead of a local let's encrypt certificate and refuse direct requests. see docs/cloudflare.md
+- mcp server at `/mcp` (streamable http): ai assistants like claude code, cursor and vs code can manage services, deployments, logs, env vars, domains, storage, containers, projects, registries and server settings. tools are generated from the openapi document, so new endpoints show up automatically, and `api_request` covers anything else. see docs/mcp.md
+- api tokens (`ctr_…`): revocable, optionally read-only or expiring, and stored only as hashes. they work for the rest api and mcp, but can't mint other tokens or change passwords
+- new "MCP & API" page with the endpoint url, copyable client snippets, token management and a searchable tool list
+- `POST /api/containers/{id}/exec` (and the `exec_command` tool) runs a one-off shell command in a container and returns its exit code, stdout and stderr
+
 0.1.17-alpha (2026-10-08)
 - link github to an existing account from settings → account (and unlink it again, once the account has a password); github sign-in and linking only show up when the server has a github oauth app configured
 - github sign-in refreshes the stored github username, so renamed accounts stay current

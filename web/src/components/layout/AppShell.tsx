@@ -1,5 +1,6 @@
 import { A, Navigate, useLocation, useNavigate } from "@solidjs/router";
 import Activity from "lucide-solid/icons/activity";
+import Bot from "lucide-solid/icons/bot";
 import Boxes from "lucide-solid/icons/boxes";
 import ChevronRight from "lucide-solid/icons/chevron-right";
 import ChevronsUpDown from "lucide-solid/icons/chevrons-up-down";
@@ -69,6 +70,7 @@ const workspaceNav: NavLink[] = [
 const platformNav: NavLink[] = [
 	{ href: "/monitoring", label: "Monitoring", icon: () => <Activity /> },
 	{ href: "/server", label: "Server", icon: () => <Server /> },
+	{ href: "/mcp", label: "MCP & API", icon: () => <Bot /> },
 	{ href: "/settings", label: "Settings", icon: () => <Settings /> },
 ];
 

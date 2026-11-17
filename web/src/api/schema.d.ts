@@ -229,6 +229,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cloudflare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** get the cloudflare connection status */
+        get: operations["get_cloudflare_status"];
+        /**
+         * connect the server to a cloudflare account; verifies the token and
+         *     creates the tunnel containr manages
+         */
+        put: operations["connect_cloudflare"];
+        post?: never;
+        /**
+         * disconnect cloudflare: removes the tunnel and its dns records and turns
+         *     cloudflare domains back into direct routes
+         */
+        delete: operations["disconnect_cloudflare"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cloudflare/zones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** refresh the zone list from cloudflare */
+        get: operations["list_cloudflare_zones"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/containers": {
         parameters: {
             query?: never;
@@ -239,6 +281,23 @@ export interface paths {
         get: operations["list_containers"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/containers/{id}/exec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** run a shell command in a container and wait for its output */
+        post: operations["exec_command"];
         delete?: never;
         options?: never;
         head?: never;
@@ -956,6 +1015,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** list the caller's api tokens */
+        get: operations["list_api_tokens"];
+        put?: never;
+        /** create an api token */
+        post: operations["create_api_token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tokens/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** revoke an api token */
+        delete: operations["delete_api_token"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -977,6 +1071,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description api token as listed (the secret is never returned again) */
+        ApiTokenResponse: {
+            created_at: string;
+            expires_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            last_used_at?: string | null;
+            name: string;
+            /** @description first characters of the token, e.g. `ctr_AbCd1234` */
+            prefix: string;
+            /** @description `read` or `full` */
+            scope: string;
+        };
         /** @description app details */
         AppDetails: {
             /** Format: int64 */
@@ -1081,11 +1188,55 @@ export interface components {
             /** Format: int64 */
             reclaimed_bytes: number;
         };
+        /** @description how a cloudflare domain is doing after the last sync */
+        CloudflareDomainResponse: {
+            /** @description whether the proxied cname exists on cloudflare */
+            dns_ready: boolean;
+            domain: string;
+            error?: string | null;
+        };
+        /** @description cloudflare connection and runtime status */
+        CloudflareStatusResponse: {
+            account_id?: string | null;
+            /** @description whether a cloudflared binary is installed */
+            cloudflared_installed: boolean;
+            /** @description whether the tunnel connector is running */
+            cloudflared_running: boolean;
+            /** @description whether a cloudflare account is connected */
+            connected: boolean;
+            /** @description configured cloudflare domains and their dns state */
+            domains: components["schemas"]["CloudflareDomainResponse"][];
+            /** @description whether the firewall currently blocks public :80/:443 */
+            firewall_active: boolean;
+            /**
+             * @description whether everything public is tunnel-fronted, so the firewall could
+             *     close :80/:443 once active
+             */
+            firewall_required: boolean;
+            last_error?: string | null;
+            last_sync_at?: string | null;
+            tunnel_id?: string | null;
+            tunnel_name?: string | null;
+            /** @description zones the account can manage, cached from the last sync */
+            zones: components["schemas"]["CloudflareZoneResponse"][];
+        };
+        /** @description a dns zone the connected account can manage */
+        CloudflareZoneResponse: {
+            id: string;
+            name: string;
+        };
         /** @description a config file containr mounts read-only into the service's containers */
         ConfigFileRequest: {
             content: string;
             /** @description absolute path inside the container */
             path: string;
+        };
+        /** @description connect request: a cloudflare api token and the account it manages */
+        ConnectCloudflareRequest: {
+            /** @description the cloudflare account id the tunnel is created in */
+            account_id: string;
+            /** @description api token with cloudflare tunnel edit and zone dns edit permissions */
+            api_token: string;
         };
         ContainerListItem: {
             id: string;
@@ -1115,6 +1266,18 @@ export interface components {
             restart_count: number;
             started_at?: string | null;
             status: string;
+        };
+        /** @description token to create */
+        CreateApiTokenRequest: {
+            /**
+             * Format: int64
+             * @description days until the token stops working; omit for no expiry
+             */
+            expires_in_days?: number | null;
+            /** @description label to recognise the token by, e.g. "claude code" */
+            name: string;
+            /** @description `read` (GET requests and read-only tools) or `full`; default `full` */
+            scope?: string | null;
         };
         /** @description bucket creation request */
         CreateBucketRequest: {
@@ -1177,6 +1340,11 @@ export interface components {
             email: string;
             /** @description password (min 8 characters) */
             password: string;
+        };
+        /** @description newly created token; `token` is shown only this once */
+        CreatedApiTokenResponse: {
+            api_token: components["schemas"]["ApiTokenResponse"];
+            token: string;
         };
         /** @description certificate issuance response */
         DashboardCertResponse: {
@@ -1244,6 +1412,31 @@ export interface components {
         ErrorResponse: {
             /** @description error message */
             error: string;
+        };
+        /** @description a command to run once in a container */
+        ExecCommandRequest: {
+            /** @description shell command, run with `/bin/sh -c` */
+            command: string;
+            /**
+             * Format: int64
+             * @description seconds to wait before giving up (default 60, max 300)
+             */
+            timeout_secs?: number | null;
+            /** @description working directory inside the container */
+            workdir?: string | null;
+        };
+        /** @description output of a one-shot command */
+        ExecCommandResponse: {
+            /**
+             * Format: int64
+             * @description exit code; null when the command timed out
+             */
+            exit_code?: number | null;
+            stderr: string;
+            stdout: string;
+            timed_out: boolean;
+            /** @description output was cut at 256 KiB per stream */
+            truncated: boolean;
         };
         ExecTokenResponse: {
             expires_at: string;
@@ -1328,6 +1521,8 @@ export interface components {
             repository_count?: number | null;
         };
         InventoryServiceResponse: {
+            /** @description custom domains served through the cloudflare tunnel */
+            cloudflare_domains: string[];
             connection_string?: string | null;
             container_ids: string[];
             created_at: string;
@@ -1542,6 +1737,11 @@ export interface components {
             build_args?: components["schemas"]["EnvVarRequest"][] | null;
             build_context?: string | null;
             build_target?: string | null;
+            /**
+             * @description custom domains to serve through the cloudflare tunnel. entries must
+             *     be in `domains`; absent keeps the current selection
+             */
+            cloudflare_domains?: string[] | null;
             command?: string[] | null;
             /** Format: double */
             cpu_limit?: number | null;
@@ -1595,6 +1795,8 @@ export interface components {
             build_args: components["schemas"]["EditableEnvVarResponse"][];
             build_context?: string | null;
             build_target?: string | null;
+            /** @description custom domains served through the cloudflare tunnel */
+            cloudflare_domains: string[];
             command?: string[] | null;
             /** Format: double */
             cpu_limit?: number | null;
@@ -2485,6 +2687,180 @@ export interface operations {
             };
         };
     };
+    get_cloudflare_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description cloudflare status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudflareStatusResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    connect_cloudflare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectCloudflareRequest"];
+            };
+        };
+        responses: {
+            /** @description cloudflare connected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudflareStatusResponse"];
+                };
+            };
+            /** @description invalid credentials */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    disconnect_cloudflare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description cloudflare disconnected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudflareStatusResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_cloudflare_zones: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description cloudflare zones */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudflareZoneResponse"][];
+                };
+            };
+            /** @description not connected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     list_containers: {
         parameters: {
             query?: never;
@@ -2505,6 +2881,60 @@ export interface operations {
             };
             /** @description unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    exec_command: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description container id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description command output */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecCommandResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4930,6 +5360,125 @@ export interface operations {
             };
             /** @description github or download error */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_api_tokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description api tokens */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiTokenResponse"][];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_api_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateApiTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description token created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedApiTokenResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description api tokens cannot create tokens */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_api_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description token id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description token revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description token not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

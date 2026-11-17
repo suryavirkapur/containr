@@ -47,6 +47,41 @@ export const getSystemStats = async (): Promise<SystemStats> => {
 	return data;
 };
 
+export type CloudflareStatus = components["schemas"]["CloudflareStatusResponse"];
+export type CloudflareZone = components["schemas"]["CloudflareZoneResponse"];
+
+export const getCloudflareStatus = async (): Promise<CloudflareStatus> => {
+	const { data, error } = await api.GET("/api/cloudflare");
+	if (error) throw error;
+	if (!data) throw new Error("missing cloudflare status");
+	return data;
+};
+
+export const connectCloudflare = async (
+	apiToken: string,
+	accountId: string,
+): Promise<CloudflareStatus> => {
+	const { data, error } = await api.PUT("/api/cloudflare", {
+		body: { api_token: apiToken, account_id: accountId },
+	});
+	if (error) throw error;
+	if (!data) throw new Error("missing cloudflare status");
+	return data;
+};
+
+export const disconnectCloudflare = async (): Promise<CloudflareStatus> => {
+	const { data, error } = await api.DELETE("/api/cloudflare");
+	if (error) throw error;
+	if (!data) throw new Error("missing cloudflare status");
+	return data;
+};
+
+export const listCloudflareZones = async (): Promise<CloudflareZone[]> => {
+	const { data, error } = await api.GET("/api/cloudflare/zones");
+	if (error) throw error;
+	return data ?? [];
+};
+
 export const getHealth = async (): Promise<Health> => {
 	const { data, error } = await api.GET("/health");
 	if (error) throw error;
