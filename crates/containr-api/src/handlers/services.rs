@@ -1,7 +1,7 @@
 use axum::{
     extract::{Multipart, Path, Query, State},
     http::{HeaderMap, StatusCode},
-    Json,
+    Extension, Json,
 };
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
@@ -18,9 +18,10 @@ use crate::domain::services::{
     HttpRequestLogsQuery, InventoryServiceResponse, ListServicesQuery,
     MoveServiceRequest, RevealEnvVarRequest, RevealEnvVarResponse,
     ServiceAction, ServiceLogsQuery, ServiceLogsResponse,
-    ServiceMetricsResponse, ServiceSettingsResponse,
-    ServiceUpdatePreview, ServiceSvc, UpdateServiceRequest,
+    ServiceMetricsResponse, ServiceSettingsResponse, ServiceSvc,
+    ServiceUpdatePreview, UpdateServiceRequest,
 };
+use crate::handlers::api_tokens::{deployment_channel, RequestScope};
 use crate::handlers::auth::ErrorResponse;
 use crate::handlers::deployments::{
     DeploymentResponse, DeploymentTriggerRequest, DeploymentWaitResponse,
@@ -94,13 +95,17 @@ async fn get_user_id(
 pub async fn create_service(
     State(state): State<AppState>,
     headers: HeaderMap,
+    scope: Option<Extension<RequestScope>>,
     Json(req): Json<CreateServiceRequest>,
 ) -> Result<
     (StatusCode, Json<InventoryServiceResponse>),
     (StatusCode, Json<ErrorResponse>),
 > {
     let user_id = get_user_id(&state, &headers).await?;
-    let response = ServiceSvc::new(state).create_service(user_id, req).await?;
+    let via = deployment_channel(scope.map(|Extension(scope)| scope));
+    let response = ServiceSvc::new(state)
+        .create_service(user_id, req, via)
+        .await?;
     Ok((StatusCode::CREATED, Json(response)))
 }
 
@@ -417,6 +422,7 @@ pub async fn get_service_deployment(
 pub async fn trigger_service_deployment(
     State(state): State<AppState>,
     headers: HeaderMap,
+    scope: Option<Extension<RequestScope>>,
     Path(id): Path<Uuid>,
     body: Option<Json<DeploymentTriggerRequest>>,
 ) -> Result<
@@ -424,8 +430,9 @@ pub async fn trigger_service_deployment(
     (StatusCode, Json<ErrorResponse>),
 > {
     let user_id = get_user_id(&state, &headers).await?;
+    let via = deployment_channel(scope.map(|Extension(scope)| scope));
     let deployment = ServiceSvc::new(state)
-        .trigger_service_deployment(user_id, id, body.map(|value| value.0))
+        .trigger_service_deployment(user_id, id, body.map(|value| value.0), via)
         .await?;
     Ok((StatusCode::CREATED, Json(deployment)))
 }
@@ -450,6 +457,7 @@ pub async fn trigger_service_deployment(
 pub async fn rollback_service_deployment(
     State(state): State<AppState>,
     headers: HeaderMap,
+    scope: Option<Extension<RequestScope>>,
     Path((id, deployment_id)): Path<(Uuid, Uuid)>,
     body: Option<Json<RollbackRequest>>,
 ) -> Result<
@@ -457,12 +465,14 @@ pub async fn rollback_service_deployment(
     (StatusCode, Json<ErrorResponse>),
 > {
     let user_id = get_user_id(&state, &headers).await?;
+    let via = deployment_channel(scope.map(|Extension(scope)| scope));
     let deployment = ServiceSvc::new(state)
         .rollback_service_deployment(
             user_id,
             id,
             deployment_id,
             body.map(|value| value.0),
+            via,
         )
         .await?;
     Ok((StatusCode::CREATED, Json(deployment)))
@@ -489,8 +499,7 @@ pub async fn wait_for_service_deployment(
     headers: HeaderMap,
     Path((id, deployment_id)): Path<(Uuid, Uuid)>,
     Query(query): Query<WaitQuery>,
-) -> Result<Json<DeploymentWaitResponse>, (StatusCode, Json<ErrorResponse>)>
-{
+) -> Result<Json<DeploymentWaitResponse>, (StatusCode, Json<ErrorResponse>)> {
     let user_id = get_user_id(&state, &headers).await?;
     let deployment = ServiceSvc::new(state)
         .wait_for_service_deployment(
@@ -667,6 +676,7 @@ pub struct SourceUploadForm {
 pub async fn deploy_upload(
     State(state): State<AppState>,
     headers: HeaderMap,
+    scope: Option<Extension<RequestScope>>,
     Path(id): Path<Uuid>,
     mut multipart: Multipart,
 ) -> Result<
@@ -735,8 +745,9 @@ pub async fn deploy_upload(
     .map_err(bad_request)?;
     let _ = tokio::fs::remove_file(&archive_path).await;
 
+    let via = deployment_channel(scope.map(|Extension(scope)| scope));
     let deployment = svc
-        .deploy_local_source(user_id, id, source_dir, "upload")
+        .deploy_local_source(user_id, id, source_dir, "upload", via)
         .await?;
     upload.keep();
     Ok((StatusCode::CREATED, Json(deployment)))
@@ -759,6 +770,7 @@ pub async fn deploy_upload(
 pub async fn deploy_dockerfile(
     State(state): State<AppState>,
     headers: HeaderMap,
+    scope: Option<Extension<RequestScope>>,
     Path(id): Path<Uuid>,
     Json(req): Json<DockerfileDeployRequest>,
 ) -> Result<
@@ -785,8 +797,9 @@ pub async fn deploy_dockerfile(
         .await
         .map_err(internal_error)?;
 
+    let via = deployment_channel(scope.map(|Extension(scope)| scope));
     let deployment = svc
-        .deploy_local_source(user_id, id, source_dir, "dockerfile")
+        .deploy_local_source(user_id, id, source_dir, "dockerfile", via)
         .await?;
     upload.keep();
     Ok((StatusCode::CREATED, Json(deployment)))

@@ -1399,6 +1399,11 @@ export interface components {
             image_id?: string | null;
             started_at?: string | null;
             status: string;
+            /**
+             * @description what queued the deployment: manual, api, mcp, webhook, github or
+             *     system
+             */
+            triggered_via: string;
         };
         /** @description deployment trigger request (optional) */
         DeploymentTriggerRequest: {

@@ -5789,6 +5789,7 @@
           "app_id",
           "commit_sha",
           "status",
+          "triggered_via",
           "created_at"
         ],
         "properties": {
@@ -5838,6 +5839,10 @@
           },
           "status": {
             "type": "string"
+          },
+          "triggered_via": {
+            "type": "string",
+            "description": "what queued the deployment: manual, api, mcp, webhook, github or\nsystem"
           }
         }
       },

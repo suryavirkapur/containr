@@ -11,7 +11,8 @@ use crate::github::DeploymentJob;
 use crate::handlers::auth::ErrorResponse;
 use crate::state::AppState;
 use containr_common::models::{
-    App, Deployment, DeploymentSource, DeploymentStatus, RolloutStrategy,
+    App, Deployment, DeploymentChannel, DeploymentSource, DeploymentStatus,
+    RolloutStrategy,
 };
 
 /// deployment response
@@ -24,6 +25,10 @@ pub struct DeploymentResponse {
     pub image_id: Option<String>,
     #[schema(value_type = String)]
     pub status: DeploymentStatus,
+    /// what queued the deployment: manual, api, mcp, webhook, github or
+    /// system
+    #[schema(value_type = String)]
+    pub triggered_via: DeploymentChannel,
     pub container_id: Option<String>,
     pub created_at: String,
     pub started_at: Option<String>,
@@ -88,6 +93,7 @@ impl From<&Deployment> for DeploymentResponse {
             commit_message: d.commit_message.clone(),
             image_id: d.image_id.clone(),
             status: d.status,
+            triggered_via: d.triggered_via,
             container_id: d.container_id.clone(),
             created_at: d.created_at.to_rfc3339(),
             started_at: d.started_at.map(|t| t.to_rfc3339()),
@@ -116,6 +122,7 @@ pub(crate) async fn create_and_queue_deployment(
     rollback_from_deployment_id: Option<Uuid>,
     source_override: Option<DeploymentSource>,
     cleanup_stale_deployments: bool,
+    triggered_via: DeploymentChannel,
 ) -> Result<Deployment, (StatusCode, Json<ErrorResponse>)> {
     queue_deployment(
         state,
@@ -129,6 +136,7 @@ pub(crate) async fn create_and_queue_deployment(
         source_override,
         cleanup_stale_deployments,
         None,
+        triggered_via,
     )
     .await
 }
@@ -143,6 +151,7 @@ pub(crate) async fn create_and_queue_local_build_deployment(
     source_path: String,
     commit_sha: String,
     commit_message: String,
+    triggered_via: DeploymentChannel,
 ) -> Result<Deployment, (StatusCode, Json<ErrorResponse>)> {
     queue_deployment(
         state,
@@ -156,6 +165,7 @@ pub(crate) async fn create_and_queue_local_build_deployment(
         Some(DeploymentSource::LocalPath { path: source_path }),
         false,
         Some(service_id),
+        triggered_via,
     )
     .await
 }
@@ -173,6 +183,7 @@ async fn queue_deployment(
     source_override: Option<DeploymentSource>,
     cleanup_stale_deployments: bool,
     local_build_service_id: Option<Uuid>,
+    triggered_via: DeploymentChannel,
 ) -> Result<Deployment, (StatusCode, Json<ErrorResponse>)> {
     let source = match source_override {
         Some(source) => source,
@@ -190,6 +201,7 @@ async fn queue_deployment(
     };
     deployment.rollout_strategy = rollout_strategy;
     deployment.rollback_from_deployment_id = rollback_from_deployment_id;
+    deployment.triggered_via = triggered_via;
     deployment.app_snapshot = Some(app.clone());
     state
         .db

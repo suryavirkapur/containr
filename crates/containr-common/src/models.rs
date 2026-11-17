@@ -871,6 +871,53 @@ impl DeploymentStatus {
     }
 }
 
+/// what queued a deployment, recorded for the audit trail
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentChannel {
+    /// a person in the dashboard or the cli
+    #[default]
+    Manual,
+    /// an api token used over the rest api (scripts, ci)
+    Api,
+    /// an llm assistant through the mcp endpoint
+    Mcp,
+    /// the service's own deploy webhook url
+    Webhook,
+    /// a github push (auto-deploy)
+    Github,
+    /// containr itself (recovery redeploys)
+    System,
+}
+
+impl DeploymentChannel {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DeploymentChannel::Manual => "manual",
+            DeploymentChannel::Api => "api",
+            DeploymentChannel::Mcp => "mcp",
+            DeploymentChannel::Webhook => "webhook",
+            DeploymentChannel::Github => "github",
+            DeploymentChannel::System => "system",
+        }
+    }
+
+    /// parses a channel name, accepting any case
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "manual" => Some(DeploymentChannel::Manual),
+            "api" => Some(DeploymentChannel::Api),
+            "mcp" => Some(DeploymentChannel::Mcp),
+            "webhook" => Some(DeploymentChannel::Webhook),
+            "github" => Some(DeploymentChannel::Github),
+            "system" => Some(DeploymentChannel::System),
+            _ => None,
+        }
+    }
+}
+
 /// represents a single deployment of an app
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Deployment {
@@ -888,6 +935,9 @@ pub struct Deployment {
     pub rollback_from_deployment_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_snapshot: Option<App>,
+    /// what queued this deployment (manual, api, mcp, webhook, github, system)
+    #[serde(default)]
+    pub triggered_via: DeploymentChannel,
     pub status: DeploymentStatus,
     /// deprecated: use service_deployments for multi-container apps
     pub container_id: Option<String>,
@@ -916,6 +966,7 @@ impl Deployment {
             rollout_strategy: RolloutStrategy::default(),
             rollback_from_deployment_id: None,
             app_snapshot: None,
+            triggered_via: DeploymentChannel::Manual,
             status: DeploymentStatus::Pending,
             container_id: None,
             image_id: None,
