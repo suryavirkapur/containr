@@ -72,6 +72,8 @@ Some endpoints aren't exposed: sign-in and OAuth flows, password changes, token 
 
 `exec_command` runs `/bin/sh -c <command>` once in a container you own. It returns the exit code, stdout and stderr, and it times out after 60 seconds by default (300 at most). It's also available as `POST /api/containers/{id}/exec`.
 
+Deployments are asynchronous. `trigger_service_deployment` and `rollback_service_deployment` accept `timeout_secs` in the body to wait for a terminal status in one call, and `wait_for_service_deployment` long-polls any deployment (default 60s, max 600s) and reports `timed_out` when it was still in progress.
+
 ## How it works
 
 `crates/containr-api/src/handlers/api_tokens.rs` has a middleware that runs in front of every route. It swaps a valid `ctr_` token for a short-lived session JWT, so existing handlers accept tokens without changes. The middleware also blocks writes from read-only tokens.

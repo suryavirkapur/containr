@@ -28,6 +28,10 @@ pub fn router() -> Router<AppState> {
             get(services::get_service_deployment),
         )
         .route(
+            "/api/services/{id}/deployments/{deployment_id}/wait",
+            get(services::wait_for_service_deployment),
+        )
+        .route(
             "/api/services/{id}/deployments/{deployment_id}/rollback",
             post(services::rollback_service_deployment),
         )

@@ -99,6 +99,7 @@ use crate::handlers::{
         services::run_service_action,
         services::list_service_deployments,
         services::get_service_deployment,
+        services::wait_for_service_deployment,
         services::trigger_service_deployment,
         services::rollback_service_deployment,
         services::get_service_deployment_logs,
