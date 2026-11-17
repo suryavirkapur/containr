@@ -259,6 +259,7 @@ async fn run_server_command(
             db.clone(),
             shared_config.clone(),
             args.data_dir.clone(),
+            routes.cloudflare_dns_ready(),
         );
     let cloudflare_manager = Arc::new(cloudflare_manager);
     {
