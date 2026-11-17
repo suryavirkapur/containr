@@ -1,4 +1,4 @@
-import CircleAlert from "lucide-solid/icons/circle-alert";
+import CircleAlert from "lucide-solid/icons/circle-exclamation-point";
 import CircleCheck from "lucide-solid/icons/circle-check";
 import Info from "lucide-solid/icons/info";
 import X from "lucide-solid/icons/x";

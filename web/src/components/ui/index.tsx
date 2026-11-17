@@ -1,13 +1,13 @@
 import { A } from "@solidjs/router";
 import Check from "lucide-solid/icons/check";
-import CircleAlert from "lucide-solid/icons/circle-alert";
+import CircleAlert from "lucide-solid/icons/circle-exclamation-point";
 import CircleCheck from "lucide-solid/icons/circle-check";
 import Copy from "lucide-solid/icons/copy";
 import Eye from "lucide-solid/icons/eye";
 import EyeOff from "lucide-solid/icons/eye-off";
 import Info from "lucide-solid/icons/info";
 import LoaderCircle from "lucide-solid/icons/loader-circle";
-import TriangleAlert from "lucide-solid/icons/triangle-alert";
+import TriangleAlert from "lucide-solid/icons/triangle-exclamation-point";
 import {
 	type Component,
 	createSignal,
