@@ -41,6 +41,10 @@ pub fn router() -> Router<AppState> {
         )
         .route("/api/services/{id}", get(services::get_service))
         .route("/api/services/{id}", patch(services::update_service))
+        .route(
+            "/api/services/{id}/preview-update",
+            post(services::preview_service_update),
+        )
         .route("/api/services/{id}", delete(services::delete_service))
         .route(
             "/api/services/{id}/settings",

@@ -11,6 +11,7 @@ use axum::{http::StatusCode, Json};
 use chrono::Utc;
 use croner::Cron;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tracing::{info, warn};
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 use trust_dns_resolver::proto::rr::RecordType;
@@ -310,6 +311,35 @@ pub struct ServiceSettingsResponse {
     pub rollout_strategy: String,
     pub auto_deploy: AutoDeploySettingsResponse,
     pub service: ServiceSettingsServiceResponse,
+}
+
+/// one changed field in an update preview (values are masked like the
+/// settings endpoint, so secrets never appear)
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ServiceUpdateFieldChange {
+    /// dotted path, e.g. `service.domains` or `env_vars.DATABASE_URL`
+    pub field: String,
+    /// value before the update; null when the entry is new
+    pub from: Option<serde_json::Value>,
+    /// value after the update; null when the entry is removed
+    pub to: Option<serde_json::Value>,
+}
+
+/// what an update would change, returned by the preview endpoint
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ServiceUpdatePreview {
+    /// fields that would change; empty when the request is a no-op
+    pub changes: Vec<ServiceUpdateFieldChange>,
+    /// settings as they would look after the update (secrets masked)
+    pub settings: ServiceSettingsResponse,
+}
+
+/// a validated update ready to be applied or previewed
+struct ServiceUpdatePlan {
+    app: App,
+    previous_service: ContainerService,
+    updated_service: ContainerService,
+    mount_migrations: Vec<shared_mounts::MountMigration>,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -825,44 +855,124 @@ impl ServiceSvc {
             .map(str::trim)
             .unwrap_or_default()
             .is_empty();
-        let webhook_token = app.ensure_deploy_webhook_token().to_string();
+        app.ensure_deploy_webhook_token();
         if webhook_token_missing {
             self.state.db.save_app(&app).map_err(internal_error)?;
         }
 
-        Ok(ServiceSettingsResponse {
-            service_id: service.id.to_string(),
-            resource_kind: "app_service".to_string(),
-            github_url: app.github_url.clone(),
-            branch: app.branch.clone(),
-            env_vars: app
-                .env_vars
-                .iter()
-                .map(masked_env_var_response)
-                .collect(),
-            rollout_strategy: rollout_strategy_label(app.rollout_strategy)
-                .to_string(),
-            auto_deploy: AutoDeploySettingsResponse {
-                enabled: app.auto_deploy_enabled,
-                watch_paths: app.auto_deploy_watch_paths.clone(),
-                cleanup_stale_deployments: app
-                    .auto_deploy_cleanup_stale_deployments,
-                webhook_path: format!(
-                    "/webhooks/deploy/{}?token={}",
-                    service.id, webhook_token
-                ),
-                webhook_token,
-            },
-            service: service_settings_service_response(&service),
-        })
+        Ok(settings_response(&app, &service))
     }
 
-    pub async fn update_service(
+    /// resolves what an update would change without persisting anything:
+    /// validations, mount migrations and field-level diff included
+    pub async fn preview_service_update(
         &self,
         user_id: Uuid,
         service_id: Uuid,
         req: UpdateServiceRequest,
-    ) -> ApiResult<InventoryServiceResponse> {
+    ) -> ApiResult<ServiceUpdatePreview> {
+        let (before_app, before_service) =
+            resolve_owned_app_service_record(&self.state, user_id, service_id)?;
+        let plan = self
+            .plan_service_update(user_id, service_id, req)
+            .await?;
+
+        let mut changes = Vec::new();
+        let before =
+            serde_json::to_value(settings_response(&before_app, &before_service))
+                .map_err(internal_error)?;
+        let after =
+            serde_json::to_value(settings_response(&plan.app, &plan.updated_service))
+                .map_err(internal_error)?;
+        diff_settings_values("", &before, &after, &mut changes);
+
+        // masked secret values compare equal, so flag real secret changes
+        // separately using the unmasked values
+        let secret_changes: &[(&str, &[EnvVar], &[EnvVar])] = &[
+            ("env_vars", &before_app.env_vars, &plan.app.env_vars),
+            (
+                "service.env_vars",
+                &before_service.env_vars,
+                &plan.updated_service.env_vars,
+            ),
+        ];
+        for (prefix, before, after) in secret_changes {
+            for after_var in *after {
+                let changed = before
+                    .iter()
+                    .find(|var| var.key == after_var.key)
+                    .is_some_and(|var| {
+                        var.secret && var.value != after_var.value
+                    });
+                if changed {
+                    changes.push(ServiceUpdateFieldChange {
+                        field: format!("{}.{}", prefix, after_var.key),
+                        from: Some(Value::String(SECRET_MASK.to_string())),
+                        to: Some(Value::String(format!(
+                            "{} (updated)",
+                            SECRET_MASK
+                        ))),
+                    });
+                }
+            }
+        }
+        let secret_changes: &[(&str, &[BuildArg], &[BuildArg])] = &[(
+            "service.build_args",
+            &before_service.build_args,
+            &plan.updated_service.build_args,
+        )];
+        for (prefix, before, after) in secret_changes {
+            for after_var in *after {
+                let changed = before
+                    .iter()
+                    .find(|var| var.key == after_var.key)
+                    .is_some_and(|var| {
+                        var.secret && var.value != after_var.value
+                    });
+                if changed {
+                    changes.push(ServiceUpdateFieldChange {
+                        field: format!("{}.{}", prefix, after_var.key),
+                        from: Some(Value::String(SECRET_MASK.to_string())),
+                        to: Some(Value::String(format!(
+                            "{} (updated)",
+                            SECRET_MASK
+                        ))),
+                    });
+                }
+            }
+        }
+        if let (Some(before_auth), Some(after_auth)) = (
+            before_service.registry_auth.as_ref(),
+            plan.updated_service.registry_auth.as_ref(),
+        ) {
+            if before_auth.password != after_auth.password {
+                changes.push(ServiceUpdateFieldChange {
+                    field: "service.registry_auth.password".to_string(),
+                    from: Some(Value::String(SECRET_MASK.to_string())),
+                    to: Some(Value::String(format!(
+                        "{} (updated)",
+                        SECRET_MASK
+                    ))),
+                });
+            }
+        }
+        changes.sort_by(|a, b| a.field.cmp(&b.field));
+
+        Ok(ServiceUpdatePreview {
+            changes,
+            settings: settings_response(&plan.app, &plan.updated_service),
+        })
+    }
+
+    /// applies the request to a resolved app and validates the result.
+    /// nothing is persisted and no side effects run — the caller decides
+    /// whether to apply the plan or only preview it
+    async fn plan_service_update(
+        &self,
+        user_id: Uuid,
+        service_id: Uuid,
+        req: UpdateServiceRequest,
+    ) -> ApiResult<ServiceUpdatePlan> {
         let config = self.state.config.read().await.clone();
         let (mut app, service) =
             resolve_owned_app_service_record(&self.state, user_id, service_id)?;
@@ -967,6 +1077,32 @@ impl ServiceSvc {
             &previous_service,
             &updated_service,
         )?;
+
+        Ok(ServiceUpdatePlan {
+            app,
+            previous_service,
+            updated_service,
+            mount_migrations,
+        })
+    }
+
+    pub async fn update_service(
+        &self,
+        user_id: Uuid,
+        service_id: Uuid,
+        req: UpdateServiceRequest,
+    ) -> ApiResult<InventoryServiceResponse> {
+        let config = self.state.config.read().await.clone();
+        let plan = self
+            .plan_service_update(user_id, service_id, req)
+            .await?;
+        let ServiceUpdatePlan {
+            mut app,
+            previous_service,
+            updated_service,
+            mount_migrations,
+        } = plan;
+
         let moved = shared_mounts::apply(mount_migrations).await?;
         app.updated_at = Utc::now();
         if let Err(save_error) = self.state.db.save_app(&app) {
@@ -1002,7 +1138,7 @@ impl ServiceSvc {
             }
         }
 
-        self.service_response(user_id, service.id, &config.proxy)
+        self.service_response(user_id, updated_service.id, &config.proxy)
     }
 
     pub async fn get_service_logs(
@@ -2530,6 +2666,153 @@ fn masked_build_arg_response(build_arg: &BuildArg) -> EditableEnvVarResponse {
         key: build_arg.key.clone(),
         value: mask_secret_value(build_arg.secret, &build_arg.value),
         secret: build_arg.secret,
+    }
+}
+
+/// the masked, editable view of a service used by the settings and
+/// update-preview endpoints
+fn settings_response(
+    app: &App,
+    service: &ContainerService,
+) -> ServiceSettingsResponse {
+    let webhook_token = app.deploy_webhook_token.clone().unwrap_or_default();
+    ServiceSettingsResponse {
+        service_id: service.id.to_string(),
+        resource_kind: "app_service".to_string(),
+        github_url: app.github_url.clone(),
+        branch: app.branch.clone(),
+        env_vars: app
+            .env_vars
+            .iter()
+            .map(masked_env_var_response)
+            .collect(),
+        rollout_strategy: rollout_strategy_label(app.rollout_strategy)
+            .to_string(),
+        auto_deploy: AutoDeploySettingsResponse {
+            enabled: app.auto_deploy_enabled,
+            watch_paths: app.auto_deploy_watch_paths.clone(),
+            cleanup_stale_deployments: app
+                .auto_deploy_cleanup_stale_deployments,
+            webhook_path: format!(
+                "/webhooks/deploy/{}?token={}",
+                service.id, webhook_token
+            ),
+            webhook_token,
+        },
+        service: service_settings_service_response(service),
+    }
+}
+
+/// arrays whose elements are objects keyed by a string field are diffed
+/// per key; anything else is compared whole
+const KEYED_ARRAY_FIELDS: &[&str] = &["key", "name", "path"];
+
+fn keyed_array<'a>(
+    items: &'a [serde_json::Value],
+) -> Option<std::collections::BTreeMap<String, &'a serde_json::Value>> {
+    if items.is_empty() {
+        return None;
+    }
+    let mut keyed = std::collections::BTreeMap::new();
+    for item in items {
+        let object = item.as_object()?;
+        let key = KEYED_ARRAY_FIELDS
+            .iter()
+            .find_map(|field| object.get(*field)?.as_str())?;
+        keyed.insert(key.to_string(), item);
+    }
+    Some(keyed)
+}
+
+fn join_path(path: &str, segment: &str) -> String {
+    if path.is_empty() {
+        segment.to_string()
+    } else {
+        format!("{}.{}", path, segment)
+    }
+}
+
+/// recursively collects differences between two settings documents
+fn diff_settings_values(
+    path: &str,
+    before: &serde_json::Value,
+    after: &serde_json::Value,
+    changes: &mut Vec<ServiceUpdateFieldChange>,
+) {
+    if before == after {
+        return;
+    }
+    match (before, after) {
+        (serde_json::Value::Object(before), serde_json::Value::Object(after)) => {
+            let keys: std::collections::BTreeSet<&String> =
+                before.keys().chain(after.keys()).collect();
+            for key in keys {
+                let child = join_path(path, key);
+                match (before.get(key), after.get(key)) {
+                    (None, Some(value)) => {
+                        changes.push(ServiceUpdateFieldChange {
+                            field: child,
+                            from: None,
+                            to: Some(value.clone()),
+                        })
+                    }
+                    (Some(value), None) => {
+                        changes.push(ServiceUpdateFieldChange {
+                            field: child,
+                            from: Some(value.clone()),
+                            to: None,
+                        })
+                    }
+                    (Some(before), Some(after)) => {
+                        diff_settings_values(&child, before, after, changes)
+                    }
+                    _ => {}
+                }
+            }
+        }
+        (serde_json::Value::Array(before), serde_json::Value::Array(after)) => {
+            match (keyed_array(before), keyed_array(after)) {
+                (Some(before), Some(after)) => {
+                    let keys: std::collections::BTreeSet<&String> =
+                        before.keys().chain(after.keys()).collect();
+                    for key in keys {
+                        let child = join_path(path, key);
+                        match (before.get(key), after.get(key)) {
+                            (None, Some(value)) => {
+                                changes.push(ServiceUpdateFieldChange {
+                                    field: child,
+                                    from: None,
+                                    to: Some((*value).clone()),
+                                })
+                            }
+                            (Some(value), None) => {
+                                changes.push(ServiceUpdateFieldChange {
+                                    field: child,
+                                    from: Some((*value).clone()),
+                                    to: None,
+                                })
+                            }
+                            (Some(before), Some(after)) => {
+                                diff_settings_values(
+                                    &child, before, after, changes,
+                                )
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => changes.push(ServiceUpdateFieldChange {
+                    field: path.to_string(),
+                    from: Some(before.clone().into()),
+                    to: Some(after.clone().into()),
+                }),
+            }
+        }
+        _ => changes.push(ServiceUpdateFieldChange {
+            field: path.to_string(),
+            from: Some(before.clone()),
+            to: Some(after.clone()),
+        }),
     }
 }
 
@@ -5165,13 +5448,63 @@ pub(crate) async fn resolve_source_deployment_source(
 mod services_test {
     use super::{
         build_app_env_vars, build_default_urls, build_service_env_vars,
-        default_service_domain, supported_template_message, EnvVar,
-        EnvVarRequest, ProxyConfig, ServiceAction, ServiceInventoryItem,
-        ServiceResourceKind, ServiceType, TemplateKind,
+        default_service_domain, diff_settings_values,
+        supported_template_message, EnvVar, EnvVarRequest, ProxyConfig,
+        ServiceAction, ServiceInventoryItem, ServiceResourceKind,
+        ServiceType, TemplateKind,
     };
     use chrono::Utc;
     use containr_common::service_inventory::ServiceRuntimeStatus;
+    use serde_json::json;
     use uuid::Uuid;
+
+    #[test]
+    fn diff_reports_scalar_object_and_keyed_array_changes() {
+        let before = json!({
+            "branch": "main",
+            "env_vars": [
+                { "key": "A", "value": "1", "secret": false },
+                { "key": "B", "value": "x", "secret": true },
+            ],
+            "service": { "replicas": 1, "domains": ["a.example.com"] },
+        });
+        let after = json!({
+            "branch": "dev",
+            "env_vars": [
+                { "key": "A", "value": "2", "secret": false },
+                { "key": "C", "value": "new", "secret": false },
+            ],
+            "service": { "replicas": 3, "domains": ["b.example.com"] },
+        });
+        let mut changes = Vec::new();
+        diff_settings_values("", &before, &after, &mut changes);
+        changes.sort_by(|a, b| a.field.cmp(&b.field));
+        let fields: Vec<&str> =
+            changes.iter().map(|change| change.field.as_str()).collect();
+        assert_eq!(
+            fields,
+            vec![
+                "branch",
+                "env_vars.A.value",
+                "env_vars.B",
+                "env_vars.C",
+                "service.domains",
+                "service.replicas",
+            ]
+        );
+        let added = changes
+            .iter()
+            .find(|change| change.field == "env_vars.C")
+            .expect("added var");
+        assert_eq!(added.from, None);
+        let removed = changes
+            .iter()
+            .find(|change| change.field == "env_vars.B")
+            .expect("removed var");
+        assert_eq!(removed.to, None);
+        // masked secrets compare equal, so no diff for B's value itself
+        assert!(!fields.contains(&"env_vars.B.value"));
+    }
 
     #[test]
     fn masked_env_var_keeps_existing_secret_even_if_marked_plain() {
