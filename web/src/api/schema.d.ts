@@ -781,6 +781,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/services/{id}/deployments/{deployment_id}/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["wait_for_service_deployment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/services/{id}/env/reveal": {
         parameters: {
             query?: never;
@@ -1378,6 +1394,17 @@ export interface components {
             commit_sha?: string | null;
             /** @description rollout strategy override (stop_first or start_first) */
             rollout_strategy?: string | null;
+            /**
+             * Format: int64
+             * @description wait up to this many seconds for the deployment to finish before
+             *     responding (max 600); the response then shows the final status
+             */
+            timeout_secs?: number | null;
+        };
+        /** @description deployment response after waiting for it to reach a terminal state */
+        DeploymentWaitResponse: components["schemas"]["DeploymentResponse"] & {
+            /** @description true when the wait timed out before the deployment finished */
+            timed_out: boolean;
         };
         /** @description usage of one docker resource category */
         DiskUsageEntryResponse: {
@@ -1680,6 +1707,12 @@ export interface components {
         RollbackRequest: {
             /** @description rollout strategy override (stop_first or start_first) */
             rollout_strategy?: string | null;
+            /**
+             * Format: int64
+             * @description wait up to this many seconds for the deployment to finish before
+             *     responding (max 600); the response then shows the final status
+             */
+            timeout_secs?: number | null;
         };
         ServiceContainerMetrics: {
             /** Format: int64 */
@@ -4525,6 +4558,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description deployment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wait_for_service_deployment: {
+        parameters: {
+            query?: {
+                /** @description seconds to wait for a terminal status (default 60, max 600; 0 returns the current status immediately) */
+                timeout_secs?: number;
+            };
+            header?: never;
+            path: {
+                /** @description service id */
+                id: string;
+                /** @description deployment id */
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description deployment after waiting */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentWaitResponse"];
                 };
             };
             /** @description unauthorized */

@@ -30,6 +30,15 @@ pub struct DeploymentResponse {
     pub finished_at: Option<String>,
 }
 
+/// deployment response after waiting for it to reach a terminal state
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DeploymentWaitResponse {
+    #[serde(flatten)]
+    pub deployment: DeploymentResponse,
+    /// true when the wait timed out before the deployment finished
+    pub timed_out: bool,
+}
+
 /// deployment trigger request (optional)
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct DeploymentTriggerRequest {
@@ -41,6 +50,9 @@ pub struct DeploymentTriggerRequest {
     pub commit_message: Option<String>,
     /// rollout strategy override (stop_first or start_first)
     pub rollout_strategy: Option<String>,
+    /// wait up to this many seconds for the deployment to finish before
+    /// responding (max 600); the response then shows the final status
+    pub timeout_secs: Option<u64>,
 }
 
 /// rollback request
@@ -48,12 +60,23 @@ pub struct DeploymentTriggerRequest {
 pub struct RollbackRequest {
     /// rollout strategy override (stop_first or start_first)
     pub rollout_strategy: Option<String>,
+    /// wait up to this many seconds for the deployment to finish before
+    /// responding (max 600); the response then shows the final status
+    pub timeout_secs: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct LogsQuery {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+}
+
+/// how long to wait for a deployment to reach a terminal state
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct WaitQuery {
+    /// seconds to wait (default 60, max 600); 0 returns the current
+    /// status immediately
+    pub timeout_secs: Option<u64>,
 }
 
 impl From<&Deployment> for DeploymentResponse {

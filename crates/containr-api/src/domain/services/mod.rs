@@ -5,6 +5,7 @@ use std::io::ErrorKind;
 use std::net::IpAddr;
 use std::path::{Component, Path as FsPath, PathBuf};
 use std::str::FromStr;
+use std::time::Duration;
 
 use axum::{http::StatusCode, Json};
 use chrono::Utc;
@@ -24,7 +25,8 @@ use crate::handlers::auth::ErrorResponse;
 use crate::handlers::deployments::{
     can_rollback_to_deployment, create_and_queue_deployment,
     create_and_queue_local_build_deployment, DeploymentResponse,
-    DeploymentTriggerRequest, LogsQuery, RollbackRequest,
+    DeploymentTriggerRequest, DeploymentWaitResponse, LogsQuery,
+    RollbackRequest,
 };
 use crate::security::{encrypt_value, resolve_encryption_secret};
 use crate::state::AppState;
@@ -49,6 +51,13 @@ use containr_runtime::{
 };
 
 pub type ApiResult<T> = Result<T, (StatusCode, Json<ErrorResponse>)>;
+
+/// default deployment wait when `timeout_secs` is omitted
+const DEFAULT_WAIT_SECS: u64 = 60;
+/// longest a deployment wait may block
+const MAX_WAIT_SECS: u64 = 600;
+/// how often deployment status is reloaded while waiting
+const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct ListServicesQuery {
@@ -1291,6 +1300,16 @@ impl ServiceSvc {
         )
         .await?;
 
+        let deployment = match trigger
+            .as_ref()
+            .and_then(|value| value.timeout_secs)
+        {
+            Some(secs) => {
+                self.wait_for_settle(deployment.id, secs).await?
+            }
+            None => deployment,
+        };
+
         Ok(deployment_response_for_service(&deployment, &service))
     }
 
@@ -1359,7 +1378,94 @@ impl ServiceSvc {
         )
         .await?;
 
+        let deployment = match req.as_ref().and_then(|value| value.timeout_secs)
+        {
+            Some(secs) => {
+                self.wait_for_settle(deployment.id, secs).await?
+            }
+            None => deployment,
+        };
+
         Ok(deployment_response_for_service(&deployment, &service))
+    }
+
+    /// polls until the deployment reaches a terminal state or the timeout
+    /// elapses; `timed_out` is true when it was still in progress
+    pub async fn wait_for_service_deployment(
+        &self,
+        user_id: Uuid,
+        service_id: Uuid,
+        deployment_id: Uuid,
+        timeout_secs: Option<u64>,
+    ) -> ApiResult<DeploymentWaitResponse> {
+        let (_, service) =
+            resolve_owned_app_service_record(&self.state, user_id, service_id)?;
+        // 404 early when the deployment doesn't belong to this service
+        self.require_service_deployment(user_id, service_id, deployment_id)?;
+        let timeout_secs =
+            timeout_secs.unwrap_or(DEFAULT_WAIT_SECS).min(MAX_WAIT_SECS);
+        let deadline =
+            tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
+        let deployment = loop {
+            let deployment = self
+                .state
+                .db
+                .get_deployment(deployment_id)
+                .map_err(internal_error)?
+                .ok_or_else(|| {
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(ErrorResponse {
+                            error: "deployment not found".to_string(),
+                        }),
+                    )
+                })?;
+            if deployment.status.is_terminal()
+                || tokio::time::Instant::now() >= deadline
+            {
+                break deployment;
+            }
+            tokio::time::sleep(WAIT_POLL_INTERVAL).await;
+        };
+        let timed_out = !deployment.status.is_terminal();
+        Ok(DeploymentWaitResponse {
+            deployment: deployment_response_for_service(
+                &deployment,
+                &service,
+            ),
+            timed_out,
+        })
+    }
+
+    /// reloads a deployment until its status is terminal or `secs` pass
+    async fn wait_for_settle(
+        &self,
+        deployment_id: Uuid,
+        secs: u64,
+    ) -> ApiResult<Deployment> {
+        let deadline = tokio::time::Instant::now()
+            + Duration::from_secs(secs.min(MAX_WAIT_SECS));
+        loop {
+            let deployment = self
+                .state
+                .db
+                .get_deployment(deployment_id)
+                .map_err(internal_error)?
+                .ok_or_else(|| {
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(ErrorResponse {
+                            error: "deployment not found".to_string(),
+                        }),
+                    )
+                })?;
+            if deployment.status.is_terminal()
+                || tokio::time::Instant::now() >= deadline
+            {
+                return Ok(deployment);
+            }
+            tokio::time::sleep(WAIT_POLL_INTERVAL).await;
+        }
     }
 
     pub fn get_service_deployment_logs(

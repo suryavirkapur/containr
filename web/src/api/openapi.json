@@ -3424,6 +3424,84 @@
         ]
       }
     },
+    "/api/services/{id}/deployments/{deployment_id}/wait": {
+      "get": {
+        "tags": [
+          "services"
+        ],
+        "operationId": "wait_for_service_deployment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "service id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "description": "deployment id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "timeout_secs",
+            "in": "query",
+            "description": "seconds to wait for a terminal status (default 60, max 600; 0 returns the current status immediately)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "deployment after waiting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentWaitResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "deployment not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/services/{id}/env/reveal": {
       "post": {
         "tags": [
@@ -5707,8 +5785,37 @@
               "null"
             ],
             "description": "rollout strategy override (stop_first or start_first)"
+          },
+          "timeout_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "wait up to this many seconds for the deployment to finish before\nresponding (max 600); the response then shows the final status",
+            "minimum": 0
           }
         }
+      },
+      "DeploymentWaitResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DeploymentResponse"
+          },
+          {
+            "type": "object",
+            "required": [
+              "timed_out"
+            ],
+            "properties": {
+              "timed_out": {
+                "type": "boolean",
+                "description": "true when the wait timed out before the deployment finished"
+              }
+            }
+          }
+        ],
+        "description": "deployment response after waiting for it to reach a terminal state"
       },
       "DiskUsageEntryResponse": {
         "type": "object",
@@ -6690,6 +6797,15 @@
               "null"
             ],
             "description": "rollout strategy override (stop_first or start_first)"
+          },
+          "timeout_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "wait up to this many seconds for the deployment to finish before\nresponding (max 600); the response then shows the final status",
+            "minimum": 0
           }
         }
       },
