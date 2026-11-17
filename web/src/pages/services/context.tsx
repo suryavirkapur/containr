@@ -42,6 +42,7 @@ export const toServiceInput = (
 		expose_http: current.expose_http,
 		domains: current.domains,
 		http_only_domains: current.http_only_domains,
+		cloudflare_domains: current.cloudflare_domains,
 		additional_ports: current.additional_ports,
 		replicas: current.replicas,
 		memory_limit_mb: current.memory_limit_mb ?? null,

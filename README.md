@@ -22,6 +22,10 @@ containr service install --print         # show the service files instead of wri
 containr service restart
 ```
 
+## MCP and API
+
+containr has an MCP server at `/mcp`. AI assistants (Claude Code, Cursor, VS Code, Claude Desktop) can use it to deploy and manage services. Create a token on the **MCP & API** page in the dashboard and copy the snippet for your client. The same tokens work for the REST API (reference at `/api/docs`). See [docs/mcp.md](docs/mcp.md).
+
 ## Updates
 
 Each `v*` tag builds Linux binaries (`containr-linux-amd64`, `containr-linux-arm64`) with a `.sha256` file and publishes them as a GitHub release (`.github/workflows/release.yml`). The tag must match the workspace version in `Cargo.toml`. Tags with a hyphen, like `v0.1.16-alpha`, are published as prereleases.

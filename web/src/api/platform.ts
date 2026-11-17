@@ -132,6 +132,55 @@ export const createRegistry = (server: string, username: string, password: strin
 export const deleteRegistry = (id: string) =>
 	request<void>("DELETE", `/api/registries/${encodeURIComponent(id)}`);
 
+// ---- api tokens and mcp -------------------------------------------------
+
+export type ApiTokenScope = "read" | "full";
+
+export type ApiToken = {
+	id: string;
+	name: string;
+	prefix: string;
+	scope: ApiTokenScope;
+	created_at: string;
+	last_used_at: string | null;
+	expires_at: string | null;
+};
+
+export type CreatedApiToken = { token: string; api_token: ApiToken };
+
+export const listApiTokens = () => request<ApiToken[]>("GET", "/api/tokens");
+
+export const createApiToken = (name: string, scope: ApiTokenScope, expiresInDays: number | null) =>
+	request<CreatedApiToken>("POST", "/api/tokens", {
+		name,
+		scope,
+		expires_in_days: expiresInDays,
+	});
+
+export const deleteApiToken = (id: string) =>
+	request<void>("DELETE", `/api/tokens/${encodeURIComponent(id)}`);
+
+export type McpTool = {
+	name: string;
+	title: string;
+	description: string;
+	tag: string;
+	method: string;
+	path: string;
+	read_only: boolean;
+	destructive: boolean;
+};
+
+export type McpInfo = {
+	path: string;
+	server_name: string;
+	server_version: string;
+	protocol_version: string;
+	tools: McpTool[];
+};
+
+export const getMcpInfo = () => request<McpInfo>("GET", "/api/mcp");
+
 // ---- deploy methods ------------------------------------------------------
 
 export const deployTarball = (id: string, file: File) => {
@@ -199,6 +248,8 @@ export type ServiceInput = {
 	expose_http?: boolean;
 	domains?: string[];
 	http_only_domains?: string[];
+	/** custom domains served through the cloudflare tunnel */
+	cloudflare_domains?: string[];
 	additional_ports?: number[];
 	replicas?: number;
 	memory_limit_mb?: number | null;

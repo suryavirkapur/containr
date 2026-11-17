@@ -4,8 +4,9 @@ use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
 use crate::handlers::{
-    auth, certificates, containers, deployments, github_app, health, projects,
-    registries, services, settings, storage, system, updates,
+    api_tokens, auth, certificates, cloudflare, containers, deployments,
+    github_app, health, projects, registries, services, settings, storage,
+    system, updates,
 };
 
 /// api documentation
@@ -28,7 +29,8 @@ use crate::handlers::{
         (name = "system", description = "system monitoring"),
         (name = "certificates", description = "service certificate management"),
         (name = "registries", description = "private container registries"),
-        (name = "projects", description = "projects grouping services on one network")
+        (name = "projects", description = "projects grouping services on one network"),
+        (name = "tokens", description = "api tokens for scripts and the mcp endpoint")
     ),
     paths(
         // health
@@ -48,6 +50,10 @@ use crate::handlers::{
         registries::list_registries,
         registries::create_registry,
         registries::delete_registry,
+        // api tokens
+        api_tokens::list_api_tokens,
+        api_tokens::create_api_token,
+        api_tokens::delete_api_token,
         // auth
         auth::status,
         auth::register,
@@ -65,6 +71,11 @@ use crate::handlers::{
         settings::get_settings,
         settings::update_settings,
         settings::issue_dashboard_certificate,
+        // cloudflare
+        cloudflare::get_cloudflare_status,
+        cloudflare::connect_cloudflare,
+        cloudflare::disconnect_cloudflare,
+        cloudflare::list_cloudflare_zones,
         // certificates
         certificates::get_certificate,
         certificates::reissue_certificate,
@@ -108,6 +119,7 @@ use crate::handlers::{
         containers::get_container_status,
         containers::get_container_logs,
         containers::issue_exec_token,
+        containers::exec_command,
         containers::list_container_mounts,
         containers::list_volume_entries,
         containers::delete_volume_entry,
@@ -135,6 +147,10 @@ use crate::handlers::{
             // registries
             registries::RegistryResponse,
             registries::CreateRegistryRequest,
+            // api tokens
+            api_tokens::ApiTokenResponse,
+            api_tokens::CreateApiTokenRequest,
+            api_tokens::CreatedApiTokenResponse,
             // auth
             auth::RegistrationStatusResponse,
             auth::LoginRequest,
@@ -149,6 +165,11 @@ use crate::handlers::{
             settings::SettingsResponse,
             settings::UpdateSettingsRequest,
             settings::DashboardCertResponse,
+            // cloudflare
+            cloudflare::ConnectCloudflareRequest,
+            cloudflare::CloudflareStatusResponse,
+            cloudflare::CloudflareZoneResponse,
+            cloudflare::CloudflareDomainResponse,
             // certificates
             certificates::CertificateResponse,
             certificates::ReissueRequest,
@@ -205,6 +226,8 @@ use crate::handlers::{
             containers::ContainerStatusResponse,
             containers::ContainerLogsResponse,
             containers::ExecTokenResponse,
+            containers::ExecCommandRequest,
+            containers::ExecCommandResponse,
             containers::ContainerMountResponse,
             containers::VolumeEntry,
         )

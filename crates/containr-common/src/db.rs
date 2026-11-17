@@ -23,9 +23,9 @@ use crate::managed_services::{
     QueueCredentials, QueueType, ServiceStatus, StorageBucket,
 };
 use crate::models::{
-    App, Certificate, ContainerRegistry, ContainerService, Deployment,
-    DeploymentStatus, GithubAppConfig, HttpRequestLog, Project,
-    ServiceDeployment, User,
+    ApiToken, ApiTokenScope, App, Certificate, CloudflareSettings,
+    ContainerRegistry, ContainerService, Deployment, DeploymentStatus,
+    GithubAppConfig, HttpRequestLog, Project, ServiceDeployment, User,
 };
 use crate::service_inventory::{
     summarize_app_service_runtime, ServiceInventoryItem, ServiceResourceKind,
@@ -94,6 +94,37 @@ impl Database {
 
     pub fn delete_registry(&self, id: Uuid) -> Result<bool> {
         self.store.delete_registry(id)
+    }
+
+    pub fn save_api_token(&self, token: &ApiToken) -> Result<()> {
+        self.store.save_api_token(token)
+    }
+
+    pub fn get_api_token_by_hash(
+        &self,
+        token_hash: &str,
+    ) -> Result<Option<ApiToken>> {
+        self.store.get_api_token_by_hash(token_hash)
+    }
+
+    pub fn list_api_tokens_by_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<ApiToken>> {
+        self.store.list_api_tokens_by_user(user_id)
+    }
+
+    /// deletes one of the user's tokens; false when it isn't theirs
+    pub fn delete_api_token(&self, user_id: Uuid, id: Uuid) -> Result<bool> {
+        self.store.delete_api_token(user_id, id)
+    }
+
+    pub fn touch_api_token(
+        &self,
+        id: Uuid,
+        used_at: DateTime<Utc>,
+    ) -> Result<()> {
+        self.store.touch_api_token(id, used_at)
     }
 
     /// writes a consistent snapshot of the database to `path`
@@ -400,6 +431,24 @@ impl Database {
         self.store.delete_github_app(owner_id)
     }
 
+    /// the single cloudflare account connection for this server
+    pub fn get_cloudflare_settings(
+        &self,
+    ) -> Result<Option<CloudflareSettings>> {
+        self.store.get_cloudflare_settings()
+    }
+
+    pub fn save_cloudflare_settings(
+        &self,
+        settings: &CloudflareSettings,
+    ) -> Result<()> {
+        self.store.save_cloudflare_settings(settings)
+    }
+
+    pub fn delete_cloudflare_settings(&self) -> Result<()> {
+        self.store.delete_cloudflare_settings()
+    }
+
     pub fn list_service_inventory_by_owner(
         &self,
         owner_id: Uuid,
@@ -456,6 +505,7 @@ impl Database {
                     proxy_connection_string: None,
                     domains: svc.custom_domains(),
                     http_only_domains: svc.http_only_domains(),
+                    cloudflare_domains: svc.cloudflare_domains(),
                     schedule: svc.schedule.clone(),
                     notes: svc.notes.clone(),
                     port_mappings: svc.port_mappings.clone(),
@@ -499,6 +549,7 @@ impl Database {
                 proxy_connection_string: db.proxy_connection_string(),
                 domains: Vec::new(),
                 http_only_domains: Vec::new(),
+                cloudflare_domains: Vec::new(),
                 schedule: None,
                 notes: None,
                 port_mappings: Vec::new(),
@@ -548,6 +599,7 @@ impl Database {
                 proxy_connection_string: None,
                 domains: Vec::new(),
                 http_only_domains: Vec::new(),
+                cloudflare_domains: Vec::new(),
                 schedule: None,
                 notes: None,
                 port_mappings: Vec::new(),
@@ -847,6 +899,90 @@ impl SqliteDatabase {
                 .await
                 .map_err(Error::from)?;
             Ok(r.rows_affected() > 0)
+        })
+    }
+
+    // ==================== API TOKENS ====================
+    fn save_api_token(&self, token: &ApiToken) -> Result<()> {
+        self.run(async {
+            sqlx::query(
+                r#"INSERT INTO api_tokens (id, user_id, name, token_hash, prefix, scope, created_at, last_used_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET name=excluded.name, scope=excluded.scope, last_used_at=excluded.last_used_at, expires_at=excluded.expires_at"#,
+            )
+            .bind(token.id.to_string())
+            .bind(token.user_id.to_string())
+            .bind(&token.name)
+            .bind(&token.token_hash)
+            .bind(&token.prefix)
+            .bind(token.scope.as_str())
+            .bind(token.created_at.to_rfc3339())
+            .bind(token.last_used_at.map(|t| t.to_rfc3339()))
+            .bind(token.expires_at.map(|t| t.to_rfc3339()))
+            .execute(&self.pool)
+            .await
+            .map_err(Error::from)?;
+            Ok(())
+        })
+    }
+
+    fn get_api_token_by_hash(
+        &self,
+        token_hash: &str,
+    ) -> Result<Option<ApiToken>> {
+        self.run(async {
+            let row =
+                sqlx::query("SELECT * FROM api_tokens WHERE token_hash = ?")
+                    .bind(token_hash)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(Error::from)?;
+            row_to_api_token(row.as_ref())
+        })
+    }
+
+    fn list_api_tokens_by_user(&self, user_id: Uuid) -> Result<Vec<ApiToken>> {
+        self.run(async {
+            let rows = sqlx::query(
+                "SELECT * FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC",
+            )
+            .bind(user_id.to_string())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Error::from)?;
+            let mut tokens = Vec::new();
+            for row in rows {
+                if let Some(token) = row_to_api_token(Some(&row))? {
+                    tokens.push(token);
+                }
+            }
+            Ok(tokens)
+        })
+    }
+
+    fn delete_api_token(&self, user_id: Uuid, id: Uuid) -> Result<bool> {
+        self.run(async {
+            let r = sqlx::query(
+                "DELETE FROM api_tokens WHERE id = ? AND user_id = ?",
+            )
+            .bind(id.to_string())
+            .bind(user_id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(Error::from)?;
+            Ok(r.rows_affected() > 0)
+        })
+    }
+
+    fn touch_api_token(&self, id: Uuid, used_at: DateTime<Utc>) -> Result<()> {
+        self.run(async {
+            sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
+                .bind(used_at.to_rfc3339())
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            Ok(())
         })
     }
 
@@ -1719,6 +1855,74 @@ impl SqliteDatabase {
             Ok(r.rows_affected() > 0)
         })
     }
+
+    fn get_cloudflare_settings(&self) -> Result<Option<CloudflareSettings>> {
+        self.run(async {
+            let row =
+                sqlx::query("SELECT * FROM cloudflare_settings WHERE id = 1")
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(Error::from)?;
+            row_to_cloudflare_settings(row.as_ref())
+        })
+    }
+
+    fn save_cloudflare_settings(
+        &self,
+        settings: &CloudflareSettings,
+    ) -> Result<()> {
+        self.run(async {
+            sqlx::query(
+                r#"INSERT INTO cloudflare_settings (id, api_token, account_id, tunnel_id, tunnel_name, tunnel_token, created_at, updated_at)
+                   VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET api_token=excluded.api_token, account_id=excluded.account_id, tunnel_id=excluded.tunnel_id, tunnel_name=excluded.tunnel_name, tunnel_token=excluded.tunnel_token, created_at=excluded.created_at, updated_at=excluded.updated_at"#,
+            )
+            .bind(&settings.api_token)
+            .bind(&settings.account_id)
+            .bind(&settings.tunnel_id)
+            .bind(&settings.tunnel_name)
+            .bind(&settings.tunnel_token)
+            .bind(settings.created_at.to_rfc3339())
+            .bind(settings.updated_at.to_rfc3339())
+            .execute(&self.pool)
+            .await
+            .map_err(Error::from)?;
+            Ok(())
+        })
+    }
+
+    fn delete_cloudflare_settings(&self) -> Result<()> {
+        self.run(async {
+            sqlx::query("DELETE FROM cloudflare_settings WHERE id = 1")
+                .execute(&self.pool)
+                .await
+                .map_err(Error::from)?;
+            Ok(())
+        })
+    }
+}
+
+fn row_to_cloudflare_settings(
+    row: Option<&SqliteRow>,
+) -> Result<Option<CloudflareSettings>> {
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let created_at: String = row.try_get("created_at").map_err(Error::from)?;
+    let updated_at: String = row.try_get("updated_at").map_err(Error::from)?;
+    Ok(Some(CloudflareSettings {
+        api_token: row.try_get("api_token").map_err(Error::from)?,
+        account_id: row.try_get("account_id").map_err(Error::from)?,
+        tunnel_id: row.try_get("tunnel_id").map_err(Error::from)?,
+        tunnel_name: row.try_get("tunnel_name").map_err(Error::from)?,
+        tunnel_token: row.try_get("tunnel_token").map_err(Error::from)?,
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+        updated_at: DateTime::parse_from_rfc3339(&updated_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+    }))
 }
 
 // ==================== ROW HELPERS ====================
@@ -1745,6 +1949,50 @@ fn row_to_registry(
         created_at: DateTime::parse_from_rfc3339(&created_at)
             .map_err(|e| Error::Internal(e.to_string()))?
             .with_timezone(&Utc),
+    }))
+}
+
+fn parse_optional_time(value: Option<String>) -> Result<Option<DateTime<Utc>>> {
+    value
+        .filter(|v| !v.is_empty())
+        .map(|v| {
+            DateTime::parse_from_rfc3339(&v)
+                .map(|t| t.with_timezone(&Utc))
+                .map_err(|e| Error::Internal(e.to_string()))
+        })
+        .transpose()
+}
+
+fn row_to_api_token(row: Option<&SqliteRow>) -> Result<Option<ApiToken>> {
+    let row = match row {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let created_at: String = row.try_get("created_at").map_err(Error::from)?;
+    let scope: String = row.try_get("scope").map_err(Error::from)?;
+    Ok(Some(ApiToken {
+        id: Uuid::parse_str(
+            &row.try_get::<String, _>("id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        user_id: Uuid::parse_str(
+            &row.try_get::<String, _>("user_id").map_err(Error::from)?,
+        )
+        .map_err(|e| Error::Internal(e.to_string()))?,
+        name: row.try_get("name").map_err(Error::from)?,
+        token_hash: row.try_get("token_hash").map_err(Error::from)?,
+        prefix: row.try_get("prefix").map_err(Error::from)?,
+        // an unknown scope falls back to the narrowest one
+        scope: ApiTokenScope::parse(&scope).unwrap_or(ApiTokenScope::Read),
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| Error::Internal(e.to_string()))?
+            .with_timezone(&Utc),
+        last_used_at: parse_optional_time(
+            row.try_get("last_used_at").map_err(Error::from)?,
+        )?,
+        expires_at: parse_optional_time(
+            row.try_get("expires_at").map_err(Error::from)?,
+        )?,
     }))
 }
 
@@ -1857,6 +2105,9 @@ fn row_to_service(row: Option<&SqliteRow>) -> Result<Option<ContainerService>> {
     let domains: String = row.try_get("domains").map_err(Error::from)?;
     let http_only_domains: String =
         row.try_get("http_only_domains").map_err(Error::from)?;
+    let cloudflare_domains: String = row
+        .try_get("cloudflare_domains")
+        .unwrap_or_else(|_| "[]".to_string());
     let build_args: String = row.try_get("build_args").map_err(Error::from)?;
     let command: Option<String> =
         row.try_get("command").map_err(Error::from)?;
@@ -1904,6 +2155,8 @@ fn row_to_service(row: Option<&SqliteRow>) -> Result<Option<ContainerService>> {
         env_vars: serde_json::from_str(&env_vars).unwrap_or_default(),
         domains: serde_json::from_str(&domains).unwrap_or_default(),
         http_only_domains: serde_json::from_str(&http_only_domains)
+            .unwrap_or_default(),
+        cloudflare_domains: serde_json::from_str(&cloudflare_domains)
             .unwrap_or_default(),
         build_context: row.try_get("build_context").map_err(Error::from)?,
         dockerfile_path: row.try_get("dockerfile_path").map_err(Error::from)?,
@@ -2315,9 +2568,9 @@ async fn insert_service(
     };
 
     sqlx::query(
-        r#"INSERT INTO services (id, app_id, name, image, service_type, port, expose_http, additional_ports, replicas, memory_limit, cpu_limit, depends_on, health_check, restart_policy, registry_auth, env_vars, domains, http_only_domains, build_context, dockerfile_path, build_target, build_args, command, entrypoint, working_dir, schedule, mounts, notes, basic_auth, login_gate, port_mappings, files, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, name=excluded.name, image=excluded.image, service_type=excluded.service_type, port=excluded.port, expose_http=excluded.expose_http, additional_ports=excluded.additional_ports, replicas=excluded.replicas, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, depends_on=excluded.depends_on, health_check=excluded.health_check, restart_policy=excluded.restart_policy, registry_auth=excluded.registry_auth, env_vars=excluded.env_vars, domains=excluded.domains, http_only_domains=excluded.http_only_domains, build_context=excluded.build_context, dockerfile_path=excluded.dockerfile_path, build_target=excluded.build_target, build_args=excluded.build_args, command=excluded.command, entrypoint=excluded.entrypoint, working_dir=excluded.working_dir, schedule=excluded.schedule, mounts=excluded.mounts, notes=excluded.notes, basic_auth=excluded.basic_auth, login_gate=excluded.login_gate, port_mappings=excluded.port_mappings, files=excluded.files, created_at=excluded.created_at, updated_at=excluded.updated_at"#
+        r#"INSERT INTO services (id, app_id, name, image, service_type, port, expose_http, additional_ports, replicas, memory_limit, cpu_limit, depends_on, health_check, restart_policy, registry_auth, env_vars, domains, http_only_domains, cloudflare_domains, build_context, dockerfile_path, build_target, build_args, command, entrypoint, working_dir, schedule, mounts, notes, basic_auth, login_gate, port_mappings, files, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET app_id=excluded.app_id, name=excluded.name, image=excluded.image, service_type=excluded.service_type, port=excluded.port, expose_http=excluded.expose_http, additional_ports=excluded.additional_ports, replicas=excluded.replicas, memory_limit=excluded.memory_limit, cpu_limit=excluded.cpu_limit, depends_on=excluded.depends_on, health_check=excluded.health_check, restart_policy=excluded.restart_policy, registry_auth=excluded.registry_auth, env_vars=excluded.env_vars, domains=excluded.domains, http_only_domains=excluded.http_only_domains, cloudflare_domains=excluded.cloudflare_domains, build_context=excluded.build_context, dockerfile_path=excluded.dockerfile_path, build_target=excluded.build_target, build_args=excluded.build_args, command=excluded.command, entrypoint=excluded.entrypoint, working_dir=excluded.working_dir, schedule=excluded.schedule, mounts=excluded.mounts, notes=excluded.notes, basic_auth=excluded.basic_auth, login_gate=excluded.login_gate, port_mappings=excluded.port_mappings, files=excluded.files, created_at=excluded.created_at, updated_at=excluded.updated_at"#
     )
     .bind(svc.id.to_string())
     .bind(svc.app_id.to_string())
@@ -2337,6 +2590,7 @@ async fn insert_service(
     .bind(serde_json::to_string(&svc.env_vars)?)
     .bind(serde_json::to_string(&svc.domains)?)
     .bind(serde_json::to_string(&svc.http_only_domains)?)
+    .bind(serde_json::to_string(&svc.cloudflare_domains)?)
     .bind(&svc.build_context)
     .bind(&svc.dockerfile_path)
     .bind(&svc.build_target)
@@ -2566,6 +2820,74 @@ mod tests {
         assert!(db.get_registry(registry.id).expect("get").is_none());
         assert!(db.get_app(app.id).expect("get app").is_none());
         assert!(!db.delete_registry(registry.id).expect("delete registry"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn cloudflare_settings_roundtrip() {
+        let (db, dir) = open_temp_db();
+        assert!(db
+            .get_cloudflare_settings()
+            .expect("get settings")
+            .is_none());
+
+        let settings = CloudflareSettings {
+            api_token: "enc:token".to_string(),
+            account_id: "acct-1".to_string(),
+            tunnel_id: Some("tunnel-1".to_string()),
+            tunnel_name: Some("containr".to_string()),
+            tunnel_token: Some("enc:tunnel".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        db.save_cloudflare_settings(&settings)
+            .expect("save settings");
+
+        let loaded = db
+            .get_cloudflare_settings()
+            .expect("get settings")
+            .expect("settings exist");
+        assert_eq!(loaded.api_token, "enc:token");
+        assert_eq!(loaded.account_id, "acct-1");
+        assert_eq!(loaded.tunnel_id.as_deref(), Some("tunnel-1"));
+        assert_eq!(loaded.tunnel_token.as_deref(), Some("enc:tunnel"));
+
+        let updated = CloudflareSettings {
+            tunnel_id: Some("tunnel-2".to_string()),
+            ..settings
+        };
+        db.save_cloudflare_settings(&updated)
+            .expect("update settings");
+        let reloaded = db
+            .get_cloudflare_settings()
+            .expect("get settings")
+            .expect("settings exist");
+        assert_eq!(reloaded.tunnel_id.as_deref(), Some("tunnel-2"));
+
+        db.delete_cloudflare_settings().expect("delete settings");
+        assert!(db
+            .get_cloudflare_settings()
+            .expect("get settings")
+            .is_none());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn service_cloudflare_domains_persist() {
+        let (db, dir) = open_temp_db();
+        let mut app = seed_app(&db);
+        app.services[0].domains = vec!["app.example.com".to_string()];
+        app.services[0].cloudflare_domains =
+            vec!["app.example.com".to_string()];
+        db.save_app(&app).expect("save app");
+
+        let loaded = db.get_app(app.id).expect("get app").expect("app exists");
+        assert_eq!(
+            loaded.services[0].cloudflare_domains,
+            vec!["app.example.com".to_string()]
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }

@@ -252,6 +252,22 @@ async fn run_server_command(
     let (proxy_update_tx, mut proxy_update_rx) =
         tokio::sync::mpsc::channel::<containr_runtime::ProxyRouteUpdate>(64);
 
+    // cloudflare tunnel coordination: dns records, ingress rules, the
+    // host firewall and the cloudflared connector
+    let (cloudflare_manager, cloudflare_sync_rx) =
+        containr_api::cloudflare::CloudflareManager::new(
+            db.clone(),
+            shared_config.clone(),
+            args.data_dir.clone(),
+        );
+    let cloudflare_manager = Arc::new(cloudflare_manager);
+    {
+        let manager = cloudflare_manager.clone();
+        tokio::spawn(async move {
+            manager.run(cloudflare_sync_rx).await;
+        });
+    }
+
     // start api server and get deployment queue receiver
     let deployment_rx = containr_api::run_server(
         shared_config.clone(),
@@ -260,6 +276,7 @@ async fn run_server_command(
         db.clone(),
         Some(proxy_update_tx.clone()),
         Some(cert_request_tx.clone()),
+        Some(cloudflare_manager),
     )
     .await?;
     info!(port = %config.server.port, "api server started");
@@ -802,6 +819,7 @@ fn add_external_routes(
             algorithm: proxy.load_balance,
             basic_auth: None,
             login_gate: None,
+            via_cloudflare: false,
         });
         info!(domain = %domain, upstream = %external.upstream, "added external route");
     }
@@ -999,6 +1017,7 @@ async fn refresh_routes_for_app(
                         scope: gate.scope,
                     }
                 }),
+                via_cloudflare: service.domain_via_cloudflare(&domain),
             });
             tracing::info!(
                 domain = %domain,
@@ -1174,8 +1193,20 @@ fn domains_for_service(
     service: &containr_common::models::ContainerService,
     base_domain: &str,
 ) -> Vec<String> {
-    let mut domains = vec![service_subdomain(service, base_domain)];
-    for domain in service.custom_domains() {
+    let custom_domains = service.custom_domains();
+    let via_cloudflare = service.cloudflare_domains();
+    // a fully tunnel-fronted service drops its generated default domain too,
+    // so nothing on it can still be reached directly
+    let all_tunneled = !via_cloudflare.is_empty()
+        && custom_domains
+            .iter()
+            .all(|domain| via_cloudflare.iter().any(|cf| cf == domain));
+
+    let mut domains = Vec::new();
+    if !all_tunneled {
+        domains.push(service_subdomain(service, base_domain));
+    }
+    for domain in custom_domains {
         if !domains.iter().any(|existing| existing == &domain) {
             domains.push(domain);
         }

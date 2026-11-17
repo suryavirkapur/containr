@@ -444,10 +444,15 @@ impl ProxyHttp for ContainrProxy {
             .unwrap_or(false);
         ctx.client_tls = is_tls;
         ctx.client_host = authority;
-        ctx.client_ip = session
+        let peer_ip = session
             .client_addr()
             .and_then(|addr| addr.as_inet())
-            .map(|addr| addr.ip().to_string());
+            .map(|addr| addr.ip());
+        // cloudflared dials the proxy locally, so a loopback peer on a
+        // cloudflare route is the tunnel; anything else bypassed it
+        let peer_is_loopback =
+            peer_ip.map(|ip| ip.is_loopback()).unwrap_or(false);
+        ctx.client_ip = peer_ip.map(|ip| ip.to_string());
         let https_required = if host.is_empty() {
             false
         } else if host == base_domain
@@ -528,6 +533,38 @@ impl ProxyHttp for ContainrProxy {
 
         // Find route for this host
         if let Some(route) = self.routes.get_route(&host) {
+            if route.via_cloudflare {
+                if !peer_is_loopback {
+                    // cloudflare-fronted domains are only reachable through
+                    // the tunnel; direct hits are refused even when the
+                    // host firewall is not in place
+                    let body = "origin is only reachable via cloudflare";
+                    let mut header = ResponseHeader::build(403, None)?;
+                    header.insert_header("Content-Type", "text/plain")?;
+                    header.insert_header(
+                        "Content-Length",
+                        body.len().to_string(),
+                    )?;
+                    session
+                        .write_response_header(Box::new(header), false)
+                        .await?;
+                    session
+                        .write_response_body(Some(body.into()), true)
+                        .await?;
+                    return Ok(true);
+                }
+                // only trust the real client ip from the tunnel itself
+                if let Some(client_ip) = req_header
+                    .headers
+                    .get("cf-connecting-ip")
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    ctx.client_ip = Some(client_ip.to_string());
+                }
+            }
+
             // Active ACME challenges were handled above. Unknown challenge
             // paths must obey the same authentication as every other URL.
             if let Some(gate) = route.login_gate {
@@ -1045,6 +1082,7 @@ mod tests {
                 password_hash: "unused without credentials".to_string(),
             }),
             login_gate: None,
+            via_cloudflare: false,
         });
         let challenges = ChallengeStore::new();
         challenges.add("active", "active.key");
@@ -1207,6 +1245,7 @@ mod tests {
                 owner_id: owner,
                 scope,
             }),
+            via_cloudflare: false,
         });
         let mut config = AppConfig::default();
         config.auth.jwt_secret = SECRET.to_string();

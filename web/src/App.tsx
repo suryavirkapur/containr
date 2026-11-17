@@ -31,11 +31,13 @@ const Buckets = lazy(() => import("./pages/storage/Buckets"));
 const BucketDetail = lazy(() => import("./pages/storage/BucketDetail"));
 const Monitoring = lazy(() => import("./pages/platform/Monitoring"));
 const Server = lazy(() => import("./pages/platform/Server"));
+const McpPortal = lazy(() => import("./pages/platform/McpPortal"));
 const SettingsLayout = lazy(() => import("./pages/settings/SettingsLayout"));
 const GeneralSettings = lazy(() => import("./pages/settings/GeneralSettings"));
 const AccountSettings = lazy(() => import("./pages/settings/AccountSettings"));
 const UsersSettings = lazy(() => import("./pages/settings/UsersSettings"));
 const GithubSettings = lazy(() => import("./pages/settings/GithubSettings"));
+const CloudflareSettings = lazy(() => import("./pages/settings/CloudflareSettings"));
 const RegistriesSettings = lazy(() => import("./pages/settings/RegistriesSettings"));
 
 const redirect =
@@ -77,11 +79,13 @@ const App: Component = () => (
 			<Route path="/storage/:id" component={BucketDetail} />
 			<Route path="/monitoring" component={Monitoring} />
 			<Route path="/server" component={Server} />
+			<Route path="/mcp" component={McpPortal} />
 			<Route path="/settings" component={SettingsLayout}>
 				<Route path="/" component={GeneralSettings} />
 				<Route path="/account" component={AccountSettings} />
 				<Route path="/users" component={UsersSettings} />
 				<Route path="/github" component={GithubSettings} />
+				<Route path="/cloudflare" component={CloudflareSettings} />
 				<Route path="/registries" component={RegistriesSettings} />
 			</Route>
 			<Route path="/dashboard" component={redirect("/")} />

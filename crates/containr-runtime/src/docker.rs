@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
+use bollard::container::LogOutput;
 use bollard::exec::{
     CreateExecOptions, ResizeExecOptions, StartExecOptions, StartExecResults,
 };
@@ -243,6 +244,18 @@ pub struct DockerContainerInfo {
     pub status: DockerContainerStatus,
 }
 
+/// result of a one-shot, non-interactive command run in a container
+#[derive(Debug, Clone)]
+pub struct DockerExecOutput {
+    /// exit code, or none when the command timed out
+    pub exit_code: Option<i64>,
+    pub stdout: String,
+    pub stderr: String,
+    /// true when stdout or stderr were cut at the output limit
+    pub truncated: bool,
+    pub timed_out: bool,
+}
+
 /// interactive exec session for a running container
 pub struct DockerExecSession {
     pub exec_id: String,
@@ -364,6 +377,114 @@ impl DockerContainerManager {
                 Err(ClientError::Operation(format!("start exec failed: {}", e)))
             }
         }
+    }
+
+    /// runs a command to completion without a tty and captures its output.
+    /// output past `max_output_bytes` (per stream) is dropped; the command
+    /// is abandoned after `timeout`.
+    pub async fn run_exec(
+        &self,
+        id: &str,
+        command: Vec<String>,
+        working_dir: Option<String>,
+        timeout: std::time::Duration,
+        max_output_bytes: usize,
+    ) -> Result<DockerExecOutput> {
+        info!(id = %id, command = ?command, "running exec command");
+
+        if self.stub_mode {
+            return Err(ClientError::Operation(
+                "container exec is not available in stub mode".to_string(),
+            ));
+        }
+
+        let exec_options = CreateExecOptions {
+            attach_stdout: Some(true),
+            attach_stderr: Some(true),
+            tty: Some(false),
+            cmd: Some(command),
+            working_dir,
+            ..Default::default()
+        };
+        let exec =
+            self.client()
+                .create_exec(id, exec_options)
+                .await
+                .map_err(|e| {
+                    ClientError::Operation(format!("create exec failed: {}", e))
+                })?;
+
+        let start_options = StartExecOptions {
+            detach: false,
+            ..Default::default()
+        };
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut truncated = false;
+
+        let started = self
+            .client()
+            .start_exec(&exec.id, Some(start_options))
+            .await
+            .map_err(|e| {
+                ClientError::Operation(format!("start exec failed: {}", e))
+            })?;
+        let mut output = match started {
+            StartExecResults::Attached { output, .. } => output,
+            StartExecResults::Detached => {
+                return Err(ClientError::Operation(
+                    "exec session detached unexpectedly".to_string(),
+                ));
+            }
+        };
+
+        let collect = async {
+            while let Some(message) = output.next().await {
+                let message = message.map_err(|e| {
+                    ClientError::Operation(format!("exec stream failed: {}", e))
+                })?;
+                let (target, bytes) = match message {
+                    LogOutput::StdErr { message } => (&mut stderr, message),
+                    other => (&mut stdout, other.into_bytes()),
+                };
+                let room = max_output_bytes.saturating_sub(target.len());
+                if bytes.len() > room {
+                    truncated = true;
+                }
+                target.extend_from_slice(&bytes[..bytes.len().min(room)]);
+            }
+            Ok::<(), ClientError>(())
+        };
+        let timed_out = match tokio::time::timeout(timeout, collect).await {
+            Ok(result) => {
+                result?;
+                false
+            }
+            Err(_) => true,
+        };
+
+        let exit_code = if timed_out {
+            None
+        } else {
+            self.client()
+                .inspect_exec(&exec.id)
+                .await
+                .map_err(|e| {
+                    ClientError::Operation(format!(
+                        "inspect exec failed: {}",
+                        e
+                    ))
+                })?
+                .exit_code
+        };
+
+        Ok(DockerExecOutput {
+            exit_code,
+            stdout: String::from_utf8_lossy(&stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&stderr).into_owned(),
+            truncated,
+            timed_out,
+        })
     }
 
     /// resizes an interactive exec session

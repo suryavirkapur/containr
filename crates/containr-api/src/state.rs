@@ -37,6 +37,8 @@ pub struct AppState {
     pub proxy_update_tx: Option<mpsc::Sender<ProxyRouteUpdate>>,
     pub oauth_states: Arc<DashMap<String, OAuthState>>,
     pub cert_request_tx: Option<mpsc::Sender<String>>,
+    /// coordinates the cloudflare tunnel, dns records and the firewall
+    pub cloudflare: Option<Arc<crate::cloudflare::CloudflareManager>>,
 }
 
 impl AppState {
@@ -49,6 +51,7 @@ impl AppState {
         deployment_tx: mpsc::Sender<DeploymentJob>,
         proxy_update_tx: Option<mpsc::Sender<ProxyRouteUpdate>>,
         cert_request_tx: Option<mpsc::Sender<String>>,
+        cloudflare: Option<Arc<crate::cloudflare::CloudflareManager>>,
     ) -> containr_common::Result<Self> {
         Ok(Self {
             config,
@@ -59,6 +62,7 @@ impl AppState {
             proxy_update_tx,
             oauth_states: Arc::new(DashMap::new()),
             cert_request_tx,
+            cloudflare,
         })
     }
 
