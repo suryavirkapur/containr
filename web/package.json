@@ -22,7 +22,7 @@
     "@xterm/xterm": "^6.0.0",
     "lucide-solid": "^1.74.0",
     "openapi-fetch": "^0.17.0",
-    "solid-js": "^1.9.19"
+    "solid-js": "^1.9.20"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",
