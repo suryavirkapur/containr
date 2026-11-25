@@ -10,7 +10,7 @@ use bollard::query_parameters::{
     BuildImageOptions, CreateImageOptions, ListImagesOptions,
     RemoveImageOptions,
 };
-use bollard::{auth::DockerCredentials, body_full, Docker};
+use bollard::{auth::DockerCredentials, body_try_stream, Docker};
 use futures::StreamExt;
 use tracing::{info, warn};
 
@@ -283,14 +283,30 @@ impl ImageManager {
             "building image with containerfile"
         );
 
-        // create tar archive of the context directory
-        let tar_data =
-            create_tar_archive(&config.context_path).map_err(|e| {
+        // tar the context through a temp file and stream it to the
+        // daemon: a large context buffered in memory (the old Vec<u8>
+        // approach) can take the worker down
+        let context_archive = tempfile::NamedTempFile::new()
+            .and_then(|file| {
+                create_tar_archive(
+                    file.as_file().try_clone()?,
+                    &config.context_path,
+                )
+                .map(|_| file)
+            })
+            .map_err(|e| {
                 ClientError::Operation(format!(
                     "failed to create tar archive: {}",
                     e
                 ))
             })?;
+        let context_file = context_archive.reopen().map_err(|e| {
+            ClientError::Operation(format!(
+                "failed to reopen tar archive: {}",
+                e
+            ))
+        })?;
+        let context_stream = tar_chunk_stream(context_file);
 
         let options = BuildImageOptions {
             dockerfile: containerfile,
@@ -308,7 +324,7 @@ impl ImageManager {
         let mut stream = self.client().build_image(
             options,
             None,
-            Some(body_full(bytes::Bytes::from(tar_data))),
+            Some(body_try_stream(context_stream)),
         );
 
         while let Some(result) = stream.next().await {
@@ -429,13 +445,40 @@ impl ImageManager {
     }
 }
 
-/// creates a tar archive of the given directory
-fn create_tar_archive(path: &str) -> std::io::Result<Vec<u8>> {
-    let mut archive = tar::Builder::new(Vec::new());
+/// creates a tar archive of the given directory, writing to `writer`
+fn create_tar_archive<W: std::io::Write>(
+    writer: W,
+    path: &str,
+) -> std::io::Result<()> {
+    let mut archive = tar::Builder::new(writer);
     // keep symlinks as links so they can't pull host files into the context
     archive.follow_symlinks(false);
     archive.append_dir_all(".", path)?;
-    archive.into_inner()
+    archive.into_inner().map(|_| ())
+}
+
+/// reads `file` in chunks as a fallible byte stream for the docker
+/// `/build` request body, so the context never sits whole in memory
+fn tar_chunk_stream(
+    file: std::fs::File,
+) -> impl futures::Stream<Item = std::result::Result<bytes::Bytes, std::io::Error>>
+       + Send
+       + 'static {
+    let file = tokio::fs::File::from_std(file);
+    futures::stream::try_unfold(
+        (file, vec![0u8; 64 * 1024]),
+        |(mut file, mut buffer)| async move {
+            use tokio::io::AsyncReadExt;
+            match file.read(&mut buffer).await {
+                Ok(0) => Ok(None),
+                Ok(read) => Ok(Some((
+                    bytes::Bytes::copy_from_slice(&buffer[..read]),
+                    (file, buffer),
+                ))),
+                Err(error) => Err(error),
+            }
+        },
+    )
 }
 
 impl Default for ImageManager {

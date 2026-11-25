@@ -31,12 +31,12 @@ bollard = { workspace = true }
 
 # tar archives for docker builds
 tar = "0.4"
+tempfile = "3"
 
 # bytes for building image body
 bytes = { workspace = true }
 croner = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
 uuid = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
