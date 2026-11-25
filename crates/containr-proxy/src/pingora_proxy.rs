@@ -53,6 +53,9 @@ pub struct ProxyCtx {
     client_host: String,
     /// client ip, for X-Forwarded-For and X-Real-IP
     client_ip: Option<String>,
+    /// whether this request arrived through the local cloudflare tunnel.
+    /// only then are cf-* headers trusted and kept
+    via_tunnel: bool,
 }
 
 /// Pingora-based proxy server
@@ -353,6 +356,7 @@ impl ProxyHttp for ContainrProxy {
             client_tls: false,
             client_host: String::new(),
             client_ip: None,
+            via_tunnel: false,
         }
     }
 
@@ -535,6 +539,7 @@ impl ProxyHttp for ContainrProxy {
         if let Some(route) = self.routes.get_route(&host) {
             if route.via_cloudflare && peer_is_loopback {
                 // only trust the real client ip from the tunnel itself
+                ctx.via_tunnel = true;
                 if let Some(client_ip) = req_header
                     .headers
                     .get("cf-connecting-ip")
@@ -640,6 +645,7 @@ impl ProxyHttp for ContainrProxy {
     ) -> Result<()> {
         merge_cookie_headers(upstream_request)?;
         strip_cookie(upstream_request, GATE_COOKIE)?;
+        strip_untrusted_client_headers(upstream_request, ctx);
         set_forwarded_headers(upstream_request, ctx)?;
 
         // For SSE, add appropriate headers for streaming
@@ -994,20 +1000,35 @@ fn set_forwarded_headers(
         request.insert_header("X-Forwarded-Host", ctx.client_host.as_str())?;
     }
     if let Some(ip) = &ctx.client_ip {
-        let forwarded_for = match request
-            .headers
-            .get("x-forwarded-for")
-            .and_then(|value| value.to_str().ok())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            Some(existing) => format!("{}, {}", existing, ip),
-            None => ip.clone(),
-        };
-        request.insert_header("X-Forwarded-For", forwarded_for)?;
+        // the peer ip (or the tunnel-provided cf-connecting-ip) is the
+        // only trustworthy client address; a client-supplied
+        // x-forwarded-for would let callers spoof their identity to the
+        // app, so the chain always starts fresh here
+        request.insert_header("X-Forwarded-For", ip.as_str())?;
         request.insert_header("X-Real-IP", ip.as_str())?;
     }
     Ok(())
+}
+
+/// headers cloudflare sets at the edge. when the request did not arrive
+/// through the local tunnel these are client-supplied spoofs and are
+/// removed; through the tunnel they are genuine and stay
+const CLOUDFLARE_HEADERS: &[&str] = &[
+    "cf-connecting-ip",
+    "true-client-ip",
+    "cf-ipcountry",
+    "cf-ray",
+    "cf-visitor",
+    "cdn-loop",
+];
+
+fn strip_untrusted_client_headers(request: &mut RequestHeader, ctx: &ProxyCtx) {
+    if ctx.via_tunnel {
+        return;
+    }
+    for name in CLOUDFLARE_HEADERS {
+        request.remove_header(*name);
+    }
 }
 
 #[cfg(test)]
@@ -1039,6 +1060,7 @@ mod tests {
             client_tls: tls,
             client_host: "app.example.com".to_string(),
             client_ip: ip.map(ToOwned::to_owned),
+            via_tunnel: false,
         }
     }
 
@@ -1186,10 +1208,9 @@ mod tests {
             header(&request, "x-forwarded-host"),
             vec!["app.example.com"]
         );
-        assert_eq!(
-            header(&request, "x-forwarded-for"),
-            vec!["203.0.113.9, 198.51.100.4"]
-        );
+        // a client-supplied x-forwarded-for is discarded: the proxy owns
+        // the chain
+        assert_eq!(header(&request, "x-forwarded-for"), vec!["198.51.100.4"]);
         assert_eq!(header(&request, "x-real-ip"), vec!["198.51.100.4"]);
 
         let mut plain =
@@ -1198,6 +1219,52 @@ mod tests {
             .expect("forwarded");
         assert_eq!(header(&plain, "x-forwarded-proto"), vec!["http"]);
         assert!(header(&plain, "x-forwarded-for").is_empty());
+    }
+
+    #[test]
+    fn spoofed_cloudflare_headers_are_stripped_off_tunnel() {
+        let mut request =
+            RequestHeader::build("GET", b"/", None).expect("request");
+        for name in CLOUDFLARE_HEADERS {
+            request.append_header(*name, "spoofed").expect("cf header");
+        }
+        request
+            .append_header("cf-device-type", "desktop")
+            .expect("cf header");
+
+        strip_untrusted_client_headers(&mut request, &ctx(false, None));
+        for name in CLOUDFLARE_HEADERS {
+            assert!(
+                header(&request, name).is_empty(),
+                "{} should be stripped",
+                name
+            );
+        }
+        // cf-device-type is metadata an app may legitimately rely on
+        // behind cloudflare; it does not carry the client ip, so it is
+        // not on the strip list
+        assert_eq!(header(&request, "cf-device-type"), vec!["desktop"]);
+    }
+
+    #[test]
+    fn cloudflare_headers_survive_through_the_tunnel() {
+        let mut request =
+            RequestHeader::build("GET", b"/", None).expect("request");
+        request
+            .append_header("cf-connecting-ip", "203.0.113.9")
+            .expect("cf header");
+        request
+            .append_header("cf-ray", "abc-fra")
+            .expect("cf header");
+
+        let mut context = ctx(true, Some("203.0.113.9"));
+        context.via_tunnel = true;
+        strip_untrusted_client_headers(&mut request, &context);
+        set_forwarded_headers(&mut request, &context).expect("forwarded");
+
+        assert_eq!(header(&request, "cf-connecting-ip"), vec!["203.0.113.9"]);
+        assert_eq!(header(&request, "cf-ray"), vec!["abc-fra"]);
+        assert_eq!(header(&request, "x-forwarded-for"), vec!["203.0.113.9"]);
     }
 
     struct GateFixture {
