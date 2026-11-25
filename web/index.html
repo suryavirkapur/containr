@@ -7,13 +7,9 @@
     <meta name="theme-color" content="#09090b" />
     <title>containr</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <script>
-      try {
-        var t = localStorage.getItem("containr-theme") || "dark";
-        var dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
-        document.documentElement.classList.toggle("dark", dark);
-      } catch (e) {}
-    </script>
+    <!-- must run before first paint; kept external so the response can
+         carry a strict content-security-policy without unsafe-inline -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <noscript>containr needs JavaScript enabled.</noscript>

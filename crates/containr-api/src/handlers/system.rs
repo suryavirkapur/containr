@@ -16,9 +16,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::auth::{extract_bearer_token, validate_token};
-use crate::handlers::auth::{
-    require_admin_user, require_authenticated_user, ErrorResponse,
-};
+use crate::handlers::auth::{require_admin_user, ErrorResponse};
 use crate::state::AppState;
 use containr_runtime::{
     DockerContainerManager, DockerDiskUsage, DockerDiskUsageEntry,
@@ -285,6 +283,7 @@ pub async fn get_system_stats(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<SystemStats>, (StatusCode, Json<ErrorResponse>)> {
+    let _admin = require_admin_user(&state, &headers).await?;
     let config = state.config.read().await.clone();
     let user_id = get_user_id(&headers, &config.auth.jwt_secret)?;
     drop(config);
@@ -409,7 +408,7 @@ pub async fn get_system_info(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<SystemInfoResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let _user = require_authenticated_user(&state, &headers).await?;
+    let _admin = require_admin_user(&state, &headers).await?;
     let config = state.config.read().await.clone();
 
     // an unresponsive docker daemon must not hang the dashboard
