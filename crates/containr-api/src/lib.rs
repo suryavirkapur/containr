@@ -10,6 +10,7 @@ pub mod handlers;
 pub mod mcp;
 pub mod mount_fs;
 pub mod openapi;
+pub mod rate_limit;
 pub mod security;
 pub mod server;
 pub mod state;

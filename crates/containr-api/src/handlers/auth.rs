@@ -1,9 +1,11 @@
 //! authentication handlers
 
+use std::net::SocketAddr;
+
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
-    response::Redirect,
+    extract::{ConnectInfo, Path, Query, State},
+    http::{header, HeaderMap, StatusCode},
+    response::{IntoResponse, Redirect, Response},
     Json,
 };
 use base64::Engine;
@@ -576,26 +578,44 @@ fn bad_request(
     request_body = LoginRequest,
     responses(
         (status = 200, description = "successfully logged in", body = AuthResponse),
-        (status = 401, description = "invalid credentials", body = ErrorResponse)
+        (status = 401, description = "invalid credentials", body = ErrorResponse),
+        (status = 429, description = "too many login attempts", body = ErrorResponse)
     )
 )]
 pub async fn login(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(req): Json<LoginRequest>,
-) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Response, (StatusCode, Json<ErrorResponse>)> {
+    let client_ip = login_client_ip(&peer, &headers);
+    if let Some(retry_after) =
+        state.login_limiter.retry_after(&client_ip, &req.email)
+    {
+        return Ok((
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, retry_after.to_string())],
+            Json(ErrorResponse {
+                error: "too many login attempts; try again later".to_string(),
+            }),
+        )
+            .into_response());
+    }
+
     // find user
     let user = state
         .db
         .get_user_by_email(&req.email)
-        .map_err(internal_error)?
-        .ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(ErrorResponse {
-                    error: "invalid credentials".to_string(),
-                }),
-            )
-        })?;
+        .map_err(internal_error)?;
+    let Some(user) = user else {
+        state.login_limiter.record_failure(&client_ip, &req.email);
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "invalid credentials".to_string(),
+            }),
+        ));
+    };
 
     // verify password
     let password_hash = user.password_hash.as_ref().ok_or_else(|| {
@@ -610,6 +630,7 @@ pub async fn login(
     let valid = verify_password(&req.password, password_hash)
         .map_err(internal_error)?;
     if !valid {
+        state.login_limiter.record_failure(&client_ip, &req.email);
         return Err((
             StatusCode::UNAUTHORIZED,
             Json(ErrorResponse {
@@ -628,11 +649,32 @@ pub async fn login(
     )
     .map_err(internal_error)?;
 
+    state.login_limiter.record_success(&req.email);
+
     Ok(Json(AuthResponse {
         token,
         user: user_response(&user),
         linked: false,
-    }))
+    })
+    .into_response())
+}
+
+/// the address a login attempt is attributed to. containr's own
+/// reverse proxy terminates client traffic locally and reports the real
+/// client in x-real-ip; a direct hit on the api port is attributed to
+/// the peer itself
+fn login_client_ip(peer: &SocketAddr, headers: &HeaderMap) -> String {
+    if peer.ip().is_loopback() {
+        if let Some(ip) = headers
+            .get("x-real-ip")
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return ip.to_string();
+        }
+    }
+    peer.ip().to_string()
 }
 
 /// github oauth callback

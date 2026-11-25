@@ -36,6 +36,8 @@ pub struct AppState {
     pub deployment_tx: mpsc::Sender<DeploymentJob>,
     pub proxy_update_tx: Option<mpsc::Sender<ProxyRouteUpdate>>,
     pub oauth_states: Arc<DashMap<String, OAuthState>>,
+    /// failed-login tracker for the login endpoint's brute-force limit
+    pub login_limiter: crate::rate_limit::LoginRateLimiter,
     pub cert_request_tx: Option<mpsc::Sender<String>>,
     /// coordinates the cloudflare tunnel, dns records and the firewall
     pub cloudflare: Option<Arc<crate::cloudflare::CloudflareManager>>,
@@ -61,6 +63,7 @@ impl AppState {
             deployment_tx,
             proxy_update_tx,
             oauth_states: Arc::new(DashMap::new()),
+            login_limiter: crate::rate_limit::LoginRateLimiter::new(),
             cert_request_tx,
             cloudflare,
         })
