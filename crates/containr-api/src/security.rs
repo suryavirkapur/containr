@@ -51,6 +51,17 @@ pub fn decrypt_value(config: &Config, value: &str) -> Result<String, String> {
         return Err("encryption key is not configured".to_string());
     }
 
+    // falling through means the stored value is plaintext: either it
+    // predates encryption at rest, or it was saved unencrypted. either
+    // way the operator should know
+    if !has_prefix {
+        tracing::warn!(
+            "decrypt_value: passing through a value that is not \
+             encrypted (missing 'enc:' prefix); the secret is stored \
+             in plaintext"
+        );
+    }
+
     Ok(payload.to_string())
 }
 

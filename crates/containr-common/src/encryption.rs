@@ -28,6 +28,35 @@ pub type Result<T> = std::result::Result<T, EncryptionError>;
 /// nonce size for aes-256-gcm (96 bits)
 const NONCE_SIZE: usize = 12;
 
+/// generates a cryptographically secure random secret: 32 random bytes,
+/// base64-encoded (44 chars). used for jwt secrets and the at-rest
+/// encryption key when a config is first created
+pub fn generate_secret() -> String {
+    let mut bytes = [0u8; 32];
+    rand::rng().fill(&mut bytes);
+    base64_encode(&bytes)
+}
+
+/// well-known placeholder secrets shipped in old defaults and the
+/// example config. startup refuses to run with these
+pub const WEAK_SECRET_LITERALS: &[&str] = &[
+    "change-me-in-production",
+    "change-me-generate-with-openssl-rand-hex-32",
+    "changeme",
+    "secret",
+];
+
+/// whether `secret` is a placeholder or too short to sign or encrypt
+/// with. 32 chars is roughly the base64 encoding of 24 random bytes, so
+/// anything shorter cannot carry meaningful entropy
+pub fn is_weak_secret(secret: &str) -> bool {
+    let trimmed = secret.trim();
+    trimmed.len() < 32
+        || WEAK_SECRET_LITERALS
+            .iter()
+            .any(|weak| trimmed.eq_ignore_ascii_case(weak))
+}
+
 /// encrypts plaintext using aes-256-gcm
 /// returns base64-encoded ciphertext with nonce prepended
 pub fn encrypt(plaintext: &str, key: &[u8]) -> Result<String> {

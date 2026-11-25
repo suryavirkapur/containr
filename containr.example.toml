@@ -45,13 +45,17 @@ client_secret = ""
 webhook_secret = ""
 
 [auth]
-# jwt signing secret - generate with: openssl rand -hex 32
+# jwt signing secret - a random one is generated when containr first
+# creates this file. to set your own: openssl rand -base64 32
+# containr refuses to start with a placeholder or a value < 32 chars
+# (local development override: CONTAINR_INSECURE_DEV_SECRETS=1)
 jwt_secret = "change-me-generate-with-openssl-rand-hex-32"
 # jwt token expiry in hours
 jwt_expiry_hours = 24
 
 [security]
-# encryption key for secrets - generate with: openssl rand -hex 32
+# encryption key for secrets - a random one is generated when containr
+# first creates this file. to set your own: openssl rand -base64 32
 encryption_key = "change-me-generate-with-openssl-rand-hex-32"
 # allowed cors origins for the api (empty array = deny cross-origin)
 cors_allowed_origins = [

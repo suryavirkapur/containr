@@ -200,10 +200,62 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
+/// env var an operator can set to keep containr booting with a weak
+/// jwt secret during local development
+const INSECURE_DEV_SECRETS_ENV: &str = "CONTAINR_INSECURE_DEV_SECRETS";
+
+/// refuses to boot when the jwt secret is a placeholder or too short,
+/// and warns loudly about a weak at-rest encryption key. admin
+/// subcommands intentionally skip this check so a broken install stays
+/// repairable
+fn enforce_secret_strength(config: &Config) -> anyhow::Result<()> {
+    if containr_common::is_weak_secret(&config.auth.jwt_secret) {
+        let dev_override =
+            std::env::var(INSECURE_DEV_SECRETS_ENV).unwrap_or_default();
+        if dev_override != "1" && dev_override != "true" {
+            return Err(anyhow!(
+                "refusing to start: auth.jwt_secret is a placeholder or \
+                 shorter than 32 chars. set a random secret in {} \
+                 (e.g. `openssl rand -base64 32`), or export {}=1 to \
+                 bypass this check during local development",
+                "containr.toml",
+                INSECURE_DEV_SECRETS_ENV
+            ));
+        }
+        warn!(
+            "{} is set: starting with a weak jwt secret. do not use \
+             this in production",
+            INSECURE_DEV_SECRETS_ENV
+        );
+    }
+
+    let encryption_key = config.security.encryption_key.trim();
+    if encryption_key.is_empty()
+        && std::env::var("CONTAINR_ENCRYPTION_KEY")
+            .unwrap_or_default()
+            .is_empty()
+    {
+        warn!(
+            "security.encryption_key is not configured: secrets stored in \
+             the database (registry credentials, tokens) cannot be \
+             encrypted at rest"
+        );
+    } else if containr_common::is_weak_secret(encryption_key) {
+        warn!(
+            "security.encryption_key is weak: generate a stronger one \
+             (e.g. `openssl rand -base64 32`). changing it makes existing \
+             encrypted values undecryptable, so rotate carefully"
+        );
+    }
+
+    Ok(())
+}
+
 async fn run_server_command(
     args: &ServerArgs,
     config: Config,
 ) -> anyhow::Result<()> {
+    enforce_secret_strength(&config)?;
     info!("starting containr v{}", env!("CARGO_PKG_VERSION"));
 
     // create data directory
@@ -537,6 +589,10 @@ async fn load_or_create_config(args: &ServerArgs) -> anyhow::Result<Config> {
         Ok(config)
     } else {
         let mut config = Config::default();
+        // never write the placeholder secrets from the default: a fresh
+        // config gets fresh random ones
+        config.auth.jwt_secret = containr_common::generate_secret();
+        config.security.encryption_key = containr_common::generate_secret();
         config.server.port = args.api_port;
         config.proxy.http_port = args.http_port;
         config.proxy.https_port = args.https_port;

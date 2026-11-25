@@ -12,7 +12,9 @@ pub mod service_inventory;
 
 pub use config::{Config, DatabaseConfig, LoggingConfig};
 pub use db::Database;
-pub use encryption::{decrypt, derive_key, encrypt};
+pub use encryption::{
+    decrypt, derive_key, encrypt, generate_secret, is_weak_secret,
+};
 pub use error::{Error, Result};
 pub use managed_services::{
     DatabaseType, ManagedDatabase, ServiceStatus, StorageBucket,
