@@ -768,8 +768,10 @@ impl ProxyHttp for ContainrProxy {
             .uri
             .path_and_query()
             .map(|value| value.as_str())
-            .unwrap_or(req.uri.path())
-            .to_string();
+            .unwrap_or(req.uri.path());
+        // query strings can carry credentials (webhook tokens, gate
+        // passwords); the request log keeps the path, not the secrets
+        let path = containr_common::scrub::scrub_sensitive_query(path);
         let log = HttpRequestLog::new(
             service_id,
             app_id,

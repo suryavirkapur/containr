@@ -264,7 +264,22 @@ pub async fn run_server(
             state,
             api_tokens::api_token_auth,
         ))
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http().make_span_with(
+            |request: &axum::http::Request<axum::body::Body>| {
+                // the default span logs the full uri, which can carry
+                // credentials in the query (exec tokens, webhook
+                // tokens, gate passwords) — scrub them first
+                let uri = containr_common::scrub::scrub_sensitive_query(
+                    &request.uri().to_string(),
+                );
+                tracing::info_span!(
+                    "request",
+                    method = %request.method(),
+                    uri = %uri,
+                    version = ?request.version(),
+                )
+            },
+        ))
         .layer(cors);
 
     let addr: SocketAddr = format!(
