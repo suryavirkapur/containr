@@ -24,6 +24,7 @@ use crate::auth::{
     validate_token,
 };
 use crate::handlers::auth::ErrorResponse;
+use crate::mount_fs::{MountDir, MountFsError};
 use crate::state::AppState;
 use containr_runtime::{
     DockerContainerManager, DockerContainerState, DockerContainerStats,
@@ -855,82 +856,47 @@ fn path_escapes_mount() -> (StatusCode, Json<ErrorResponse>) {
     )
 }
 
-/// resolves `rel` under `base`, following symlinks only while they stay
-/// inside the canonical mount root. the target itself may not exist yet.
-fn resolve_within_mount(
-    base: &FsPath,
-    rel: &FsPath,
-) -> Result<PathBuf, (StatusCode, Json<ErrorResponse>)> {
-    let base = std::fs::canonicalize(base).map_err(internal_error)?;
-    let mut target = base.clone();
-    for component in rel.components() {
-        match component {
-            std::path::Component::Normal(name) => target.push(name),
-            std::path::Component::CurDir => {}
-            _ => {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse {
-                        error: "invalid path".to_string(),
-                    }),
-                ));
-            }
+/// maps a mount traversal failure to the api response. a symlink
+/// anywhere in the path is an escape attempt, not a missing file
+fn mount_error(error: MountFsError) -> (StatusCode, Json<ErrorResponse>) {
+    match error {
+        MountFsError::Symlink => path_escapes_mount(),
+        MountFsError::Invalid => (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "invalid path".to_string(),
+            }),
+        ),
+        MountFsError::Io(error)
+            if error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "path not found".to_string(),
+                }),
+            )
         }
-    }
-
-    // walk up to the deepest ancestor that exists on disk
-    let mut existing = target.as_path();
-    let mut missing = Vec::new();
-    loop {
-        match std::fs::symlink_metadata(existing) {
-            Ok(_) => break,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let name =
-                    existing.file_name().ok_or_else(path_escapes_mount)?;
-                missing.push(name.to_os_string());
-                existing = existing.parent().ok_or_else(path_escapes_mount)?;
-            }
-            Err(error) => return Err(internal_error(error)),
-        }
-    }
-
-    // dangling symlinks fail to canonicalize and are rejected here
-    let mut resolved =
-        std::fs::canonicalize(existing).map_err(|_| path_escapes_mount())?;
-    if !resolved.starts_with(&base) {
-        return Err(path_escapes_mount());
-    }
-    for name in missing.iter().rev() {
-        resolved.push(name);
-    }
-
-    Ok(resolved)
-}
-
-/// resolves the parent of `rel` safely and appends the final component
-/// without following it, so a final symlink is acted on as the link itself
-fn resolve_entry_within_mount(
-    base: &FsPath,
-    rel: &FsPath,
-) -> Result<PathBuf, (StatusCode, Json<ErrorResponse>)> {
-    let name = rel
-        .components()
-        .filter_map(|component| match component {
-            std::path::Component::Normal(name) => Some(name),
-            _ => None,
-        })
-        .next_back()
-        .ok_or_else(|| {
+        MountFsError::Io(error)
+            if error.raw_os_error() == Some(libc::ENOTDIR) =>
+        {
             (
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: "path is required".to_string(),
+                    error: "path is not a directory".to_string(),
                 }),
             )
-        })?;
-    let parent = rel.parent().unwrap_or_else(|| FsPath::new(""));
-    let parent = resolve_within_mount(base, parent)?;
-    Ok(parent.join(name))
+        }
+        MountFsError::Io(error) => internal_error(error),
+    }
+}
+
+/// opens the mount root as a directory fd so every operation under it
+/// is race-free and symlink-free
+fn open_mount(
+    base: &FsPath,
+) -> Result<MountDir, (StatusCode, Json<ErrorResponse>)> {
+    MountDir::open(base).map_err(mount_error)
 }
 
 async fn resolve_mount_path(
@@ -992,34 +958,21 @@ pub async fn list_volume_entries(
     let docker = DockerContainerManager::new();
     let (base, rel, _read_only) =
         resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
-    let target = resolve_within_mount(&base, &rel)?;
-
-    let metadata = std::fs::metadata(&target).map_err(internal_error)?;
-    if !metadata.is_dir() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "path is not a directory".to_string(),
-            }),
-        ));
-    }
+    let mount = open_mount(&base)?;
 
     let mut entries = Vec::new();
-    for entry in std::fs::read_dir(&target).map_err(internal_error)? {
-        let entry = entry.map_err(internal_error)?;
-        let file_type = entry.file_type().map_err(internal_error)?;
-        let meta = entry.metadata().map_err(internal_error)?;
-        let name = entry.file_name().to_string_lossy().to_string();
+    for entry in mount.list(&rel).map_err(mount_error)? {
+        let name = entry.name.to_string_lossy().to_string();
         let rel_path = rel.join(&name).to_string_lossy().to_string();
-        let modified_at = meta.modified().ok().map(|time| {
+        let modified_at = entry.modified.map(|time| {
             chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339()
         });
 
         entries.push(VolumeEntry {
             name,
             path: rel_path,
-            is_dir: file_type.is_dir(),
-            size_bytes: meta.len(),
+            is_dir: entry.is_dir,
+            size_bytes: entry.len,
             modified_at,
         });
     }
@@ -1072,15 +1025,8 @@ pub async fn delete_volume_entry(
     }
     // never delete the mount root itself; the final component is not
     // followed, so a symlink entry removes only the link
-    let target = resolve_entry_within_mount(&base, &rel)?;
-
-    let metadata =
-        std::fs::symlink_metadata(&target).map_err(internal_error)?;
-    if metadata.is_dir() {
-        std::fs::remove_dir_all(&target).map_err(internal_error)?;
-    } else {
-        std::fs::remove_file(&target).map_err(internal_error)?;
-    }
+    let mount = open_mount(&base)?;
+    mount.remove_all(&rel).map_err(mount_error)?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1114,9 +1060,10 @@ pub async fn download_volume_entry(
     let docker = DockerContainerManager::new();
     let (base, rel, _read_only) =
         resolve_mount_path(&docker, &id, &query.mount, query.path).await?;
-    let target = resolve_within_mount(&base, &rel)?;
+    let mount = open_mount(&base)?;
 
-    let metadata = std::fs::metadata(&target).map_err(internal_error)?;
+    let file = mount.open_file(&rel).map_err(mount_error)?;
+    let metadata = file.metadata().map_err(internal_error)?;
     if metadata.is_dir() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -1126,8 +1073,14 @@ pub async fn download_volume_entry(
         ));
     }
 
-    let data = tokio::fs::read(&target).await.map_err(internal_error)?;
-    let filename = target
+    let mut data = Vec::new();
+    tokio::io::AsyncReadExt::read_to_end(
+        &mut tokio::fs::File::from_std(file),
+        &mut data,
+    )
+    .await
+    .map_err(internal_error)?;
+    let filename = rel
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("download");
@@ -1187,10 +1140,8 @@ pub async fn upload_volume_entry(
             }),
         ));
     }
-    let target_dir = resolve_within_mount(&base, &rel)?;
-    tokio::fs::create_dir_all(&target_dir)
-        .await
-        .map_err(internal_error)?;
+    let mount = open_mount(&base)?;
+    mount.create_dir_all(&rel).map_err(mount_error)?;
 
     while let Some(field) =
         multipart.next_field().await.map_err(internal_error)?
@@ -1208,11 +1159,10 @@ pub async fn upload_volume_entry(
             })?;
 
         let file_name_path = validate_rel_path(&file_name)?;
-        let file_path = resolve_within_mount(&base, &rel.join(file_name_path))?;
-
-        let mut file = tokio::fs::File::create(&file_path)
-            .await
-            .map_err(internal_error)?;
+        let file = mount
+            .create_file(&rel.join(file_name_path))
+            .map_err(mount_error)?;
+        let mut file = tokio::fs::File::from_std(file);
         let data = field.bytes().await.map_err(internal_error)?;
         file.write_all(&data).await.map_err(internal_error)?;
     }
@@ -1258,10 +1208,8 @@ pub async fn create_volume_directory(
         ));
     }
 
-    let target_dir = resolve_within_mount(&base, &rel)?;
-    tokio::fs::create_dir_all(&target_dir)
-        .await
-        .map_err(internal_error)?;
+    let mount = open_mount(&base)?;
+    mount.create_dir_all(&rel).map_err(mount_error)?;
 
     Ok(StatusCode::OK)
 }
@@ -1269,9 +1217,9 @@ pub async fn create_volume_directory(
 #[cfg(test)]
 mod tests {
     use super::{
-        format_app_container_label, resolve_entry_within_mount,
-        resolve_exec_command, resolve_within_mount,
+        format_app_container_label, mount_error, resolve_exec_command,
     };
+    use crate::mount_fs::{MountDir, MountFsError};
     use axum::http::StatusCode;
     use std::path::{Path, PathBuf};
 
@@ -1294,7 +1242,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn resolve_within_mount_rejects_symlink_escape() {
+    fn mount_dir_rejects_symlink_escape() {
         let root = TempDir::new();
         let base = root.0.join("mount");
         let outside = root.0.join("outside");
@@ -1306,40 +1254,106 @@ mod tests {
         std::os::unix::fs::symlink(base.join("sub"), base.join("inner"))
             .expect("create inner link");
 
-        let status = |result: Result<PathBuf, _>| match result {
-            Ok(path) => panic!("expected rejection, got {:?}", path),
-            Err((status, _)) => status,
-        };
+        let mount = MountDir::open(&base).expect("open mount");
 
-        assert_eq!(
-            status(resolve_within_mount(&base, Path::new("escape/secret"))),
-            StatusCode::FORBIDDEN
-        );
-        assert_eq!(
-            status(resolve_within_mount(&base, Path::new("escape/new/file"))),
-            StatusCode::FORBIDDEN
-        );
-        assert!(resolve_within_mount(&base, Path::new("inner/new")).is_ok());
-        assert!(resolve_within_mount(&base, Path::new("missing/a")).is_ok());
+        // a symlink anywhere in the path is an escape attempt
+        for rel in ["escape/secret", "escape/new/file", "inner/anything"] {
+            assert!(
+                matches!(
+                    mount.open_dir(Path::new(rel)),
+                    Err(MountFsError::Symlink)
+                ),
+                "expected symlink rejection for {}",
+                rel
+            );
+        }
+        assert!(mount.open_dir(Path::new("sub")).is_ok());
+        assert!(matches!(
+            mount.open_dir(Path::new("missing/a")),
+            Err(MountFsError::Io(_))
+        ));
 
         // deleting a symlink acts on the link itself, never its target
-        let entry = resolve_entry_within_mount(&base, Path::new("escape"))
-            .expect("link entry resolves");
-        let canonical_base = std::fs::canonicalize(&base).expect("canon");
-        assert_eq!(entry, canonical_base.join("escape"));
+        mount.remove_all(Path::new("escape")).expect("remove link");
+        assert!(outside.join("secret").exists());
+        assert!(!base.join("escape").exists());
     }
 
+    #[cfg(unix)]
     #[test]
-    fn resolve_entry_within_mount_rejects_mount_root() {
+    fn mount_dir_leaf_symlink_is_never_followed() {
         let root = TempDir::new();
+        let base = root.0.join("mount");
+        let outside = root.0.join("outside");
+        std::fs::create_dir_all(&base).expect("create base");
+        std::fs::create_dir_all(&outside).expect("create outside");
+        std::fs::write(outside.join("secret"), "x").expect("write secret");
+        std::os::unix::fs::symlink(outside.join("secret"), base.join("link"))
+            .expect("create file link");
+
+        let mount = MountDir::open(&base).expect("open mount");
+        assert!(matches!(
+            mount.open_file(Path::new("link")),
+            Err(MountFsError::Symlink)
+        ));
+        assert!(matches!(
+            mount.create_file(Path::new("link")),
+            Err(MountFsError::Symlink)
+        ));
+
+        // removing the link must not touch the target
+        mount.remove_all(Path::new("link")).expect("remove link");
+        assert!(outside.join("secret").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mount_dir_create_and_remove_tree() {
+        let root = TempDir::new();
+        let base = root.0.join("mount");
+        std::fs::create_dir_all(&base).expect("create base");
+        let mount = MountDir::open(&base).expect("open mount");
+
+        mount
+            .create_dir_all(Path::new("a/b/c"))
+            .expect("create nested dirs");
+        let mut file = mount
+            .create_file(Path::new("a/b/f.txt"))
+            .expect("create file");
+        std::io::Write::write_all(&mut file, b"data").expect("write");
+        drop(file);
+
+        let entries = mount.list(Path::new("a/b")).expect("list");
+        assert_eq!(entries.len(), 2);
+
+        mount.remove_all(Path::new("a")).expect("remove tree");
+        assert!(!base.join("a").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mount_dir_rejects_mount_root_for_entries() {
+        let root = TempDir::new();
+        let base = root.0.join("mount");
+        std::fs::create_dir_all(&base).expect("create base");
+        let mount = MountDir::open(&base).expect("open mount");
+
         for rel in ["", ".", "./"] {
-            match resolve_entry_within_mount(&root.0, Path::new(rel)) {
-                Ok(path) => panic!("expected rejection, got {:?}", path),
-                Err((status, _)) => {
-                    assert_eq!(status, StatusCode::BAD_REQUEST)
-                }
-            }
+            assert!(
+                matches!(
+                    mount.remove_all(Path::new(rel)),
+                    Err(MountFsError::Invalid)
+                ),
+                "expected rejection for {:?}",
+                rel
+            );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mount_error_maps_symlink_to_forbidden() {
+        assert_eq!(mount_error(MountFsError::Symlink).0, StatusCode::FORBIDDEN);
     }
 
     #[test]

@@ -8,6 +8,7 @@ pub mod domain;
 pub mod github;
 pub mod handlers;
 pub mod mcp;
+pub mod mount_fs;
 pub mod openapi;
 pub mod security;
 pub mod server;
