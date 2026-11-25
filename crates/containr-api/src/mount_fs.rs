@@ -43,9 +43,7 @@ fn classify_lookup_error(
     match error.raw_os_error() {
         Some(libc::ELOOP) => return MountFsError::Symlink,
         Some(libc::ENOTDIR) => {
-            if let Ok(stat) =
-                fstatat(dirfd, name, libc::AT_SYMLINK_NOFOLLOW)
-            {
+            if let Ok(stat) = fstatat(dirfd, name, libc::AT_SYMLINK_NOFOLLOW) {
                 if (stat.st_mode & libc::S_IFMT) == libc::S_IFLNK {
                     return MountFsError::Symlink;
                 }
@@ -226,7 +224,9 @@ fn walk(
                 )
                 .map_err(|error| classify_lookup_error(dirfd, part, error))?;
             }
-            Err(error) => return Err(classify_lookup_error(dirfd, part, error)),
+            Err(error) => {
+                return Err(classify_lookup_error(dirfd, part, error))
+            }
         }
     }
     Ok(current)
