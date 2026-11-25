@@ -9,6 +9,7 @@ use crate::github::get_repo_installation_token;
 use crate::handlers::auth::ErrorResponse;
 use crate::security::decrypt_value;
 use crate::state::AppState;
+use containr_common::git_url::{is_github_host, validate_git_source_url};
 use containr_common::models::{App, DeploymentSource};
 
 pub async fn resolve_app_deployment_source(
@@ -39,6 +40,18 @@ pub async fn resolve_source_deployment_source(
     source_url: &str,
 ) -> Result<DeploymentSource, (StatusCode, Json<ErrorResponse>)> {
     if is_local_source_path(source_url) {
+        // local checkouts are only ever directories containr itself
+        // created for an upload; user input can never point at the
+        // filesystem
+        let work_dir = state.data_dir.join("builds");
+        if !containr_runtime::worker::is_uploaded_source(
+            &work_dir,
+            Path::new(source_url),
+        ) {
+            return Err(invalid_source(
+                "local source paths must come from an upload",
+            ));
+        }
         return Ok(DeploymentSource::LocalPath {
             path: source_url.to_string(),
         });
@@ -60,9 +73,11 @@ pub async fn resolve_remote_source_deployment(
     owner_id: Uuid,
     source_url: &str,
 ) -> Result<DeploymentSource, (StatusCode, Json<ErrorResponse>)> {
-    let token = resolve_remote_git_token(state, owner_id, source_url).await?;
+    let validated = validate_git_source_url(source_url)
+        .map_err(|reason| invalid_source(&reason))?;
+    let token = resolve_remote_git_token(state, owner_id, &validated).await?;
     Ok(DeploymentSource::RemoteGit {
-        url: source_url.to_string(),
+        url: validated.url,
         token,
     })
 }
@@ -70,8 +85,14 @@ pub async fn resolve_remote_source_deployment(
 pub async fn resolve_remote_git_token(
     state: &AppState,
     owner_id: Uuid,
-    repo_url: &str,
+    source: &containr_common::git_url::GitSourceUrl,
 ) -> Result<Option<String>, (StatusCode, Json<ErrorResponse>)> {
+    // github tokens may only travel to github.com; attaching an oauth
+    // token to a clone of any other host would leak it
+    if !is_github_host(&source.host) {
+        return Ok(None);
+    }
+
     let config = state.config.read().await.clone();
 
     if let Some(app_config) =
@@ -83,7 +104,7 @@ pub async fn resolve_remote_git_token(
         let token = get_repo_installation_token(
             &app_config,
             &private_key_pem,
-            repo_url,
+            &source.url,
         )
         .await
         .map_err(|e| {
@@ -123,6 +144,15 @@ fn is_local_source_path(source: &str) -> bool {
 
     let path = Path::new(source);
     path.is_absolute() || path.exists()
+}
+
+fn invalid_source(reason: &str) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: format!("invalid source url: {}", reason),
+        }),
+    )
 }
 
 fn internal_error<E: std::fmt::Display>(

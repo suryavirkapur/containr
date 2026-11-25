@@ -1250,22 +1250,38 @@ impl DeploymentWorker {
         let _ = tokio::fs::remove_dir_all(&repo_path).await;
 
         let source = job.source.clone();
-        // uploaded sources are already extracted plain directories
+        // uploaded sources are already extracted plain directories, and
+        // they are the only local paths a deployment may use
         if let DeploymentSource::LocalPath { path } = &source {
             let path = PathBuf::from(path);
             if is_uploaded_source(&self.work_dir, &path) {
                 return Ok(path);
             }
+            return Err(anyhow::anyhow!(
+                "refusing to clone a local path outside the uploads dir"
+            ));
         }
         let source_url = match &source {
-            DeploymentSource::LocalPath { path } => path.clone(),
             DeploymentSource::RemoteGit { url, .. } => url.clone(),
+            DeploymentSource::LocalPath { .. } => unreachable!(),
             DeploymentSource::None => {
                 return Err(anyhow::anyhow!(
                     "clone_repo called for deployment without source checkout"
                 ));
             }
         };
+
+        // revalidate before cloning: only https urls to public hosts may
+        // reach git, so a stored url can't smuggle in file://, ssh or an
+        // internal address
+        let validated =
+            containr_common::git_url::validate_git_source_url(&source_url)
+                .map_err(|reason| {
+                    anyhow::anyhow!("invalid repository url: {}", reason)
+                })?;
+        // a github token may only be attached when cloning from github
+        let github_host = validated.is_github_host();
+        let source_url = validated.url;
 
         info!(
             url = %source_url,
@@ -1276,12 +1292,14 @@ impl DeploymentWorker {
 
         // shallow clone with the system git, which brings its own tls
         let token = match &source {
-            DeploymentSource::RemoteGit { token, .. } => token.clone(),
+            DeploymentSource::RemoteGit { token, .. } if github_host => {
+                token.clone()
+            }
             _ => None,
         };
         let git = Git::new(token);
         let path = repo_path.to_string_lossy().to_string();
-        git.run(
+        git.run_transport(
             None,
             &[
                 "clone",
@@ -1422,7 +1440,42 @@ impl Git {
         dir: Option<&Path>,
         args: &[&str],
     ) -> anyhow::Result<String> {
+        self.run_inner(dir, args, false).await
+    }
+
+    /// like `run`, but for commands that contact a remote (clone, fetch).
+    /// restricts git to the https transport and tells git not to apply
+    /// user-controlled protocol decisions — clone urls are validated to
+    /// be https, this is defense in depth.
+    async fn run_transport(
+        &self,
+        dir: Option<&Path>,
+        args: &[&str],
+    ) -> anyhow::Result<String> {
+        self.run_inner(dir, args, true).await
+    }
+
+    async fn run_inner(
+        &self,
+        dir: Option<&Path>,
+        args: &[&str],
+        transport: bool,
+    ) -> anyhow::Result<String> {
         let mut command = tokio::process::Command::new("git");
+        if transport {
+            command
+                .args([
+                    "-c",
+                    "protocol.allow=never",
+                    "-c",
+                    "protocol.https.allow=always",
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                ])
+                // urls are validated https; this keeps git from applying
+                // user-controlled protocol decisions at all
+                .env("GIT_PROTOCOL_FROM_USER", "0");
+        }
         if let Some(dir) = dir {
             command.arg("-C").arg(dir);
         }
@@ -1489,8 +1542,11 @@ async fn checkout_commit(
                     "short sha not present in shallow clone"
                 ));
             }
-            git.run(Some(repo), &["fetch", "--depth", "1", "origin", sha])
-                .await?;
+            git.run_transport(
+                Some(repo),
+                &["fetch", "--depth", "1", "origin", sha],
+            )
+            .await?;
             sha.to_string()
         }
     };

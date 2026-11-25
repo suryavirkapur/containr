@@ -987,7 +987,7 @@ impl ServiceSvc {
         let previous_github_url = app.github_url.trim().to_string();
 
         if let Some(github_url) = req.github_url {
-            app.github_url = github_url.trim().to_string();
+            app.github_url = validate_source_url(&github_url)?.to_string();
         }
 
         if let Some(branch) = req.branch {
@@ -1685,6 +1685,7 @@ impl ServiceSvc {
             service.name = name.clone();
         }
 
+        let github_url = validate_source_url(&github_url)?.to_string();
         let mut app = App::new(name, github_url, user_id);
         if let Some(branch) = branch {
             app.branch = branch;
@@ -1966,6 +1967,7 @@ impl ServiceSvc {
         }
 
         if let Some(github_url) = non_empty(addition.github_url) {
+            let github_url = validate_source_url(&github_url)?.to_string();
             let current = app.github_url.trim();
             if current.is_empty() {
                 app.github_url = github_url;
@@ -5338,6 +5340,20 @@ async fn run_queue_action(
 
     state.db.save_managed_queue(queue).map_err(internal_error)?;
     Ok(())
+}
+
+/// trims and validates a repository url from user input. empty values
+/// pass through (a service can defer source configuration); anything
+/// else must be an https url to a public host
+fn validate_source_url(input: &str) -> ApiResult<&str> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Ok("");
+    }
+    containr_common::git_url::validate_git_source_url(trimmed).map_err(
+        |reason| bad_request(format!("invalid repository url: {}", reason)),
+    )?;
+    Ok(trimmed)
 }
 
 fn resolve_rollout_strategy(

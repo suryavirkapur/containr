@@ -5,6 +5,7 @@ pub mod config;
 pub mod db;
 pub mod encryption;
 pub mod error;
+pub mod git_url;
 pub mod managed_services;
 pub mod models;
 pub mod service_inventory;
